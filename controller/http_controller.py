@@ -20,3 +20,14 @@ def fetch_all_instruments():
     except Exception as e:
         print(f"Error fetching instruments: {e}")
         return None
+
+
+def fetch_all_positions():
+    try:
+        positions = kite.positions()
+        net_positions = positions["net"]
+        print(net_positions)
+        return net_positions
+    except Exception as e:
+        print(f"Error fetching positions: {e}")
+        return None

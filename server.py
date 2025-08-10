@@ -1,14 +1,15 @@
 from flask import Flask
+import threading
 
 from core.kite_connector import initialise_kite_for_dev, initialise_kite_for_prod
-from controller.trade_controller import fetch_all_orders, fetch_all_instruments
+from controller.http_controller import (
+    fetch_all_orders,
+    fetch_all_instruments,
+    fetch_all_positions,
+)
+from controller.ticker_controller import start_socket_connection
 
 app = Flask(__name__)
-
-
-@app.route("/")
-def hello_world():
-    return "<p>Hello, World!</p>"
 
 
 @app.route("/get_all_orders", methods=["GET"])
@@ -29,9 +30,21 @@ def get_all_instruments():
         return {"error": "Failed to fetch instruments"}, 500
 
 
+@app.route("/get_all_positions", methods=["GET"])
+def get_all_positions():
+    positions = fetch_all_positions()
+    if positions is not None:
+        return {"positions": positions}, 200
+    else:
+        return {"error": "Failed to fetch positions"}, 500
+
+
 if __name__ == "__main__":
     # uncomment for development
     initialise_kite_for_dev()
+
     # uncomment for production
     # initialise_kite_for_prod()
+
+    threading.Thread(target=start_socket_connection, daemon=True).start()
     app.run(debug=True, use_reloader=False)

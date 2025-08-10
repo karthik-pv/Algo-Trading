@@ -1,4 +1,5 @@
 .env
 venv
 __pycache__/
-temp.txt 
+temp.txt
+config.json
