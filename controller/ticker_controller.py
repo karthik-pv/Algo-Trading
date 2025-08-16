@@ -1,4 +1,5 @@
 from core.kite_connector import KiteSingleton
+from controller.http_controller import fetch_instruments
 
 KiteInstance = KiteSingleton()
 
@@ -15,8 +16,9 @@ def start_socket_connection():
 
     def on_connect(ws, response):
         print("Connected to Kite WebSocket")
-        ws.subscribe([738561])
-        ws.set_mode(ws.MODE_FULL, [256265])
+        instruments = fetch_instruments()
+        print(instruments)
+        ws.set_mode(ws.MODE_FULL, instruments)
 
     def on_close(ws, code, reason):
         print("WebSocket closed:", code, reason)

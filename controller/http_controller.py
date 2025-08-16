@@ -1,3 +1,4 @@
+from utils import get_trading_symbols_from_json
 from core.kite_connector import KiteSingleton
 
 KiteInstance = KiteSingleton()
@@ -22,12 +23,36 @@ def fetch_all_instruments():
         return None
 
 
+def fetch_instruments():
+    try:
+        instruments = kite.instruments()
+        trading_symbols = get_trading_symbols_from_json()
+
+        relevant_instruments = [
+            instrument
+            for instrument in instruments
+            if instrument["tradingsymbol"] in trading_symbols
+        ]
+
+        if len(relevant_instruments) != len(trading_symbols):
+            print(
+                "Few trading symbols were invalid and did not map to valid trading instruments."
+            )
+
+        return relevant_instruments if relevant_instruments else None
+
+    except Exception as e:
+        print(f"Error fetching instrument: {e}")
+        return None
+
+
 def fetch_all_positions():
     try:
         positions = kite.positions()
-        net_positions = positions["net"]
-        print(net_positions)
-        return net_positions
+        net_open_positions = [
+            position for position in positions["net"] if position["quantity"] > 0
+        ]
+        return net_open_positions
     except Exception as e:
         print(f"Error fetching positions: {e}")
         return None

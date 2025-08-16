@@ -3,3 +3,5 @@ venv
 __pycache__/
 temp.txt
 config.json
+access_token.json
+trading_symbols.json

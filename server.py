@@ -1,10 +1,11 @@
-from flask import Flask
+from flask import Flask, request, jsonify
 import threading
 
 from core.kite_connector import initialise_kite_for_dev, initialise_kite_for_prod
 from controller.http_controller import (
     fetch_all_orders,
     fetch_all_instruments,
+    fetch_instruments,
     fetch_all_positions,
 )
 from controller.ticker_controller import start_socket_connection
@@ -28,6 +29,15 @@ def get_all_instruments():
         return {"instruments": instruments}, 200
     else:
         return {"error": "Failed to fetch instruments"}, 500
+
+
+@app.route("/get_open_positions", methods=["GET"])
+def get_all_open_positions():
+    positions = fetch_all_positions()
+    if positions is not None:
+        return {"positions": positions}, 200
+    else:
+        return {"error": "Failed to fetch positions"}, 500
 
 
 @app.route("/get_all_positions", methods=["GET"])

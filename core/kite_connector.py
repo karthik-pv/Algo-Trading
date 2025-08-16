@@ -1,7 +1,10 @@
 import os
+import json
 import logging
 import kiteconnect
 from dotenv import load_dotenv
+
+from utils import get_access_token_from_json
 
 logging.basicConfig(level=logging.DEBUG)
 
@@ -50,7 +53,6 @@ class KiteSingleton:
         kite_socket = kiteconnect.KiteTicker(
             api_key=KITE_API_KEY, access_token=self._access_token
         )
-        print(kite_socket)
         return kite_socket
 
     def get_kite(self):
@@ -61,11 +63,16 @@ class KiteSingleton:
         self._access_token = access_token
         logging.debug(f"Access token set: {access_token}")
 
+    def get_access_token(self):
+        return get_access_token_from_json()
+
 
 # development
 def initialise_kite_for_dev():
     kite_instance = KiteSingleton()
-    access_token = input("Paste your access token for development: ").strip()
+    access_token = kite_instance.get_access_token()
+    if not access_token:
+        access_token = input("Paste your access token for development: ").strip()
     kite_instance.set_access_token(access_token)
 
 
