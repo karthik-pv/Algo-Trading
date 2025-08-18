@@ -12,12 +12,12 @@ def start_socket_connection():
     socket = KiteInstance.create_kite_socket()
 
     def on_ticks(ws, ticks):
+
         print(ticks)
 
     def on_connect(ws, response):
         print("Connected to Kite WebSocket")
         instruments = fetch_instruments()
-        print(instruments)
         ws.set_mode(ws.MODE_FULL, instruments)
 
     def on_close(ws, code, reason):
