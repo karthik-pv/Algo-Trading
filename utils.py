@@ -16,6 +16,3 @@ def get_trading_symbols_from_json():
     with open(symbols_file_path, "r") as file:
         data = json.load(file)
     return data.get("trading_symbols", [])
-
-
-get_trading_symbols_from_json()

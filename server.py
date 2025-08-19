@@ -40,15 +40,6 @@ def get_all_open_positions():
         return {"error": "Failed to fetch positions"}, 500
 
 
-@app.route("/get_all_positions", methods=["GET"])
-def get_all_positions():
-    positions = fetch_all_positions()
-    if positions is not None:
-        return {"positions": positions}, 200
-    else:
-        return {"error": "Failed to fetch positions"}, 500
-
-
 if __name__ == "__main__":
     # uncomment for development
     initialise_kite_for_dev()

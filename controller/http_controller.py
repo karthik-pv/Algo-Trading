@@ -52,6 +52,7 @@ def fetch_instruments():
 def fetch_all_positions():
     try:
         positions = kite.positions()
+        print(positions)
         net_open_positions = [
             position for position in positions["net"] if position["quantity"] > 0
         ]
