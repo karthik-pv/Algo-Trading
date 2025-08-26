@@ -29,7 +29,13 @@ def fetch_instruments():
     try:
         instruments = kite.instruments()
         trading_symbols = get_trading_symbols_from_json()
-
+        relevant_instruments_data = [
+            instrument
+            for instrument in instruments
+            if instrument["tradingsymbol"] in trading_symbols
+            and instrument["exchange"] in supported_exchanges
+        ]
+        print(relevant_instruments_data)
         relevant_instruments = [
             instrument["instrument_token"]
             for instrument in instruments

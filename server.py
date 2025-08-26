@@ -10,6 +10,9 @@ from controller.http_controller import (
     fetch_all_trades,
 )
 from controller.ticker_controller import start_socket_connection
+from core.trade_logic import Trader_Singleton
+
+trader = Trader_Singleton()
 
 app = Flask(__name__)
 
@@ -57,5 +60,7 @@ if __name__ == "__main__":
     # uncomment for production
     # initialise_kite_for_prod()
 
+    trader.start_trading_watcher_thread()
+    trader.refresh_open_positions_and_buy_price()
     threading.Thread(target=start_socket_connection, daemon=True).start()
     app.run(debug=True, use_reloader=False)

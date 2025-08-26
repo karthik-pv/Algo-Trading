@@ -1,13 +1,21 @@
+import time
+import random
+import threading
+
 from controller.http_controller import fetch_all_positions
 
 STOP_LOSS = 5
 BOOK_PROFIT = 5
+MY_LIST = [-10, 0, 10]
 
 
 class Trader_Singleton:
     _instance = None
     _open_positions_and_buy_price = {}
     _latest_price_for_instrument_token = {}
+    _trading_watcher_thread_running = False
+    _stop_event = threading.Event()
+    _tick_counter = 0
 
     def __new__(cls):
         if cls._instance is None:
@@ -29,16 +37,47 @@ class Trader_Singleton:
         print(self._open_positions_and_buy_price)
 
     def stop_loss_book_profit_core(self):
-        for instrument in self._open_positions_and_buy_price.keys:
-            difference = (
-                self._latest_price_for_instrument_token[instrument]
-                - self._open_positions_and_buy_price[instrument]
+        print("Started trading watcher thead")
+        while not self._stop_event.is_set():
+            for instrument in self._latest_price_for_instrument_token.keys():
+                print(self._open_positions_and_buy_price)
+                print(type(instrument))
+                difference = (
+                    self._latest_price_for_instrument_token[instrument]
+                    - self._open_positions_and_buy_price[instrument]
+                )
+                difference = random.choice(MY_LIST)
+                if difference < 0 and difference >= STOP_LOSS:
+                    # sell logic
+                    print("sold to stop loss")
+                    continue
+                elif difference > 0 and difference >= BOOK_PROFIT:
+                    # sell logic
+                    print("sold to book profit")
+                    continue
+                else:
+                    print("not sold")
+                self._stop_event.wait(timeout=0.01)
+
+    def set_latest_price(self, ticks):
+        for tick in ticks:
+            self._latest_price_for_instrument_token[tick["instrument_token"]] = tick[
+                "ohlc"
+            ]["close"]
+        print(self._latest_price_for_instrument_token)
+
+    def start_trading_watcher_thread(self):
+        if not self._trading_watcher_thread_running:
+            self._trading_watcher_thread_running = True
+            self._stop_event.clear()
+            thread = threading.Thread(
+                target=self.stop_loss_book_profit_core, daemon=True
             )
-            if difference < 0 and difference >= STOP_LOSS:
-                # sell logic
-                continue
-            elif difference > 0 and difference >= BOOK_PROFIT:
-                # sell logic
-                continue
-            else:
-                continue
+            print("Launching trading watcher thread 🚀")
+            thread.start()
+
+    def stop_trading_watcher_thread(self):
+        if self._trading_watcher_thread_running:
+            print("Stopping trading watcher thread ⏹")
+            self._stop_event.set()
+            self._trading_watcher_thread_running = False
