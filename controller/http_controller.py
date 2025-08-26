@@ -60,3 +60,12 @@ def fetch_all_positions():
     except Exception as e:
         print(f"Error fetching positions: {e}")
         return None
+
+
+def fetch_all_trades():
+    try:
+        trades = kite.trades()
+        return trades
+    except Exception as e:
+        print(f"Error fetching trades: {e}")
+        return None

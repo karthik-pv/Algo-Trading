@@ -7,6 +7,7 @@ from controller.http_controller import (
     fetch_all_instruments,
     fetch_instruments,
     fetch_all_positions,
+    fetch_all_trades,
 )
 from controller.ticker_controller import start_socket_connection
 
@@ -38,6 +39,15 @@ def get_all_open_positions():
         return {"positions": positions}, 200
     else:
         return {"error": "Failed to fetch positions"}, 500
+
+
+@app.route("/get_trades", methods=["GET"])
+def get_trades():
+    trades = fetch_all_trades()
+    if trades is not None:
+        return {"trades": trades}, 200
+    else:
+        return {"error": "Failed to fetch trades"}, 500
 
 
 if __name__ == "__main__":
