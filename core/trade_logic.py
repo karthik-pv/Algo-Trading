@@ -6,13 +6,13 @@ from controller.http_controller import fetch_all_positions
 
 STOP_LOSS = 5
 BOOK_PROFIT = 5
-MY_LIST = [-10, 0, 10]
 
 
 class Trader_Singleton:
     _instance = None
     _open_positions_and_buy_price = {}
     _latest_price_for_instrument_token = {}
+    _quantities_of_instrument = {}
     _trading_watcher_thread_running = False
     _stop_event = threading.Event()
     _tick_counter = 0
@@ -40,23 +40,30 @@ class Trader_Singleton:
         print("Started trading watcher thead")
         while not self._stop_event.is_set():
             for instrument in self._latest_price_for_instrument_token.keys():
-                print(self._open_positions_and_buy_price)
-                print(type(instrument))
                 difference = (
                     self._latest_price_for_instrument_token[instrument]
                     - self._open_positions_and_buy_price[instrument]
                 )
-                difference = random.choice(MY_LIST)
-                if difference < 0 and difference >= STOP_LOSS:
-                    # sell logic
-                    print("sold to stop loss")
+                if difference < 0 and abs(difference) >= STOP_LOSS:
+                    print(
+                        "------------------------------------------------------------------------------"
+                    )
+                    print("difference = " + difference)
+                    print("SELLING " + instrument + " TO STOP LOSS")
+                    print(
+                        "------------------------------------------------------------------------------"
+                    )
                     continue
                 elif difference > 0 and difference >= BOOK_PROFIT:
-                    # sell logic
-                    print("sold to book profit")
+                    print(
+                        "------------------------------------------------------------------------------"
+                    )
+                    print("difference = " + difference)
+                    print("SELLING " + instrument + " TO BOOK PROFIT")
+                    print(
+                        "------------------------------------------------------------------------------"
+                    )
                     continue
-                else:
-                    print("not sold")
                 self._stop_event.wait(timeout=0.01)
 
     def set_latest_price(self, ticks):

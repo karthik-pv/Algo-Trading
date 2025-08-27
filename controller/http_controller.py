@@ -25,7 +25,7 @@ def fetch_all_instruments():
         return None
 
 
-def fetch_instruments():
+def fetch_instruments_from_json():
     try:
         instruments = kite.instruments()
         trading_symbols = get_trading_symbols_from_json()

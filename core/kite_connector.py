@@ -23,6 +23,7 @@ class KiteSingleton:
     _instance = None
     _kite = None
     _access_token = None
+    _kite_socket = None
 
     def __new__(cls):
         if cls._instance is None:
@@ -49,11 +50,12 @@ class KiteSingleton:
         self.set_access_token(data["access_token"])
         logging.debug(f"Access token set: {data['access_token']}")
 
-    def create_kite_socket(self):
-        kite_socket = kiteconnect.KiteTicker(
-            api_key=KITE_API_KEY, access_token=self._access_token
-        )
-        return kite_socket
+    def get_kite_socket_connection(self):
+        if self._kite_socket is None:
+            self._kite_socket = kiteconnect.KiteTicker(
+                api_key=KITE_API_KEY, access_token=self._access_token
+            )
+        return self._kite_socket
 
     def get_kite(self):
         return self._kite
