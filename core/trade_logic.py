@@ -2,7 +2,7 @@ import time
 import random
 import threading
 
-from controller.http_controller import fetch_all_positions
+from controller.http_controller import fetch_all_positions, sell_units
 
 STOP_LOSS = 5
 BOOK_PROFIT = 5
@@ -11,8 +11,8 @@ BOOK_PROFIT = 5
 class Trader_Singleton:
     _instance = None
     _open_positions_and_buy_price = {}
-    _latest_price_for_instrument_token = {}
-    _quantities_of_instrument = {}
+    _latest_price_for_tradingsymbol = {}
+    _quantities_of_tradingsymbol = {}
     _trading_watcher_thread_running = False
     _stop_event = threading.Event()
     _tick_counter = 0
@@ -31,27 +31,37 @@ class Trader_Singleton:
         self._open_positions_and_buy_price.clear()
         positions = fetch_all_positions()
         for position in positions:
-            self._open_positions_and_buy_price[position["instrument_token"]] = position[
+            self._open_positions_and_buy_price[position["tradingsymbol"]] = position[
                 "average_price"
             ]
         print(self._open_positions_and_buy_price)
 
+    def get_relevant_instruments_to_track(self):
+        positions = fetch_all_positions()
+        relevant_instruments = [position["instrument"] for position in positions]
+        return relevant_instruments
+
     def stop_loss_book_profit_core(self):
         print("Started trading watcher thead")
         while not self._stop_event.is_set():
-            for instrument in self._latest_price_for_instrument_token.keys():
+            for tradingsymbol in self._latest_price_for_tradingsymbol.keys():
                 difference = (
-                    self._latest_price_for_instrument_token[instrument]
-                    - self._open_positions_and_buy_price[instrument]
+                    self._latest_price_for_tradingsymbol[tradingsymbol]
+                    - self._open_positions_and_buy_price[tradingsymbol]
                 )
                 if difference < 0 and abs(difference) >= STOP_LOSS:
                     print(
                         "------------------------------------------------------------------------------"
                     )
                     print("difference = " + difference)
-                    print("SELLING " + instrument + " TO STOP LOSS")
+                    print("SELLING " + tradingsymbol + " TO STOP LOSS")
                     print(
                         "------------------------------------------------------------------------------"
+                    )
+                    sell_units(
+                        tradingsymbol,
+                        self._quantities_of_tradingsymbol[tradingsymbol],
+                        "MCX",
                     )
                     continue
                 elif difference > 0 and difference >= BOOK_PROFIT:
@@ -59,19 +69,25 @@ class Trader_Singleton:
                         "------------------------------------------------------------------------------"
                     )
                     print("difference = " + difference)
-                    print("SELLING " + instrument + " TO BOOK PROFIT")
+                    print("SELLING " + tradingsymbol + " TO BOOK PROFIT")
                     print(
                         "------------------------------------------------------------------------------"
                     )
+                    sell_units(
+                        tradingsymbol,
+                        self._quantities_of_tradingsymbol[tradingsymbol],
+                        "MCX",
+                    )
                     continue
+
                 self._stop_event.wait(timeout=0.01)
 
     def set_latest_price(self, ticks):
         for tick in ticks:
-            self._latest_price_for_instrument_token[tick["instrument_token"]] = tick[
-                "ohlc"
-            ]["close"]
-        print(self._latest_price_for_instrument_token)
+            self._latest_price_for_tradingsymbol[tick["tradingsymbol"]] = tick["ohlc"][
+                "close"
+            ]
+        print(self._latest_price_for_tradingsymbol)
 
     def start_trading_watcher_thread(self):
         if not self._trading_watcher_thread_running:

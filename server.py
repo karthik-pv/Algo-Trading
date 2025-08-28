@@ -5,14 +5,16 @@ from core.kite_connector import initialise_kite_for_dev, initialise_kite_for_pro
 from controller.http_controller import (
     fetch_all_orders,
     fetch_all_instruments,
-    fetch_instruments,
     fetch_all_positions,
     fetch_all_trades,
 )
-from controller.ticker_controller import start_socket_connection
+from controller.ticker_controller import start_socket_connection, set_shutdown_event
 from core.trade_logic import Trader_Singleton
 
 trader = Trader_Singleton()
+
+shutdown_event = threading.Event()
+set_shutdown_event(shutdown_event)
 
 app = Flask(__name__)
 

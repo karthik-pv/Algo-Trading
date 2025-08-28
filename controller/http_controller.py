@@ -4,7 +4,7 @@ from core.kite_connector import KiteSingleton
 KiteInstance = KiteSingleton()
 kite = KiteInstance.get_kite()
 
-supported_exchanges = ["MCX"]
+supported_exchanges = ["MCX", "NIFTY"]
 
 
 def fetch_all_orders():
@@ -74,4 +74,22 @@ def fetch_all_trades():
         return trades
     except Exception as e:
         print(f"Error fetching trades: {e}")
+        return None
+
+
+def sell_units(trading_symbol, quantity, exchange):
+    try:
+        order_id = kite.place_order(
+            tradingsymbol=trading_symbol,
+            exchange=exchange,
+            transaction_type=kite.TRANSACTION_TYPE_SELL,
+            quantity=quantity,
+            order_type=kite.ORDER_TYPE_MARKET,
+            product=kite.PRODUCT_MIS,
+            variety=kite.VARIETY_REGULAR,
+        )
+        print(f"Sell order placed successfully. Order ID: {order_id}")
+        return order_id
+    except Exception as e:
+        print(f"Error placing sell order: {e}")
         return None
