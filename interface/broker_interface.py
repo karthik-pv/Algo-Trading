@@ -24,10 +24,6 @@ class BrokerInterface(ABC):
         pass
 
     @abstractmethod
-    def fetch_instruments_from_json(self):
-        pass
-
-    @abstractmethod
     def start_socket_connection(self, shutdown_event, trader_instance):
         pass
 

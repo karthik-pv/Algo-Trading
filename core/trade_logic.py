@@ -8,6 +8,7 @@ BOOK_PROFIT = 0.5
 
 class Trader_Singleton:
     _instance = None
+    _broker = None
     _open_positions_and_buy_price = {}
     _latest_price_for_tradingsymbol = {}
     _quantities_of_tradingsymbol = {}
@@ -20,6 +21,9 @@ class Trader_Singleton:
         if cls._instance is None:
             cls._instance = super(Trader_Singleton, cls).__new__(cls)
         return cls._instance
+
+    def set_broker(self, broker):
+        self._broker = broker
 
     # ---------------------- POSITION MGMT ----------------------
 
@@ -97,12 +101,14 @@ class Trader_Singleton:
 
     # ---------------------- THREAD CONTROL ----------------------
 
-    def start_trading_watcher_thread(self, broker: BrokerInterface):
+    def start_trading_watcher_thread(self):
         if not self._trading_watcher_thread_running:
             self._trading_watcher_thread_running = True
             self._stop_event.clear()
             thread = threading.Thread(
-                target=self.stop_loss_book_profit_core, args=(broker,), daemon=True
+                target=self.stop_loss_book_profit_core,
+                args=(self._broker,),
+                daemon=True,
             )
             logging.info("Launching trading watcher thread 🚀")
             thread.start()

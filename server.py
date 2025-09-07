@@ -3,6 +3,8 @@
 import threading
 import logging
 from flask import Flask, jsonify, request
+
+from core.trade_logic import Trader_Singleton
 from interface.broker_interface import BrokerInterface
 from adapter.kite_adapter import KiteAdapter
 
@@ -37,6 +39,7 @@ def get_instruments():
 @app.route("/positions")
 def get_positions():
     positions = broker.fetch_all_positions()
+    print(positions)
     return jsonify(positions if positions else {"error": "Could not fetch positions"})
 
 
@@ -81,14 +84,18 @@ def start_socket():
 
 
 if __name__ == "__main__":
-    # socket_thread = threading.Thread(target=start_socket, daemon=True)
-    # socket_thread.start()
-
     try:
+        trader = Trader_Singleton()
+        trader.set_broker(broker)
+
         # uncomment for development
-        # broker.dev_start()
+        broker.dev_start()
         # uncomment for prod
-        broker.prod_start()
+        # broker.prod_start()
+
+        socket_thread = threading.Thread(target=start_socket, daemon=True)
+        socket_thread.start()
+
         app.run(host="0.0.0.0", port=5000, debug=True)
     except KeyboardInterrupt:
         shutdown_event.set()

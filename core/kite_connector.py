@@ -70,7 +70,7 @@ class KiteSingleton:
 
     # development
     def initialise_kite_for_dev(self):
-        access_token = self.kite_instance.get_access_token()
+        access_token = self._instance.get_access_token()
         if not access_token:
             access_token = input("Paste your access token for development: ").strip()
         self.set_access_token(access_token)

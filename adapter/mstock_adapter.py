@@ -1,99 +1,97 @@
 import logging
 
 from utils import get_trading_symbols_from_json
-from core.kite_connector import KiteSingleton
+from core.mstock_connector import MStockSingleton
 from interface.broker_interface import BrokerInterface
 from core.trade_logic import Trader_Singleton
 
 
-class KiteAdapter(BrokerInterface):
+class MStockAdapter(BrokerInterface):
 
     def __init__(self):
         self._trader = Trader_Singleton()
-        self.kite_instance = KiteSingleton()
-        self.kite = self.kite_instance.get_kite()
-        self.supported_exchanges = ["MCX", "NIFTY"]
+        self.mstock_instance = MStockSingleton()
+        self.client = self.mstock_instance.get_client()
+        self.supported_exchanges = ["NSE", "BSE"]  # Adjust as per MStock API
 
     def fetch_all_orders(self):
         try:
-            return self.kite.orders()
+            return self.client.get_orders()
         except Exception as e:
-            logging.error(f"Kite fetch_all_orders error: {e}")
+            logging.error(f"MStock fetch_all_orders error: {e}")
             return None
 
     def fetch_all_instruments(self):
         try:
-            return self.kite.instruments()
+            return self.client.get_instruments()
         except Exception as e:
-            logging.error(f"Kite fetch_all_instruments error: {e}")
+            logging.error(f"MStock fetch_all_instruments error: {e}")
             return None
 
     def fetch_all_positions(self):
         try:
-            positions = self.kite.positions()
-            print(positions)
-            return [p for p in positions["net"] if p["quantity"] > 0]
+            positions = self.client.get_positions()
+            return [p for p in positions if p.get("quantity", 0) > 0]
         except Exception as e:
-            logging.error(f"Kite fetch_all_positions error: {e}")
+            logging.error(f"MStock fetch_all_positions error: {e}")
             return None
 
     def fetch_all_trades(self):
         try:
-            return self.kite.trades()
+            return self.client.get_trades()
         except Exception as e:
-            logging.error(f"Kite fetch_all_trades error: {e}")
+            logging.error(f"MStock fetch_all_trades error: {e}")
             return None
 
     def sell_units(self, trading_symbol, quantity, exchange):
         try:
-            order_id = self.kite.place_order(
+            order_id = self.client.place_order(
                 tradingsymbol=trading_symbol,
                 exchange=exchange,
-                transaction_type=self.kite.TRANSACTION_TYPE_SELL,
+                transaction_type="SELL",
                 quantity=quantity,
-                order_type=self.kite.ORDER_TYPE_MARKET,
-                product=self.kite.PRODUCT_MIS,
-                variety=self.kite.VARIETY_REGULAR,
+                order_type="MARKET",
+                product="MIS",
+                variety="REGULAR",
             )
-            logging.info(f"Kite Sell order placed successfully. Order ID: {order_id}")
+            logging.info(f"MStock Sell order placed successfully. Order ID: {order_id}")
             return order_id
         except Exception as e:
-            logging.error(f"Kite sell_units error: {e}")
+            logging.error(f"MStock sell_units error: {e}")
             return None
 
     def fetch_instruments_from_json(self):
         try:
-            instruments = self.kite.instruments()
+            instruments = self.client.get_instruments()
             trading_symbols = get_trading_symbols_from_json()
-            # trading_symbols = ["CRUDEOILM25SEP5400PE"]
             relevant_instruments = [
-                inst["instrument_token"]
+                inst["token"]
                 for inst in instruments
-                if inst["tradingsymbol"] in trading_symbols
+                if inst["symbol"] in trading_symbols
                 and inst["exchange"] in self.supported_exchanges
             ]
             return relevant_instruments if relevant_instruments else []
         except Exception as e:
-            logging.error(f"Kite fetch_instruments_from_json error: {e}")
+            logging.error(f"MStock fetch_instruments_from_json error: {e}")
             return None
 
     def start_socket_connection(self, shutdown_event, trader_instance):
-        socket = self.kite_instance.get_kite_socket_connection()
+        socket = self.mstock_instance.get_socket_connection()
 
         def on_ticks(ws, ticks):
-            # print(ticks)
             self._trader.set_latest_price(ticks)
 
         def on_connect(ws, response):
-            logging.info("Connected to Kite WebSocket")
+            logging.info("Connected to MStock WebSocket")
             instruments = self.fetch_instruments_from_json()
-            ws.set_mode(ws.MODE_FULL, instruments)
+            if instruments:
+                ws.subscribe(instruments)
 
         def on_close(ws, code, reason):
-            logging.warning(f"Kite WebSocket closed: {code}, {reason}")
+            logging.warning(f"MStock WebSocket closed: {code}, {reason}")
 
         def on_order_update(ws, data):
-            logging.info(f"Kite Order update: {data}")
+            logging.info(f"MStock Order update: {data}")
             self._trader.refresh_open_positions_and_buy_price()
             subscribe_instruments = self._trader.get_relevant_instruments_to_track()
             if subscribe_instruments:
@@ -110,7 +108,7 @@ class KiteAdapter(BrokerInterface):
         socket.close()
 
     def dev_start(self):
-        self.kite_instance.initialise_kite_for_dev()
+        self.mstock_instance.initialise_for_dev()
 
     def prod_start(self):
-        self.kite_instance.initialise_kite_for_prod()
+        self.mstock_instance.initialise_for_prod()
