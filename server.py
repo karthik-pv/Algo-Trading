@@ -1,68 +1,95 @@
-from flask import Flask, request, jsonify
+# server.py
+
 import threading
+import logging
+from flask import Flask, jsonify, request
+from interface.broker_interface import BrokerInterface
+from adapter.kite_adapter import KiteAdapter
 
-from core.kite_connector import initialise_kite_for_dev, initialise_kite_for_prod
-from controller.http_controller import (
-    fetch_all_orders,
-    fetch_all_instruments,
-    fetch_all_positions,
-    fetch_all_trades,
-)
-from controller.ticker_controller import start_socket_connection, set_shutdown_event
-from core.trade_logic import Trader_Singleton
-
-trader = Trader_Singleton()
-
-shutdown_event = threading.Event()
-set_shutdown_event(shutdown_event)
 
 app = Flask(__name__)
 
+BROKER_MAP = {
+    "kite": KiteAdapter,
+}
 
-@app.route("/get_all_orders", methods=["GET"])
-def get_all_orders():
-    orders = fetch_all_orders()
-    if orders is not None:
-        return {"orders": orders}, 200
-    else:
-        return {"error": "Failed to fetch orders"}, 500
+CURRENT_BROKER = "kite"
+broker: BrokerInterface = BROKER_MAP[CURRENT_BROKER]()
 
 
-@app.route("/get_all_instruments", methods=["GET"])
-def get_all_instruments():
-    instruments = fetch_all_instruments()
-    if instruments is not None:
-        return {"instruments": instruments}, 200
-    else:
-        return {"error": "Failed to fetch instruments"}, 500
+shutdown_event = threading.Event()
 
 
-@app.route("/get_open_positions", methods=["GET"])
-def get_all_open_positions():
-    positions = fetch_all_positions()
-    if positions is not None:
-        return {"positions": positions}, 200
-    else:
-        return {"error": "Failed to fetch positions"}, 500
+@app.route("/orders")
+def get_orders():
+    orders = broker.fetch_all_orders()
+    return jsonify(orders if orders else {"error": "Could not fetch orders"})
 
 
-@app.route("/get_trades", methods=["GET"])
+@app.route("/instruments")
+def get_instruments():
+    instruments = broker.fetch_all_instruments()
+    return jsonify(
+        instruments if instruments else {"error": "Could not fetch instruments"}
+    )
+
+
+@app.route("/positions")
+def get_positions():
+    positions = broker.fetch_all_positions()
+    return jsonify(positions if positions else {"error": "Could not fetch positions"})
+
+
+@app.route("/trades")
 def get_trades():
-    trades = fetch_all_trades()
-    if trades is not None:
-        return {"trades": trades}, 200
-    else:
-        return {"error": "Failed to fetch trades"}, 500
+    trades = broker.fetch_all_trades()
+    return jsonify(trades if trades else {"error": "Could not fetch trades"})
+
+
+@app.route("/sell", methods=["POST"])
+def sell():
+    data = request.get_json(force=True)  # parse JSON body
+    symbol = data.get("symbol")
+    qty = data.get("qty")
+    exchange = data.get("exchange")
+
+    if not symbol or not qty or not exchange:
+        return jsonify({"error": "Missing required fields: symbol, qty, exchange"}), 400
+
+    order_id = broker.sell_units(symbol, qty, exchange)
+    if order_id:
+        return jsonify({"message": "Sell order placed", "order_id": order_id})
+    return jsonify({"error": "Failed to place sell order"}), 400
+
+
+@app.route("/instruments/json")
+def instruments_json():
+    instruments = broker.fetch_instruments_from_json()
+    return jsonify(
+        instruments
+        if instruments
+        else {"error": "Could not fetch relevant instruments"}
+    )
+
+
+def start_socket():
+    try:
+        logging.info("Starting broker WebSocket connection...")
+        broker.start_socket_connection(shutdown_event, trader_instance=None)
+    except Exception as e:
+        logging.error(f"Socket error: {e}")
 
 
 if __name__ == "__main__":
-    # uncomment for development
-    initialise_kite_for_dev()
+    # socket_thread = threading.Thread(target=start_socket, daemon=True)
+    # socket_thread.start()
 
-    # uncomment for production
-    # initialise_kite_for_prod()
-
-    trader.start_trading_watcher_thread()
-    trader.refresh_open_positions_and_buy_price()
-    threading.Thread(target=start_socket_connection, daemon=True).start()
-    app.run(debug=True, use_reloader=False)
+    try:
+        # uncomment for development
+        # broker.dev_start()
+        # uncomment for prod
+        broker.prod_start()
+        app.run(host="0.0.0.0", port=5000, debug=True)
+    except KeyboardInterrupt:
+        shutdown_event.set()
+        logging.info("Shutting down server...")

@@ -68,18 +68,14 @@ class KiteSingleton:
     def get_access_token(self):
         return get_access_token_from_json()
 
+    # development
+    def initialise_kite_for_dev(self):
+        access_token = self.kite_instance.get_access_token()
+        if not access_token:
+            access_token = input("Paste your access token for development: ").strip()
+        self.set_access_token(access_token)
 
-# development
-def initialise_kite_for_dev():
-    kite_instance = KiteSingleton()
-    access_token = kite_instance.get_access_token()
-    if not access_token:
-        access_token = input("Paste your access token for development: ").strip()
-    kite_instance.set_access_token(access_token)
-
-
-# prod
-def initialise_kite_for_prod():
-    kite_instance = KiteSingleton()
-    kite_instance.create_session()
-    logging.debug("Kite session created for production.")
+    # prod
+    def initialise_kite_for_prod(self):
+        self.create_session()
+        logging.debug("Kite session created for production.")

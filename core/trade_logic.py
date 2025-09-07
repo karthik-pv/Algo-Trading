@@ -1,11 +1,9 @@
-import time
-import random
 import threading
+import logging
+from interface.broker_interface import BrokerInterface
 
-from controller.http_controller import fetch_all_positions, sell_units
-
-STOP_LOSS = 5
-BOOK_PROFIT = 5
+STOP_LOSS = 0.5
+BOOK_PROFIT = 0.5
 
 
 class Trader_Singleton:
@@ -13,6 +11,7 @@ class Trader_Singleton:
     _open_positions_and_buy_price = {}
     _latest_price_for_tradingsymbol = {}
     _quantities_of_tradingsymbol = {}
+    _instrument_token_to_trading_symbol_mapping = {}
     _trading_watcher_thread_running = False
     _stop_event = threading.Event()
     _tick_counter = 0
@@ -22,85 +21,94 @@ class Trader_Singleton:
             cls._instance = super(Trader_Singleton, cls).__new__(cls)
         return cls._instance
 
-    def get_instance(self):
-        if self._instance is None:
-            self._instance = self()
-        return self._instance
+    # ---------------------- POSITION MGMT ----------------------
 
-    def refresh_open_positions_and_buy_price(self):
+    def refresh_open_positions_and_buy_price(self, broker: BrokerInterface):
         self._open_positions_and_buy_price.clear()
-        positions = fetch_all_positions()
+        positions = broker.fetch_all_positions()
+        logging.info(f"Positions {positions}")
+
         for position in positions:
             self._open_positions_and_buy_price[position["tradingsymbol"]] = position[
                 "average_price"
             ]
-        print(self._open_positions_and_buy_price)
+            self._instrument_token_to_trading_symbol_mapping[
+                position["instrument_token"]
+            ] = position["tradingsymbol"]
 
-    def get_relevant_instruments_to_track(self):
-        positions = fetch_all_positions()
-        relevant_instruments = [position["instrument"] for position in positions]
-        return relevant_instruments
+        logging.debug(self._open_positions_and_buy_price)
 
-    def stop_loss_book_profit_core(self):
-        print("Started trading watcher thead")
+    def get_relevant_instruments_to_track(self, broker: BrokerInterface):
+        positions = broker.fetch_all_positions()
+        return [position["instrument"] for position in positions]
+
+    def update_trading_symbol_and_quantity(self, broker: BrokerInterface):
+        positions = broker.fetch_all_positions()
+        for position in positions:
+            self._quantities_of_tradingsymbol[position["tradingsymbol"]] = position[
+                "quantity"
+            ]
+
+    # ---------------------- TRADING LOGIC ----------------------
+
+    def stop_loss_book_profit_core(self, broker: BrokerInterface):
+        logging.info("Started trading watcher thread")
         while not self._stop_event.is_set():
-            for tradingsymbol in self._latest_price_for_tradingsymbol.keys():
-                difference = (
-                    self._latest_price_for_tradingsymbol[tradingsymbol]
-                    - self._open_positions_and_buy_price[tradingsymbol]
-                )
-                if difference < 0 and abs(difference) >= STOP_LOSS:
-                    print(
-                        "------------------------------------------------------------------------------"
-                    )
-                    print("difference = " + difference)
-                    print("SELLING " + tradingsymbol + " TO STOP LOSS")
-                    print(
-                        "------------------------------------------------------------------------------"
-                    )
-                    sell_units(
-                        tradingsymbol,
-                        self._quantities_of_tradingsymbol[tradingsymbol],
-                        "MCX",
-                    )
-                    continue
-                elif difference > 0 and difference >= BOOK_PROFIT:
-                    print(
-                        "------------------------------------------------------------------------------"
-                    )
-                    print("difference = " + difference)
-                    print("SELLING " + tradingsymbol + " TO BOOK PROFIT")
-                    print(
-                        "------------------------------------------------------------------------------"
-                    )
-                    sell_units(
-                        tradingsymbol,
-                        self._quantities_of_tradingsymbol[tradingsymbol],
-                        "MCX",
-                    )
+            for tradingsymbol in list(self._latest_price_for_tradingsymbol.keys()):
+                qty = self._quantities_of_tradingsymbol.get(tradingsymbol)
+                buy_price = self._open_positions_and_buy_price.get(tradingsymbol)
+                ltp = self._latest_price_for_tradingsymbol.get(tradingsymbol)
+
+                if not (qty and buy_price and ltp):
                     continue
 
-                self._stop_event.wait(timeout=0.01)
+                difference = ltp - buy_price
+
+                if difference < 0 and abs(difference) >= STOP_LOSS:
+                    logging.warning(
+                        f"STOP LOSS triggered for {tradingsymbol}, diff={difference}"
+                    )
+                    broker.sell_units(tradingsymbol, qty, "MCX")
+                    continue
+
+                elif difference > 0 and difference >= BOOK_PROFIT:
+                    logging.info(
+                        f"BOOK PROFIT triggered for {tradingsymbol}, diff={difference}"
+                    )
+                    broker.sell_units(tradingsymbol, qty, "MCX")
+                    continue
+
+            self._stop_event.wait(timeout=0.01)
+
+    # ---------------------- TICKS ----------------------
 
     def set_latest_price(self, ticks):
+        """This part stays independent, just updates latest prices from ticks"""
         for tick in ticks:
-            self._latest_price_for_tradingsymbol[tick["tradingsymbol"]] = tick["ohlc"][
-                "close"
-            ]
-        print(self._latest_price_for_tradingsymbol)
+            tradingsymbol = self._instrument_token_to_trading_symbol_mapping.get(
+                tick["instrument_token"]
+            )
+            if tradingsymbol:
+                self._latest_price_for_tradingsymbol[tradingsymbol] = tick["ohlc"][
+                    "close"
+                ]
 
-    def start_trading_watcher_thread(self):
+        logging.debug(self._latest_price_for_tradingsymbol)
+
+    # ---------------------- THREAD CONTROL ----------------------
+
+    def start_trading_watcher_thread(self, broker: BrokerInterface):
         if not self._trading_watcher_thread_running:
             self._trading_watcher_thread_running = True
             self._stop_event.clear()
             thread = threading.Thread(
-                target=self.stop_loss_book_profit_core, daemon=True
+                target=self.stop_loss_book_profit_core, args=(broker,), daemon=True
             )
-            print("Launching trading watcher thread 🚀")
+            logging.info("Launching trading watcher thread 🚀")
             thread.start()
 
     def stop_trading_watcher_thread(self):
         if self._trading_watcher_thread_running:
-            print("Stopping trading watcher thread ⏹")
+            logging.info("Stopping trading watcher thread ⏹")
             self._stop_event.set()
             self._trading_watcher_thread_running = False

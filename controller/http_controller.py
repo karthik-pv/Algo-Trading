@@ -5,6 +5,8 @@ KiteInstance = KiteSingleton()
 kite = KiteInstance.get_kite()
 
 supported_exchanges = ["MCX", "NIFTY"]
+# supported_exchanges = [kite.EXCHANGE_NSE,kite.EXCHANGE_BSE,kite.EXCHANGE_NFO]
+# ,kite.EXCHANGE_MCX
 
 
 def fetch_all_orders():
@@ -58,7 +60,6 @@ def fetch_instruments_from_json():
 def fetch_all_positions():
     try:
         positions = kite.positions()
-        print(positions)
         net_open_positions = [
             position for position in positions["net"] if position["quantity"] > 0
         ]
@@ -93,3 +94,44 @@ def sell_units(trading_symbol, quantity, exchange):
     except Exception as e:
         print(f"Error placing sell order: {e}")
         return None
+
+
+# To get the average buy price of Buy Order which are not sold yet and thus dont use the average buy price from Position which considers even sold Buy Order to calculate the average
+def fetch_open_buy_trades():
+    """
+    Returns the list of BUY trades (with price & qty) that are not yet sold.
+    Uses FIFO matching between BUY and SELL trades.
+    """
+    trades = kite.trades()  # all executed trades
+    open_buys = []
+
+    # Organize trades FIFO by order_timestamp
+    trades_sorted = sorted(trades, key=lambda x: x["order_timestamp"])
+
+    fifo_buys = []  # will hold unmatched buy trades
+
+    for trade in trades_sorted:
+        qty = trade["quantity"]
+        price = trade["average_price"]
+        side = trade["transaction_type"]
+
+        if side == "BUY":
+            fifo_buys.append(
+                {"qty": qty, "price": price, "symbol": trade["tradingsymbol"]}
+            )
+
+        elif side == "SELL":
+            # Match sells against FIFO buys
+            remaining = qty
+            while remaining > 0 and fifo_buys:
+                buy_trade = fifo_buys[0]
+                if buy_trade["qty"] > remaining:
+                    buy_trade["qty"] -= remaining
+                    remaining = 0
+                else:
+                    remaining -= buy_trade["qty"]
+                    fifo_buys.pop(0)  # fully matched buy removed
+
+    # Whatever is left in fifo_buys = open buy positions
+    open_buys = fifo_buys
+    return open_buys
