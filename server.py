@@ -13,6 +13,7 @@ app = Flask(__name__)
 
 BROKER_MAP = {
     "kite": KiteAdapter,
+    # "mstock" : "MStockAdapter"
 }
 
 CURRENT_BROKER = "kite"
@@ -96,7 +97,7 @@ if __name__ == "__main__":
         socket_thread = threading.Thread(target=start_socket, daemon=True)
         socket_thread.start()
 
-        app.run(host="0.0.0.0", port=5000, debug=True)
+        app.run(debug=True)
     except KeyboardInterrupt:
         shutdown_event.set()
         logging.info("Shutting down server...")
