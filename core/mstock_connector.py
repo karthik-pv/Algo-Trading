@@ -1,20 +1,24 @@
 import os
+import json
 import logging
+import http.client
 from dotenv import load_dotenv
 
-from utils import get_access_token_from_json
+from utils import fetch_from_json
 
 logging.basicConfig(level=logging.DEBUG)
 
 load_dotenv()
 
 MSTOCK_API_KEY = os.getenv("MSTOCK_API_KEY")
-MSTOCK_SECRET_KEY = os.getenv("MSTOCK_SECRET_KEY")
+MSTOCK_CLIENT_CODE = os.getenv("MSTOCK_CLIENT_CODE")
+MSTOCK_CLIENT_PASSWORD = os.getenv("MSTOCK_CLIENT_PASSWORD")
 
 
 class MStockSingleton:
     _instance = None
     _client = None
+    _api_key = None
     _access_token = None
     _socket = None
 
@@ -25,49 +29,74 @@ class MStockSingleton:
         return cls._instance
 
     def _initialize_client(self):
-        if not MSTOCK_API_KEY:
+        self._api_key = MSTOCK_API_KEY
+        if not self._api_key:
             raise ValueError("MSTOCK_API_KEY not found in environment variables")
 
-        # Replace this with actual client init for MStock
-        self._client = MStockAPI(api_key=MSTOCK_API_KEY)
-        logging.debug("MStock API client created.")
-
     def create_session(self):
-        print(self._client.login_url())
-        request_token = input("Please paste the request token obtained here - ")
-        if not MSTOCK_SECRET_KEY:
-            raise ValueError("MSTOCK_SECRET_KEY not found in environment variables")
+        refresh_token = self.login()
+        self.get_session_token(refresh_token)
 
-        data = self._client.generate_session(
-            request_token=request_token, api_secret=MSTOCK_SECRET_KEY
+    def login(self):
+        conn = http.client.HTTPSConnection("api.mstock.trade")
+        headers = {
+            "X-Mirae-Version": "1",
+            "Content-Type": "application/json",
+        }
+        json_data = {
+            "clientcode": MSTOCK_CLIENT_CODE,
+            "password": MSTOCK_CLIENT_PASSWORD,
+            "totp": "",
+            "state": "",
+        }
+        conn.request(
+            "POST",
+            "/openapi/typeb/connect/login",
+            json.dumps(json_data),
+            headers,
         )
-        logging.debug(f"Session data received: {data}")
-        self.set_access_token(data["access_token"])
+        response = json.loads(conn.getresponse().read().decode("utf-8"))
+        print(response)
+        return response["data"]["refreshToken"]
 
-    def get_socket_connection(self):
-        if self._socket is None:
-            self._socket = MStockWebSocket(
-                api_key=MSTOCK_API_KEY, access_token=self._access_token
-            )
-        return self._socket
+    def get_session_token(self, refresh_token):
+        otp = input("Please enter OTP received - ")
+        conn = http.client.HTTPSConnection("api.mstock.trade")
+        headers = {
+            "X-Mirae-Version": "1",
+            "X-PrivateKey": self._api_key,
+            "Content-Type": "application/json",
+        }
+        json_data = {
+            "refreshToken": refresh_token,
+            "otp": otp,
+        }
+        print(json_data)
+        print(headers)
+        conn.request(
+            "POST",
+            "/openapi/typeb/session/token",
+            json.dumps(json_data),
+            headers,
+        )
+        response = json.loads(conn.getresponse().read().decode("utf-8"))
+        access_token = response["data"]["jwt_token"]
+        self.set_access_token(access_token)
+        print(access_token)
 
     def get_client(self):
         return self._client
 
     def set_access_token(self, access_token):
-        self._client.set_access_token(access_token)
         self._access_token = access_token
         logging.debug(f"Access token set: {access_token}")
 
-    def get_access_token(self):
-        return get_access_token_from_json()
-
     # development
     def initialise_for_dev(self):
-        access_token = self._instance.get_access_token()
-        if not access_token:
-            access_token = input("Paste your access token for development: ").strip()
-        self.set_access_token(access_token)
+        if not self._access_token:
+            access_token = fetch_from_json("access_token.json", "mstock_jwt_token")
+            print(access_token)
+            self.set_access_token(access_token)
 
     # production
     def initialise_for_prod(self):

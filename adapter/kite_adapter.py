@@ -61,21 +61,21 @@ class KiteAdapter(BrokerInterface):
             logging.error(f"Kite sell_units error: {e}")
             return None
 
-    def fetch_instruments_from_json(self):
-        try:
-            instruments = self.kite.instruments()
-            trading_symbols = get_trading_symbols_from_json()
-            # trading_symbols = ["CRUDEOILM25SEP5400PE"]
-            relevant_instruments = [
-                inst["instrument_token"]
-                for inst in instruments
-                if inst["tradingsymbol"] in trading_symbols
-                and inst["exchange"] in self.supported_exchanges
-            ]
-            return relevant_instruments if relevant_instruments else []
-        except Exception as e:
-            logging.error(f"Kite fetch_instruments_from_json error: {e}")
-            return None
+    # def fetch_instruments_from_json(self):
+    #     try:
+    #         instruments = self.kite.instruments()
+    #         trading_symbols = get_trading_symbols_from_json()
+    #         # trading_symbols = ["CRUDEOILM25SEP5400PE"]
+    #         relevant_instruments = [
+    #             inst["instrument_token"]
+    #             for inst in instruments
+    #             if inst["tradingsymbol"] in trading_symbols
+    #             and inst["exchange"] in self.supported_exchanges
+    #         ]
+    #         return relevant_instruments if relevant_instruments else []
+    #     except Exception as e:
+    #         logging.error(f"Kite fetch_instruments_from_json error: {e}")
+    #         return None
 
     def start_socket_connection(self, shutdown_event, trader_instance):
         socket = self.kite_instance.get_kite_socket_connection()

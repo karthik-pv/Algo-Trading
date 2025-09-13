@@ -7,18 +7,16 @@ from flask import Flask, jsonify, request
 from core.trade_logic import Trader_Singleton
 from interface.broker_interface import BrokerInterface
 from adapter.kite_adapter import KiteAdapter
+from adapter.mstock_adapter import MStockAdapter
 
 
 app = Flask(__name__)
 
-BROKER_MAP = {
-    "kite": KiteAdapter,
-    # "mstock" : "MStockAdapter"
-}
+BROKER_MAP = {"kite": KiteAdapter, "mstock": MStockAdapter}
 
-CURRENT_BROKER = "kite"
+CURRENT_BROKER = "mstock"
+
 broker: BrokerInterface = BROKER_MAP[CURRENT_BROKER]()
-
 
 shutdown_event = threading.Event()
 
