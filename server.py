@@ -1,7 +1,6 @@
-# server.py
-
 import threading
 import logging
+import asyncio
 from flask import Flask, jsonify, request
 
 from core.trade_logic import Trader_Singleton
@@ -74,12 +73,25 @@ def instruments_json():
     )
 
 
+def run_flask_app():
+    app.run(debug=True)
+
+
 def start_socket():
     try:
         logging.info("Starting broker WebSocket connection...")
         broker.start_socket_connection(shutdown_event, trader_instance=None)
     except Exception as e:
         logging.error(f"Socket error: {e}")
+
+
+async def start_async_connections():
+    """Main async function to run all async brokers."""
+    if isinstance(broker, MStockAdapter):
+        # This starts the M.Stock WebSocket loop as an asyncio task
+        await broker.start_socket_connection(shutdown_event, trader_instance=None)
+    else:
+        logging.info("M.Stock not selected, skipping async socket start.")
 
 
 if __name__ == "__main__":
@@ -92,10 +104,15 @@ if __name__ == "__main__":
         # uncomment for prod
         # broker.prod_start()
 
-        socket_thread = threading.Thread(target=start_socket, daemon=True)
-        socket_thread.start()
+        if CURRENT_BROKER == "kite":
+            socket_thread = threading.Thread(target=start_socket, daemon=True)
+            socket_thread.start()
+            app.run(debug=True)
+        elif CURRENT_BROKER == "mstock":
+            asyncio.run(start_async_connections())
+            flask_thread = threading.Thread(target=run_flask_app, daemon=True)
+            flask_thread.start()
 
-        app.run(debug=True)
     except KeyboardInterrupt:
         shutdown_event.set()
         logging.info("Shutting down server...")

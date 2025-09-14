@@ -1,7 +1,11 @@
 import os
+import rel
 import json
+import asyncio
 import logging
 import http.client
+import websockets
+import threading
 from dotenv import load_dotenv
 
 from utils import fetch_from_json
@@ -17,7 +21,6 @@ MSTOCK_CLIENT_PASSWORD = os.getenv("MSTOCK_CLIENT_PASSWORD")
 
 class MStockSingleton:
     _instance = None
-    _client = None
     _api_key = None
     _access_token = None
     _socket = None
@@ -71,8 +74,6 @@ class MStockSingleton:
             "refreshToken": refresh_token,
             "otp": otp,
         }
-        print(json_data)
-        print(headers)
         conn.request(
             "POST",
             "/openapi/typeb/session/token",
@@ -80,12 +81,66 @@ class MStockSingleton:
             headers,
         )
         response = json.loads(conn.getresponse().read().decode("utf-8"))
-        access_token = response["data"]["jwt_token"]
-        self.set_access_token(access_token)
+        print(response)
+        access_token = response["data"]["jwtToken"]
         print(access_token)
+        self.set_access_token(access_token)
 
-    def get_client(self):
-        return self._client
+    async def start_socket_connection(self, shutdown_event, trader_instance):
+        """Starts the WebSocket connection and handles automatic reconnection."""
+        self._trader = trader_instance
+        url = f"wss://ws.mstock.trade?API_KEY={self._api_key}&ACCESS_TOKEN={self._access_token}"
+
+        while True:
+            try:
+                logging.info("Attempting to connect to M.Stock WebSocket...")
+                async with websockets.connect(url) as ws:
+                    self._socket = ws
+                    logging.info("Connection successful. Logging in...")
+
+                    # 1. Login to M.Stock 🔐
+                    login_message = f"LOGIN:{self._access_token}"
+                    await ws.send(login_message)
+
+                    # 2. Subscribe to instruments after a short delay for authentication
+                    await asyncio.sleep(1)
+                    await self._subscribe_to_instruments()
+
+                    # 3. Listen for messages indefinitely
+                    async for message in ws:
+                        await self._handle_message(message)
+
+            except websockets.exceptions.ConnectionClosed as e:
+                logging.warning(f"Connection closed: {e}. Reconnecting in 5s...")
+                await asyncio.sleep(5)
+            except Exception as e:
+                logging.error(f"WebSocket error: {e}. Retrying in 5s...")
+                await asyncio.sleep(5)
+
+    async def _subscribe_to_instruments(self):
+        """Sends the subscription message for relevant instruments."""
+        if not self._socket:
+            return
+
+        instruments = self._trader.get_relevant_instruments_to_track()
+        if instruments:
+            subscription_message = {"a": "subscribe", "v": instruments}
+            await self._socket.send(json.dumps(subscription_message))
+            logging.info(f"Subscription sent for instruments: {instruments}")
+
+    async def _handle_message(self, message):
+        """Processes incoming messages from the WebSocket."""
+        if isinstance(message, bytes):
+            # Ticks are binary data
+            self._trader.set_latest_price(message)
+        else:
+            try:
+                data = json.loads(message)
+                if data.get("type") == "order_update":
+                    self._trader.refresh_open_positions_and_buy_price()
+                    await self._subscribe_to_instruments()
+            except json.JSONDecodeError:
+                logging.warning(f"Received non-JSON text: {message}")
 
     def set_access_token(self, access_token):
         self._access_token = access_token

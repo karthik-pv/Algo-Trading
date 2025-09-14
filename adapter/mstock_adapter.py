@@ -31,8 +31,11 @@ class MStockAdapter(BrokerInterface):
     def fetch_instruments_from_json(self):
         return
 
-    def start_socket_connection(self, shutdown_event, trader_instance):
-        return
+    async def start_socket_connection(self, shutdown_event, trader_instance):
+        await self.mstock_instance.start_socket_connection(
+            shutdown_event, trader_instance
+        )
+        print("Socket started")
 
     def dev_start(self):
         self.mstock_instance.initialise_for_dev()
