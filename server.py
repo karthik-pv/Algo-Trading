@@ -74,7 +74,7 @@ def instruments_json():
 
 
 def run_flask_app():
-    app.run(debug=True)
+    app.run(debug=True, use_reloader=False)
 
 
 def start_socket():
@@ -88,7 +88,8 @@ def start_socket():
 async def start_async_connections():
     """Main async function to run all async brokers."""
     if isinstance(broker, MStockAdapter):
-        # This starts the M.Stock WebSocket loop as an asyncio task
+        flask_thread = threading.Thread(target=run_flask_app, daemon=True)
+        flask_thread.start()
         await broker.start_socket_connection(shutdown_event, trader_instance=None)
     else:
         logging.info("M.Stock not selected, skipping async socket start.")
@@ -110,8 +111,6 @@ if __name__ == "__main__":
             app.run(debug=True)
         elif CURRENT_BROKER == "mstock":
             asyncio.run(start_async_connections())
-            flask_thread = threading.Thread(target=run_flask_app, daemon=True)
-            flask_thread.start()
 
     except KeyboardInterrupt:
         shutdown_event.set()

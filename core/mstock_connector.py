@@ -98,15 +98,12 @@ class MStockSingleton:
                     self._socket = ws
                     logging.info("Connection successful. Logging in...")
 
-                    # 1. Login to M.Stock 🔐
                     login_message = f"LOGIN:{self._access_token}"
                     await ws.send(login_message)
 
-                    # 2. Subscribe to instruments after a short delay for authentication
                     await asyncio.sleep(1)
                     await self._subscribe_to_instruments()
 
-                    # 3. Listen for messages indefinitely
                     async for message in ws:
                         await self._handle_message(message)
 
@@ -122,7 +119,7 @@ class MStockSingleton:
         if not self._socket:
             return
 
-        instruments = self._trader.get_relevant_instruments_to_track()
+        instruments = [55256, 55412]
         if instruments:
             subscription_message = {"a": "subscribe", "v": instruments}
             await self._socket.send(json.dumps(subscription_message))
