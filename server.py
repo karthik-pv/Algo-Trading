@@ -90,6 +90,7 @@ async def start_async_connections():
     if isinstance(broker, MStockAdapter):
         flask_thread = threading.Thread(target=run_flask_app, daemon=True)
         flask_thread.start()
+        trader.start_trading_watcher_thread()
         await broker.start_socket_connection(shutdown_event, trader_instance=None)
     else:
         logging.info("M.Stock not selected, skipping async socket start.")
@@ -108,6 +109,7 @@ if __name__ == "__main__":
         if CURRENT_BROKER == "kite":
             socket_thread = threading.Thread(target=start_socket, daemon=True)
             socket_thread.start()
+            trader.start_trading_watcher_thread()
             app.run(debug=True)
         elif CURRENT_BROKER == "mstock":
             asyncio.run(start_async_connections())

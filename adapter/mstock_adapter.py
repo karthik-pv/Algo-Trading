@@ -1,9 +1,12 @@
+import http.client
+import json
 import logging
 
 from utils import get_trading_symbols_from_json
 from core.mstock_connector import MStockSingleton
 from interface.broker_interface import BrokerInterface
 from core.trade_logic import Trader_Singleton
+from adapter.mstock_utils import position_attribute_mgmt
 
 
 class MStockAdapter(BrokerInterface):
@@ -20,7 +23,25 @@ class MStockAdapter(BrokerInterface):
         return
 
     def fetch_all_positions(self):
-        return
+        try:
+            conn = http.client.HTTPSConnection("api.mstock.trade")
+            headers = {
+                "X-Mirae-Version": "1",
+                "X-PrivateKey": self.mstock_instance._api_key,
+                "Authorization": f"Bearer {self.mstock_instance._access_token}",
+            }
+            conn.request("GET", "/openapi/typeb/portfolio/positions", headers=headers)
+            response = json.loads(conn.getresponse().read().decode("utf-8"))
+            positions = position_attribute_mgmt(response["data"])
+            open_positions = [
+                open_position
+                for open_position in positions
+                if int(open_position["quantity"]) > 0
+            ]
+            print(open_positions)
+            return open_positions
+        except Exception as e:
+            logging.error(f"Error fetching positions: {e}")
 
     def fetch_all_trades(self):
         return

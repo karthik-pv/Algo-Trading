@@ -58,6 +58,7 @@ class Trader_Singleton:
     def stop_loss_book_profit_core(self, broker: BrokerInterface):
         logging.info("Started trading watcher thread")
         while not self._stop_event.is_set():
+            print("Watcher thread is running")
             for tradingsymbol in list(self._latest_price_for_tradingsymbol.keys()):
                 qty = self._quantities_of_tradingsymbol.get(tradingsymbol)
                 buy_price = self._open_positions_and_buy_price.get(tradingsymbol)
@@ -82,7 +83,7 @@ class Trader_Singleton:
                     broker.sell_units(tradingsymbol, qty, "MCX")
                     continue
 
-            self._stop_event.wait(timeout=0.01)
+            self._stop_event.wait(timeout=0.1)
 
     # ---------------------- TICKS ----------------------
 
