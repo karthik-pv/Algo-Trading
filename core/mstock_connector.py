@@ -119,7 +119,7 @@ class MStockSingleton:
         if not self._socket:
             return
 
-        instruments = [55256, 55412]
+        instruments = ["1333"]
         if instruments:
             subscription_message = {"a": "subscribe", "v": instruments}
             await self._socket.send(json.dumps(subscription_message))
