@@ -96,9 +96,9 @@ async def start_async_connections():
     if isinstance(broker, MStockAdapter):
         # flask_thread = threading.Thread(target=run_flask_app, daemon=True)
         # flask_thread.start()
-        run_flask_app()
         trader.start_trading_watcher_thread()
-        await broker.start_socket_connection(shutdown_event, trader_instance=trader)
+        run_flask_app()
+        # await broker.start_socket_connection(shutdown_event, trader_instance=trader)
     else:
         logging.info("M.Stock not selected, skipping async socket start.")
 
@@ -106,13 +106,15 @@ async def start_async_connections():
 if __name__ == "__main__":
     try:
         trader = Trader_Singleton()
-        trader.set_broker(broker)
-        trader.on_start()
 
         # uncomment for development
         broker.dev_start()
         # uncomment for prod
         # broker.prod_start()
+
+        trader.set_broker(broker)
+        trader.on_start()
+        trader.set_latest_price(1333, "idea", 974)
 
         if CURRENT_BROKER == "kite":
             socket_thread = threading.Thread(target=start_socket, daemon=True)

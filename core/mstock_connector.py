@@ -25,6 +25,7 @@ class MStockSingleton:
     _api_key = None
     _access_token = None
     _socket = None
+    _trader = None
 
     def __new__(cls):
         if cls._instance is None:

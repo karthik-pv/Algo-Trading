@@ -31,7 +31,6 @@ class KiteAdapter(BrokerInterface):
     def fetch_all_positions(self):
         try:
             positions = self.kite.positions()
-            print(positions)
             return [p for p in positions["net"] if p["quantity"] > 0]
         except Exception as e:
             logging.error(f"Kite fetch_all_positions error: {e}")

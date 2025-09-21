@@ -40,7 +40,9 @@ class MStockAdapter(BrokerInterface):
             ]
             return open_positions
         except Exception as e:
-            logging.error(f"Error fetching positions: {e}")
+            logging.error(
+                f"Error fetching positions: {e} \n\n CONSIDER LOGGING IN AGAIN \n\n"
+            )
 
     def fetch_all_trades(self):
         return

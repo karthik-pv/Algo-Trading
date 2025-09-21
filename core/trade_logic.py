@@ -29,7 +29,6 @@ class Trader_Singleton:
         self._open_positions_and_buy_price.clear()
         positions = self._broker.fetch_all_positions()
         logging.info(f"Positions {positions}")
-
         for position in positions:
             self._open_positions_and_buy_price[position["tradingsymbol"]] = position[
                 "average_price"
