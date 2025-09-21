@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Trading Dashboard (SSE)</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+      }
+      .container {
+        border: 1px solid #ccc;
+        padding: 20px;
+        border-radius: 8px;
+        width: 400px;
+      }
+      h2 {
+        margin-top: 0;
+      }
+      #alerts {
+        list-style-type: none;
+        padding: 0;
+      }
+      #alerts li {
+        padding: 10px;
+        margin-bottom: 8px;
+        border-radius: 5px;
+        border: 1px solid #ddd;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h2>Trade Alerts</h2>
+      <ul id="alerts"></ul>
+    </div>
+
+    <script>
+      const colorMap = {
+        red: "rgba(255, 102, 102, 0.2)", // Light Red
+        green: "rgba(102, 255, 102, 0.2)", // Light Green
+        blue: "rgba(102, 102, 255, 0.2)", // Light Blue
+        default: "rgba(200, 200, 200, 0.2)", // Light Grey
+      };
+
+      const eventSource = new EventSource("/stream");
+
+      console.log("Connecting to SSE stream...");
+
+      eventSource.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+        console.log("Received alert:", data);
+
+        const alertsList = document.getElementById("alerts");
+        const newAlert = document.createElement("li");
+
+        newAlert.textContent = `[${new Date().toLocaleTimeString()}] ${
+          data.msg
+        }`;
+
+        newAlert.style.backgroundColor =
+          colorMap[data.color] || colorMap.default;
+
+        alertsList.prepend(newAlert);
+
+        if (alertsList.children.length > 5) {
+          alertsList.removeChild(alertsList.lastElementChild);
+        }
+      };
+
+      eventSource.onerror = (err) => {
+        console.error("EventSource failed:", err);
+      };
+    </script>
+  </body>
+</html>

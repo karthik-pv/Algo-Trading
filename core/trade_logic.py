@@ -1,5 +1,6 @@
 import threading
 import logging
+import queue
 from interface.broker_interface import BrokerInterface
 
 STOP_LOSS = 0.5
@@ -16,6 +17,8 @@ class Trader_Singleton:
     _trading_watcher_thread_running = False
     _stop_event = threading.Event()
     _tick_counter = 0
+
+    alert_queue = queue.Queue()
 
     def __new__(cls):
         if cls._instance is None:
@@ -76,12 +79,24 @@ class Trader_Singleton:
                     logging.warning(
                         f"STOP LOSS triggered for {tradingsymbol}, diff={difference}"
                     )
+                    self.alert_queue.put(
+                        {
+                            "msg": f"STOP LOSS TRIGGERED FOR {tradingsymbol} DIFF = {difference}",
+                            "color": "red",
+                        }
+                    )
                     broker.sell_units(tradingsymbol, qty, "MCX")
                     continue
 
                 elif difference > 0 and difference >= BOOK_PROFIT:
                     logging.info(
                         f"BOOK PROFIT triggered for {tradingsymbol}, diff={difference}"
+                    )
+                    self.alert_queue.put(
+                        {
+                            "msg": f"BOOK PROFIT TRIGGERED FOR {tradingsymbol} DIFF = {difference}",
+                            "color": "green",
+                        }
                     )
                     broker.sell_units(tradingsymbol, qty, "MCX")
                     continue

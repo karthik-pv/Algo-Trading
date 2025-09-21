@@ -1,7 +1,8 @@
+import json
 import threading
 import logging
 import asyncio
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, Response, render_template
 
 from core.trade_logic import Trader_Singleton
 from interface.broker_interface import BrokerInterface
@@ -91,12 +92,28 @@ def start_socket():
         logging.error(f"Socket error: {e}")
 
 
+@app.route("/alert")
+def alert_page():
+    return render_template("alert.html")
+
+
+@app.route("/stream")
+def stream():
+    def event_stream():
+        logging.info("Client connected to SSE stream.")
+        while True:
+            message = trader.alert_queue.get()
+            json_data = json.dumps(message)
+            yield f"data: {json_data}\n\n"
+
+    return Response(event_stream(), mimetype="text/event-stream")
+
+
 async def start_async_connections():
     """Main async function to run all async brokers."""
     if isinstance(broker, MStockAdapter):
         # flask_thread = threading.Thread(target=run_flask_app, daemon=True)
         # flask_thread.start()
-        trader.start_trading_watcher_thread()
         run_flask_app()
         # await broker.start_socket_connection(shutdown_event, trader_instance=trader)
     else:
@@ -122,6 +139,8 @@ if __name__ == "__main__":
             trader.start_trading_watcher_thread()
             app.run(debug=True)
         elif CURRENT_BROKER == "mstock":
+
+            trader.start_trading_watcher_thread()
             asyncio.run(start_async_connections())
 
     except KeyboardInterrupt:
