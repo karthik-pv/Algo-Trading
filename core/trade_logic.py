@@ -51,6 +51,10 @@ class Trader_Singleton:
                 "quantity"
             ]
 
+    def refresh_subscriptions(self):
+        positions = self.get_relevant_instruments_to_track()
+        self._broker.refresh_subscriptions(positions)
+
     def on_start(self):
         self.refresh_open_positions_and_buy_price()
         self.update_trading_symbol_and_quantity()

@@ -43,6 +43,7 @@ def get_positions():
 
 @app.route("/refresh_ticker_subscriptions")
 def refresh_ticker_subscriptions():
+    trader.refresh_subscriptions()
     return
 
 
