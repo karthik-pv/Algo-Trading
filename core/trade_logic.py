@@ -8,7 +8,7 @@ BOOK_PROFIT = 0.5
 
 class Trader_Singleton:
     _instance = None
-    _broker = None
+    _broker = BrokerInterface or None
     _open_positions_and_buy_price = {}
     _latest_price_for_tradingsymbol = {}
     _quantities_of_tradingsymbol = {}
@@ -25,11 +25,9 @@ class Trader_Singleton:
     def set_broker(self, broker):
         self._broker = broker
 
-    # ---------------------- POSITION MGMT ----------------------
-
-    def refresh_open_positions_and_buy_price(self, broker: BrokerInterface):
+    def refresh_open_positions_and_buy_price(self):
         self._open_positions_and_buy_price.clear()
-        positions = broker.fetch_all_positions()
+        positions = self._broker.fetch_all_positions()
         logging.info(f"Positions {positions}")
 
         for position in positions:
@@ -42,18 +40,20 @@ class Trader_Singleton:
 
         logging.debug(self._open_positions_and_buy_price)
 
-    def get_relevant_instruments_to_track(self, broker: BrokerInterface):
-        positions = broker.fetch_all_positions()
+    def get_relevant_instruments_to_track(self):
+        positions = self._broker.fetch_all_positions()
         return [position["instrument"] for position in positions]
 
-    def update_trading_symbol_and_quantity(self, broker: BrokerInterface):
-        positions = broker.fetch_all_positions()
+    def update_trading_symbol_and_quantity(self):
+        positions = self._broker.fetch_all_positions()
         for position in positions:
             self._quantities_of_tradingsymbol[position["tradingsymbol"]] = position[
                 "quantity"
             ]
 
-    # ---------------------- TRADING LOGIC ----------------------
+    def on_start(self):
+        self.refresh_open_positions_and_buy_price()
+        self.update_trading_symbol_and_quantity()
 
     def stop_loss_book_profit_core(self, broker: BrokerInterface):
         logging.info("Started trading watcher thread")
@@ -83,24 +83,14 @@ class Trader_Singleton:
                     broker.sell_units(tradingsymbol, qty, "MCX")
                     continue
 
-            self._stop_event.wait(timeout=0.1)
+            self._stop_event.wait(timeout=5)
 
-    # ---------------------- TICKS ----------------------
-
-    def set_latest_price(self, ticks):
-        """This part stays independent, just updates latest prices from ticks"""
-        for tick in ticks:
+    def set_latest_price(self, instrument_token, tradingsymbol, price):
+        if not tradingsymbol:
             tradingsymbol = self._instrument_token_to_trading_symbol_mapping.get(
-                tick["instrument_token"]
+                instrument_token
             )
-            if tradingsymbol:
-                self._latest_price_for_tradingsymbol[tradingsymbol] = tick["ohlc"][
-                    "close"
-                ]
-
-        logging.debug(self._latest_price_for_tradingsymbol)
-
-    # ---------------------- THREAD CONTROL ----------------------
+        self._latest_price_for_tradingsymbol[tradingsymbol] = price
 
     def start_trading_watcher_thread(self):
         if not self._trading_watcher_thread_running:

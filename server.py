@@ -41,6 +41,11 @@ def get_positions():
     return jsonify(positions if positions else {"error": "Could not fetch positions"})
 
 
+@app.route("/refresh_ticker_subscriptions")
+def refresh_ticker_subscriptions():
+    return
+
+
 @app.route("/trades")
 def get_trades():
     trades = broker.fetch_all_trades()
@@ -80,7 +85,7 @@ def run_flask_app():
 def start_socket():
     try:
         logging.info("Starting broker WebSocket connection...")
-        broker.start_socket_connection(shutdown_event, trader_instance=None)
+        broker.start_socket_connection(shutdown_event, trader_instance=trader)
     except Exception as e:
         logging.error(f"Socket error: {e}")
 
@@ -88,10 +93,11 @@ def start_socket():
 async def start_async_connections():
     """Main async function to run all async brokers."""
     if isinstance(broker, MStockAdapter):
-        flask_thread = threading.Thread(target=run_flask_app, daemon=True)
-        flask_thread.start()
-        # trader.start_trading_watcher_thread()
-        await broker.start_socket_connection(shutdown_event, trader_instance=None)
+        # flask_thread = threading.Thread(target=run_flask_app, daemon=True)
+        # flask_thread.start()
+        run_flask_app()
+        trader.start_trading_watcher_thread()
+        await broker.start_socket_connection(shutdown_event, trader_instance=trader)
     else:
         logging.info("M.Stock not selected, skipping async socket start.")
 
@@ -100,6 +106,7 @@ if __name__ == "__main__":
     try:
         trader = Trader_Singleton()
         trader.set_broker(broker)
+        trader.on_start()
 
         # uncomment for development
         broker.dev_start()

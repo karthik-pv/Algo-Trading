@@ -9,6 +9,7 @@ import threading
 from dotenv import load_dotenv
 
 from utils import fetch_from_json
+from adapter.mstock_utils import parse_quote_message
 
 logging.basicConfig(level=logging.DEBUG)
 
@@ -114,30 +115,30 @@ class MStockSingleton:
                 logging.error(f"WebSocket error: {e}. Retrying in 5s...")
                 await asyncio.sleep(5)
 
-    async def _subscribe_to_instruments(self):
-        """Sends the subscription message for relevant instruments."""
+    async def _subscribe_to_instruments(self, instruments):
         if not self._socket:
             return
-
-        instruments = ["1333"]
         if instruments:
-            subscription_message = {"a": "subscribe", "v": instruments}
+            subscription_message = {
+                "correlationID": "Optional Field",
+                "action": 1,
+                "params": {
+                    "mode": 3,
+                    "tokenList": [{"exchangeType": 1, "tokens": instruments}],
+                },
+            }
             await self._socket.send(json.dumps(subscription_message))
             logging.info(f"Subscription sent for instruments: {instruments}")
 
     async def _handle_message(self, message):
-        """Processes incoming messages from the WebSocket."""
-        if isinstance(message, bytes):
-            # Ticks are binary data
-            self._trader.set_latest_price(message)
-        else:
-            try:
-                data = json.loads(message)
-                if data.get("type") == "order_update":
-                    self._trader.refresh_open_positions_and_buy_price()
-                    await self._subscribe_to_instruments()
-            except json.JSONDecodeError:
-                logging.warning(f"Received non-JSON text: {message}")
+        try:
+            price_data = parse_quote_message(message)
+            closing_price = price_data["close"]
+            tradingsymbol = price_data["token"]
+            self._trader.set_latest_price(None, tradingsymbol, closing_price)
+
+        except:
+            logging.debug("Error parsing market data")
 
     def set_access_token(self, access_token):
         self._access_token = access_token

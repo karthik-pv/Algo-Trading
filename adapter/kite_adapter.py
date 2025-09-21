@@ -81,8 +81,10 @@ class KiteAdapter(BrokerInterface):
         socket = self.kite_instance.get_kite_socket_connection()
 
         def on_ticks(ws, ticks):
-            # print(ticks)
-            self._trader.set_latest_price(ticks)
+            for tick in ticks:
+                instrument_token = tick["instrument_token"]
+                price = tick["ohlc"]["close"]
+                self._trader.set_latest_price(instrument_token, None, price)
 
         def on_connect(ws, response):
             logging.info("Connected to Kite WebSocket")

@@ -24,6 +24,10 @@ class BrokerInterface(ABC):
         pass
 
     @abstractmethod
+    def refresh_subscriptions(self):
+        pass
+
+    @abstractmethod
     def start_socket_connection(self, shutdown_event, trader_instance):
         pass
 

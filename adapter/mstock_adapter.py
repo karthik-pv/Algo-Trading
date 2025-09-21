@@ -38,7 +38,6 @@ class MStockAdapter(BrokerInterface):
                 for open_position in positions
                 if int(open_position["quantity"]) > 0
             ]
-            print(open_positions)
             return open_positions
         except Exception as e:
             logging.error(f"Error fetching positions: {e}")
@@ -49,8 +48,8 @@ class MStockAdapter(BrokerInterface):
     def sell_units(self, trading_symbol, quantity, exchange):
         return
 
-    def fetch_instruments_from_json(self):
-        return
+    def refresh_subscriptions(self, instruments):
+        self.mstock_instance._subscribe_to_instruments(instruments)
 
     async def start_socket_connection(self, shutdown_event, trader_instance):
         await self.mstock_instance.start_socket_connection(
