@@ -55,6 +55,9 @@ class Trader_Singleton:
 
     def refresh_subscriptions(self):
         positions = self.get_relevant_instruments_to_track()
+        self.refresh_open_positions_and_buy_price()
+        print(self._open_positions_and_buy_price)
+        self.update_trading_symbol_and_quantity()
         self._broker.refresh_subscriptions(positions)
 
     def on_start(self):
@@ -74,7 +77,7 @@ class Trader_Singleton:
                     continue
 
                 difference = ltp - buy_price
-
+                print(difference)
                 if difference < 0 and abs(difference) >= STOP_LOSS:
                     logging.warning(
                         f"STOP LOSS triggered for {tradingsymbol}, diff={difference}"

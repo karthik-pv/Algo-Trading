@@ -4,30 +4,19 @@ from pprint import pprint
 
 
 def position_attribute_mgmt(positions):
-    # updated_positions = []
-    # if positions:
-    #     for position in positions:
-    #         updated_position = {
-    #             "tradingsymbol": position.get("symbolname"),
-    #             "average_price": position.get("buyavgprice"),
-    #             "quantity": position.get("netqty"),
-    #             "exchange": position.get("exchange"),
-    #             "instrument_token": position.get("symboltoken"),
-    #             "instrument": position.get("symboltoken"),
-    #         }
-    #         updated_positions.append(updated_position)
-    # return updated_positions
-
-    return [
-        {
-            "tradingsymbol": "idea",
-            "average_price": 975,
-            "quantity": "3",
-            "exchange": "NSE",
-            "instrument_token": 1333,
-            "instrument": 1333,
-        }
-    ]
+    updated_positions = []
+    if positions:
+        for position in positions:
+            updated_position = {
+                "tradingsymbol": position.get("symbolname"),
+                "average_price": float(position.get("buyavgprice")),
+                "quantity": int(position.get("netqty")),
+                "exchange": position.get("exchange"),
+                "instrument_token": int(position.get("symboltoken")),
+                "instrument": int(position.get("symboltoken")),
+            }
+            updated_positions.append(updated_position)
+    return updated_positions
 
 
 def parse_market_depth(market_depth_data):
