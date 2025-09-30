@@ -112,10 +112,10 @@ def stream():
 async def start_async_connections():
     """Main async function to run all async brokers."""
     if isinstance(broker, MStockAdapter):
-        flask_thread = threading.Thread(target=run_flask_app, daemon=True)
-        flask_thread.start()
-        # run_flask_app()
-        await broker.start_socket_connection(shutdown_event, trader_instance=trader)
+        # flask_thread = threading.Thread(target=run_flask_app, daemon=True)
+        # flask_thread.start()
+        run_flask_app()
+        # await broker.start_socket_connection(shutdown_event, trader_instance=trader)
     else:
         logging.info("M.Stock not selected, skipping async socket start.")
 
