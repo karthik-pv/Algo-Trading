@@ -1,10 +1,13 @@
 import threading
 import logging
 import queue
+import datetime
 from typing import Optional , Dict
 from interface.broker_interface import BrokerInterface
 
-from core.trade_utils import get_weekly_expiry_date , format_option_symbol_mstock
+from core.trade_utils import get_weekly_expiry_date
+
+from utils import fetch_from_json
 
 PNT_STOP_LOSS = 0.5
 PNT_BOOK_PROFIT = 0.5
@@ -14,10 +17,12 @@ PCTG_STOP_LOSS = 0.5
 
 
 class Trader_Singleton:
+
     _instance = None
     _broker = BrokerInterface
     
     _position_data = {}
+    _five_weekly_option_contracts = {}
 
     _trading_watcher_thread_running = False
     _stop_event = threading.Event()
@@ -139,21 +144,13 @@ class Trader_Singleton:
     # ---------------------- GENERATE OTMS/ITMS ------------------------------    
         
     def get_5_weekly_option_contracts(
-        nifty_price: float,
-        call_or_put: str,
-        strike_interval: int = 100,
-        underlying: str = "NIFTY"
-    ) -> Dict[str, Dict[str, Optional[str]]]:
-        """
-        Return 5 weekly option contracts (numeric strikes + MStock-style symbols).
-        Keys returned: ITM2, ITM1, ATM, OTM1, OTM2
-
-        :param nifty_price: current Nifty price (e.g. 24919)
-        :param call_or_put: 'CE' or 'PE'
-        :param strike_interval: strike step (50, 100, ...)
-        :param underlying: underlying symbol prefix
-        :return: dict with 'strikes' and 'symbols' sub-dicts
-        """
+    self,
+    nifty_price: float,
+    call_or_put: str,
+    strike_interval: int = 100,
+    underlying: str = "NIFTY"
+    
+    ) -> Dict[str, any]:
         if strike_interval <= 0:
             raise ValueError("strike_interval must be positive integer")
 
@@ -188,11 +185,16 @@ class Trader_Singleton:
                 strikes[k] = None
 
         symbols = {
-            k: (format_option_symbol_mstock(underlying, expiry, v, call_or_put) if v is not None else None)
+            k: (self._broker.format_option_symbol(underlying, expiry, v, call_or_put) if v is not None else None)
             for k, v in strikes.items()
         }
-
         return {"expiry": expiry, "strikes": strikes, "symbols": symbols}
+    
+
+    def setup_weekly_option_contract_subscriptions():
+        nifty_near_month_token = fetch_from_json("constant.json" , "NIFTY_NEAR_MONTH_FUTURE_TOKEN")
+        return
+
 
 
     # ---------------------- DIFFERENCE CALCULATOR ----------------------

@@ -24,6 +24,10 @@ class BrokerInterface(ABC):
         pass
 
     @abstractmethod
+    def fetch_instrument_quote(self):
+        pass
+
+    @abstractmethod
     def sell_units(self, trading_symbol, instrument_token ,quantity, exchange ,ltp):
         pass
 

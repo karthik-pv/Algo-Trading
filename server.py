@@ -58,6 +58,11 @@ def get_fund_summary():
     broker.fetch_fund_summary()
     return {"msg" : "success"}
 
+@app.route("/instrument_quote")
+def get_instrument_quote():
+    quotes = broker.fetch_instrument_quote("NFO" , "52168")
+    return jsonify(quotes)
+
 
 @app.route("/sell", methods=["POST"])
 def sell():

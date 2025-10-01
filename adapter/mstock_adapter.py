@@ -16,7 +16,7 @@ class MStockAdapter(BrokerInterface):
     def __init__(self):
         self._trader = Trader_Singleton()
         self.mstock_instance = MStockSingleton()
-        self.supported_exchanges = ["NSE", "BSE"]  # Adjust as per MStock API
+        self.supported_exchanges = ["NSE", "BSE"]
 
     def fetch_all_orders(self):
         return
@@ -66,6 +66,30 @@ class MStockAdapter(BrokerInterface):
         response = json.loads(conn.getresponse().read().decode("utf-8"))
         fund_summary = fund_summary_attribute_mgmt(response)
         return fund_summary
+    
+    def fetch_instrument_quote(self , exchange , instrument_token):
+        conn = http.client.HTTPSConnection('api.mstock.trade')
+        headers = {
+                "X-Mirae-Version": "1",
+                "X-PrivateKey": self.mstock_instance._api_key,
+                "Authorization": f"Bearer {self.mstock_instance._access_token}",
+                "Content-Type": "application/json"
+            }
+        json_data = {
+            'mode': 'OHLC',
+            'exchangeTokens': {
+               exchange : [instrument_token]
+            },
+        }
+        conn.request(
+            'POST',
+            '/openapi/typeb/instruments/quote',
+            json.dumps(json_data),
+            headers
+        )
+        response = json.loads(conn.getresponse().read().decode("utf-8"))
+        print(response)
+
 
     def sell_units(self, trading_symbol, instrument_token , quantity, exchange , ltp):
         print("here")

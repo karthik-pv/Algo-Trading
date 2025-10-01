@@ -80,3 +80,4 @@ def main():
     else:
         print(f"\n--- No items found where the '{attribute}' attribute contains all specified patterns. ---")
 
+main()
