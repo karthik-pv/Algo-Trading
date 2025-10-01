@@ -150,6 +150,7 @@ if __name__ == "__main__":
 
         trader.set_broker(broker)
         trader.on_start()
+        trader.setup_weekly_option_contract_subscriptions()
 
         if CURRENT_BROKER == "kite":
             socket_thread = threading.Thread(target=start_socket, daemon=True)

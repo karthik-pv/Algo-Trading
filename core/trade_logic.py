@@ -7,7 +7,7 @@ from interface.broker_interface import BrokerInterface
 
 from core.trade_utils import get_weekly_expiry_date
 
-from utils import fetch_from_json
+from utils import fetch_from_json , find_matching_object
 
 PNT_STOP_LOSS = 0.5
 PNT_BOOK_PROFIT = 0.5
@@ -191,8 +191,12 @@ class Trader_Singleton:
         return {"expiry": expiry, "strikes": strikes, "symbols": symbols}
     
 
-    def setup_weekly_option_contract_subscriptions():
-        nifty_near_month_token = fetch_from_json("constant.json" , "NIFTY_NEAR_MONTH_FUTURE_TOKEN")
+    def setup_weekly_option_contract_subscriptions(self):
+        nifty_near_month_token = fetch_from_json("constants.json" , "NIFTY_NEAR_MONTH_FUTURE_TOKEN")
+        print(nifty_near_month_token)
+        nifty_near_month_data = find_matching_object("instrument_list.json" , "name" , nifty_near_month_token)
+        print(nifty_near_month_data)
+        current_nifty_price = self._broker.fetch_instrument_quote(nifty_near_month_data["exch_seg"] , nifty_near_month_data["token"])
         return
 
 

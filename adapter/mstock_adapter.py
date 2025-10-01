@@ -88,7 +88,7 @@ class MStockAdapter(BrokerInterface):
             headers
         )
         response = json.loads(conn.getresponse().read().decode("utf-8"))
-        print(response)
+        return response
 
 
     def sell_units(self, trading_symbol, instrument_token , quantity, exchange , ltp):

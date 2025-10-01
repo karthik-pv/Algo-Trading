@@ -1,11 +1,10 @@
-# Navigate to the venv activation directory
-cd venv/bin
+#!/bin/bash
 
-# Activate the virtual environment (use 'source' to load it into the current shell)
-source activate
+echo "Activating virtual environment..."
 
-# Navigate back to the AlgoTrading root directory
-cd ../..
+source venv/bin/activate
 
-# Run the Python server (Use 'python3' instead of 'python')
+echo "Starting server... Press Ctrl+C to stop."
+
 python3 server.py
+
