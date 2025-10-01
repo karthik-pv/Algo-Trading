@@ -1,7 +1,10 @@
 import threading
 import logging
 import queue
+from typing import Optional , Dict
 from interface.broker_interface import BrokerInterface
+
+from core.trade_utils import get_weekly_expiry_date , format_option_symbol_mstock
 
 PNT_STOP_LOSS = 0.5
 PNT_BOOK_PROFIT = 0.5
@@ -57,9 +60,6 @@ class Trader_Singleton:
         logging.debug(f"Updated {key_token}:{attribute_name} to {updated_value}")
 
     def refresh_open_positions_and_buy_price(self):
-        # Clear existing data to reflect only currently open positions
-        # NOTE: We iterate over a copy to safely remove/update entries
-
         self._broker.unsubscribe_from_all(self.get_relevant_instruments_to_track())
 
         positions_from_broker = self._broker.fetch_all_positions()
@@ -83,7 +83,10 @@ class Trader_Singleton:
                 "tradingsymbol": position["tradingsymbol"],
                 "average_price": position["average_price"],
                 "quantity": position["quantity"], 
-                "latest_price": position["average_price"]
+                "latest_price": position["average_price"],
+                "instrument_token": position["instrument_token"],
+                "instrument": position["instrument_token"],
+                "exchange" : position["exchange"]
             })
         
         self._broker.subscribe_to_all(self.get_relevant_instruments_to_track())
@@ -100,23 +103,22 @@ class Trader_Singleton:
         logging.info("Started trading watcher thread")
         while not self._stop_event.is_set():
             print(self._position_data)
-            for token, data in list(self._position_data.items()):
+            for token , data in list(self._position_data.items()):
                 print("---------------")
                 print(data)
                 print("---------------")
                 qty = data.get("quantity")
                 buy_price = data.get("average_price")
                 ltp = data.get("latest_price")
+                exchange = data.get("exchange")
                 tradingsymbol = data.get("tradingsymbol")
+                instrument_token = data.get("instrument_token")
 
                 sell = self.to_sell_or_not_to_sell(buy_price , ltp)
                 print(f"DECISION TO SELL IS {sell}")
                 if sell:
-                    #sell()
-                    pass
-
-                
-
+                    broker.sell_units(tradingsymbol,instrument_token,qty , exchange , ltp)
+                    print("SELLING")
             self._stop_event.wait(timeout=5)
 
     # ---------------------- DECISION MAKER ----------------------------
@@ -133,7 +135,64 @@ class Trader_Singleton:
                 return True
         return False
         
+
+    # ---------------------- GENERATE OTMS/ITMS ------------------------------    
         
+    def get_5_weekly_option_contracts(
+        nifty_price: float,
+        call_or_put: str,
+        strike_interval: int = 100,
+        underlying: str = "NIFTY"
+    ) -> Dict[str, Dict[str, Optional[str]]]:
+        """
+        Return 5 weekly option contracts (numeric strikes + MStock-style symbols).
+        Keys returned: ITM2, ITM1, ATM, OTM1, OTM2
+
+        :param nifty_price: current Nifty price (e.g. 24919)
+        :param call_or_put: 'CE' or 'PE'
+        :param strike_interval: strike step (50, 100, ...)
+        :param underlying: underlying symbol prefix
+        :return: dict with 'strikes' and 'symbols' sub-dicts
+        """
+        if strike_interval <= 0:
+            raise ValueError("strike_interval must be positive integer")
+
+        # Floor to the nearest lower strike -> ATM (ensures ATM <= current price)
+        atm_strike = int((nifty_price // strike_interval) * strike_interval)
+
+        expiry = get_weekly_expiry_date()
+
+        if call_or_put.upper() == "CE":
+            strikes = {
+                "ITM2": atm_strike - 2 * strike_interval,
+                "ITM1": atm_strike - 1 * strike_interval,
+                "ATM":  atm_strike,
+                "OTM1": atm_strike + 1 * strike_interval,
+                "OTM2": atm_strike + 2 * strike_interval,
+            }
+        elif call_or_put.upper() == "PE":
+            strikes = {
+                # for puts, ITM = strikes above spot
+                "ITM2": atm_strike + 2 * strike_interval,
+                "ITM1": atm_strike + 1 * strike_interval,
+                "ATM":  atm_strike,
+                "OTM1": atm_strike - 1 * strike_interval,
+                "OTM2": atm_strike - 2 * strike_interval,
+            }
+        else:
+            raise ValueError("call_or_put must be 'CE' or 'PE'")
+
+        # Normalize: if any strike < 0, set to None
+        for k, v in strikes.items():
+            if v is None or v < 0:
+                strikes[k] = None
+
+        symbols = {
+            k: (format_option_symbol_mstock(underlying, expiry, v, call_or_put) if v is not None else None)
+            for k, v in strikes.items()
+        }
+
+        return {"expiry": expiry, "strikes": strikes, "symbols": symbols}
 
 
     # ---------------------- DIFFERENCE CALCULATOR ----------------------
@@ -151,7 +210,7 @@ class Trader_Singleton:
         return current_price - buy_price
 
             
-    # ---------------------- TICK HANDLES ----------------------
+    # ---------------------- TICK HANDLER ----------------------
 
     def set_latest_price(self, instrument_token, tradingsymbol, price):
         token = instrument_token

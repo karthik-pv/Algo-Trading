@@ -126,7 +126,7 @@ class MStockSingleton:
                 "action": 1,
                 "params": {
                     "mode": 3,
-                    "tokenList": [{"exchangeType": 2, "tokens": [str(instrument) for instrument in instruments]}],
+                    "tokenList": [{"exchangeType": 2, "tokens": ["38369"] }],
                 },
             }
             await self._socket.send(json.dumps(subscription_message))
@@ -151,7 +151,7 @@ class MStockSingleton:
         try:
             market_update = parse_quote_message(message)
             # print(market_update)
-            self._trader.set_latest_price(int(market_update["token"]) , None , market_update["ltp"])
+            self._trader.set_latest_price(market_update["token"] , None , market_update["ltp"])
 
         except:
             logging.debug("Error parsing market data")

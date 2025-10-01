@@ -101,6 +101,15 @@ def start_socket():
 def alert_page():
     return render_template("alert.html")
 
+@app.route("/widget_one")
+def widget_one():
+    return render_template("widget_one.html")
+
+@app.route("/widget_two")
+def widget_two():
+    return render_template("widget_two.html")
+
+
 
 @app.route("/stream")
 def stream():

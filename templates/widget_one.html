@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Widget Configurations</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #f4f7f9;
+            color: #333;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+        }
+        .widget-container {
+            background-color: #ffffff;
+            padding: 2rem;
+            border-radius: 12px;
+            box-shadow: 0 8px 16px rgba(0, 0, 0, 0.1);
+            width: 400px;
+        }
+        .widget-container h2 {
+            text-align: center;
+            color: #2c3e50;
+            margin-bottom: 1.5rem;
+        }
+        .form-group {
+            margin-bottom: 1.25rem;
+        }
+        .form-group label {
+            display: block;
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+        }
+        .form-group .radio-group label,
+        .form-group .checkbox-group label {
+            display: inline-block;
+            margin-right: 1rem;
+            font-weight: normal;
+        }
+        .form-group input[type="text"],
+        .form-group select {
+            width: 100%;
+            padding: 0.75rem;
+            border: 1px solid #dcdfe6;
+            border-radius: 6px;
+            box-sizing: border-box;
+        }
+        .trigger-section {
+            border-left: 3px solid #e0e0e0;
+            padding-left: 1rem;
+            margin-top: 1rem;
+        }
+    </style>
+</head>
+<body>
+
+<div class="widget-container">
+    <h2>Widget Configurations</h2>
+    <form id="configForm">
+
+        <div class="form-group">
+            <label>MODE</label>
+            <div class="radio-group">
+                <input type="radio" id="modeAlert" name="mode" value="Alert" checked>
+                <label for="modeAlert">Alert</label>
+                <input type="radio" id="modeExecution" name="mode" value="Execution">
+                <label for="modeExecution">Execution</label>
+            </div>
+        </div>
+
+        <div class="form-group">
+            <div class="checkbox-group">
+                <input type="checkbox" id="useMaxMargin" name="useMaxMargin">
+                <label for="useMaxMargin">USE_MAX_POSSIBLE_MARGIN</label>
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label>SELL_TRIGGER_MODE</label>
+            <div class="radio-group">
+                <input type="radio" id="triggerPTS" name="sellTriggerMode" value="PTS" checked>
+                <label for="triggerPTS">PTS</label>
+                <input type="radio" id="triggerPCT" name="sellTriggerMode" value="PCT">
+                <label for="triggerPCT">PCT</label>
+                <input type="radio" id="triggerEMA" name="sellTriggerMode" value="EMA">
+                <label for="triggerEMA">EMA</label>
+            </div>
+        </div>
+        
+        <hr>
+
+        <div id="ptsSection" class="trigger-section">
+            <div class="form-group">
+                <label for="ptsProfit">PTS_PROFIT</label>
+                <input type="text" id="ptsProfit" name="ptsProfit" inputmode="numeric" pattern="[0-9]*">
+            </div>
+            <div class="form-group">
+                <label for="ptsLoss">PTS_LOSS</label>
+                <input type="text" id="ptsLoss" name="ptsLoss" inputmode="numeric" pattern="[0-9]*">
+            </div>
+        </div>
+
+        <div id="pctSection" class="trigger-section" style="display:none;">
+            <div class="form-group">
+                <label for="pctProfit">PCT_PROFIT</label>
+                <input type="text" id="pctProfit" name="pctProfit" inputmode="numeric" pattern="[0-9]*">
+            </div>
+            <div class="form-group">
+                <label for="pctLoss">PCT_LOSS</label>
+                <input type="text" id="pctLoss" name="pctLoss" inputmode="numeric" pattern="[0-9]*">
+            </div>
+        </div>
+
+        <div id="emaSection" class="trigger-section" style="display:none;">
+            <div class="form-group">
+                <label for="emas">EMAs</label>
+                <select id="emas" name="emas">
+                    <option value="9">9</option>
+                    <option value="21">21</option>
+                    <option value="50">50</option>
+                    <option value="100">100</option>
+                    <option value="200">200</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="emaTolerance">EMA_TOLERANCE</label>
+                <input type="text" id="emaTolerance" name="emaTolerance" inputmode="numeric" pattern="[0-9]*">
+            </div>
+        </div>
+
+    </form>
+</div>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const triggerRadios = document.querySelectorAll('input[name="sellTriggerMode"]');
+        const ptsSection = document.getElementById('ptsSection');
+        const pctSection = document.getElementById('pctSection');
+        const emaSection = document.getElementById('emaSection');
+
+        function handleTriggerChange() {
+            // Hide all sections first
+            ptsSection.style.display = 'none';
+            pctSection.style.display = 'none';
+            emaSection.style.display = 'none';
+
+            // Show the selected one
+            if (document.getElementById('triggerPTS').checked) {
+                ptsSection.style.display = 'block';
+            } else if (document.getElementById('triggerPCT').checked) {
+                pctSection.style.display = 'block';
+            } else if (document.getElementById('triggerEMA').checked) {
+                emaSection.style.display = 'block';
+            }
+        }
+
+        // Add event listener to each radio button
+        triggerRadios.forEach(radio => {
+            radio.addEventListener('change', handleTriggerChange);
+        });
+
+        // Initial check
+        handleTriggerChange();
+    });
+</script>
+
+</body>
+</html>

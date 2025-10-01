@@ -4,3 +4,4 @@ __pycache__/
 config.json
 access_token.json
 trading_symbols.json
+instrument_list.json

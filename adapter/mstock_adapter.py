@@ -1,6 +1,8 @@
 import http.client
 import json
 import logging
+import datetime
+import calendar
 
 from utils import get_trading_symbols_from_json
 from core.mstock_connector import MStockSingleton
@@ -65,9 +67,55 @@ class MStockAdapter(BrokerInterface):
         fund_summary = fund_summary_attribute_mgmt(response)
         return fund_summary
 
-    def sell_units(self, trading_symbol, quantity, exchange):
-        return
+    def sell_units(self, trading_symbol, instrument_token , quantity, exchange , ltp):
+        print("here")
+        conn = http.client.HTTPSConnection('api.mstock.trade')
+        headers = {
+                "X-Mirae-Version": "1",
+                "X-PrivateKey": self.mstock_instance._api_key,
+                "Authorization": f"Bearer {self.mstock_instance._access_token}",
+                "Content-Type": "application/json"
+            }
+        json_data = { 
+            'variety': 'NORMAL',
+            'tradingsymbol': trading_symbol,
+            'symboltoken': instrument_token,
+            'exchange': exchange,
+            'transactiontype': 'SELL',
+            'ordertype': 'MARKET',
+            'quantity': str(quantity),
+            'producttype': 'INTRADAY',
+            'price': "0.00",
+            'triggerprice': '0.00',
+            'squareoff': '0.00',
+            'stoploss': '0.00',
+            'trailingStopLoss': '',
+            'disclosedquantity': '',
+            'duration': 'DAY',
+            'ordertag': 'my_algo',
+        }
+        print(json_data)
+        conn.request(
+            'POST',
+            '/openapi/typeb/orders/regular',
+            json.dumps(json_data),
+            headers
+        )
+        response = conn.getresponse().read().decode("utf-8")
+        print(response)
 
+    def buy_units(self, trading_symbol, instrument_token, quantity, exchange, ltp):
+        return super().buy_units(trading_symbol, instrument_token, quantity, exchange, ltp)
+    
+    def format_option_symbol(self ,  underlying: str,
+        expiry: datetime.date,
+        strike: int,
+        call_or_put: str) -> str:
+        yy = expiry.year % 100
+        # Get the first letter of the month name, e.g., 'October' -> 'O'
+        month_char = calendar.month_name[expiry.month][0].upper()
+        dd_str = f"{expiry.day:02d}"
+        return f"{underlying}{yy}{month_char}{dd_str}{strike}{call_or_put.upper()}"
 
     def unsubscribe_from_all(self,instruments):
         self.mstock_instance._unsubscribe_from_all(instruments)

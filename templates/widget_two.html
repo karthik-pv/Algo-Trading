@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Call Options Buy Widget</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #f4f7f9;
+            color: #333;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+        }
+        .widget-container {
+            background-color: #ffffff;
+            padding: 2rem;
+            border-radius: 12px;
+            box-shadow: 0 8px 16px rgba(0, 0, 0, 0.1);
+            width: 600px;
+        }
+        .widget-container h2 {
+            text-align: center;
+            color: #2c3e50;
+            margin-bottom: 1.5rem;
+        }
+        .option-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 1.5rem;
+        }
+        .option-table th, .option-table td {
+            border: 1px solid #e0e0e0;
+            padding: 0.8rem;
+            text-align: left;
+        }
+        .option-table th {
+            background-color: #f2f2f2;
+            font-weight: 600;
+            color: #555;
+        }
+        .option-table td.center {
+            text-align: center;
+        }
+        .buy-button {
+            background-color: #28a745;
+            color: white;
+            border: none;
+            padding: 0.6rem 1rem;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            font-weight: 500;
+            transition: background-color 0.2s;
+        }
+        .buy-button:hover {
+            background-color: #218838;
+        }
+        .no-options {
+            text-align: center;
+            color: #777;
+            margin-top: 2rem;
+            padding: 1rem;
+            border: 1px dashed #ccc;
+            border-radius: 8px;
+            background-color: #f9f9f9;
+        }
+    </style>
+</head>
+<body>
+
+<div class="widget-container">
+    <h2>Call Options Buy</h2>
+
+    <p>Underlying Index: <strong id="underlyingPrice">Loading...</strong></p> 
+
+    <table class="option-table">
+        <thead>
+            <tr>
+                <th>LEVELS (Expiry)</th>
+                <th>OPTION_STRIKE</th>
+                <th>MARKET_PRICE</th>
+                <th>LOTS</th>
+                <th class="center">Action</th>
+            </tr>
+        </thead>
+        <tbody id="optionsTableBody">
+            <tr><td colspan="5" class="no-options">Loading call options...</td></tr>
+            </tbody>
+    </table>
+</div>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const optionsTableBody = document.getElementById('optionsTableBody');
+        const underlyingPriceElement = document.getElementById('underlyingPrice');
+
+        // This is a dummy function to simulate your backend calls
+        // In a real application, this would fetch data from your Python backend via AJAX/WebSocket
+        function get_5_weekly_option_contracts(call_or_put) {
+            console.log(`Simulating fetching ${call_or_put} contracts...`);
+            // Example static data
+            return [
+                { expiry: "28 Dec 2023", strike_price: 20000, tradingsymbol: "NIFTY 20000 CE", token: "NIFTY_TOKEN_20000" },
+                { expiry: "28 Dec 2023", strike_price: 20050, tradingsymbol: "NIFTY 20050 CE", token: "NIFTY_TOKEN_20050" },
+                { expiry: "28 Dec 2023", strike_price: 20100, tradingsymbol: "NIFTY 20100 CE", token: "NIFTY_TOKEN_20100" },
+                { expiry: "04 Jan 2024", strike_price: 20000, tradingsymbol: "NIFTY 20000 CE", token: "NIFTY_TOKEN_20000_NEXT" },
+                { expiry: "04 Jan 2024", strike_price: 20050, tradingsymbol: "NIFTY 20050 CE", token: "NIFTY_TOKEN_20050_NEXT" }
+            ];
+        }
+
+        // Dummy function to simulate fetching market price
+        function get_market_price(token) {
+            // Simulate API call for LTP
+            const prices = {
+                "NIFTY_TOKEN_20000": 150.25,
+                "NIFTY_TOKEN_20050": 120.50,
+                "NIFTY_TOKEN_20100": 95.00,
+                "NIFTY_TOKEN_20000_NEXT": 180.75,
+                "NIFTY_TOKEN_20050_NEXT": 145.30
+            };
+            return prices[token] || "N/A";
+        }
+
+        // Dummy function for lot calculation (based on MAX_POSSIBLE_MARGIN which would come from Widget 1 configs)
+        function calculate_max_lots(token, max_margin_flag) {
+            // Simple simulation: fixed lots for now
+            const defaultLots = 50;
+            if (token.includes("20000")) return max_margin_flag ? 100 : defaultLots;
+            if (token.includes("20050")) return max_margin_flag ? 75 : defaultLots;
+            return defaultLots;
+        }
+
+        function populateOptions() {
+            // In a real app, `max_margin_flag` would be read from your configuration (Widget 1)
+            const useMaxMargin = document.getElementById('useMaxMargin') ? document.getElementById('useMaxMargin').checked : false;
+
+            const callContracts = get_5_weekly_option_contracts("CE");
+            
+            optionsTableBody.innerHTML = ''; // Clear existing rows
+
+            if (callContracts.length === 0) {
+                optionsTableBody.innerHTML = '<tr><td colspan="5" class="no-options">No call options available.</td></tr>';
+                return;
+            }
+
+            callContracts.forEach(contract => {
+                const marketPrice = get_market_price(contract.token); // Use actual token
+                const lots = calculate_max_lots(contract.token, useMaxMargin);
+
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${contract.expiry}</td>
+                    <td>${contract.tradingsymbol}</td>
+                    <td>₹ ${marketPrice.toFixed(2)}</td>
+                    <td>${lots}</td>
+                    <td class="center">
+                        <button class="buy-button" 
+                                data-token="${contract.token}" 
+                                data-tradingsymbol="${contract.tradingsymbol}"
+                                data-lots="${lots}">Buy</button>
+                    </td>
+                `;
+                optionsTableBody.appendChild(row);
+            });
+
+            // Add event listeners to the new buy buttons
+            document.querySelectorAll('.buy-button').forEach(button => {
+                button.addEventListener('click', function() {
+                    const token = this.dataset.token;
+                    const tradingsymbol = this.dataset.tradingsymbol;
+                    const lots = this.dataset.lots;
+                    // In a real application, you'd send this data to your backend
+                    console.log(`Buying ${lots} lots of ${tradingsymbol} (Token: ${token}) at MARKET PRICE.`);
+                    alert(`Order placed for ${lots} lots of ${tradingsymbol}! (Simulation)`);
+                });
+            });
+        }
+
+        // Simulate fetching underlying price (e.g., Nifty Spot Price)
+        function fetchUnderlyingPrice() {
+            // This would be from your live market data feed
+            underlyingPriceElement.textContent = `NIFTY 50: ₹ 20,025.50`;
+        }
+
+        fetchUnderlyingPrice();
+        populateOptions(); // Initial population of options
+        
+        // In a real application, you might refresh populateOptions periodically
+        // setInterval(populateOptions, 60000); // Refresh every minute
+    });
+</script>
+
+</body>
+</html>

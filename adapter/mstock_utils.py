@@ -12,8 +12,9 @@ def position_attribute_mgmt(positions):
                 "average_price": float(position.get("buyavgprice")),
                 "quantity": int(position.get("netqty")),
                 "exchange": position.get("exchange"),
-                "instrument_token": int(position.get("symboltoken")),
-                "instrument": int(position.get("symboltoken")),
+                "instrument_token": position.get("symboltoken"),
+                "instrument": (position.get("symboltoken")),
+                "exchange" : position.get("exchange")
             }
             updated_positions.append(updated_position)
     return updated_positions

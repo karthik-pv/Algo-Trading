@@ -24,7 +24,11 @@ class BrokerInterface(ABC):
         pass
 
     @abstractmethod
-    def sell_units(self, trading_symbol, quantity, exchange):
+    def sell_units(self, trading_symbol, instrument_token ,quantity, exchange ,ltp):
+        pass
+
+    @abstractmethod
+    def buy_units(self , trading_symbol , instrument_token , quantity , exchange , ltp):
         pass
 
     @abstractmethod
@@ -33,6 +37,10 @@ class BrokerInterface(ABC):
 
     @abstractmethod
     def subscribe_to_all(self , instruments):
+        pass
+
+    @abstractmethod
+    def format_option_symbol(self ,  underlying , expiry , strike, call_or_put):
         pass
 
     @abstractmethod
