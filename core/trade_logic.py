@@ -12,7 +12,7 @@ PCTG_STOP_LOSS = 0.5
 
 class Trader_Singleton:
     _instance = None
-    _broker = None
+    _broker = BrokerInterface
     
     _position_data = {}
 
@@ -59,6 +59,9 @@ class Trader_Singleton:
     def refresh_open_positions_and_buy_price(self):
         # Clear existing data to reflect only currently open positions
         # NOTE: We iterate over a copy to safely remove/update entries
+
+        self._broker.unsubscribe_from_all(self.get_relevant_instruments_to_track())
+
         positions_from_broker = self._broker.fetch_all_positions()
         
         new_position_tokens = {pos["instrument_token"] for pos in positions_from_broker}
@@ -80,9 +83,10 @@ class Trader_Singleton:
                 "tradingsymbol": position["tradingsymbol"],
                 "average_price": position["average_price"],
                 "quantity": position["quantity"], 
-                "latest_price": self._position_data[token].get("latest_price")
+                "latest_price": position["average_price"]
             })
-            
+        
+        self._broker.subscribe_to_all(self.get_relevant_instruments_to_track())
         logging.info(f"Updated positions: {len(self._position_data)}")
         logging.debug(self._position_data)
 
@@ -90,23 +94,23 @@ class Trader_Singleton:
         """Returns a list of instrument tokens currently in the _position_data."""
         return list(self._position_data.keys())
 
-    def update_trading_symbol_and_quantity(self):
-        self.refresh_open_open_positions_and_buy_price()
-
     # ---------------------- TRADING LOGIC (Refactored) ----------------------
 
     def stop_loss_book_profit_core(self, broker: BrokerInterface):
         logging.info("Started trading watcher thread")
         while not self._stop_event.is_set():
-            # Iterate over positions still in the dictionary
+            print(self._position_data)
             for token, data in list(self._position_data.items()):
+                print("---------------")
+                print(data)
+                print("---------------")
                 qty = data.get("quantity")
                 buy_price = data.get("average_price")
                 ltp = data.get("latest_price")
                 tradingsymbol = data.get("tradingsymbol")
 
                 sell = self.to_sell_or_not_to_sell(buy_price , ltp)
-
+                print(f"DECISION TO SELL IS {sell}")
                 if sell:
                     #sell()
                     pass
@@ -136,14 +140,14 @@ class Trader_Singleton:
 
 
 
-    def calculate_pctg_difference(buy_price: float, current_price: float) -> float:
+    def calculate_pctg_difference(self , buy_price: float, current_price: float) -> float:
         if buy_price <= 0:
             raise ValueError("Buy price must be greater than zero")
         
         pct_change = ((current_price - buy_price) / buy_price) * 100
         return pct_change
     
-    def calculate_point_difference(buy_price: float, current_price: float) -> float:
+    def calculate_point_difference(self , buy_price: float, current_price: float) -> float:
         return current_price - buy_price
 
             
@@ -194,7 +198,7 @@ class Trader_Singleton:
         print(self._position_data)
         
         # Call the broker's subscription method
-        self._broker.refresh_subscriptions(tokens_to_subscribe)
+        self._broker.subscribe_to_all(tokens_to_subscribe)
         
     def on_start(self):
         # Calls the centralized function

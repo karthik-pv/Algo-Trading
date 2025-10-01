@@ -42,6 +42,9 @@ class KiteAdapter(BrokerInterface):
         except Exception as e:
             logging.error(f"Kite fetch_all_trades error: {e}")
             return None
+        
+    def fetch_fund_summary(self):
+        return
 
     def sell_units(self, trading_symbol, quantity, exchange):
         try:

@@ -18,6 +18,11 @@ def position_attribute_mgmt(positions):
             updated_positions.append(updated_position)
     return updated_positions
 
+def fund_summary_attribute_mgmt(fund_summary):
+    cropped_fund_summary = {}
+    cropped_fund_summary["cash_balance"] = fund_summary["data"][0]["AVAILABLE_BALANCE"]
+    return cropped_fund_summary
+
 
 def parse_market_depth(market_depth_data):
     """Parses the 200-byte market depth data into bids and asks."""

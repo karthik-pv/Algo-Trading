@@ -104,7 +104,7 @@ class MStockSingleton:
                     await ws.send(login_message)
 
                     await asyncio.sleep(1)
-                    await self._subscribe_to_instruments()
+                    await self._subscribe_to_instruments(trader_instance.get_relevant_instruments_to_track())
 
                     async for message in ws:
                         await self._handle_message(message)
@@ -117,6 +117,7 @@ class MStockSingleton:
                 await asyncio.sleep(5)
 
     async def _subscribe_to_instruments(self, instruments):
+        print("here")
         if not self._socket:
             return
         if instruments:
@@ -125,18 +126,32 @@ class MStockSingleton:
                 "action": 1,
                 "params": {
                     "mode": 3,
-                    "tokenList": [{"exchangeType": 1, "tokens": instruments}],
+                    "tokenList": [{"exchangeType": 2, "tokens": [str(instrument) for instrument in instruments]}],
                 },
             }
             await self._socket.send(json.dumps(subscription_message))
             logging.info(f"Subscription sent for instruments: {instruments}")
 
+    async def _unsubscribe_from_all(self , instruments):
+        if not self._socket:
+            return
+        if instruments:
+            subscription_message = {
+                "correlationID": "Optional Field",
+                "action": 0,
+                "params": {
+                    "mode": 3,
+                    "tokenList": [{"exchangeType": 2, "tokens": [str(instrument) for instrument in instruments]}],
+                },
+            }
+            await self._socket.send(json.dumps(subscription_message))
+            logging.info("Unsubscribed from all the instruments")
+
     async def _handle_message(self, message):
         try:
-            price_data = parse_quote_message(message)
-            closing_price = price_data["close"]
-            tradingsymbol = price_data["token"]
-            self._trader.set_latest_price(None, tradingsymbol, closing_price)
+            market_update = parse_quote_message(message)
+            # print(market_update)
+            self._trader.set_latest_price(int(market_update["token"]) , None , market_update["ltp"])
 
         except:
             logging.debug("Error parsing market data")

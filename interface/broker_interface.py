@@ -20,11 +20,19 @@ class BrokerInterface(ABC):
         pass
 
     @abstractmethod
+    def fetch_fund_summary(self):
+        pass
+
+    @abstractmethod
     def sell_units(self, trading_symbol, quantity, exchange):
         pass
 
     @abstractmethod
-    def refresh_subscriptions(self):
+    def unsubscribe_from_all(self , instruments):
+        pass
+
+    @abstractmethod
+    def subscribe_to_all(self , instruments):
         pass
 
     @abstractmethod

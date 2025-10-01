@@ -19,11 +19,11 @@ def calculate_pct_profit_loss(buy_price: float, current_price: float) -> float:
 
 
 # Example usage
-if __name__ == "__main__":
-    buy = 19500
-    current = 19825
-    pl_pct = calculate_pct_profit_loss(buy, current)
-    print(f"Profit/Loss %: {pl_pct:.2f}%")
+# if __name__ == "__main__":
+#     buy = 19500
+#     current = 19825
+#     pl_pct = calculate_pct_profit_loss(buy, current)
+#     print(f"Profit/Loss %: {pl_pct:.2f}%")
 
 #  PCT (%) PROFIT / LOSS  =======================================================================================================
 
@@ -42,11 +42,11 @@ def calculate_point_difference(buy_price: float, current_price: float) -> float:
 
 
 # Example usage
-if __name__ == "__main__":
-    buy = 19500
-    current = 19825
-    diff_points = calculate_point_difference(buy, current)
-    print(f"Difference in points: {diff_points}")
+# if __name__ == "__main__":
+#     buy = 19500
+#     current = 19825
+#     diff_points = calculate_point_difference(buy, current)
+#     print(f"Difference in points: {diff_points}")
 
 #  PTS PROFIT / LOSS  =======================================================================================================
 
@@ -352,11 +352,6 @@ if __name__ == "__main__":
 
 
 # GET 1M EMAS OF NEAR MONTH NIFTY FUTURE   =======================================================================================================
-
-
-import pandas as pd
-import time
-
 
 def should_trigger_sell_ema(current_price: float, target_ema: int, tolerance_ema: int) -> bool:
     """
