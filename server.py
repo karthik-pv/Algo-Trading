@@ -115,19 +115,6 @@ def widget_two():
     return render_template("widget_two.html")
 
 
-
-@app.route("/stream")
-def stream():
-    def event_stream():
-        logging.info("Client connected to SSE stream.")
-        while True:
-            message = trader.alert_queue.get()
-            json_data = json.dumps(message)
-            yield f"data: {json_data}\n\n"
-
-    return Response(event_stream(), mimetype="text/event-stream")
-
-
 async def start_async_connections():
     """Main async function to run all async brokers."""
     if isinstance(broker, MStockAdapter):   

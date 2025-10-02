@@ -5,7 +5,7 @@ import datetime
 from typing import Optional , Dict
 from interface.broker_interface import BrokerInterface
 
-from core.trade_utils import get_weekly_expiry_date , get_instrument_tokens_from_symbol
+from core.trade_utils import get_weekly_expiry_date , get_instrument_tokens_from_symbol , get_instrument_details_from_json
 
 from utils import fetch_from_json , find_matching_object
 
@@ -30,7 +30,6 @@ class Trader_Singleton:
     _comparison_function = "PNT"
     _use_max_margin = True
 
-    alert_queue = queue.Queue()
 
     def __new__(cls):
         if cls._instance is None:
@@ -49,6 +48,28 @@ class Trader_Singleton:
             if data.get("tradingsymbol") == token_or_symbol:
                 return token
         return None
+    
+    def weekly_options_initialize(self , token , data , call_or_put):
+        if token not in self._five_weekly_option_contracts:
+            self._five_weekly_option_contracts[token] = {}
+        self._five_weekly_option_contracts[token]["name"] = data["name"]
+        self._five_weekly_option_contracts[token]["expiry"] = data["expiry"]
+        self._five_weekly_option_contracts[token]["ltp"] = 0
+        self._five_weekly_option_contracts[token]["lots"] =  data["lotsize"]
+        self._five_weekly_option_contracts[token]["call_or_put"] = call_or_put
+
+    
+    def update_weekly_positions(self, token: str, attribute_name: str, updated_value):
+        if token not in self._five_weekly_option_contracts:
+            logging.warning(
+                f"Token {token} not found in weekly option contracts. "
+                f"Cannot update '{attribute_name}'."
+            )
+            return
+        self._five_weekly_option_contracts[token][attribute_name] = updated_value
+        logging.debug(
+            f"Updated weekly option {token}: Set '{attribute_name}' to {updated_value}"
+        )
     
     def position_data_update(self, token_or_symbol, attribute_name, updated_value, is_token=True):
         key_token = self._get_position_key(token_or_symbol, is_token)
@@ -200,10 +221,13 @@ class Trader_Singleton:
         print(nifty_near_month_quote)
         ltp_nifty_near_month = nifty_near_month_quote["data"]["fetched"][0]["close"]
         contracts = self.get_5_weekly_option_contracts(ltp_nifty_near_month , "CE")["symbols"]
-        print(contracts)
         relevant_tokens_to_subscribe = []
         for key , value in contracts.items(): 
-            relevant_tokens_to_subscribe.append(get_instrument_tokens_from_symbol(value))
+            data = get_instrument_details_from_json(value)
+            token = data["token"]
+            relevant_tokens_to_subscribe.append(token)
+            self.weekly_options_initialize(token , data , "CE")
+        print(self._five_weekly_option_contracts)
         self._broker.subscribe_to_all(relevant_tokens_to_subscribe)
         return
 
@@ -229,17 +253,19 @@ class Trader_Singleton:
     def set_latest_price(self, instrument_token, tradingsymbol, price):
         token = instrument_token
         
-        if token not in self._position_data:
-            self._position_data[token] = {
-                "tradingsymbol": tradingsymbol,
-            }
-            
-        self.position_data_update(
-            token, 
-            "latest_price", 
-            price, 
-            is_token=True
-        )
+        if token in self._position_data:
+            self.position_data_update(
+                token, 
+                "latest_price", 
+                price, 
+                is_token=True
+            )
+        
+        if token in self._five_weekly_option_contracts:
+            self.update_weekly_positions(token , "ltp" , price)
+
+
+        
 
     # ---------------------- THREAD CONTROL ----------------------
 

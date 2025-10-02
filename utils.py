@@ -35,13 +35,13 @@ def find_matching_object(filepath: str, attribute_name: str, attribute_value: An
             objects = ijson.items(f, 'item')
             for item in objects:
                 if item.get(attribute_name) == attribute_value:
-                    return item  # Return the first match and exit immediately
+                    return item  
     except FileNotFoundError:
         print(f"Error: The file '{filepath}' was not found.")
     except Exception as e:
         print(f"An error occurred while processing the file: {e}")
     
-    return None # Return None if the loop finishes without finding a match
+    return None
 
 
 print(find_matching_object("instrument_list.json" , "name" , fetch_from_json("constants.json" , "NIFTY_NEAR_MONTH_FUTURE_TOKEN")))

@@ -79,3 +79,6 @@ def get_weekly_expiry_date() -> datetime.date:
 
 def get_instrument_tokens_from_symbol(name):
     return find_matching_object("instrument_list.json" , "name" , name)["token"]
+
+def get_instrument_details_from_json(name):
+    return find_matching_object("instrument_list.json" , "name" , name)
