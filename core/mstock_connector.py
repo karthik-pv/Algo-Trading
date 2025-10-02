@@ -126,7 +126,7 @@ class MStockSingleton:
                 "action": 1,
                 "params": {
                     "mode": 3,
-                    "tokenList": [{"exchangeType": 2, "tokens": ["38369"] }],
+                    "tokenList": [{"exchangeType": 2, "tokens": instruments }],
                 },
             }
             await self._socket.send(json.dumps(subscription_message))

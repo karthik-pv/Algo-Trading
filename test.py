@@ -7,19 +7,19 @@ from utils import fetch_from_json
 def get_weekly_expiry_date(today: Optional[datetime.date] = None) -> datetime.date:
     """
     Returns the upcoming weekly expiry date, adjusted for holidays and weekends.
-    Calculates the upcoming Thursday and then moves backwards to the previous working day
-    if the Thursday is a holiday or a weekend.
+    Calculates the upcoming Tuesday and then moves backwards to the previous working day
+    if the Tuesday is a holiday or a weekend.
     """
     if today is None:
         today = datetime.date.today()
 
-    days_until_thursday = (3 - today.weekday() + 7) % 7
-    expiry_candidate = today + datetime.timedelta(days=days_until_thursday)
+    # Calculate days until the next Tuesday (weekday() == 1)
+    days_until_tuesday = (1 - today.weekday() + 7) % 7
+    expiry_candidate = today + datetime.timedelta(days=days_until_tuesday)
 
-    if days_until_thursday == 0 and datetime.datetime.now().time() > datetime.time(15, 30):
+    # If it's Tuesday and past market close, roll over to the next week's Tuesday.
+    if days_until_tuesday == 0 and datetime.datetime.now().time() > datetime.time(15, 30):
          expiry_candidate += datetime.timedelta(days=7)
-    elif today.weekday() > 3:
-        expiry_candidate += datetime.timedelta(days=7)
 
     holiday_strings = fetch_from_json("constants.json", "HOLIDAYS")
     if holiday_strings is None:
@@ -116,8 +116,8 @@ def get_5_weekly_option_contracts(
 
 # ---------- Example usage ----------
 if __name__ == "__main__":
-    price = 24919
-    today_date = datetime.date.today() # A Wednesday
+    price = 24778.3
+    today_date = datetime.date(2025,10,1) # A Wednesday
     
     # Correctly pass 'today' as a keyword argument
     res_ce = get_5_weekly_option_contracts(price, "CE", strike_interval=100, today=today_date)

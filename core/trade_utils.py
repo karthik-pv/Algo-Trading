@@ -2,62 +2,63 @@ import datetime
 import calendar
 from typing import Optional , Dict
 
-from utils import fetch_from_json
+from utils import fetch_from_json , find_matching_object
 
-def last_thursday(year: int, month: int):
-    # get the last day of month
+def last_tuesday(year: int, month: int) -> datetime.date:
+    """
+    Finds the last Tuesday of a given month and year.
+    """
     last_day = calendar.monthrange(year, month)[1]
     dt = datetime.date(year, month, last_day)
-    # go backwards until we find a Thursday (weekday() == 3 for Thursday, since Monday=0)
-    while dt.weekday() != 3:
+    # Go backwards until we find a Tuesday (weekday() == 1 for Tuesday)
+    while dt.weekday() != 1:
         dt -= datetime.timedelta(days=1)
     return dt
 
 
-def get_current_nifty_future(today: datetime.date = None):
-
+def get_current_nifty_future(today: datetime.date = None) -> tuple[int, int]:
+    """
+    Determines the current trading month for Nifty futures based on the last Tuesday expiry.
+    """
     if today is None:
         today = datetime.date.today()
 
     this_month = today.month
     this_year = today.year
     
-    exp_this = last_thursday(this_year, this_month)
-    if today <= exp_this:
+    # Use the updated last_tuesday function to find this month's expiry
+    expiry_this_month = last_tuesday(this_year, this_month)
+    
+    if today <= expiry_this_month:
+        # If today is on or before this month's expiry, we are in the current month's contract
         return (this_month, this_year)
     else:
+        # Otherwise, roll over to the next month's contract
         if this_month == 12:
             return (1, this_year + 1)
         else:
             return (this_month + 1, this_year)
 
 def nifty_future_symbol(root: str = "NIFTY", today: datetime.date = None) -> str:
+    """
+    Generates the Nifty future symbol (e.g., NIFTYOCT25) for the current trading month.
+    """
     month, year = get_current_nifty_future(today)
     mon_name = calendar.month_abbr[month].upper()
-    print(f"MON _ NAME {mon_name}")
     yy = year % 100
     return f"{root}{mon_name}{yy:02d}"
 
-def get_weekly_expiry_date(today: Optional[datetime.date] = None) -> datetime.date:
-    if today is None:
-        today = datetime.date.today()
-    # This week's Thursday (weekday() Monday=0 .. Sunday=6; Thursday==3)
-    thursday = today + datetime.timedelta(days=(3 - today.weekday() + 7) % 7)
-    # if we've passed Thursday this week, move to next week's Thursday
-    if today.weekday() > 3:
-        thursday += datetime.timedelta(days=7)
-    return thursday
-
 def get_weekly_expiry_date() -> datetime.date:
+
     today = datetime.date.today()
 
-    days_until_thursday = (3 - today.weekday() + 7) % 7
-    expiry_candidate = today + datetime.timedelta(days=days_until_thursday)
+    # Calculate days until the next Tuesday (weekday() == 1)
+    days_until_tuesday = (1 - today.weekday() + 7) % 7
+    expiry_candidate = today + datetime.timedelta(days=days_until_tuesday)
 
-    if days_until_thursday == 0 and datetime.datetime.now().time() > datetime.time(15, 30):
+    # If it's Tuesday and past market close, roll over to the next week's Tuesday.
+    if days_until_tuesday == 0 and datetime.datetime.now().time() > datetime.time(15, 30):
          expiry_candidate += datetime.timedelta(days=7)
-    elif today.weekday() > 3:
-        expiry_candidate += datetime.timedelta(days=7)
 
     holiday_strings = fetch_from_json("constants.json", "HOLIDAYS")
     if holiday_strings is None:
@@ -76,17 +77,5 @@ def get_weekly_expiry_date() -> datetime.date:
         expiry_candidate -= datetime.timedelta(days=1)
 
 
-def format_option_symbol_mstock(
-    underlying: str,
-    expiry: datetime.date,
-    strike: int,
-    call_or_put: str
-) -> str:
-    yy = expiry.year % 100
-    # Get the first letter of the month name, e.g., 'October' -> 'O'
-    month_char = calendar.month_name[expiry.month][0].upper()
-    dd_str = f"{expiry.day:02d}"
-    return f"{underlying}{yy}{month_char}{dd_str}{strike}{call_or_put.upper()}"
-
-
-
+def get_instrument_tokens_from_symbol(name):
+    return find_matching_object("instrument_list.json" , "name" , name)["token"]
