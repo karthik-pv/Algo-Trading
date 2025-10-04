@@ -106,6 +106,10 @@ def start_socket():
 def alert_page():
     return render_template("alert.html")
 
+@app.route("/home")
+def home_page():
+    return render_template("home.html")
+
 @app.route("/widget_one")
 def widget_one():
     return render_template("widget_one.html")

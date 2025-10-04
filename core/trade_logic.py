@@ -6,7 +6,7 @@ from typing import Optional , Dict
 from flask_socketio import SocketIO
 from interface.broker_interface import BrokerInterface
 
-from core.trade_utils import get_weekly_expiry_date , get_instrument_tokens_from_symbol , get_instrument_details_from_json
+from core.trade_utils import get_weekly_expiry_date , get_instrument_tokens_from_symbol , get_instrument_details_from_json 
 
 from utils import fetch_from_json , find_matching_object
 
@@ -52,12 +52,12 @@ class Trader_Singleton:
                 return token
         return None
     
-    def weekly_options_initialize(self , token , data , call_or_put):
+    def weekly_options_initialize(self , token , data , call_or_put , price):
         if token not in self._five_weekly_option_contracts:
             self._five_weekly_option_contracts[token] = {}
         self._five_weekly_option_contracts[token]["name"] = data["name"]
         self._five_weekly_option_contracts[token]["expiry"] = data["expiry"]
-        self._five_weekly_option_contracts[token]["ltp"] = 0
+        self._five_weekly_option_contracts[token]["ltp"] = price
         self._five_weekly_option_contracts[token]["lots"] =  data["lotsize"]
         self._five_weekly_option_contracts[token]["call_or_put"] = call_or_put
 
@@ -227,9 +227,10 @@ class Trader_Singleton:
         relevant_tokens_to_subscribe = []
         for key , value in contracts.items(): 
             data = get_instrument_details_from_json(value)
+            price = self._broker.fetch_instrument_quote(data["exch_seg"] , data["token"])["data"]["fetched"][0]["close"]
             token = data["token"]
             relevant_tokens_to_subscribe.append(token)
-            self.weekly_options_initialize(token , data , "CE")
+            self.weekly_options_initialize(token , data , "CE" , price)
         print(self._five_weekly_option_contracts)
         self._broker.subscribe_to_all(relevant_tokens_to_subscribe)
         return
