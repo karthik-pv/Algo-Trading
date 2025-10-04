@@ -128,7 +128,7 @@ async def start_async_connections():
 
 if __name__ == "__main__":
     try:
-        trader = Trader_Singleton()
+        trader = Trader_Singleton() 
 
         # uncomment for development
         broker.dev_start()
@@ -138,6 +138,8 @@ if __name__ == "__main__":
         trader.set_broker(broker)
         trader.on_start()
         trader.setup_weekly_option_contract_subscriptions()
+
+        trader.start_frontend_socket_server(app)
 
         if CURRENT_BROKER == "kite":
             socket_thread = threading.Thread(target=start_socket, daemon=True)

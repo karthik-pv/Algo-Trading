@@ -3,6 +3,7 @@ import logging
 import queue
 import datetime
 from typing import Optional , Dict
+from flask_socketio import SocketIO
 from interface.broker_interface import BrokerInterface
 
 from core.trade_utils import get_weekly_expiry_date , get_instrument_tokens_from_symbol , get_instrument_details_from_json
@@ -17,6 +18,8 @@ PCTG_STOP_LOSS = 0.5
 
 
 class Trader_Singleton:
+
+    frontend_data_socket = SocketIO(cors_allowed_origins="*")
 
     _instance = None
     _broker = BrokerInterface
@@ -268,6 +271,22 @@ class Trader_Singleton:
         
 
     # ---------------------- THREAD CONTROL ----------------------
+
+    def start_frontend_socket_server(self, app):
+        self.frontend_data_socket.init_app(app)
+
+        def run_socketio():
+            self.frontend_data_socket.run(
+                app,
+                host='0.0.0.0',
+                port=5001,
+                allow_unsafe_werkzeug=True
+            )
+            
+        socket_thread = threading.Thread(target=run_socketio, daemon=True)
+        socket_thread.start()
+        logging.info("Frontend socket server thread has been launched. 🚀")
+
 
     def start_trading_watcher_thread(self):
         if not self._trading_watcher_thread_running:

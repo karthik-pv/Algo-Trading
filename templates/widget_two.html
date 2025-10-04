@@ -3,12 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Call Options Buy Widget</title>
+    <title>Call Options Buy Widget (Live)</title>
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
     <style>
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-            background-color: #f4f7f9;
-            color: #333;
+            background-color: #1a1a1a; /* Darker background */
+            color: #e0e0e0;
             display: flex;
             justify-content: center;
             align-items: center;
@@ -16,15 +17,16 @@
             margin: 0;
         }
         .widget-container {
-            background-color: #ffffff;
+            background-color: #2c2c2c; /* Dark widget background */
             padding: 2rem;
             border-radius: 12px;
-            box-shadow: 0 8px 16px rgba(0, 0, 0, 0.1);
-            width: 600px;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+            width: 700px;
+            border: 1px solid #444;
         }
         .widget-container h2 {
             text-align: center;
-            color: #2c3e50;
+            color: #ffffff;
             margin-bottom: 1.5rem;
         }
         .option-table {
@@ -33,18 +35,16 @@
             margin-top: 1.5rem;
         }
         .option-table th, .option-table td {
-            border: 1px solid #e0e0e0;
+            border: 1px solid #444;
             padding: 0.8rem;
             text-align: left;
         }
         .option-table th {
-            background-color: #f2f2f2;
+            background-color: #383838;
             font-weight: 600;
-            color: #555;
+            color: #ccc;
         }
-        .option-table td.center {
-            text-align: center;
-        }
+        .option-table td.center { text-align: center; }
         .buy-button {
             background-color: #28a745;
             color: white;
@@ -56,17 +56,23 @@
             font-weight: 500;
             transition: background-color 0.2s;
         }
-        .buy-button:hover {
-            background-color: #218838;
-        }
+        .buy-button:hover { background-color: #218838; }
         .no-options {
             text-align: center;
-            color: #777;
+            color: #888;
             margin-top: 2rem;
             padding: 1rem;
-            border: 1px dashed #ccc;
+            border: 1px dashed #555;
             border-radius: 8px;
-            background-color: #f9f9f9;
+            background-color: #333;
+        }
+        /* Style for flashing price updates */
+        .flash {
+            animation: price-flash 0.7s ease-out;
+        }
+        @keyframes price-flash {
+            0% { background-color: #3e8e41; color: #fff; }
+            100% { background-color: transparent; color: inherit; }
         }
     </style>
 </head>
@@ -74,123 +80,120 @@
 
 <div class="widget-container">
     <h2>Call Options Buy</h2>
-
-    <p>Underlying Index: <strong id="underlyingPrice">Loading...</strong></p> 
-
+    <p>Status: <strong id="connectionStatus" style="color: #ffc107;">Connecting...</strong></p> 
     <table class="option-table">
         <thead>
             <tr>
-                <th>LEVELS (Expiry)</th>
-                <th>OPTION_STRIKE</th>
+                <th>OPTION_NAME</th>
+                <th>EXPIRY</th>
                 <th>MARKET_PRICE</th>
                 <th>LOTS</th>
                 <th class="center">Action</th>
             </tr>
         </thead>
         <tbody id="optionsTableBody">
-            <tr><td colspan="5" class="no-options">Loading call options...</td></tr>
-            </tbody>
+            <tr><td colspan="5" class="no-options">Waiting for data from server...</td></tr>
+        </tbody>
     </table>
 </div>
 
 <script>
     document.addEventListener('DOMContentLoaded', function() {
         const optionsTableBody = document.getElementById('optionsTableBody');
-        const underlyingPriceElement = document.getElementById('underlyingPrice');
+        const connectionStatus = document.getElementById('connectionStatus');
+        
+        const socket = io('http://localhost:5001');
 
-        // This is a dummy function to simulate your backend calls
-        // In a real application, this would fetch data from your Python backend via AJAX/WebSocket
-        function get_5_weekly_option_contracts(call_or_put) {
-            console.log(`Simulating fetching ${call_or_put} contracts...`);
-            // Example static data
-            return [
-                { expiry: "28 Dec 2023", strike_price: 20000, tradingsymbol: "NIFTY 20000 CE", token: "NIFTY_TOKEN_20000" },
-                { expiry: "28 Dec 2023", strike_price: 20050, tradingsymbol: "NIFTY 20050 CE", token: "NIFTY_TOKEN_20050" },
-                { expiry: "28 Dec 2023", strike_price: 20100, tradingsymbol: "NIFTY 20100 CE", token: "NIFTY_TOKEN_20100" },
-                { expiry: "04 Jan 2024", strike_price: 20000, tradingsymbol: "NIFTY 20000 CE", token: "NIFTY_TOKEN_20000_NEXT" },
-                { expiry: "04 Jan 2024", strike_price: 20050, tradingsymbol: "NIFTY 20050 CE", token: "NIFTY_TOKEN_20050_NEXT" }
-            ];
-        }
+        socket.on('connect', () => {
+            console.log('Successfully connected to the socket server!');
+            connectionStatus.textContent = 'Connected';
+            connectionStatus.style.color = '#28a745';
+            // 3. Once connected, ask the backend for the initial list of contracts
+            socket.emit('request_weekly_options');
+        });
 
-        // Dummy function to simulate fetching market price
-        function get_market_price(token) {
-            // Simulate API call for LTP
-            const prices = {
-                "NIFTY_TOKEN_20000": 150.25,
-                "NIFTY_TOKEN_20050": 120.50,
-                "NIFTY_TOKEN_20100": 95.00,
-                "NIFTY_TOKEN_20000_NEXT": 180.75,
-                "NIFTY_TOKEN_20050_NEXT": 145.30
-            };
-            return prices[token] || "N/A";
-        }
+        socket.on('disconnect', () => {
+            console.log('Disconnected from the socket server.');
+            connectionStatus.textContent = 'Disconnected';
+            connectionStatus.style.color = '#dc3545';
+            optionsTableBody.innerHTML = '<tr><td colspan="5" class="no-options">Connection lost. Please refresh.</td></tr>';
+        });
 
-        // Dummy function for lot calculation (based on MAX_POSSIBLE_MARGIN which would come from Widget 1 configs)
-        function calculate_max_lots(token, max_margin_flag) {
-            // Simple simulation: fixed lots for now
-            const defaultLots = 50;
-            if (token.includes("20000")) return max_margin_flag ? 100 : defaultLots;
-            if (token.includes("20050")) return max_margin_flag ? 75 : defaultLots;
-            return defaultLots;
-        }
+        // 4. Listen for the event that sends the full list of option contracts
+        socket.on('update_weekly_options', (contracts) => {
+            console.log('Received weekly options data:', contracts);
+            populateOptionsTable(contracts);
+        });
 
-        function populateOptions() {
-            // In a real app, `max_margin_flag` would be read from your configuration (Widget 1)
-            const useMaxMargin = document.getElementById('useMaxMargin') ? document.getElementById('useMaxMargin').checked : false;
+        // 5. Listen for real-time price updates for a single instrument
+        socket.on('live_ltp_update', (tick) => {
+            // Expected format: { token: "12345", ltp: 150.75 }
+            const priceCell = document.getElementById(`price-${tick.token}`);
+            if (priceCell) {
+                priceCell.textContent = `₹ ${tick.ltp.toFixed(2)}`;
+                priceCell.classList.add('flash');
+                // Remove the class after the animation ends to allow re-triggering
+                setTimeout(() => priceCell.classList.remove('flash'), 700);
+            }
+        });
 
-            const callContracts = get_5_weekly_option_contracts("CE");
-            
+        function populateOptionsTable(contracts) {
             optionsTableBody.innerHTML = ''; // Clear existing rows
 
-            if (callContracts.length === 0) {
-                optionsTableBody.innerHTML = '<tr><td colspan="5" class="no-options">No call options available.</td></tr>';
+            if (Object.keys(contracts).length === 0) {
+                optionsTableBody.innerHTML = '<tr><td colspan="5" class="no-options">No call options received from server.</td></tr>';
                 return;
             }
 
-            callContracts.forEach(contract => {
-                const marketPrice = get_market_price(contract.token); // Use actual token
-                const lots = calculate_max_lots(contract.token, useMaxMargin);
+            // The data is an object, so we iterate over its keys (the tokens)
+            for (const token in contracts) {
+                const contract = contracts[token];
+                
+                // We only want to display call options ('CE') in this widget
+                if (contract.call_or_put !== 'CE') {
+                    continue;
+                }
 
                 const row = document.createElement('tr');
+                // Add a unique ID to each row for potential future use
+                row.id = `row-${token}`;
+
                 row.innerHTML = `
+                    <td>${contract.name}</td>
                     <td>${contract.expiry}</td>
-                    <td>${contract.tradingsymbol}</td>
-                    <td>₹ ${marketPrice.toFixed(2)}</td>
-                    <td>${lots}</td>
+                    <td id="price-${token}">₹ ${contract.ltp.toFixed(2)}</td>
+                    <td>${contract.lots}</td>
                     <td class="center">
                         <button class="buy-button" 
-                                data-token="${contract.token}" 
-                                data-tradingsymbol="${contract.tradingsymbol}"
-                                data-lots="${lots}">Buy</button>
+                                data-token="${token}" 
+                                data-tradingsymbol="${contract.name}"
+                                data-lots="${contract.lots}">Buy</button>
                     </td>
                 `;
                 optionsTableBody.appendChild(row);
-            });
-
+            }
+            
             // Add event listeners to the new buy buttons
+            addBuyButtonListeners();
+        }
+
+        function addBuyButtonListeners() {
             document.querySelectorAll('.buy-button').forEach(button => {
                 button.addEventListener('click', function() {
-                    const token = this.dataset.token;
-                    const tradingsymbol = this.dataset.tradingsymbol;
-                    const lots = this.dataset.lots;
-                    // In a real application, you'd send this data to your backend
-                    console.log(`Buying ${lots} lots of ${tradingsymbol} (Token: ${token}) at MARKET PRICE.`);
-                    alert(`Order placed for ${lots} lots of ${tradingsymbol}! (Simulation)`);
+                    const orderDetails = {
+                        token: this.dataset.token,
+                        tradingsymbol: this.dataset.tradingsymbol,
+                        lots: this.dataset.lots
+                    };
+                    
+                    // 6. Emit an event to the backend to place a buy order
+                    socket.emit('place_buy_order', orderDetails);
+                    
+                    console.log(`Emitted 'place_buy_order' for ${orderDetails.tradingsymbol}`);
+                    alert(`Order for ${orderDetails.lots} lots of ${orderDetails.tradingsymbol} sent to server!`);
                 });
             });
         }
-
-        // Simulate fetching underlying price (e.g., Nifty Spot Price)
-        function fetchUnderlyingPrice() {
-            // This would be from your live market data feed
-            underlyingPriceElement.textContent = `NIFTY 50: ₹ 20,025.50`;
-        }
-
-        fetchUnderlyingPrice();
-        populateOptions(); // Initial population of options
-        
-        // In a real application, you might refresh populateOptions periodically
-        // setInterval(populateOptions, 60000); // Refresh every minute
     });
 </script>
 
