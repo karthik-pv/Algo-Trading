@@ -274,6 +274,7 @@ class Trader_Singleton:
 
     def start_frontend_socket_server(self, app):
         self.frontend_data_socket.init_app(app)
+        self.register_socket_handlers()
 
         def run_socketio():
             self.frontend_data_socket.run(
@@ -321,3 +322,25 @@ class Trader_Singleton:
     def on_start(self):
         # Calls the centralized function
         self.refresh_open_positions_and_buy_price()
+
+
+    # ---------------------- SOCKET EVENT HANDLERS ----------------------
+
+    def register_socket_handlers(self):
+        @self.frontend_data_socket.on('request_weekly_options')
+        def handle_request_weekly_options():
+            logging.info(
+                "Received 'request_weekly_options' from client. Sending data..."
+            )
+            self.frontend_data_socket.emit(
+                'update_weekly_options',
+                self._five_weekly_option_contracts
+            )
+
+        @self.frontend_data_socket.on('connect')
+        def handle_connect():
+            print("Client connected to socket server.")
+
+        @self.frontend_data_socket.on('disconnect')
+        def handle_disconnect():
+            logging.info("Client disconnected.")
