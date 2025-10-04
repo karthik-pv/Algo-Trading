@@ -1,163 +1,202 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Call Options Buy Widget (Live)</title>
-    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
-    <style>
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-            background-color: #1a1a1a; /* Darker background */
-            color: #e0e0e0;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
-            margin: 0;
-        }
-        .widget-container {
-            background-color: #2c2c2c; /* Dark widget background */
-            padding: 2rem;
-            border-radius: 12px;
-            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
-            width: 700px;
-            border: 1px solid #444;
-        }
-        .widget-container h2 {
-            text-align: center;
-            color: #ffffff;
-            margin-bottom: 1.5rem;
-        }
-        .option-table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-top: 1.5rem;
-        }
-        .option-table th, .option-table td {
-            border: 1px solid #444;
-            padding: 0.8rem;
-            text-align: left;
-        }
-        .option-table th {
-            background-color: #383838;
-            font-weight: 600;
-            color: #ccc;
-        }
-        .option-table td.center { text-align: center; }
-        .buy-button {
-            background-color: #28a745;
-            color: white;
-            border: none;
-            padding: 0.6rem 1rem;
-            border-radius: 5px;
-            cursor: pointer;
-            font-size: 0.9rem;
-            font-weight: 500;
-            transition: background-color 0.2s;
-        }
-        .buy-button:hover { background-color: #218838; }
-        .no-options {
-            text-align: center;
-            color: #888;
-            margin-top: 2rem;
-            padding: 1rem;
-            border: 1px dashed #555;
-            border-radius: 8px;
-            background-color: #333;
-        }
-        /* Style for flashing price updates */
-        .flash {
-            animation: price-flash 0.7s ease-out;
-        }
-        @keyframes price-flash {
-            0% { background-color: #3e8e41; color: #fff; }
-            100% { background-color: transparent; color: inherit; }
-        }
-    </style>
-</head>
-<body>
+{% extends "base.html" %}
 
-<div class="widget-container">
-    <h2>Call Options Buy</h2>
-    <p>Status: <strong id="connectionStatus" style="color: #ffc107;">Connecting...</strong></p> 
-    <table class="option-table">
-        <thead>
-            <tr>
-                <th>OPTION_NAME</th>
-                <th>EXPIRY</th>
-                <th>MARKET_PRICE</th>
-                <th>LOTS</th>
-                <th class="center">Action</th>
-            </tr>
-        </thead>
-        <tbody id="optionsTableBody">
-            <tr><td colspan="5" class="no-options">Waiting for data from server...</td></tr>
-        </tbody>
-    </table>
-</div>
+{% block title %}Options Widget (Live){% endblock %}
 
+{% block head_styles %}
+<style>
+    .main-content {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        height: 100vh;
+        padding: 1rem;
+        box-sizing: border-box;
+    }
+    .widget-container {
+        background-color: #2c2c2c;
+        padding: 2rem;
+        border-radius: 12px;
+        width: 800px;
+        max-width: 95%;
+        /* MODIFIED: Default Call theme (green border and glow) */
+        border: 1px solid #2e7d32;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6), 0 0 20px rgba(76, 175, 80, 0.25);
+        transition: box-shadow 0.4s ease, border-color 0.4s ease;
+    }
+    /* MODIFIED: Style override for Put theme (red border and glow) */
+    .widget-container.put-view {
+        border: 1px solid #c62828;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6), 0 0 20px rgba(211, 47, 47, 0.35);
+    }
+    .widget-container h2 {
+        text-align: center;
+        margin-bottom: 0.5rem;
+        /* MODIFIED: Default Call title color */
+        color: #66bb6a;
+        transition: color 0.4s ease;
+    }
+    /* MODIFIED: Put title color */
+    .widget-container.put-view h2 {
+        color: #ef5350;
+    }
+    .toggle-container {
+        display: flex;
+        justify-content: center;
+        margin-bottom: 1.5rem;
+        border: 1px solid #444;
+        border-radius: 7px;
+        overflow: hidden;
+        width: fit-content;
+        margin-left: auto;
+        margin-right: auto;
+    }
+    .toggle-button {
+        background-color: transparent;
+        color: #ccc;
+        border: none;
+        padding: 0.6rem 1.2rem;
+        cursor: pointer;
+        font-size: 0.9rem;
+        font-weight: 500;
+        transition: background-color 0.3s;
+    }
+    .toggle-button:first-child {
+        border-right: 1px solid #444;
+    }
+    .toggle-button.active-toggle {
+        background-color: #2e7d32; /* Call color */
+        color: white;
+    }
+    .widget-container.put-view .toggle-button.active-toggle {
+        background-color: #c62828; /* Put color */
+    }
+    .option-table {
+        width: 100%;
+        border-collapse: collapse;
+    }
+    .option-table th, .option-table td {
+        border: 1px solid #444;
+        padding: 1.2rem; /* MODIFIED: Increased padding for more space */
+        text-align: left;
+    }
+    .option-table th {
+        background-color: #383838;
+        font-weight: 600;
+        color: #ccc;
+    }
+    .option-table td.center { text-align: center; }
+    .buy-button {
+        background-color: #28a745; color: white; border: none; padding: 0.6rem 1rem;
+        border-radius: 5px; cursor: pointer; font-size: 0.9rem; font-weight: 500;
+        transition: background-color 0.2s;
+    }
+    .buy-button:hover { background-color: #218838; }
+    .no-options {
+        text-align: center; color: #888; margin-top: 2rem; padding: 1rem;
+        border: 1px dashed #555; border-radius: 8px; background-color: #333;
+    }
+    .flash {
+        animation: price-flash 0.7s ease-out;
+    }
+    @keyframes price-flash {
+        0% { background-color: #3e8e41; color: #fff; }
+        100% { background-color: transparent; color: inherit; }
+    }
+    @media (max-width: 768px) {
+        .main-content {
+            align-items: flex-start;
+            padding-top: 6rem;
+        }
+        .widget-container { padding: 1rem; }
+        .widget-container h2 { font-size: 1.5rem; }
+        .option-table th, .option-table td { padding: 0.6rem; font-size: 0.8rem; }
+        .buy-button { padding: 0.5rem; font-size: 0.75rem; }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<main class="main-content">
+    <div class="widget-container" id="widgetContainer">
+        <h2 id="optionsTitle">Call Options</h2>
+        <p>Status: <strong id="connectionStatus" style="color: #ffc107;">Connecting...</strong></p> 
+        
+        <div class="toggle-container">
+            <button class="toggle-button active-toggle" id="callBtn">Calls (CE)</button>
+            <button class="toggle-button" id="putBtn">Puts (PE)</button>
+        </div>
+
+        <table class="option-table">
+            <thead>
+                <tr>
+                    <th>OPTION_NAME</th>
+                    <th>EXPIRY</th>
+                    <th>MARKET_PRICE</th>
+                    <th>LOTS</th>
+                    <th class="center">Action</th>
+                </tr>
+            </thead>
+            <tbody id="optionsTableBody">
+                <tr><td colspan="5" class="no-options">Waiting for data from server...</td></tr>
+            </tbody>
+        </table>
+    </div>
+</main>
+{% endblock %}
+
+{% block scripts %}
 <script>
     document.addEventListener('DOMContentLoaded', function() {
+        const widgetContainer = document.getElementById('widgetContainer');
         const optionsTableBody = document.getElementById('optionsTableBody');
         const connectionStatus = document.getElementById('connectionStatus');
-        
+        const optionsTitle = document.getElementById('optionsTitle');
+        const callBtn = document.getElementById('callBtn');
+        const putBtn = document.getElementById('putBtn');
+
+        let allContracts = {};
+
         const socket = io('http://localhost:5001');
 
         socket.on('connect', () => {
-            console.log('Successfully connected to the socket server!');
             connectionStatus.textContent = 'Connected';
             connectionStatus.style.color = '#28a745';
-            // 3. Once connected, ask the backend for the initial list of contracts
             socket.emit('request_weekly_options');
         });
 
         socket.on('disconnect', () => {
-            console.log('Disconnected from the socket server.');
             connectionStatus.textContent = 'Disconnected';
             connectionStatus.style.color = '#dc3545';
-            optionsTableBody.innerHTML = '<tr><td colspan="5" class="no-options">Connection lost. Please refresh.</td></tr>';
         });
 
-        // 4. Listen for the event that sends the full list of option contracts
         socket.on('update_weekly_options', (contracts) => {
-            console.log('Received weekly options data:', contracts);
-            populateOptionsTable(contracts);
+            allContracts = contracts;
+            populateOptionsTable(allContracts, 'CE');
         });
-
-        // 5. Listen for real-time price updates for a single instrument
-        socket.on('live_ltp_update', (tick) => {
-            // Expected format: { token: "12345", ltp: 150.75 }
+        
+        socket.on('price-updated', (tick) => {
+            if (allContracts[tick.token]) {
+                allContracts[tick.token].ltp = tick.ltp;
+            }
             const priceCell = document.getElementById(`price-${tick.token}`);
             if (priceCell) {
                 priceCell.textContent = `₹ ${tick.ltp.toFixed(2)}`;
                 priceCell.classList.add('flash');
-                // Remove the class after the animation ends to allow re-triggering
                 setTimeout(() => priceCell.classList.remove('flash'), 700);
             }
         });
 
-        function populateOptionsTable(contracts) {
-            optionsTableBody.innerHTML = ''; // Clear existing rows
-
-            if (Object.keys(contracts).length === 0) {
-                optionsTableBody.innerHTML = '<tr><td colspan="5" class="no-options">No call options received from server.</td></tr>';
+        function populateOptionsTable(contracts, optionType) {
+            optionsTableBody.innerHTML = ''; 
+            const filteredContracts = Object.entries(contracts).filter(([token, contract]) => contract.call_or_put === optionType);
+            if (filteredContracts.length === 0) {
+                const typeName = optionType === 'CE' ? 'call' : 'put';
+                optionsTableBody.innerHTML = `<tr><td colspan="5" class="no-options">No ${typeName} options received.</td></tr>`;
                 return;
             }
-
-            // The data is an object, so we iterate over its keys (the tokens)
-            for (const token in contracts) {
-                const contract = contracts[token];
-                
-                // We only want to display call options ('CE') in this widget
-                if (contract.call_or_put !== 'CE') {
-                    continue;
-                }
-
+            for (const [token, contract] of filteredContracts) {
                 const row = document.createElement('tr');
-                // Add a unique ID to each row for potential future use
                 row.id = `row-${token}`;
-
                 row.innerHTML = `
                     <td>${contract.name}</td>
                     <td>${contract.expiry}</td>
@@ -172,8 +211,6 @@
                 `;
                 optionsTableBody.appendChild(row);
             }
-            
-            // Add event listeners to the new buy buttons
             addBuyButtonListeners();
         }
 
@@ -185,17 +222,27 @@
                         tradingsymbol: this.dataset.tradingsymbol,
                         lots: this.dataset.lots
                     };
-                    
-                    // 6. Emit an event to the backend to place a buy order
                     socket.emit('place_buy_order', orderDetails);
-                    
-                    console.log(`Emitted 'place_buy_order' for ${orderDetails.tradingsymbol}`);
                     alert(`Order for ${orderDetails.lots} lots of ${orderDetails.tradingsymbol} sent to server!`);
                 });
             });
         }
+        
+        callBtn.addEventListener('click', () => {
+            widgetContainer.classList.remove('put-view');
+            optionsTitle.textContent = 'Call Options';
+            putBtn.classList.remove('active-toggle');
+            callBtn.classList.add('active-toggle');
+            populateOptionsTable(allContracts, 'CE');
+        });
+
+        putBtn.addEventListener('click', () => {
+            widgetContainer.classList.add('put-view');
+            optionsTitle.textContent = 'Put Options';
+            callBtn.classList.remove('active-toggle');
+            putBtn.classList.add('active-toggle');
+            populateOptionsTable(allContracts, 'PE');
+        });
     });
 </script>
-
-</body>
-</html>
+{% endblock %}
