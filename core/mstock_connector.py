@@ -6,9 +6,10 @@ import logging
 import http.client
 import websockets
 import threading
+import datetime
 from dotenv import load_dotenv
 
-from utils import fetch_from_json
+from utils import fetch_from_json , write_to_json
 from adapter.mstock_utils import parse_quote_message
 
 logging.basicConfig(level=logging.DEBUG)
@@ -86,6 +87,11 @@ class MStockSingleton:
         print(response)
         access_token = response["data"]["jwtToken"]
         print(access_token)
+        data_to_update_json = {
+            "mstock_jwt_token" : access_token , 
+            "mstock_last_token_timestamp" : datetime.datetime.now().isoformat()
+        }
+        write_to_json(data_to_update_json , "access_token.json")
         self.set_access_token(access_token)
 
     async def start_socket_connection(self, shutdown_event, trader_instance):
@@ -169,5 +175,13 @@ class MStockSingleton:
 
     # production
     def initialise_for_prod(self):
-        self.create_session()
-        logging.debug("MStock session created for production.")
+        last_updated_date = fetch_from_json("access_token.json" , "mstock_last_token_timestamp")
+        last_update_datetime = datetime.datetime.fromisoformat(last_updated_date)
+        today_date = datetime.datetime.now().date()
+        if not last_update_datetime.date() == today_date:
+            self.create_session()
+            logging.debug("MStock session created for production.")
+        else:
+            access_token = fetch_from_json("access_token.json", "mstock_jwt_token")
+            print(access_token)
+            self.set_access_token(access_token)

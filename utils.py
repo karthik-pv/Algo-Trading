@@ -1,6 +1,7 @@
 import os
 import json
 import ijson
+import logging
 from typing import Generator, Dict, Any , List
 
 
@@ -44,4 +45,22 @@ def find_matching_object(filepath: str, attribute_name: str, attribute_value: An
     return None
 
 
-print(find_matching_object("instrument_list.json" , "name" , fetch_from_json("constants.json" , "NIFTY_NEAR_MONTH_FUTURE_TOKEN")))
+def write_to_json(data_to_write: dict, file_path: str) -> bool:
+    try:
+        try:
+            with open(file_path, 'r') as f:
+                existing_data = json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError):
+            existing_data = {}
+
+        existing_data.update(data_to_write)
+
+        with open(file_path, 'w') as f:
+            json.dump(existing_data, f, indent=4)
+        
+        logging.info(f"Successfully wrote updates to {file_path}")
+        return True
+
+    except (IOError, TypeError) as e:
+        logging.error(f"Failed to write to JSON file at {file_path}: {e}")
+        return False

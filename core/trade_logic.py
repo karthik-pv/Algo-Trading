@@ -221,6 +221,7 @@ class Trader_Singleton:
         nifty_near_month_token = fetch_from_json("constants.json" , "NIFTY_NEAR_MONTH_FUTURE_TOKEN")
         nifty_near_month_data = find_matching_object("instrument_list.json" , "name" , nifty_near_month_token)
         nifty_near_month_quote = self._broker.fetch_instrument_quote(nifty_near_month_data["exch_seg"] , nifty_near_month_data["token"])
+        print(nifty_near_month_quote)
         ltp_nifty_near_month = nifty_near_month_quote["data"]["fetched"][0]["close"]
         contracts = self.get_5_weekly_option_contracts(ltp_nifty_near_month , "CE")["symbols"]
         relevant_tokens_to_subscribe = []

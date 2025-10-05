@@ -135,9 +135,9 @@ if __name__ == "__main__":
         trader = Trader_Singleton() 
 
         # uncomment for development
-        broker.dev_start()
+        # broker.dev_start()
         # uncomment for prod
-        # broker.prod_start()
+        broker.prod_start()
 
         trader.set_broker(broker)
         trader.on_start()
