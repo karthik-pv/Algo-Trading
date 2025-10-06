@@ -19,6 +19,20 @@ def position_attribute_mgmt(positions):
             updated_positions.append(updated_position)
     return updated_positions
 
+def order_attribute_mgmt(orders):
+    updated_orders = []
+    if orders:
+        for order in orders:
+            updated_order = {
+                "tradingsymbol" : order.get("tradingsymbol") , 
+                "timestamp" : order.get("exchorderupdatetime"),
+                "transaction_type" : order.get("transactiontype"),
+                "quantity" : order.get("quantity"),
+                "average_price" : order.get("averageprice")
+            }
+            updated_orders.append(updated_order)
+    return updated_orders
+
 def fund_summary_attribute_mgmt(fund_summary):
     cropped_fund_summary = {}
     cropped_fund_summary["cash_balance"] = fund_summary["data"][0]["AVAILABLE_BALANCE"]

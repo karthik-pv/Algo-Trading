@@ -24,6 +24,7 @@ shutdown_event = threading.Event()
 @app.route("/orders")
 def get_orders():
     orders = broker.fetch_all_orders()
+    print(orders)
     return jsonify(orders if orders else {"error": "Could not fetch orders"})
 
 

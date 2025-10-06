@@ -6,7 +6,7 @@ from typing import Optional , Dict
 from flask_socketio import SocketIO
 from interface.broker_interface import BrokerInterface
 
-from core.trade_utils import get_weekly_expiry_date , get_instrument_tokens_from_symbol , get_instrument_details_from_json 
+from core.trade_utils import get_weekly_expiry_date , get_instrument_tokens_from_symbol , get_instrument_details_from_json , calculate_accurate_average_buy_price_and_update_positions 
 
 from utils import fetch_from_json , find_matching_object
 
@@ -92,6 +92,12 @@ class Trader_Singleton:
         self._broker.unsubscribe_from_all(self.get_relevant_instruments_to_track())
 
         positions_from_broker = self._broker.fetch_all_positions()
+        orders_from_broker = self._broker.fetch_all_orders()
+        positions_from_broker = calculate_accurate_average_buy_price_and_update_positions(positions_from_broker , orders_from_broker)
+
+        print("###########################")
+        print(positions_from_broker)
+        print("###########################")
         
         new_position_tokens = {pos["instrument_token"] for pos in positions_from_broker}
         

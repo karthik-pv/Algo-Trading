@@ -4,11 +4,11 @@ import logging
 import datetime
 import calendar
 
-from utils import get_trading_symbols_from_json
+from utils import get_trading_symbols_from_json , find_matching_object
 from core.mstock_connector import MStockSingleton
 from interface.broker_interface import BrokerInterface
 from core.trade_logic import Trader_Singleton
-from adapter.mstock_utils import position_attribute_mgmt , fund_summary_attribute_mgmt
+from adapter.mstock_utils import position_attribute_mgmt , fund_summary_attribute_mgmt , order_attribute_mgmt
 
 
 class MStockAdapter(BrokerInterface):
@@ -19,7 +19,23 @@ class MStockAdapter(BrokerInterface):
         self.supported_exchanges = ["NSE", "BSE"]
 
     def fetch_all_orders(self):
-        return
+        try:
+            conn = http.client.HTTPSConnection('api.mstock.trade')
+            headers = {
+                "X-Mirae-Version": "1",
+                "X-PrivateKey": self.mstock_instance._api_key,
+                "Authorization": f"Bearer {self.mstock_instance._access_token}",
+            }
+            conn.request('GET', '/openapi/typeb/orders', headers=headers)
+            response = order_attribute_mgmt(json.loads(conn.getresponse().read().decode("utf-8"))["data"])
+            print("\n")
+            print("ORDERS PROCESSED DATA =================== \n")
+            print(response)
+            return response
+        except Exception as e:
+            logging.error(
+                f"Error fetching orders: {e} \n\n CONSIDER LOGGING IN AGAIN \n\n"
+            )
 
     def fetch_all_instruments(self):
         return
@@ -100,11 +116,12 @@ class MStockAdapter(BrokerInterface):
                 "Authorization": f"Bearer {self.mstock_instance._access_token}",
                 "Content-Type": "application/json"
             }
+        trading_symbol_for_transaction = find_matching_object("instrument_list.json" , "token" , instrument_token)["name"]
         json_data = { 
             'variety': 'NORMAL',
-            'tradingsymbol': trading_symbol,
+            'tradingsymbol': trading_symbol_for_transaction,
             'symboltoken': instrument_token,
-            'exchange': exchange,
+            'exchange': "NFO",
             'transactiontype': 'SELL',
             'ordertype': 'MARKET',
             'quantity': str(quantity),
@@ -114,7 +131,7 @@ class MStockAdapter(BrokerInterface):
             'squareoff': '0.00',
             'stoploss': '0.00',
             'trailingStopLoss': '',
-            'disclosedquantity': '',
+            'disclosedquantity': '0',
             'duration': 'DAY',
             'ordertag': 'my_algo',
         }
