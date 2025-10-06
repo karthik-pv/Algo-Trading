@@ -15,10 +15,13 @@ def last_tuesday(year: int, month: int) -> datetime.date:
         dt -= datetime.timedelta(days=1)
     return dt
 
-def calculate_accurate_average_buy_price_and_update_positions(positions: List[Dict[str, Any]], orders: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def calculate_accurate_average_buy_price_and_update_positions(
+    positions: List[Dict[str, Any]], 
+    orders: List[Dict[str, Any]]
+) -> List[Dict[str, Any]]:
     positions_map = {}
     for i, p in enumerate(positions):
-        symbol = p.get('tradingsymbol') 
+        symbol = p.get('tradingsymbol')
         quantity = p.get('quantity', 0)
         if symbol and quantity > 0:
             positions_map[symbol] = {
@@ -27,25 +30,29 @@ def calculate_accurate_average_buy_price_and_update_positions(positions: List[Di
                 'original_index': i
             }
 
-    if not positions_map: return positions
+    if not positions_map:
+        return positions
 
     try:
-        # Key changed to 'exchorderupdatetime'
-        orders.sort(key=lambda item: datetime.datetime.strptime(item['exchorderupdatetime'], '%Y-%b-%d %H:%M:%S') , reverse=True)
-    except Exception as e: return positions
+        orders.sort(key=lambda item: datetime.datetime.strptime(item['timestamp'], '%Y-%b-%d %H:%M:%S'), reverse=True)
+    except Exception as e:
+        print(f"Error sorting orders, returning original positions. Error: {e}")
+        return positions
 
-    for order in orders: 
+    for order in orders:
         symbol = order.get("tradingsymbol")
-        # Key changed to 'transactiontype'
-        if order.get("transactiontype") != "BUY" or symbol not in positions_map: continue
-            
-        order_quantity = order.get("quantity", 0)
-        # Key changed to 'averageprice'
-        avg_price = order.get("averageprice", 0.0)
         
-        if order_quantity <= 0 or avg_price <= 0.0: continue
+        if order.get("transaction_type") != "BUY" or symbol not in positions_map:
+            continue
+            
+        order_quantity = int(order.get("quantity", 0))
+        avg_price = float(order.get("average_price", 0.0))
+        
+        if order_quantity <= 0 or avg_price <= 0.0:
+            continue
             
         position_data = positions_map[symbol]
+        
         consumed_quantity = min(order_quantity, position_data['remaining_quantity'])
         
         if consumed_quantity > 0:
@@ -53,18 +60,20 @@ def calculate_accurate_average_buy_price_and_update_positions(positions: List[Di
             position_data['total_cost'] += cost_contribution
             position_data['remaining_quantity'] -= consumed_quantity
             
-            if position_data['remaining_quantity'] <= 0: del positions_map[symbol]
-                
-        if not positions_map: break
+        if not positions_map:
+            break
 
-    for data in positions_map.values():
+    for symbol, data in positions_map.items():
         original_index = data['original_index']
         total_cost = data['total_cost']
-        original_quantity = positions[original_index]['quantity']
         
-        if original_quantity > 0:
-            new_average_price = total_cost / original_quantity
-            positions[original_index]['average_price'] = new_average_price
+        original_quantity = positions[original_index].get('quantity', 0)
+        
+        if total_cost > 0 and original_quantity > 0:
+            quantity_accounted_for = original_quantity - data['remaining_quantity']
+            if quantity_accounted_for > 0:
+                new_average_price = total_cost / quantity_accounted_for
+                positions[original_index]['average_price'] = round(new_average_price, 2)
             
     return positions
 

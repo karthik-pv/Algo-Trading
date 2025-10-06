@@ -93,10 +93,10 @@ class Trader_Singleton:
 
         positions_from_broker = self._broker.fetch_all_positions()
         orders_from_broker = self._broker.fetch_all_orders()
-        positions_from_broker = calculate_accurate_average_buy_price_and_update_positions(positions_from_broker , orders_from_broker)
+        positions = calculate_accurate_average_buy_price_and_update_positions(positions_from_broker , orders_from_broker)
 
         print("###########################")
-        print(positions_from_broker)
+        print(positions)
         print("###########################")
         
         new_position_tokens = {pos["instrument_token"] for pos in positions_from_broker}
