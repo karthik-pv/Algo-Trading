@@ -137,6 +137,8 @@ def get_weekly_expiry_date() -> datetime.date:
         print(f"Adjusting expiry: {expiry_candidate.strftime('%d-%m-%Y')} is a holiday/weekend. Checking previous day.")
         expiry_candidate -= datetime.timedelta(days=1)
 
+        
+
 
 def get_instrument_tokens_from_symbol(name):
     return find_matching_object("instrument_list.json" , "name" , name)["token"]

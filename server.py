@@ -139,7 +139,6 @@ if __name__ == "__main__":
         # broker.dev_start()
         # uncomment for prod
         broker.prod_start()
-
         trader.set_broker(broker)
         trader.on_start()
         trader.setup_weekly_option_contract_subscriptions()

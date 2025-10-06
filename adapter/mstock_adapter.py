@@ -48,6 +48,7 @@ class MStockAdapter(BrokerInterface):
                 "X-PrivateKey": self.mstock_instance._api_key,
                 "Authorization": f"Bearer {self.mstock_instance._access_token}",
             }
+            print(headers)
             conn.request("GET", "/openapi/typeb/portfolio/positions", headers=headers)
             response = json.loads(conn.getresponse().read().decode("utf-8"))
             print("POSITIONS RAW DATA =================== \n")

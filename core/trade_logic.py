@@ -32,6 +32,7 @@ class Trader_Singleton:
     _tick_counter = 0
     _comparison_function = "PNT"
     _use_max_margin = True
+    _sell_mode = "ALERT"
 
 
     def __new__(cls):
@@ -92,7 +93,9 @@ class Trader_Singleton:
         self._broker.unsubscribe_from_all(self.get_relevant_instruments_to_track())
 
         positions_from_broker = self._broker.fetch_all_positions()
+        print(positions_from_broker)
         orders_from_broker = self._broker.fetch_all_orders()
+        print(orders_from_broker)
         positions = calculate_accurate_average_buy_price_and_update_positions(positions_from_broker , orders_from_broker)
 
         print("###########################")
@@ -152,8 +155,11 @@ class Trader_Singleton:
                 sell = self.to_sell_or_not_to_sell(buy_price , ltp)
                 print(f"DECISION TO SELL IS {sell}")
                 if sell:
-                    broker.sell_units(tradingsymbol,instrument_token,qty , exchange , ltp)
-                    print("SELLING")
+                    if self._sell_mode == "SELL":
+                        broker.sell_units(tradingsymbol,instrument_token,qty , exchange , ltp)
+                    print("###################################")
+                    logging.critical(f"SELL UNITS - {tradingsymbol}")
+                    print("###################################")
             self._stop_event.wait(timeout=5)
 
     # ---------------------- DECISION MAKER ----------------------------

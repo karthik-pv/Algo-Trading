@@ -33,6 +33,7 @@ def order_attribute_mgmt(orders):
             updated_orders.append(updated_order)
     return updated_orders
 
+
 def fund_summary_attribute_mgmt(fund_summary):
     cropped_fund_summary = {}
     cropped_fund_summary["cash_balance"] = fund_summary["data"][0]["AVAILABLE_BALANCE"]
