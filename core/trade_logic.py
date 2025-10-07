@@ -26,6 +26,7 @@ class Trader_Singleton:
     
     _position_data = {}
     _five_weekly_option_contracts = {}
+    _fund_summary = {}
 
     _trading_watcher_thread_running = False
     _stop_event = threading.Event()
@@ -53,14 +54,16 @@ class Trader_Singleton:
                 return token
         return None
     
-    def weekly_options_initialize(self , token , data , call_or_put , price):
+    def weekly_options_initialize(self , token , data , call_or_put , price , level):
         if token not in self._five_weekly_option_contracts:
             self._five_weekly_option_contracts[token] = {}
         self._five_weekly_option_contracts[token]["name"] = data["name"]
         self._five_weekly_option_contracts[token]["expiry"] = data["expiry"]
         self._five_weekly_option_contracts[token]["ltp"] = price
-        self._five_weekly_option_contracts[token]["lots"] =  data["lotsize"]
+        self._five_weekly_option_contracts[token]["lotsize"] = data["lotsize"]
+        self._five_weekly_option_contracts[token]["lots"] =  int(((self._fund_summary["cash_balance"] - self._fund_summary["utilized"]) / price) / int(data["lotsize"]))
         self._five_weekly_option_contracts[token]["call_or_put"] = call_or_put
+        self._five_weekly_option_contracts[token]["level"] = level
 
     
     def update_weekly_positions(self, token: str, attribute_name: str, updated_value):
@@ -71,6 +74,7 @@ class Trader_Singleton:
             )
             return
         self._five_weekly_option_contracts[token][attribute_name] = updated_value
+        self._five_weekly_option_contracts[token]["lots"] =  int(((self._fund_summary["cash_balance"] - self._fund_summary["utilized"]) / self._five_weekly_option_contracts[token]["ltp"]) / int(self._five_weekly_option_contracts[token]["lotsize"]))
         logging.debug(
             f"Updated weekly option {token}: Set '{attribute_name}' to {updated_value}"
         )
@@ -91,17 +95,11 @@ class Trader_Singleton:
 
     def refresh_open_positions_and_buy_price(self):
         self._broker.unsubscribe_from_all(self.get_relevant_instruments_to_track())
-
+        fund_summary = self._broker.fetch_fund_summary()
         positions_from_broker = self._broker.fetch_all_positions()
-        print(positions_from_broker)
         orders_from_broker = self._broker.fetch_all_orders()
-        print(orders_from_broker)
         positions = calculate_accurate_average_buy_price_and_update_positions(positions_from_broker , orders_from_broker)
 
-        print("###########################")
-        print(positions)
-        print("###########################")
-        
         new_position_tokens = {pos["instrument_token"] for pos in positions_from_broker}
         
         tokens_to_remove = [
@@ -126,7 +124,8 @@ class Trader_Singleton:
                 "instrument": position["instrument_token"],
                 "exchange" : position["exchange"]
             })
-        
+        for key , value in fund_summary.items():
+            self._fund_summary[key] = float(value)
         self._broker.subscribe_to_all(self.get_relevant_instruments_to_track())
         logging.info(f"Updated positions: {len(self._position_data)}")
         logging.debug(self._position_data)
@@ -233,7 +232,6 @@ class Trader_Singleton:
         nifty_near_month_token = fetch_from_json("constants.json" , "NIFTY_NEAR_MONTH_FUTURE_TOKEN")
         nifty_near_month_data = find_matching_object("instrument_list.json" , "name" , nifty_near_month_token)
         nifty_near_month_quote = self._broker.fetch_instrument_quote(nifty_near_month_data["exch_seg"] , nifty_near_month_data["token"])
-        print(nifty_near_month_quote)
         ltp_nifty_near_month = nifty_near_month_quote["data"]["fetched"][0]["close"]
         contracts = self.get_5_weekly_option_contracts(ltp_nifty_near_month , "CE")["symbols"]
         relevant_tokens_to_subscribe = []
@@ -242,16 +240,19 @@ class Trader_Singleton:
             price = self._broker.fetch_instrument_quote(data["exch_seg"] , data["token"])["data"]["fetched"][0]["close"]
             token = data["token"]
             relevant_tokens_to_subscribe.append(token)
-            self.weekly_options_initialize(token , data , "CE" , price)
+            self.weekly_options_initialize(token , data , "CE" , price , level=key)
         contracts = self.get_5_weekly_option_contracts(ltp_nifty_near_month , "PE")["symbols"]
         for key , value in contracts.items(): 
             data = get_instrument_details_from_json(value)
             price = self._broker.fetch_instrument_quote(data["exch_seg"] , data["token"])["data"]["fetched"][0]["close"]
             token = data["token"]
             relevant_tokens_to_subscribe.append(token)
-            self.weekly_options_initialize(token , data , "PE" , price)
+            self.weekly_options_initialize(token , data , "PE" , price , level=key)
         print(self._five_weekly_option_contracts)
-        self._broker.subscribe_to_all(relevant_tokens_to_subscribe)
+        try:
+            self._broker.subscribe_to_all(relevant_tokens_to_subscribe)
+        except Exception as e:
+            print(f"Couldnt subscribe to instruments - {e}")
         return
 
 
@@ -289,7 +290,8 @@ class Trader_Singleton:
             payload = {
                 'token': token,             
                 'name': tradingsymbol,      
-                'ltp': price               
+                'ltp': price,
+                'lots' : self._five_weekly_option_contracts["token"]["lots"]
             }
             self.frontend_data_socket.emit('price-updated', payload)
 
@@ -333,17 +335,13 @@ class Trader_Singleton:
             self._trading_watcher_thread_running = False
 
     def refresh_subscriptions(self):
-        # Refactored to use the new centralized data structure
         self.refresh_open_positions_and_buy_price()
-        
-        # Get the list of tokens to subscribe to
         tokens_to_subscribe = self.get_relevant_instruments_to_track()
-        
-        print(self._position_data)
-        
-        # Call the broker's subscription method
-        self._broker.subscribe_to_all(tokens_to_subscribe)
-        
+        try:
+            self._broker.subscribe_to_all(tokens_to_subscribe)
+        except Exception as e:
+            print(f"Couldnt subscribe to instruments - {e}")
+
     def on_start(self):
         # Calls the centralized function
         self.refresh_open_positions_and_buy_price()

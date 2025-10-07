@@ -2,6 +2,7 @@ import os
 import json
 import ijson
 import logging
+from datetime import datetime, time
 from typing import Generator, Dict, Any , List
 
 
@@ -64,3 +65,12 @@ def write_to_json(data_to_write: dict, file_path: str) -> bool:
     except (IOError, TypeError) as e:
         logging.error(f"Failed to write to JSON file at {file_path}: {e}")
         return False
+    
+
+def is_market_open() -> bool:
+    now = datetime.now()
+    market_start = time(9, 15)
+    market_end = time(15, 30)
+    is_weekday = now.weekday() < 5
+    is_market_hours = market_start <= now.time() <= market_end
+    return is_weekday and is_market_hours

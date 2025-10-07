@@ -16,14 +16,12 @@
         background-color: #2c2c2c;
         padding: 2rem;
         border-radius: 12px;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6), 0 0 20px rgba(76, 175, 80, 0.25);
         width: 800px;
         max-width: 95%;
-        /* MODIFIED: Default Call theme (green border and glow) */
         border: 1px solid #2e7d32;
-        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6), 0 0 20px rgba(76, 175, 80, 0.25);
         transition: box-shadow 0.4s ease, border-color 0.4s ease;
     }
-    /* MODIFIED: Style override for Put theme (red border and glow) */
     .widget-container.put-view {
         border: 1px solid #c62828;
         box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6), 0 0 20px rgba(211, 47, 47, 0.35);
@@ -31,13 +29,36 @@
     .widget-container h2 {
         text-align: center;
         margin-bottom: 0.5rem;
-        /* MODIFIED: Default Call title color */
         color: #66bb6a;
         transition: color 0.4s ease;
     }
-    /* MODIFIED: Put title color */
     .widget-container.put-view h2 {
         color: #ef5350;
+    }
+    .summary-container {
+        display: flex;
+        justify-content: space-evenly;
+        padding: 1rem 0;
+        margin: 1rem 0;
+        border-top: 1px solid #444;
+        border-bottom: 1px solid #444;
+    }
+    .summary-item {
+        text-align: center;
+    }
+    .summary-label {
+        display: block;
+        font-size: 0.8rem;
+        color: #aaa;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+    .summary-value {
+        display: block;
+        font-size: 1.4rem;
+        font-weight: 600;
+        color: #ffffff;
+        margin-top: 0.25rem;
     }
     .toggle-container {
         display: flex;
@@ -64,11 +85,11 @@
         border-right: 1px solid #444;
     }
     .toggle-button.active-toggle {
-        background-color: #2e7d32; /* Call color */
+        background-color: #2e7d32;
         color: white;
     }
     .widget-container.put-view .toggle-button.active-toggle {
-        background-color: #c62828; /* Put color */
+        background-color: #c62828;
     }
     .option-table {
         width: 100%;
@@ -76,7 +97,7 @@
     }
     .option-table th, .option-table td {
         border: 1px solid #444;
-        padding: 1.2rem; /* MODIFIED: Increased padding for more space */
+        padding: 1.2rem;
         text-align: left;
     }
     .option-table th {
@@ -95,9 +116,7 @@
         text-align: center; color: #888; margin-top: 2rem; padding: 1rem;
         border: 1px dashed #555; border-radius: 8px; background-color: #333;
     }
-    .flash {
-        animation: price-flash 0.7s ease-out;
-    }
+    .flash { animation: price-flash 0.7s ease-out; }
     @keyframes price-flash {
         0% { background-color: #3e8e41; color: #fff; }
         100% { background-color: transparent; color: inherit; }
@@ -111,6 +130,7 @@
         .widget-container h2 { font-size: 1.5rem; }
         .option-table th, .option-table td { padding: 0.6rem; font-size: 0.8rem; }
         .buy-button { padding: 0.5rem; font-size: 0.75rem; }
+        .summary-value { font-size: 1.1rem; }
     }
 </style>
 {% endblock %}
@@ -121,6 +141,16 @@
         <h2 id="optionsTitle">Call Options</h2>
         <p>Status: <strong id="connectionStatus" style="color: #ffc107;">Connecting...</strong></p> 
         
+        <div class="summary-container">
+            <div class="summary-item">
+                <span class="summary-label">Cash Balance</span>
+                <span class="summary-value" id="cashBalanceValue">Loading...</span>
+            </div>
+            <div class="summary-item">
+                <span class="summary-label">Utilized Funds</span>
+                <span class="summary-value" id="utilizedValue">Loading...</span>
+            </div>
+        </div>
         <div class="toggle-container">
             <button class="toggle-button active-toggle" id="callBtn">Calls (CE)</button>
             <button class="toggle-button" id="putBtn">Puts (PE)</button>
@@ -129,6 +159,7 @@
         <table class="option-table">
             <thead>
                 <tr>
+                    <th>LEVEL</th>
                     <th>OPTION_NAME</th>
                     <th>EXPIRY</th>
                     <th>MARKET_PRICE</th>
@@ -137,7 +168,7 @@
                 </tr>
             </thead>
             <tbody id="optionsTableBody">
-                <tr><td colspan="5" class="no-options">Waiting for data from server...</td></tr>
+                <tr><td colspan="6" class="no-options">Waiting for data from server...</td></tr>
             </tbody>
         </table>
     </div>
@@ -154,7 +185,34 @@
         const callBtn = document.getElementById('callBtn');
         const putBtn = document.getElementById('putBtn');
 
+        const cashBalanceEl = document.getElementById('cashBalanceValue');
+        const utilizedEl = document.getElementById('utilizedValue');
+
         let allContracts = {};
+
+        async function fetchFundSummary() {
+            try {
+                cashBalanceEl.textContent = 'Fetching...';
+                utilizedEl.textContent = 'Fetching...';
+
+                const response = await fetch('http://127.0.0.1:5000/fund_summary');
+                if (!response.ok) {
+                    throw new Error(`HTTP Error: ${response.status}`);
+                }
+                const summary = await response.json();
+
+                if (summary.data && summary.data.cash_balance && summary.data.utilized) {
+                    cashBalanceEl.textContent = `₹ ${parseFloat(summary.data.cash_balance).toLocaleString('en-IN')}`;
+                    utilizedEl.textContent = `₹ ${parseFloat(summary.data.utilized).toLocaleString('en-IN')}`;
+                } else {
+                    throw new Error("Invalid data format received.");
+                }
+            } catch (error) {
+                console.error("Could not fetch fund summary:", error);
+                cashBalanceEl.textContent = 'Error';
+                utilizedEl.textContent = 'Error';
+            }
+        }
 
         const socket = io('http://localhost:5001');
 
@@ -177,6 +235,7 @@
         socket.on('price-updated', (tick) => {
             if (allContracts[tick.token]) {
                 allContracts[tick.token].ltp = tick.ltp;
+                allContracts[tick.token].lots = tick.lots;
             }
             const priceCell = document.getElementById(`price-${tick.token}`);
             if (priceCell) {
@@ -191,13 +250,16 @@
             const filteredContracts = Object.entries(contracts).filter(([token, contract]) => contract.call_or_put === optionType);
             if (filteredContracts.length === 0) {
                 const typeName = optionType === 'CE' ? 'call' : 'put';
-                optionsTableBody.innerHTML = `<tr><td colspan="5" class="no-options">No ${typeName} options received.</td></tr>`;
+                // MODIFIED: Updated colspan to 6
+                optionsTableBody.innerHTML = `<tr><td colspan="6" class="no-options">No ${typeName} options received.</td></tr>`;
                 return;
             }
             for (const [token, contract] of filteredContracts) {
                 const row = document.createElement('tr');
                 row.id = `row-${token}`;
+                // MODIFIED: Added cell for contract.level
                 row.innerHTML = `
+                    <td>${contract.level}</td>
                     <td>${contract.name}</td>
                     <td>${contract.expiry}</td>
                     <td id="price-${token}">₹ ${contract.ltp.toFixed(2)}</td>
@@ -224,6 +286,8 @@
                     };
                     socket.emit('place_buy_order', orderDetails);
                     alert(`Order for ${orderDetails.lots} lots of ${orderDetails.tradingsymbol} sent to server!`);
+
+                    fetchFundSummary();
                 });
             });
         }
@@ -243,6 +307,8 @@
             putBtn.classList.add('active-toggle');
             populateOptionsTable(allContracts, 'PE');
         });
+
+        fetchFundSummary();
     });
 </script>
 {% endblock %}

@@ -37,6 +37,7 @@ def order_attribute_mgmt(orders):
 def fund_summary_attribute_mgmt(fund_summary):
     cropped_fund_summary = {}
     cropped_fund_summary["cash_balance"] = fund_summary["data"][0]["AVAILABLE_BALANCE"]
+    cropped_fund_summary["utilized"] = fund_summary["data"][0]["AMOUNT_UTILIZED"]
     return cropped_fund_summary
 
 

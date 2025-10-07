@@ -28,9 +28,9 @@ class MStockAdapter(BrokerInterface):
             }
             conn.request('GET', '/openapi/typeb/orders', headers=headers)
             response = order_attribute_mgmt(json.loads(conn.getresponse().read().decode("utf-8"))["data"])
-            print("\n")
-            print("ORDERS PROCESSED DATA =================== \n")
-            print(response)
+            # print("\n")
+            # print("ORDERS PROCESSED DATA =================== \n")
+            # print(response)
             return response
         except Exception as e:
             logging.error(
@@ -48,13 +48,8 @@ class MStockAdapter(BrokerInterface):
                 "X-PrivateKey": self.mstock_instance._api_key,
                 "Authorization": f"Bearer {self.mstock_instance._access_token}",
             }
-            print(headers)
             conn.request("GET", "/openapi/typeb/portfolio/positions", headers=headers)
             response = json.loads(conn.getresponse().read().decode("utf-8"))
-            print("POSITIONS RAW DATA =================== \n")
-            print(response["data"])
-            print("\n")
-            print("POSITIONS PROCESSED DATA =================== \n")
             positions = position_attribute_mgmt(response["data"])
             open_positions = [
                 open_position
@@ -81,6 +76,7 @@ class MStockAdapter(BrokerInterface):
             }
         conn.request('GET', '/openapi/typeb/user/fundsummary', headers=headers)
         response = json.loads(conn.getresponse().read().decode("utf-8"))
+        print(response)
         fund_summary = fund_summary_attribute_mgmt(response)
         return fund_summary
     

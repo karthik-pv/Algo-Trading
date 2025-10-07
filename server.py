@@ -8,6 +8,9 @@ from core.trade_logic import Trader_Singleton
 from interface.broker_interface import BrokerInterface
 from adapter.kite_adapter import KiteAdapter
 from adapter.mstock_adapter import MStockAdapter
+from core.trading_view_handler import trading_view_handle_func
+
+from utils import is_market_open
 
 
 app = Flask(__name__)
@@ -24,7 +27,6 @@ shutdown_event = threading.Event()
 @app.route("/orders")
 def get_orders():
     orders = broker.fetch_all_orders()
-    print(orders)
     return jsonify(orders if orders else {"error": "Could not fetch orders"})
 
 
@@ -56,8 +58,8 @@ def get_trades():
 
 @app.route("/fund_summary")
 def get_fund_summary():
-    broker.fetch_fund_summary()
-    return {"msg" : "success"}
+    fund_summary = broker.fetch_fund_summary()
+    return jsonify({"data" : fund_summary})
 
 @app.route("/instrument_quote")
 def get_instrument_quote():
@@ -89,6 +91,12 @@ def instruments_json():
         if instruments
         else {"error": "Could not fetch relevant instruments"}
     )
+
+@app.route("/trading_view_webhook" , methods = ["POST"])
+def trading_view():
+    data = request.json
+    res = trading_view_handle_func(data)
+    return jsonify(res)
 
 
 def run_flask_app():
@@ -123,10 +131,13 @@ def widget_two():
 async def start_async_connections():
     """Main async function to run all async brokers."""
     if isinstance(broker, MStockAdapter):   
-        flask_thread = threading.Thread(target=run_flask_app, daemon=True)
-        flask_thread.start()
-        # run_flask_app()
-        await broker.start_socket_connection(shutdown_event, trader_instance=trader)
+        
+        if is_market_open():
+            flask_thread = threading.Thread(target=run_flask_app, daemon=True)
+            flask_thread.start()
+            await broker.start_socket_connection(shutdown_event, trader_instance=trader)
+        else:
+            run_flask_app()
     else:
         logging.info("M.Stock not selected, skipping async socket start.")
 
@@ -142,16 +153,17 @@ if __name__ == "__main__":
         trader.set_broker(broker)
         trader.on_start()
         trader.setup_weekly_option_contract_subscriptions()
-
         trader.start_frontend_socket_server(app)
 
         if CURRENT_BROKER == "kite":
             socket_thread = threading.Thread(target=start_socket, daemon=True)
             socket_thread.start()
-            trader.start_trading_watcher_thread()
+            if is_market_open():
+                trader.start_trading_watcher_thread()
             app.run(debug=True)
         elif CURRENT_BROKER == "mstock":
-            trader.start_trading_watcher_thread()
+            if is_market_open():
+                trader.start_trading_watcher_thread()
             asyncio.run(start_async_connections())
 
     except KeyboardInterrupt:
