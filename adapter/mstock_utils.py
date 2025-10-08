@@ -11,7 +11,6 @@ def position_attribute_mgmt(positions):
                 "tradingsymbol": position.get("symbolname"),
                 "average_price": float(position.get("buyavgprice")),
                 "quantity": int(position.get("netqty")),
-                "lot_count" : int(position.get("netqty")) / int(position.get("lotsize")),
                 "exchange": position.get("exchange"),
                 "instrument_token": position.get("symboltoken"),
                 "instrument": (position.get("symboltoken")),

@@ -77,7 +77,7 @@ class Trader_Singleton:
             )
             return
         self._five_weekly_option_contracts[token][attribute_name] = updated_value
-        self._five_weekly_option_contracts[token]["lots"] =  int(((self._fund_summary["cash_balance"] - self._fund_summary["utilized"]) / self._five_weekly_option_contracts[token]["ltp"]) / int(self._five_weekly_option_contracts[token]["lotsize"]))
+        self._five_weekly_option_contracts[token]["lots"] =  int(((self._fund_summary["cash_balance"]) / self._five_weekly_option_contracts[token]["ltp"]) / int(self._five_weekly_option_contracts[token]["lotsize"]))
         logging.debug(
             f"Updated weekly option {token}: Set '{attribute_name}' to {updated_value}"
         )
@@ -86,13 +86,31 @@ class Trader_Singleton:
         key_token = self._get_position_key(token_or_symbol, is_token)
         
         if key_token is None:
-            logging.warning(f"Could not find position for {token_or_symbol}. Skipping update for {attribute_name}.")
+            logging.warning(f"Could not find position for {token_or_symbol}. Skipping update.")
             return
             
         if key_token not in self._position_data:
             self._position_data[key_token] = {}
             
         self._position_data[key_token][attribute_name] = updated_value
+        
+        # --- ADDED: P/L Recalculation Block ---
+        # If the price was updated, recalculate all P/L fields
+        if attribute_name == 'latest_price':
+            position = self._position_data[key_token]
+            buy_price = position.get('average_price', 0)
+            net_qty = position.get('net_quantity', 0)
+            
+            if buy_price > 0:
+                # Recalculate and store the new P/L values
+                pts_pl = self.calculate_point_difference(buy_price, updated_value)
+                pct_pl = self.calculate_pctg_difference(buy_price, updated_value)
+                total_pl = pts_pl * net_qty
+                
+                position['pts_pl'] = pts_pl
+                position['pct_pl'] = pct_pl
+                position['total_pl'] = total_pl
+        # --- END ADDED BLOCK ---
         
         logging.debug(f"Updated {key_token}:{attribute_name} to {updated_value}")
 
@@ -103,7 +121,7 @@ class Trader_Singleton:
         orders_from_broker = self._broker.fetch_all_orders()
         positions = calculate_accurate_average_buy_price_and_update_positions(positions_from_broker , orders_from_broker)
 
-        new_position_tokens = {pos["instrument_token"] for pos in positions_from_broker}
+        new_position_tokens = {pos["instrument_token"] for pos in positions}
         
         tokens_to_remove = [
             token for token in self._position_data 
@@ -112,23 +130,41 @@ class Trader_Singleton:
         for token in tokens_to_remove:
             del self._position_data[token]
             
-        for position in positions_from_broker:
+        for position in positions: # Assuming this is the accurately calculated 'positions' list
             token = position["instrument_token"]
             
             if token not in self._position_data:
                 self._position_data[token] = {}
 
+            # --- MODIFIED BLOCK ---
+            avg_price = position["average_price"]
+            net_qty = int(position["quantity"])
+            lotsize = int(position["lotsize"])
+
+            # Calculate initial P/L values (they will be 0)
+            pts_pl = self.calculate_point_difference(avg_price, avg_price)
+            pct_pl = self.calculate_pctg_difference(avg_price, avg_price)
+            total_pl = pts_pl * net_qty
+
             self._position_data[token].update({
                 "tradingsymbol": position["tradingsymbol"],
-                "average_price": position["average_price"],
-                "quantity": position["quantity"], 
-                "latest_price": position["average_price"],
+                "average_price": avg_price,
+                "net_quantity": net_qty, 
+                "latest_price": avg_price, # Initial latest_price is the buy price
                 "instrument_token": position["instrument_token"],
-                "instrument": position["instrument_token"],
-                "exchange" : position["exchange"]
+                "exchange" : position["exchange"],
+                "lotsize" : lotsize,
+                "lots": int(net_qty / lotsize),
+                # ADDED: Initial P/L fields
+                "pts_pl": pts_pl,
+                "pct_pl": pct_pl,
+                "total_pl": total_pl
             })
+            # --- END MODIFIED BLOCK ---
+
         for key , value in fund_summary.items():
             self._fund_summary[key] = float(value)
+            
         self._broker.subscribe_to_all(self.get_relevant_instruments_to_track())
         logging.info(f"Updated positions: {len(self._position_data)}")
         logging.debug(self._position_data)
@@ -238,9 +274,7 @@ class Trader_Singleton:
         try:
             nifty_near_month_token = fetch_from_json("constants.json" , "NIFTY_NEAR_MONTH_FUTURE_TOKEN")
             nifty_near_month_data = find_matching_object("instrument_list.json" , "name" , nifty_near_month_token)
-            print(nifty_near_month_data)
             nifty_near_month_quote = self._broker.fetch_instrument_quote(nifty_near_month_data["exch_seg"] , nifty_near_month_data["token"])
-            print(nifty_near_month_quote)
             ltp_nifty_near_month = nifty_near_month_quote["data"]["fetched"][0]["ltp"]
             contracts = self.get_5_weekly_option_contracts(ltp_nifty_near_month , "CE")["symbols"]
             relevant_tokens_to_subscribe = []
@@ -286,31 +320,39 @@ class Trader_Singleton:
     # ---------------------- TICK HANDLER ----------------------
 
     def set_latest_price(self, instrument_token, tradingsymbol, price):
-        token = instrument_token
-        
-        if token in self._position_data:
-            self.position_data_update(
-                token, 
-                "latest_price", 
-                price, 
-                is_token=True
-            )
-            payload = {
-                'token': token,
-                'name': tradingsymbol,
-                'ltp': price
-            }
-            self.frontend_data_socket.emit('price-updated', payload)
-        
-        if token in self._five_weekly_option_contracts:
-            self.update_weekly_positions(token , "ltp" , price)
-            payload = {
-                'token': token,             
-                'name': tradingsymbol,      
-                'ltp': price,
-                # 'lots' : self._five_weekly_option_contracts["token"]["lots"]
-            }
-            self.frontend_data_socket.emit('price-updated', payload)
+        try:
+            token = instrument_token
+            if token in self._position_data:
+                self.position_data_update(
+                    token, 
+                    "latest_price", 
+                    price, 
+                    is_token=True
+                )
+                position_info = self._position_data[token]
+                payload = {
+                    'token': token,
+                    'name': tradingsymbol,
+                    'ltp': price,
+                    # ADDED: Include the new P/L values from the dictionary
+                    'pts_pl': position_info.get('pts_pl'),
+                    'pct_pl': position_info.get('pct_pl'),
+                    'total_pl': position_info.get('total_pl')
+                }
+                self.frontend_data_socket.emit('price-updated', payload)
+            
+            
+            if token in self._five_weekly_option_contracts:
+                self.update_weekly_positions(token , "ltp" , price)
+                payload = {
+                    'token': token,             
+                    'name': tradingsymbol,      
+                    'ltp': price,
+                    'lots' : self._five_weekly_option_contracts[token]["lots"]
+                }
+                self.frontend_data_socket.emit('price-updated', payload)
+        except Exception as e:
+            print(e)
 
         
 
@@ -400,9 +442,9 @@ class Trader_Singleton:
                 self._position_data
             )
 
-    # @self.frontend_data_socket.on('place_sell_order')
-    # def handle_sell_order(order_details):
-    #     """Handles a sell order request from the frontend."""
-    #     logging.info(f"Received sell order from client: {order_details}")
-    #     # Here you would call your broker's sell method
-    #     # self._broker.sell_units(...)
+        @self.frontend_data_socket.on('place_sell_order')
+        def handle_sell_order(order_details):
+            """Handles a sell order request from the frontend."""
+            logging.info(f"Received sell order from client: {order_details}")
+            # Here you would call your broker's sell method
+            # self._broker.sell_units(...)
