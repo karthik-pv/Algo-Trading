@@ -3,6 +3,7 @@ import json
 import logging
 import datetime
 import calendar
+import requests
 
 from utils import get_trading_symbols_from_json , find_matching_object
 from core.mstock_connector import MStockSingleton
@@ -38,7 +39,19 @@ class MStockAdapter(BrokerInterface):
             )
 
     def fetch_all_instruments(self):
+        conn = http.client.HTTPSConnection('api.mstock.trade')
+        headers = {
+                "X-Mirae-Version": "1",
+                "X-PrivateKey": self.mstock_instance._api_key,
+                "Authorization": f"Bearer {self.mstock_instance._access_token}",
+            }
+        conn.request('GET', '/openapi/typeb/instruments/OpenAPIScripMaster', headers=headers)
+        instrument_data = json.loads(conn.getresponse().read().decode("utf-8"))
+        filename = "../instrument_list.json"
+        with open(filename, 'w', encoding='utf-8') as f:
+            json.dump(instrument_data, f, ensure_ascii=False, indent=4)
         return
+    
 
     def fetch_all_positions(self):
         try:
@@ -50,7 +63,9 @@ class MStockAdapter(BrokerInterface):
             }
             conn.request("GET", "/openapi/typeb/portfolio/positions", headers=headers)
             response = json.loads(conn.getresponse().read().decode("utf-8"))
+            print(response)
             positions = position_attribute_mgmt(response["data"])
+            print(positions)
             open_positions = [
                 open_position
                 for open_position in positions
@@ -105,7 +120,6 @@ class MStockAdapter(BrokerInterface):
 
 
     def sell_units(self, trading_symbol, instrument_token , quantity, exchange , ltp):
-        print("here")
         conn = http.client.HTTPSConnection('api.mstock.trade')
         headers = {
                 "X-Mirae-Version": "1",
@@ -143,7 +157,41 @@ class MStockAdapter(BrokerInterface):
         print(response)
 
     def buy_units(self, trading_symbol, instrument_token, quantity, exchange, ltp):
-        return super().buy_units(trading_symbol, instrument_token, quantity, exchange, ltp)
+        conn = http.client.HTTPSConnection('api.mstock.trade')
+        headers = {
+                "X-Mirae-Version": "1",
+                "X-PrivateKey": self.mstock_instance._api_key,
+                "Authorization": f"Bearer {self.mstock_instance._access_token}",
+                "Content-Type": "application/json"
+            }
+        trading_symbol_for_transaction = find_matching_object("instrument_list.json" , "token" , instrument_token)["name"]
+        json_data = { 
+            'variety': 'NORMAL',
+            'tradingsymbol': trading_symbol_for_transaction,
+            'symboltoken': instrument_token,
+            'exchange': "NFO",
+            'transactiontype': 'BUY',
+            'ordertype': 'MARKET',
+            'quantity': str(quantity),
+            'producttype': 'INTRADAY',
+            'price': "0.00",
+            'triggerprice': '0.00',
+            'squareoff': '0.00',
+            'stoploss': '0.00',
+            'trailingStopLoss': '',
+            'disclosedquantity': '0',
+            'duration': 'DAY',
+            'ordertag': 'my_algo',
+        }
+        print(json_data)
+        conn.request(
+            'POST',
+            '/openapi/typeb/orders/regular',
+            json.dumps(json_data),
+            headers
+        )
+        response = conn.getresponse().read().decode("utf-8")
+        print(response)
     
     def format_option_symbol(self ,  underlying: str,
         expiry: datetime.date,

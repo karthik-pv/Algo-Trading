@@ -127,6 +127,10 @@ def widget_one():
 def widget_two():
     return render_template("widget_two.html")
 
+@app.route("/sell_widget")
+def sell_widget():
+    return render_template("sell_widget.html")
+
 
 async def start_async_connections():
     """Main async function to run all async brokers."""
@@ -136,6 +140,7 @@ async def start_async_connections():
             flask_thread = threading.Thread(target=run_flask_app, daemon=True)
             flask_thread.start()
             await broker.start_socket_connection(shutdown_event, trader_instance=trader)
+            trader.setup_weekly_option_contract_subscriptions()
         else:
             run_flask_app()
     else:
@@ -150,10 +155,12 @@ if __name__ == "__main__":
         # broker.dev_start()
         # uncomment for prod
         broker.prod_start()
+        # broker.fetch_all_instruments()
         trader.set_broker(broker)
         trader.on_start()
         trader.setup_weekly_option_contract_subscriptions()
         trader.start_frontend_socket_server(app)
+        
 
         if CURRENT_BROKER == "kite":
             socket_thread = threading.Thread(target=start_socket, daemon=True)
@@ -163,8 +170,11 @@ if __name__ == "__main__":
             app.run(debug=True)
         elif CURRENT_BROKER == "mstock":
             if is_market_open():
-                trader.start_trading_watcher_thread()
+                pass
+                # trader.start_trading_watcher_thread()
             asyncio.run(start_async_connections())
+
+        
 
     except KeyboardInterrupt:
         shutdown_event.set()

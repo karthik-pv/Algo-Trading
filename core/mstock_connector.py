@@ -136,7 +136,9 @@ class MStockSingleton:
                 },
             }
             await self._socket.send(json.dumps(subscription_message))
+            print("####################################")
             logging.info(f"Subscription sent for instruments: {instruments}")
+            print("####################################")
 
     async def _unsubscribe_from_all(self , instruments):
         if not self._socket:

@@ -3,9 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <!-- The title will be set by each individual page -->
     <title>{% block title %}{% endblock %}</title>
-    <!-- Socket.IO library is included here so all pages can use it -->
     <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
     <style>
         /* --- UNIVERSAL STYLES FOR ALL PAGES --- */
@@ -57,12 +55,10 @@
         }
         .overlay.active { opacity: 1; visibility: visible; }
     </style>
-    <!-- Placeholder for any page-specific styles -->
     {% block head_styles %}{% endblock %}
 </head>
 <body>
 
-    <!-- === SHARED NAVIGATION COMPONENT (Present on all pages) === -->
     <div class="header">
         <button class="menu-button" id="menuToggle">
             <span></span>
@@ -72,19 +68,13 @@
     </div>
     <nav class="sidebar" id="mainSidebar">
         <ul>
-            <li><a href="/home">Home</a></li>
+            <li><a href="/">Home</a></li>
             <li><a href="/widget_two">Options Widget</a></li>
-            <!-- Add other links here -->
+            <li><a href="/sell_widget">Sell Positions Widget</a></li>
         </ul>
     </nav>
     <div class="overlay" id="overlay"></div>
-    <!-- === END OF SHARED COMPONENT === -->
-
-    <!-- === PAGE-SPECIFIC CONTENT WILL BE INJECTED HERE === -->
     {% block content %}{% endblock %}
-    <!-- === END OF PAGE-SPECIFIC CONTENT === -->
-
-    <!-- Universal JavaScript for the sidebar -->
     <script>
         document.addEventListener('DOMContentLoaded', function() {
             const menuToggle = document.getElementById('menuToggle');
@@ -100,7 +90,6 @@
         });
     </script>
 
-    <!-- Placeholder for any page-specific scripts -->
     {% block scripts %}{% endblock %}
 
 </body>

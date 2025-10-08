@@ -1,0 +1,263 @@
+{% extends "base.html" %}
+
+{% block title %}Sell Open Positions{% endblock %}
+
+{% block head_styles %}
+<style>
+    .main-content {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        height: 100vh;
+        padding: 1rem;
+        box-sizing: border-box;
+    }
+    .widget-container {
+        background-color: #2c2c2c;
+        padding: 2rem;
+        border-radius: 12px;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+        width: 950px;
+        max-width: 95%;
+        border: 1px solid #444;
+    }
+    .widget-container h2 {
+        text-align: center;
+        color: #ffffff;
+        margin-bottom: 1.5rem;
+    }
+    .option-table {
+        width: 100%;
+        border-collapse: collapse;
+    }
+    .option-table th, .option-table td {
+        border: 1px solid #444;
+        padding: 1rem;
+        text-align: left;
+        vertical-align: middle;
+    }
+    .option-table th {
+        background-color: #383838;
+        font-weight: 600;
+        color: #ccc;
+    }
+    .option-table td.center { text-align: center; }
+
+    .profit {
+        color: #66bb6a;
+        font-weight: 500;
+    }
+    .loss {
+        color: #ef5350;
+        font-weight: 500;
+    }
+    .sell-button {
+        background-color: #c62828;
+        color: white;
+        border: none;
+        padding: 0.6rem 1rem;
+        border-radius: 5px;
+        cursor: pointer;
+        font-size: 0.9rem;
+        font-weight: 500;
+        transition: background-color 0.2s;
+    }
+    .sell-button:hover {
+        background-color: #a12020;
+    }
+    .no-options {
+        text-align: center; color: #888; margin-top: 2rem; padding: 1rem;
+        border: 1px dashed #555; border-radius: 8px; background-color: #333;
+    }
+    .flash {
+        animation: price-flash 0.7s ease-out;
+    }
+    @keyframes price-flash {
+        from { background-color: rgba(76, 175, 80, 0.5); }
+        to { background-color: transparent; }
+    }
+    @media (max-width: 980px) {
+        .main-content {
+            align-items: flex-start;
+            padding-top: 6rem;
+        }
+        .widget-container { padding: 1rem; }
+        .widget-container h2 { font-size: 1.5rem; }
+        .option-table th, .option-table td {
+            padding: 0.5rem;
+            font-size: 0.75rem;
+        }
+        .sell-button { padding: 0.4rem; font-size: 0.7rem; }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<main class="main-content">
+    <div class="widget-container">
+        <h2>Open Positions</h2>
+        <p>Status: <strong id="connectionStatus" style="color: #ffc107;">Connecting...</strong></p> 
+        
+        <table class="option-table">
+            <thead>
+                <tr>
+                    <th>LEVELS</th>
+                    <th>OPTION_STRIKE</th>
+                    <th>BUY_PRICE</th>
+                    <th>MARKET_PRICE</th>
+                    <th>LOTS</th>
+                    <th>P/L (%)</th>
+                    <th>P/L (PTS)</th>
+                    <th class="center">Action</th>
+                </tr>
+            </thead>
+            <tbody id="positionsTableBody">
+                <tr><td colspan="8" class="no-options">Loading open positions...</td></tr>
+            </tbody>
+        </table>
+    </div>
+</main>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const positionsTableBody = document.getElementById('positionsTableBody');
+        const connectionStatus = document.getElementById('connectionStatus');
+
+        let openPositions = {}; 
+
+        // Helper functions for P/L Calculation
+        function calculatePointDifference(buyPrice, marketPrice) {
+            return marketPrice - buyPrice;
+        }
+        function calculatePctDifference(buyPrice, marketPrice) {
+            if (buyPrice === 0 || !buyPrice) return 0;
+            return ((marketPrice - buyPrice) / buyPrice) * 100;
+        }
+
+        const socket = io('http://localhost:5001');
+
+        // This block runs when the page connects to the server
+        socket.on('connect', () => {
+            connectionStatus.textContent = 'Connected';
+            connectionStatus.style.color = '#28a745';
+            // It immediately sends an event asking for the position data
+            socket.emit('request_open_positions');
+        });
+
+        socket.on('disconnect', () => {
+            connectionStatus.textContent = 'Disconnected';
+            connectionStatus.style.color = '#dc3545';
+        });
+
+        // This block runs when the server sends the position data
+        socket.on('update_open_positions', (positions) => {
+            console.log('Received open positions:', positions);
+            openPositions = positions;
+            // It calls the function to build the table
+            populatePositionsTable(openPositions);
+        });
+        
+        // This block runs for every live price tick from the server
+        socket.on('price-updated', (tick) => {
+            const token = tick.token;
+            if (openPositions[token]) {
+                // Update the master data object with the latest price
+                openPositions[token].latest_price = tick.ltp;
+            }
+
+            // Find all cells that need updating for this token
+            const marketPriceCell = document.getElementById(`market-price-${token}`);
+            const pctCell = document.getElementById(`pct-${token}`);
+            const ptsCell = document.getElementById(`pts-${token}`);
+
+            if (marketPriceCell && openPositions[token]) {
+                const position = openPositions[token];
+                const buyPrice = position.average_price;
+                const marketPrice = tick.ltp;
+
+                // Update Market Price cell
+                marketPriceCell.textContent = `₹ ${marketPrice.toFixed(2)}`;
+                marketPriceCell.classList.add('flash');
+                setTimeout(() => marketPriceCell.classList.remove('flash'), 700);
+
+                // Update P/L Points cell
+                const ptsDiff = calculatePointDifference(buyPrice, marketPrice);
+                ptsCell.textContent = ptsDiff.toFixed(2);
+                
+                // Update P/L Percentage cell
+                const pctDiff = calculatePctDifference(buyPrice, marketPrice);
+                pctCell.textContent = `${pctDiff.toFixed(2)}%`;
+
+                // Update the color of the P/L cells
+                const plElements = [pctCell, ptsCell];
+                plElements.forEach(el => {
+                    el.className = ptsDiff >= 0 ? 'profit' : 'loss';
+                });
+            }
+        });
+
+        // This function builds the HTML for the table
+        function populatePositionsTable(positions) {
+            positionsTableBody.innerHTML = ''; 
+
+            if (!positions || Object.keys(positions).length === 0) {
+                positionsTableBody.innerHTML = `<tr><td colspan="8" class="no-options">No open positions found.</td></tr>`;
+                return;
+            }
+
+            for (const token in positions) {
+                const pos = positions[token];
+                
+                // On initial load, use 'latest_price' as the market price
+                const marketPrice = pos.latest_price || pos.average_price;
+
+                const ptsDiff = calculatePointDifference(pos.average_price, marketPrice);
+                const pctDiff = calculatePctDifference(pos.average_price, marketPrice);
+                const plClass = ptsDiff >= 0 ? 'profit' : 'loss';
+
+                const row = document.createElement('tr');
+                row.id = `row-${token}`;
+                row.innerHTML = `
+                    <td>${pos.level || ''}</td>
+                    <td>${pos.tradingsymbol || ''}</td>
+                    <td>₹ ${(pos.average_price || 0).toFixed(2)}</td>
+                    <td id="market-price-${token}">₹ ${marketPrice.toFixed(2)}</td>
+                    <td>${pos.quantity || 0}</td>
+                    <td id="pct-${token}" class="${plClass}">${pctDiff.toFixed(2)}%</td>
+                    <td id="pts-${token}" class="${plClass}">${ptsDiff.toFixed(2)}</td>
+                    <td class="center">
+                        <button class="sell-button" 
+                                data-token="${token}" 
+                                data-tradingsymbol="${pos.tradingsymbol}"
+                                data-quantity="${pos.quantity}">Sell</button>
+                    </td>
+                `;
+                positionsTableBody.appendChild(row);
+            }
+            addSellButtonListeners();
+        }
+
+        function addSellButtonListeners() {
+            document.querySelectorAll('.sell-button').forEach(button => {
+                button.addEventListener('click', function() {
+                    const quantity = this.dataset.quantity;
+                    const tradingsymbol = this.dataset.tradingsymbol;
+
+                    if (confirm(`Are you sure you want to sell ${quantity} lots of ${tradingsymbol}?`)) {
+                        const orderDetails = {
+                            token: this.dataset.token,
+                            tradingsymbol: tradingsymbol,
+                            quantity: quantity
+                        };
+                        socket.emit('place_sell_order', orderDetails);
+                        alert(`Sell order for ${quantity} lots of ${tradingsymbol} sent to server!`);
+                    }
+                });
+            });
+        }
+        
+    });
+</script>
+{% endblock %}

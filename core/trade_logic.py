@@ -9,6 +9,7 @@ from interface.broker_interface import BrokerInterface
 from core.trade_utils import get_weekly_expiry_date , get_instrument_tokens_from_symbol , get_instrument_details_from_json , calculate_accurate_average_buy_price_and_update_positions 
 
 from utils import fetch_from_json , find_matching_object
+import time
 
 PNT_STOP_LOSS = 0.5
 PNT_BOOK_PROFIT = 0.5
@@ -34,6 +35,8 @@ class Trader_Singleton:
     _comparison_function = "PNT"
     _use_max_margin = True
     _sell_mode = "ALERT"
+
+    _positions_to_subscribe = []
 
 
     def __new__(cls):
@@ -132,7 +135,10 @@ class Trader_Singleton:
 
     def get_relevant_instruments_to_track(self):
         """Returns a list of instrument tokens currently in the _position_data."""
-        return list(self._position_data.keys())
+        instruments = list(self._position_data.keys())
+        instruments.extend(self._five_weekly_option_contracts.keys())
+        print(instruments)
+        return instruments
 
     # ---------------------- TRADING LOGIC (Refactored) ----------------------
 
@@ -229,31 +235,36 @@ class Trader_Singleton:
         
 
     def setup_weekly_option_contract_subscriptions(self):
-        nifty_near_month_token = fetch_from_json("constants.json" , "NIFTY_NEAR_MONTH_FUTURE_TOKEN")
-        nifty_near_month_data = find_matching_object("instrument_list.json" , "name" , nifty_near_month_token)
-        nifty_near_month_quote = self._broker.fetch_instrument_quote(nifty_near_month_data["exch_seg"] , nifty_near_month_data["token"])
-        ltp_nifty_near_month = nifty_near_month_quote["data"]["fetched"][0]["close"]
-        contracts = self.get_5_weekly_option_contracts(ltp_nifty_near_month , "CE")["symbols"]
-        relevant_tokens_to_subscribe = []
-        for key , value in contracts.items(): 
-            data = get_instrument_details_from_json(value)
-            price = self._broker.fetch_instrument_quote(data["exch_seg"] , data["token"])["data"]["fetched"][0]["close"]
-            token = data["token"]
-            relevant_tokens_to_subscribe.append(token)
-            self.weekly_options_initialize(token , data , "CE" , price , level=key)
-        contracts = self.get_5_weekly_option_contracts(ltp_nifty_near_month , "PE")["symbols"]
-        for key , value in contracts.items(): 
-            data = get_instrument_details_from_json(value)
-            price = self._broker.fetch_instrument_quote(data["exch_seg"] , data["token"])["data"]["fetched"][0]["close"]
-            token = data["token"]
-            relevant_tokens_to_subscribe.append(token)
-            self.weekly_options_initialize(token , data , "PE" , price , level=key)
-        print(self._five_weekly_option_contracts)
         try:
+            nifty_near_month_token = fetch_from_json("constants.json" , "NIFTY_NEAR_MONTH_FUTURE_TOKEN")
+            nifty_near_month_data = find_matching_object("instrument_list.json" , "name" , nifty_near_month_token)
+            print(nifty_near_month_data)
+            nifty_near_month_quote = self._broker.fetch_instrument_quote(nifty_near_month_data["exch_seg"] , nifty_near_month_data["token"])
+            print(nifty_near_month_quote)
+            ltp_nifty_near_month = nifty_near_month_quote["data"]["fetched"][0]["ltp"]
+            contracts = self.get_5_weekly_option_contracts(ltp_nifty_near_month , "CE")["symbols"]
+            relevant_tokens_to_subscribe = []
+            for key , value in contracts.items(): 
+                data = get_instrument_details_from_json(value)
+                price = self._broker.fetch_instrument_quote(data["exch_seg"] , data["token"])["data"]["fetched"][0]["close"]
+                token = data["token"]
+                relevant_tokens_to_subscribe.append(token)
+                self.weekly_options_initialize(token , data , "CE" , price , level=key)
+            contracts = self.get_5_weekly_option_contracts(ltp_nifty_near_month , "PE")["symbols"]
+            for key , value in contracts.items(): 
+                data = get_instrument_details_from_json(value)
+                price = self._broker.fetch_instrument_quote(data["exch_seg"] , data["token"])["data"]["fetched"][0]["close"]
+                token = data["token"]
+                relevant_tokens_to_subscribe.append(token)
+                self.weekly_options_initialize(token , data , "PE" , price , level=key)
+            print("++++++++++++++++++++++++++++++++++++++++")
+            print(self._five_weekly_option_contracts)
+            print("Subscribing here ++++++++++++++++++++++")
+            print(relevant_tokens_to_subscribe)
             self._broker.subscribe_to_all(relevant_tokens_to_subscribe)
+            return
         except Exception as e:
-            print(f"Couldnt subscribe to instruments - {e}")
-        return
+            print(e)
 
 
 
@@ -284,6 +295,12 @@ class Trader_Singleton:
                 price, 
                 is_token=True
             )
+            payload = {
+                'token': token,
+                'name': tradingsymbol,
+                'ltp': price
+            }
+            self.frontend_data_socket.emit('price-updated', payload)
         
         if token in self._five_weekly_option_contracts:
             self.update_weekly_positions(token , "ltp" , price)
@@ -291,7 +308,7 @@ class Trader_Singleton:
                 'token': token,             
                 'name': tradingsymbol,      
                 'ltp': price,
-                'lots' : self._five_weekly_option_contracts["token"]["lots"]
+                # 'lots' : self._five_weekly_option_contracts["token"]["lots"]
             }
             self.frontend_data_socket.emit('price-updated', payload)
 
@@ -349,21 +366,43 @@ class Trader_Singleton:
 
     # ---------------------- SOCKET EVENT HANDLERS ----------------------
 
+    # In your Trader_Singleton class
+
     def register_socket_handlers(self):
+        @self.frontend_data_socket.on('connect')
+        def handle_connect():
+            logging.info("Client connected to socket server.")
+
+        @self.frontend_data_socket.on('disconnect')
+        def handle_disconnect():
+            logging.info("Client disconnected.")
+
         @self.frontend_data_socket.on('request_weekly_options')
         def handle_request_weekly_options():
+            """Handles request from the 'Options Widget' (widget_two)."""
             logging.info(
-                "Received 'request_weekly_options' from client. Sending data..."
+                "Received 'request_weekly_options' from client. Sending weekly contracts..."
             )
             self.frontend_data_socket.emit(
                 'update_weekly_options',
                 self._five_weekly_option_contracts
             )
 
-        @self.frontend_data_socket.on('connect')
-        def handle_connect():
-            print("Client connected to socket server.")
+        @self.frontend_data_socket.on('request_open_positions')
+        def handle_request_open_positions():
+            """Handles request from the 'Sell Positions Widget' (widget_four)."""
+            logging.info(
+                "Received 'request_open_positions' from client. Sending position data..."
+            )
+            # Emits an event that the sell widget is listening for
+            self.frontend_data_socket.emit(
+                'update_open_positions',
+                self._position_data
+            )
 
-        @self.frontend_data_socket.on('disconnect')
-        def handle_disconnect():
-            logging.info("Client disconnected.")
+    # @self.frontend_data_socket.on('place_sell_order')
+    # def handle_sell_order(order_details):
+    #     """Handles a sell order request from the frontend."""
+    #     logging.info(f"Received sell order from client: {order_details}")
+    #     # Here you would call your broker's sell method
+    #     # self._broker.sell_units(...)
