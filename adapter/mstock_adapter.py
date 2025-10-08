@@ -119,7 +119,9 @@ class MStockAdapter(BrokerInterface):
         return response
 
 
-    def sell_units(self, trading_symbol, instrument_token , quantity, exchange , ltp):
+    def sell_units(self, trading_symbol, instrument_token , quantity):
+        if instrument_token == "42703":
+            return "NOT SELLING"
         conn = http.client.HTTPSConnection('api.mstock.trade')
         headers = {
                 "X-Mirae-Version": "1",
@@ -128,6 +130,14 @@ class MStockAdapter(BrokerInterface):
                 "Content-Type": "application/json"
             }
         trading_symbol_for_transaction = find_matching_object("instrument_list.json" , "token" , instrument_token)["name"]
+        if trading_symbol:
+            data = find_matching_object("instrument_list.json" , "name" , trading_symbol)
+        elif instrument_token:
+            data = find_matching_object("instrument_list.json" , "token" , instrument_token)
+        print(data)
+        trading_symbol_for_transaction = data["name"]
+        instrument_token = data["token"]
+        lotsize = data["lotsize"]
         json_data = { 
             'variety': 'NORMAL',
             'tradingsymbol': trading_symbol_for_transaction,
@@ -135,7 +145,7 @@ class MStockAdapter(BrokerInterface):
             'exchange': "NFO",
             'transactiontype': 'SELL',
             'ordertype': 'MARKET',
-            'quantity': str(quantity),
+            'quantity': str(int(quantity) * int(lotsize)),
             'producttype': 'INTRADAY',
             'price': "0.00",
             'triggerprice': '0.00',
@@ -154,9 +164,10 @@ class MStockAdapter(BrokerInterface):
             headers
         )
         response = conn.getresponse().read().decode("utf-8")
+        self._trader.refresh_open_positions_and_buy_price()
         print(response)
 
-    def buy_units(self, trading_symbol, instrument_token, quantity, exchange, ltp):
+    def buy_units(self, trading_symbol = None, instrument_token = None, quantity = 0):
         conn = http.client.HTTPSConnection('api.mstock.trade')
         headers = {
                 "X-Mirae-Version": "1",
@@ -164,7 +175,13 @@ class MStockAdapter(BrokerInterface):
                 "Authorization": f"Bearer {self.mstock_instance._access_token}",
                 "Content-Type": "application/json"
             }
-        trading_symbol_for_transaction = find_matching_object("instrument_list.json" , "token" , instrument_token)["name"]
+        if trading_symbol:
+            data = find_matching_object("instrument_list.json" , "name" , trading_symbol)
+        elif instrument_token:
+            data = find_matching_object("instrument_list.json" , "token" , instrument_token)
+        trading_symbol_for_transaction = data["name"]
+        instrument_token = data["token"]
+        lotsize = data["lotsize"]
         json_data = { 
             'variety': 'NORMAL',
             'tradingsymbol': trading_symbol_for_transaction,
@@ -172,7 +189,7 @@ class MStockAdapter(BrokerInterface):
             'exchange': "NFO",
             'transactiontype': 'BUY',
             'ordertype': 'MARKET',
-            'quantity': str(quantity),
+            'quantity': str(int(quantity) * int(lotsize)),
             'producttype': 'INTRADAY',
             'price': "0.00",
             'triggerprice': '0.00',
@@ -191,6 +208,7 @@ class MStockAdapter(BrokerInterface):
             headers
         )
         response = conn.getresponse().read().decode("utf-8")
+        self._trader.refresh_open_positions_and_buy_price()
         print(response)
     
     def format_option_symbol(self ,  underlying: str,

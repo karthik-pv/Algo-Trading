@@ -123,9 +123,9 @@ def home_page():
 def widget_one():
     return render_template("widget_one.html")
 
-@app.route("/widget_two")
+@app.route("/buy_widget")
 def widget_two():
-    return render_template("widget_two.html")
+    return render_template("buy_widget.html")
 
 @app.route("/sell_widget")
 def sell_widget():
@@ -171,7 +171,7 @@ if __name__ == "__main__":
         elif CURRENT_BROKER == "mstock":
             if is_market_open():
                 pass
-                # trader.start_trading_watcher_thread()
+                trader.start_trading_watcher_thread()
             asyncio.run(start_async_connections())
 
         

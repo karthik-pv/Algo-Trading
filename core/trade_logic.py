@@ -11,11 +11,11 @@ from core.trade_utils import get_weekly_expiry_date , get_instrument_tokens_from
 from utils import fetch_from_json , find_matching_object
 import time
 
-PNT_STOP_LOSS = 0.5
-PNT_BOOK_PROFIT = 0.5
+PNT_STOP_LOSS = 30
+PNT_BOOK_PROFIT = 7
 
-PCTG_BOOK_PROFIT = 0.5
-PCTG_STOP_LOSS = 0.5
+PCTG_BOOK_PROFIT = 1
+PCTG_STOP_LOSS = 1
 
 
 class Trader_Singleton:
@@ -32,9 +32,9 @@ class Trader_Singleton:
     _trading_watcher_thread_running = False
     _stop_event = threading.Event()
     _tick_counter = 0
-    _comparison_function = "PNT"
+    _comparison_function = "PCT"
     _use_max_margin = True
-    _sell_mode = "ALERT"
+    _sell_mode = "SELL"
 
     _positions_to_subscribe = []
 
@@ -186,7 +186,7 @@ class Trader_Singleton:
                 print("---------------")
                 print(data)
                 print("---------------")
-                qty = data.get("quantity")
+                qty = data.get("lots")
                 buy_price = data.get("average_price")
                 ltp = data.get("latest_price")
                 exchange = data.get("exchange")
@@ -197,7 +197,10 @@ class Trader_Singleton:
                 print(f"DECISION TO SELL IS {sell}")
                 if sell:
                     if self._sell_mode == "SELL":
-                        broker.sell_units(tradingsymbol,instrument_token,qty , exchange , ltp)
+                        print(tradingsymbol)
+                        print(instrument_token)
+                        print(qty)
+                        broker.sell_units(None,instrument_token,qty)
                     print("###################################")
                     logging.critical(f"SELL UNITS - {tradingsymbol}")
                     print("###################################")
@@ -334,15 +337,15 @@ class Trader_Singleton:
                     'token': token,
                     'name': tradingsymbol,
                     'ltp': price,
-                    # ADDED: Include the new P/L values from the dictionary
                     'pts_pl': position_info.get('pts_pl'),
                     'pct_pl': position_info.get('pct_pl'),
                     'total_pl': position_info.get('total_pl')
                 }
-                self.frontend_data_socket.emit('price-updated', payload)
+                print(payload)
+                self.frontend_data_socket.emit('price-updated-position', payload)
             
             
-            if token in self._five_weekly_option_contracts:
+            elif token in self._five_weekly_option_contracts:
                 self.update_weekly_positions(token , "ltp" , price)
                 payload = {
                     'token': token,             
@@ -350,7 +353,7 @@ class Trader_Singleton:
                     'ltp': price,
                     'lots' : self._five_weekly_option_contracts[token]["lots"]
                 }
-                self.frontend_data_socket.emit('price-updated', payload)
+                self.frontend_data_socket.emit('price-updated-order', payload)
         except Exception as e:
             print(e)
 
@@ -447,4 +450,10 @@ class Trader_Singleton:
             """Handles a sell order request from the frontend."""
             logging.info(f"Received sell order from client: {order_details}")
             # Here you would call your broker's sell method
-            # self._broker.sell_units(...)
+            self._broker.buy_units(None , order_details["token"] , order_details["lots"])
+
+        @self.frontend_data_socket.on('place_buy_order')
+        def handle_buy_order(order_details):
+            logging.info(f"Received buy order from client: {order_details}")
+            print(order_details)
+            self._broker.buy_units(None , order_details["token"] , order_details["lots"])

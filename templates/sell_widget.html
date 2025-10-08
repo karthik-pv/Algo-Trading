@@ -6,19 +6,10 @@
 <style>
     /* All your existing styles are correct and have been preserved */
     .main-content { display: flex; justify-content: center; align-items: center; height: 100vh; padding: 1rem; box-sizing: border-box; }
-    .widget-container { background-color: #2c2c2c; padding: 2rem; border-radius: 12px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5); width: 1050px; max-width: 95%; border: 1px solid #444; }
+    .widget-container { background-color: #2c2c2c; padding: 2rem; border-radius: 12px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5); width: 1150px; max-width: 95%; border: 1px solid #444; }
     .widget-container h2 { text-align: center; color: #ffffff; margin-bottom: 1.5rem; }
     .option-table { width: 100%; border-collapse: collapse; }
-
-    /* --- THIS BLOCK IS MODIFIED --- */
-    .option-table th, .option-table td {
-        border: 1px solid #444;
-        padding: 1rem;
-        text-align: center; /* Changed from 'left' to 'center' */
-        vertical-align: middle;
-    }
-    /* --- END MODIFICATION --- */
-
+    .option-table th, .option-table td { border: 1px solid #444; padding: 1rem; text-align: center; vertical-align: middle; }
     .option-table th { background-color: #383838; font-weight: 600; color: #ccc; }
     .profit { color: #66bb6a; font-weight: 500; }
     .loss { color: #ef5350; font-weight: 500; }
@@ -27,7 +18,27 @@
     .no-options { text-align: center; color: #888; margin-top: 2rem; padding: 1rem; border: 1px dashed #555; border-radius: 8px; background-color: #333; }
     .flash { animation: price-flash 0.7s ease-out; }
     @keyframes price-flash { from { background-color: rgba(76, 175, 80, 0.5); } to { background-color: transparent; } }
-    @media (max-width: 1100px) { .main-content { align-items: flex-start; padding-top: 6rem; } .widget-container { padding: 1rem; } .widget-container h2 { font-size: 1.5rem; } .option-table th, .option-table td { padding: 0.5rem; font-size: 0.70rem; } .sell-button { padding: 0.4rem; font-size: 0.7rem; } }
+    
+    /* ADDED: Style for the new input boxes */
+    .lots-override-input {
+        width: 90%;
+        padding: 0.5rem;
+        background-color: #1a1a1a;
+        border: 1px solid #555;
+        color: white;
+        border-radius: 4px;
+        font-size: 0.9rem;
+        text-align: center;
+        box-sizing: border-box;
+    }
+
+    @media (max-width: 1200px) { /* Adjusted breakpoint */
+        .main-content { align-items: flex-start; padding-top: 6rem; }
+        .widget-container { padding: 1rem; }
+        .widget-container h2 { font-size: 1.5rem; }
+        .option-table th, .option-table td { padding: 0.4rem; font-size: 0.65rem; }
+        .sell-button { padding: 0.4rem; font-size: 0.7rem; }
+    }
 </style>
 {% endblock %}
 
@@ -45,14 +56,14 @@
                     <th>BUY_PRICE</th>
                     <th>MARKET_PRICE</th>
                     <th>LOTS</th>
-                    <th>%</th>
-                    <th>PTS</th>
-                    <th>P/L</th>
+                    <th>LOTS (O)</th> <th>TOTAL P/L</th>
+                    <th>P/L (%)</th>
+                    <th>P/L (PTS)</th>
                     <th class="center">Action</th>
                 </tr>
             </thead>
             <tbody id="positionsTableBody">
-                <tr><td colspan="9" class="no-options">Loading open positions...</td></tr>
+                <tr><td colspan="10" class="no-options">Loading open positions...</td></tr>
             </tbody>
         </table>
     </div>
@@ -61,8 +72,6 @@
 
 {% block scripts %}
 <script>
-    // The entire JavaScript block is correct and requires no changes.
-    // It will now render its content into the center-aligned cells.
     document.addEventListener('DOMContentLoaded', function() {
         const positionsTableBody = document.getElementById('positionsTableBody');
         const connectionStatus = document.getElementById('connectionStatus');
@@ -71,7 +80,7 @@
 
         const socket = io('http://localhost:5001');
 
-        socket.on('connect', () => {
+         socket.on('connect', () => {
             connectionStatus.textContent = 'Connected';
             connectionStatus.style.color = '#28a745';
             socket.emit('request_open_positions');
@@ -84,8 +93,9 @@
             openPositions = positions;
             populatePositionsTable(openPositions);
         });
+
         
-        socket.on('price-updated', (tick) => {
+        socket.on('price-updated-position', (tick) => {
             const token = tick.token;
             if (openPositions[token]) {
                 openPositions[token].latest_price = tick.ltp;
@@ -93,30 +103,14 @@
                 openPositions[token].pct_pl = tick.pct_pl;
                 openPositions[token].total_pl = tick.total_pl;
             }
+        })
 
-            const marketPriceCell = document.getElementById(`market-price-${token}`);
-            const totalPlCell = document.getElementById(`total-pl-${token}`);
-            const pctCell = document.getElementById(`pct-${token}`);
-            const ptsCell = document.getElementById(`pts-${token}`);
 
-            if (marketPriceCell) {
-                marketPriceCell.textContent = `${tick.ltp.toFixed(2)}`;
-                marketPriceCell.classList.add('flash');
-                setTimeout(() => marketPriceCell.classList.remove('flash'), 700);
-
-                totalPlCell.textContent = `${(tick.total_pl || 0).toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
-                ptsCell.textContent = (tick.pts_pl || 0).toFixed(2);
-                pctCell.textContent = `${(tick.pct_pl || 0).toFixed(2)}%`;
-
-                const plClass = (tick.pts_pl || 0) >= 0 ? 'profit' : 'loss';
-                [totalPlCell, pctCell, ptsCell].forEach(el => el.className = plClass);
-            }
-        });
-
+        // --- THIS FUNCTION IS MODIFIED ---
         function populatePositionsTable(positions) {
             positionsTableBody.innerHTML = ''; 
             if (!positions || Object.keys(positions).length === 0) {
-                positionsTableBody.innerHTML = `<tr><td colspan="9" class="no-options">No open positions found.</td></tr>`;
+                positionsTableBody.innerHTML = `<tr><td colspan="10" class="no-options">No open positions found.</td></tr>`;
                 return;
             }
 
@@ -130,10 +124,13 @@
                 row.innerHTML = `
                     <td>${pos.level || ''}</td>
                     <td>${pos.tradingsymbol || ''}</td>
-                    <td>${(pos.average_price || 0).toFixed(2)}</td>
-                    <td id="market-price-${token}">${marketPrice.toFixed(2)}</td>
+                    <td>₹ ${(pos.average_price || 0).toFixed(2)}</td>
+                    <td id="market-price-${token}">₹ ${marketPrice.toFixed(2)}</td>
                     <td>${pos.lots || 0}</td>
-                    <td id="total-pl-${token}" class="${plClass}">${(pos.total_pl || 0).toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+                    <td>
+                        <input type="number" class="lots-override-input" id="override-lots-${token}" placeholder="${pos.lots || 0}">
+                    </td>
+                    <td id="total-pl-${token}" class="${plClass}">₹ ${(pos.total_pl || 0).toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
                     <td id="pct-${token}" class="${plClass}">${(pos.pct_pl || 0).toFixed(2)}%</td>
                     <td id="pts-${token}" class="${plClass}">${(pos.pts_pl || 0).toFixed(2)}</td>
                     <td class="center">
@@ -141,7 +138,8 @@
                                 data-token="${token}" 
                                 data-tradingsymbol="${pos.tradingsymbol}"
                                 data-lots="${pos.lots || 0}"
-                                data-quantity="${pos.net_quantity || 0}">Sell</button>
+                                data-quantity="${pos.net_quantity || 0}"
+                                data-lotsize="${pos.lotsize || ''}">Sell</button>
                     </td>
                 `;
                 positionsTableBody.appendChild(row);
@@ -149,21 +147,39 @@
             addSellButtonListeners();
         }
 
+        // --- THIS FUNCTION IS MODIFIED ---
         function addSellButtonListeners() {
             document.querySelectorAll('.sell-button').forEach(button => {
                 button.addEventListener('click', function() {
-                    const netQuantity = this.dataset.quantity;
-                    const lots = this.dataset.lots;
+                    const token = this.dataset.token;
+                    const defaultLots = this.dataset.lots;
+                    const defaultNetQuantity = this.dataset.quantity;
+                    const lotSize = parseInt(this.dataset.lotsize);
                     const tradingsymbol = this.dataset.tradingsymbol;
+                    
+                    let lotsToSell = defaultLots;
+                    let quantityToSend = defaultNetQuantity;
 
-                    if (confirm(`Are you sure you want to sell ${netQuantity} shares (${lots} lots) of ${tradingsymbol}?`)) {
+                    // Find the specific input box for this row
+                    const overrideInput = document.getElementById(`override-lots-${token}`);
+                    
+                    // Check if the override input for this row has a valid value
+                    if (overrideInput && overrideInput.value > 0) {
+                        lotsToSell = overrideInput.value;
+                        // Recalculate the total quantity based on the override lot count
+                        if (lotSize > 0) {
+                            quantityToSend = lotsToSell * lotSize;
+                        }
+                    }
+
+                    if (confirm(`Are you sure you want to sell ${quantityToSend} shares (${lotsToSell} lots) of ${tradingsymbol}?`)) {
                         const orderDetails = {
-                            token: this.dataset.token,
+                            token: token,
                             tradingsymbol: tradingsymbol,
-                            quantity: netQuantity
+                            quantity: quantityToSend // Send the final total quantity to the backend
                         };
                         socket.emit('place_sell_order', orderDetails);
-                        alert(`Sell order for ${netQuantity} shares of ${tradingsymbol} sent to server!`);
+                        alert(`Sell order for ${quantityToSend} shares of ${tradingsymbol} sent to server!`);
                     }
                 });
             });

@@ -4,20 +4,14 @@
 
 {% block head_styles %}
 <style>
-    .main-content {
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        height: 100vh;
-        padding: 1rem;
-        box-sizing: border-box;
-    }
+    .main-content { display: flex; justify-content: center; align-items: center; height: 100vh; padding: 1rem; box-sizing: border-box; }
     .widget-container {
+        position: relative;
         background-color: #2c2c2c;
         padding: 2rem;
         border-radius: 12px;
         box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6), 0 0 20px rgba(76, 175, 80, 0.25);
-        width: 800px;
+        width: 900px;
         max-width: 95%;
         border: 1px solid #2e7d32;
         transition: box-shadow 0.4s ease, border-color 0.4s ease;
@@ -43,94 +37,43 @@
         border-top: 1px solid #444;
         border-bottom: 1px solid #444;
     }
-    .summary-item {
-        text-align: center;
-    }
-    .summary-label {
-        display: block;
-        font-size: 0.8rem;
-        color: #aaa;
-        text-transform: uppercase;
-        letter-spacing: 0.5px;
-    }
-    .summary-value {
-        display: block;
-        font-size: 1.4rem;
-        font-weight: 600;
-        color: #ffffff;
-        margin-top: 0.25rem;
-    }
-    .toggle-container {
-        display: flex;
-        justify-content: center;
-        margin-bottom: 1.5rem;
-        border: 1px solid #444;
-        border-radius: 7px;
-        overflow: hidden;
-        width: fit-content;
-        margin-left: auto;
-        margin-right: auto;
-    }
-    .toggle-button {
-        background-color: transparent;
-        color: #ccc;
-        border: none;
-        padding: 0.6rem 1.2rem;
-        cursor: pointer;
-        font-size: 0.9rem;
-        font-weight: 500;
-        transition: background-color 0.3s;
-    }
-    .toggle-button:first-child {
-        border-right: 1px solid #444;
-    }
-    .toggle-button.active-toggle {
-        background-color: #2e7d32;
-        color: white;
-    }
-    .widget-container.put-view .toggle-button.active-toggle {
-        background-color: #c62828;
-    }
-    .option-table {
-        width: 100%;
-        border-collapse: collapse;
-    }
-    .option-table th, .option-table td {
-        border: 1px solid #444;
-        padding: 1.2rem;
-        text-align: left;
-    }
-    .option-table th {
-        background-color: #383838;
-        font-weight: 600;
-        color: #ccc;
-    }
-    .option-table td.center { text-align: center; }
-    .buy-button {
-        background-color: #28a745; color: white; border: none; padding: 0.6rem 1rem;
-        border-radius: 5px; cursor: pointer; font-size: 0.9rem; font-weight: 500;
-        transition: background-color 0.2s;
-    }
+    .summary-item { text-align: center; }
+    .summary-label { display: block; font-size: 0.8rem; color: #aaa; text-transform: uppercase; letter-spacing: 0.5px; }
+    .summary-value { display: block; font-size: 1.4rem; font-weight: 600; color: #ffffff; margin-top: 0.25rem; }
+    .toggle-container { display: flex; justify-content: center; margin-bottom: 1.5rem; border: 1px solid #444; border-radius: 7px; overflow: hidden; width: fit-content; margin-left: auto; margin-right: auto; }
+    .toggle-button { background-color: transparent; color: #ccc; border: none; padding: 0.6rem 1.2rem; cursor: pointer; font-size: 0.9rem; font-weight: 500; transition: background-color 0.3s; }
+    .toggle-button:first-child { border-right: 1px solid #444; }
+    .toggle-button.active-toggle { background-color: #2e7d32; color: white; }
+    .widget-container.put-view .toggle-button.active-toggle { background-color: #c62828; }
+    .option-table { width: 100%; border-collapse: collapse; }
+    .option-table th, .option-table td { border: 1px solid #444; padding: 1.2rem; text-align: center; vertical-align: middle; }
+    .option-table th { background-color: #383838; font-weight: 600; color: #ccc; }
+    .buy-button { background-color: #28a745; color: white; border: none; padding: 0.6rem 1rem; border-radius: 5px; cursor: pointer; font-size: 0.9rem; font-weight: 500; transition: background-color 0.2s; }
     .buy-button:hover { background-color: #218838; }
-    .no-options {
-        text-align: center; color: #888; margin-top: 2rem; padding: 1rem;
-        border: 1px dashed #555; border-radius: 8px; background-color: #333;
-    }
+    .no-options { text-align: center; color: #888; margin-top: 2rem; padding: 1rem; border: 1px dashed #555; border-radius: 8px; background-color: #333; }
     .flash { animation: price-flash 0.7s ease-out; }
-    @keyframes price-flash {
-        0% { background-color: #3e8e41; color: #fff; }
-        100% { background-color: transparent; color: inherit; }
+    @keyframes price-flash { from { background-color: #3e8e41; } to { background-color: transparent; } }
+    
+    .lots-override-input {
+        width: 90%;
+        padding: 0.5rem;
+        background-color: #1a1a1a;
+        border: 1px solid #555;
+        color: white;
+        border-radius: 4px;
+        font-size: 0.9rem;
+        text-align: center;
+        box-sizing: border-box;
     }
-    @media (max-width: 768px) {
-        .main-content {
-            align-items: flex-start;
-            padding-top: 6rem;
-        }
+
+    @media (max-width: 900px) {
+        .main-content { align-items: flex-start; padding-top: 6rem; }
         .widget-container { padding: 1rem; }
         .widget-container h2 { font-size: 1.5rem; }
-        .option-table th, .option-table td { padding: 0.6rem; font-size: 0.8rem; }
-        .buy-button { padding: 0.5rem; font-size: 0.75rem; }
+        .option-table th, .option-table td { padding: 0.5rem; font-size: 0.75rem; }
+        .buy-button { padding: 0.5rem; font-size: 0.7rem; }
         .summary-value { font-size: 1.1rem; }
+        .lots-override-input { padding: 0.3rem; }
     }
 </style>
 {% endblock %}
@@ -140,7 +83,6 @@
     <div class="widget-container" id="widgetContainer">
         <h2 id="optionsTitle">Call Options</h2>
         <p>Status: <strong id="connectionStatus" style="color: #ffc107;">Connecting...</strong></p> 
-        
         <div class="summary-container">
             <div class="summary-item">
                 <span class="summary-label">Cash Balance</span>
@@ -164,11 +106,12 @@
                     <th>EXPIRY</th>
                     <th>MARKET_PRICE</th>
                     <th>LOTS</th>
+                    <th>LOTS (O)</th>
                     <th class="center">Action</th>
                 </tr>
             </thead>
             <tbody id="optionsTableBody">
-                <tr><td colspan="6" class="no-options">Waiting for data from server...</td></tr>
+                <tr><td colspan="7" class="no-options">Waiting for data from server...</td></tr>
             </tbody>
         </table>
     </div>
@@ -184,7 +127,6 @@
         const optionsTitle = document.getElementById('optionsTitle');
         const callBtn = document.getElementById('callBtn');
         const putBtn = document.getElementById('putBtn');
-
         const cashBalanceEl = document.getElementById('cashBalanceValue');
         const utilizedEl = document.getElementById('utilizedValue');
 
@@ -194,19 +136,13 @@
             try {
                 cashBalanceEl.textContent = 'Fetching...';
                 utilizedEl.textContent = 'Fetching...';
-
                 const response = await fetch('http://127.0.0.1:5000/fund_summary');
-                if (!response.ok) {
-                    throw new Error(`HTTP Error: ${response.status}`);
-                }
+                if (!response.ok) { throw new Error(`HTTP Error: ${response.status}`); }
                 const summary = await response.json();
-
                 if (summary.data && summary.data.cash_balance && summary.data.utilized) {
                     cashBalanceEl.textContent = `₹ ${parseFloat(summary.data.cash_balance).toLocaleString('en-IN')}`;
                     utilizedEl.textContent = `₹ ${parseFloat(summary.data.utilized).toLocaleString('en-IN')}`;
-                } else {
-                    throw new Error("Invalid data format received.");
-                }
+                } else { throw new Error("Invalid data format received."); }
             } catch (error) {
                 console.error("Could not fetch fund summary:", error);
                 cashBalanceEl.textContent = 'Error';
@@ -232,16 +168,22 @@
             populateOptionsTable(allContracts, 'CE');
         });
         
-        socket.on('price-updated', (tick) => {
+        socket.on('price-updated-order', (tick) => {
             if (allContracts[tick.token]) {
                 allContracts[tick.token].ltp = tick.ltp;
-                allContracts[tick.token].lots = tick.lots;
+                if (tick.lots !== undefined) {
+                    allContracts[tick.token].lots = tick.lots;
+                }
             }
             const priceCell = document.getElementById(`price-${tick.token}`);
             if (priceCell) {
                 priceCell.textContent = `₹ ${tick.ltp.toFixed(2)}`;
                 priceCell.classList.add('flash');
                 setTimeout(() => priceCell.classList.remove('flash'), 700);
+            }
+            const lotsCell = document.getElementById(`lots-${tick.token}`);
+            if (lotsCell && tick.lots !== undefined) {
+                lotsCell.textContent = tick.lots;
             }
         });
 
@@ -250,25 +192,26 @@
             const filteredContracts = Object.entries(contracts).filter(([token, contract]) => contract.call_or_put === optionType);
             if (filteredContracts.length === 0) {
                 const typeName = optionType === 'CE' ? 'call' : 'put';
-                // MODIFIED: Updated colspan to 6
-                optionsTableBody.innerHTML = `<tr><td colspan="6" class="no-options">No ${typeName} options received.</td></tr>`;
+                optionsTableBody.innerHTML = `<tr><td colspan="7" class="no-options">No ${typeName} options received.</td></tr>`;
                 return;
             }
             for (const [token, contract] of filteredContracts) {
                 const row = document.createElement('tr');
                 row.id = `row-${token}`;
-                // MODIFIED: Added cell for contract.level
                 row.innerHTML = `
-                    <td>${contract.level}</td>
-                    <td>${contract.name}</td>
-                    <td>${contract.expiry}</td>
-                    <td id="price-${token}">₹ ${contract.ltp.toFixed(2)}</td>
-                    <td>${contract.lots}</td>
+                    <td>${contract.level || ''}</td>
+                    <td>${contract.name || ''}</td>
+                    <td>${contract.expiry || ''}</td>
+                    <td id="price-${token}">₹ ${(contract.ltp || 0).toFixed(2)}</td>
+                    <td id="lots-${token}">${contract.lots || 0}</td>
+                    <td>
+                        <input type="number" class="lots-override-input" id="override-lots-${token}" placeholder="${contract.lots || 0}">
+                    </td>
                     <td class="center">
                         <button class="buy-button" 
                                 data-token="${token}" 
                                 data-tradingsymbol="${contract.name}"
-                                data-lots="${contract.lots}">Buy</button>
+                                data-lots="${contract.lots || 0}">Buy</button>
                     </td>
                 `;
                 optionsTableBody.appendChild(row);
@@ -279,14 +222,23 @@
         function addBuyButtonListeners() {
             document.querySelectorAll('.buy-button').forEach(button => {
                 button.addEventListener('click', function() {
+                    const token = this.dataset.token;
+                    let lotsToBuy = this.dataset.lots;
+                    
+                    const overrideInput = document.getElementById(`override-lots-${token}`);
+                    
+                    if (overrideInput && overrideInput.value > 0) {
+                        lotsToBuy = overrideInput.value;
+                    }
+
                     const orderDetails = {
-                        token: this.dataset.token,
+                        token: token,
                         tradingsymbol: this.dataset.tradingsymbol,
-                        lots: this.dataset.lots
+                        lots: lotsToBuy
                     };
+
                     socket.emit('place_buy_order', orderDetails);
                     alert(`Order for ${orderDetails.lots} lots of ${orderDetails.tradingsymbol} sent to server!`);
-
                     fetchFundSummary();
                 });
             });
