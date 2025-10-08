@@ -11,8 +11,8 @@ from core.trade_utils import get_weekly_expiry_date , get_instrument_tokens_from
 from utils import fetch_from_json , find_matching_object
 import time
 
-PNT_STOP_LOSS = 30
-PNT_BOOK_PROFIT = 7
+PNT_STOP_LOSS = 1
+PNT_BOOK_PROFIT = 1
 
 PCTG_BOOK_PROFIT = 1
 PCTG_STOP_LOSS = 1
@@ -32,7 +32,7 @@ class Trader_Singleton:
     _trading_watcher_thread_running = False
     _stop_event = threading.Event()
     _tick_counter = 0
-    _comparison_function = "PCT"
+    _comparison_function = "PNT"
     _use_max_margin = True
     _sell_mode = "SELL"
 
@@ -166,6 +166,19 @@ class Trader_Singleton:
             self._fund_summary[key] = float(value)
             
         self._broker.subscribe_to_all(self.get_relevant_instruments_to_track())
+        try:
+            if not self.frontend_data_socket:
+                raise ConnectionRefusedError
+            self.frontend_data_socket.emit(
+                    'update_open_positions',
+                    self._position_data
+                )
+            self.frontend_data_socket.emit(
+                    'update_weekly_options',
+                    self._five_weekly_option_contracts
+                )
+        except Exception as e:
+            print("Frontend socket yet to be instantiated")
         logging.info(f"Updated positions: {len(self._position_data)}")
         logging.debug(self._position_data)
 
@@ -341,11 +354,12 @@ class Trader_Singleton:
                     'pct_pl': position_info.get('pct_pl'),
                     'total_pl': position_info.get('total_pl')
                 }
+                print("SENDING THE DATA ++++++++++++++++++++++++++++++++++++")
                 print(payload)
                 self.frontend_data_socket.emit('price-updated-position', payload)
             
             
-            elif token in self._five_weekly_option_contracts:
+            if token in self._five_weekly_option_contracts:
                 self.update_weekly_positions(token , "ltp" , price)
                 payload = {
                     'token': token,             
@@ -449,8 +463,8 @@ class Trader_Singleton:
         def handle_sell_order(order_details):
             """Handles a sell order request from the frontend."""
             logging.info(f"Received sell order from client: {order_details}")
-            # Here you would call your broker's sell method
-            self._broker.buy_units(None , order_details["token"] , order_details["lots"])
+            print(order_details)
+            self._broker.sell_units(None , order_details["token"] , order_details["lots"])
 
         @self.frontend_data_socket.on('place_buy_order')
         def handle_buy_order(order_details):

@@ -121,7 +121,8 @@ class MStockAdapter(BrokerInterface):
 
     def sell_units(self, trading_symbol, instrument_token , quantity):
         if instrument_token == "42703":
-            return "NOT SELLING"
+            print("NOT SELLING")
+            return
         conn = http.client.HTTPSConnection('api.mstock.trade')
         headers = {
                 "X-Mirae-Version": "1",
@@ -156,7 +157,9 @@ class MStockAdapter(BrokerInterface):
             'duration': 'DAY',
             'ordertag': 'my_algo',
         }
+        print("\n\n\n\n\n\n")
         print(json_data)
+        print("\n\n\n\n\n\n")
         conn.request(
             'POST',
             '/openapi/typeb/orders/regular',

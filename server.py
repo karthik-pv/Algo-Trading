@@ -131,6 +131,10 @@ def widget_two():
 def sell_widget():
     return render_template("sell_widget.html")
 
+@app.route("/buy_dashboard")
+def dashboard():
+    return render_template("buy_dashboard.html")
+
 
 async def start_async_connections():
     """Main async function to run all async brokers."""

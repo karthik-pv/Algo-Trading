@@ -56,9 +56,9 @@
                     <th>BUY_PRICE</th>
                     <th>MARKET_PRICE</th>
                     <th>LOTS</th>
-                    <th>LOTS (O)</th> <th>TOTAL P/L</th>
-                    <th>P/L (%)</th>
-                    <th>P/L (PTS)</th>
+                    <th>LOTS (O)</th>
+                    <th>%</th>
+                    <th>PTS</th> <th>P/L</th>
                     <th class="center">Action</th>
                 </tr>
             </thead>
@@ -80,7 +80,7 @@
 
         const socket = io('http://localhost:5001');
 
-         socket.on('connect', () => {
+        socket.on('connect', () => {
             connectionStatus.textContent = 'Connected';
             connectionStatus.style.color = '#28a745';
             socket.emit('request_open_positions');
@@ -103,7 +103,28 @@
                 openPositions[token].pct_pl = tick.pct_pl;
                 openPositions[token].total_pl = tick.total_pl;
             }
-        })
+
+            const marketPriceCell = document.getElementById(`market-price-${token}`);
+            const totalPlCell = document.getElementById(`total-pl-${token}`);
+            const pctCell = document.getElementById(`pct-${token}`);
+            const ptsCell = document.getElementById(`pts-${token}`);
+
+            if (marketPriceCell) {
+                // Update Market Price cell and apply the flash
+                marketPriceCell.textContent = `${tick.ltp.toFixed(2)}`;
+                marketPriceCell.classList.add('flash');
+                setTimeout(() => marketPriceCell.classList.remove('flash'), 700);
+
+                // Update all P/L cells directly from the tick data
+                totalPlCell.textContent = `${(tick.total_pl || 0).toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+                ptsCell.textContent = (tick.pts_pl || 0).toFixed(2);
+                pctCell.textContent = `${(tick.pct_pl || 0).toFixed(2)}%`;
+
+                // Update the color of all P/L cells
+                const plClass = (tick.pts_pl || 0) >= 0 ? 'profit' : 'loss';
+                [totalPlCell, pctCell, ptsCell].forEach(el => el.className = plClass);
+            }
+        });
 
 
         // --- THIS FUNCTION IS MODIFIED ---
@@ -124,15 +145,16 @@
                 row.innerHTML = `
                     <td>${pos.level || ''}</td>
                     <td>${pos.tradingsymbol || ''}</td>
-                    <td>₹ ${(pos.average_price || 0).toFixed(2)}</td>
-                    <td id="market-price-${token}">₹ ${marketPrice.toFixed(2)}</td>
+                    <td>${(pos.average_price || 0).toFixed(2)}</td>
+                    <td id="market-price-${token}">${marketPrice.toFixed(2)}</td>
                     <td>${pos.lots || 0}</td>
                     <td>
                         <input type="number" class="lots-override-input" id="override-lots-${token}" placeholder="${pos.lots || 0}">
                     </td>
-                    <td id="total-pl-${token}" class="${plClass}">₹ ${(pos.total_pl || 0).toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
-                    <td id="pct-${token}" class="${plClass}">${(pos.pct_pl || 0).toFixed(2)}%</td>
+                    <td id="pct-${token}" class="${plClass}">${(pos.pct_pl || 0).toFixed(2)}</td>
                     <td id="pts-${token}" class="${plClass}">${(pos.pts_pl || 0).toFixed(2)}</td>
+                    <td id="total-pl-${token}" class="${plClass}">${(pos.total_pl || 0).toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+                   
                     <td class="center">
                         <button class="sell-button" 
                                 data-token="${token}" 
@@ -158,28 +180,27 @@
                     const tradingsymbol = this.dataset.tradingsymbol;
                     
                     let lotsToSell = defaultLots;
-                    let quantityToSend = defaultNetQuantity;
+                    let displayQuantity = defaultNetQuantity;
 
-                    // Find the specific input box for this row
                     const overrideInput = document.getElementById(`override-lots-${token}`);
                     
-                    // Check if the override input for this row has a valid value
                     if (overrideInput && overrideInput.value > 0) {
                         lotsToSell = overrideInput.value;
-                        // Recalculate the total quantity based on the override lot count
                         if (lotSize > 0) {
-                            quantityToSend = lotsToSell * lotSize;
+                            displayQuantity = lotsToSell * lotSize;
                         }
                     }
 
-                    if (confirm(`Are you sure you want to sell ${quantityToSend} shares (${lotsToSell} lots) of ${tradingsymbol}?`)) {
+                    if (confirm(`Are you sure you want to sell ${displayQuantity} shares (${lotsToSell} lots) of ${tradingsymbol}?`)) {
+                        // FIX: The payload now sends the 'lotsToSell' value
+                        // with the key 'lots', as requested.
                         const orderDetails = {
                             token: token,
                             tradingsymbol: tradingsymbol,
-                            quantity: quantityToSend // Send the final total quantity to the backend
+                            lots: lotsToSell 
                         };
                         socket.emit('place_sell_order', orderDetails);
-                        alert(`Sell order for ${quantityToSend} shares of ${tradingsymbol} sent to server!`);
+                        alert(`Sell order for ${lotsToSell} lots of ${tradingsymbol} sent to server!`);
                     }
                 });
             });

@@ -1,0 +1,346 @@
+{% extends "base.html" %}
+
+{% block title %}Trading Dashboard{% endblock %}
+
+{% block head_styles %}
+<style>
+    /* --- GENERAL LAYOUT --- */
+    /* This is modified to stack the widgets vertically */
+    .main-content {
+        display: flex;
+        flex-direction: column; /* Stack widgets vertically */
+        align-items: center;     /* Center them horizontally */
+        padding: 2rem 1rem;      /* Add some padding */
+        gap: 2rem;               /* Space between the widgets */
+        box-sizing: border-box;
+    }
+
+    /* --- STYLES FROM BUY WIDGET --- */
+    .widget-container {
+        position: relative; background-color: #2c2c2c; padding: 2rem;
+        border-radius: 12px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
+        border: 1px solid #444; transition: box-shadow 0.4s ease, border-color 0.4s ease;
+    }
+    #buy-widget-container {
+        width: 900px; max-width: 95%; border-color: #2e7d32;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6), 0 0 20px rgba(76, 175, 80, 0.25);
+    }
+    #buy-widget-container.put-view {
+        border-color: #c62828;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6), 0 0 20px rgba(211, 47, 47, 0.35);
+    }
+    #buy-widget-container h2 { text-align: center; margin-bottom: 0.5rem; color: #66bb6a; transition: color 0.4s ease; }
+    #buy-widget-container.put-view h2 { color: #ef5350; }
+    .summary-container { display: flex; justify-content: space-evenly; padding: 1rem 0; margin: 1rem 0; border-top: 1px solid #444; border-bottom: 1px solid #444; }
+    .summary-item { text-align: center; }
+    .summary-label { display: block; font-size: 0.8rem; color: #aaa; text-transform: uppercase; letter-spacing: 0.5px; }
+    .summary-value { display: block; font-size: 1.4rem; font-weight: 600; color: #ffffff; margin-top: 0.25rem; }
+    .toggle-container { display: flex; justify-content: center; margin-bottom: 1.5rem; border: 1px solid #444; border-radius: 7px; overflow: hidden; width: fit-content; margin-left: auto; margin-right: auto; }
+    .toggle-button { background-color: transparent; color: #ccc; border: none; padding: 0.6rem 1.2rem; cursor: pointer; font-size: 0.9rem; font-weight: 500; transition: background-color 0.3s; }
+    .toggle-button:first-child { border-right: 1px solid #444; }
+    .toggle-button.active-toggle { background-color: #2e7d32; color: white; }
+    #buy-widget-container.put-view .toggle-button.active-toggle { background-color: #c62828; }
+    .buy-button { background-color: #28a745; color: white; border: none; padding: 0.6rem 1rem; border-radius: 5px; cursor: pointer; font-size: 0.9rem; font-weight: 500; transition: background-color 0.2s; }
+    .buy-button:hover { background-color: #218838; }
+    
+    /* --- STYLES FROM SELL WIDGET --- */
+    #sell-widget-container { width: 1150px; max-width: 95%; }
+    #sell-widget-container h2 { text-align: center; color: #ffffff; margin-bottom: 1.5rem; }
+    .profit { color: #66bb6a; font-weight: 500; }
+    .loss { color: #ef5350; font-weight: 500; }
+    .sell-button { background-color: #c62828; color: white; border: none; padding: 0.6rem 1rem; border-radius: 5px; cursor: pointer; font-size: 0.9rem; font-weight: 500; transition: background-color 0.2s; }
+    .sell-button:hover { background-color: #a12020; }
+    
+    /* --- COMMON & SHARED STYLES --- */
+    .option-table { width: 100%; border-collapse: collapse; }
+    .option-table th, .option-table td { border: 1px solid #444; padding: 1rem; text-align: center; vertical-align: middle; }
+    .option-table th { background-color: #383838; font-weight: 600; color: #ccc; }
+    .no-options { text-align: center; color: #888; margin-top: 2rem; padding: 1rem; border: 1px dashed #555; border-radius: 8px; background-color: #333; }
+    .flash { animation: price-flash 0.7s ease-out; }
+    @keyframes price-flash { from { background-color: rgba(76, 175, 80, 0.5); } to { background-color: transparent; } }
+    .lots-override-input {
+        width: 90%; padding: 0.5rem; background-color: #1a1a1a;
+        border: 1px solid #555; color: white; border-radius: 4px;
+        font-size: 0.9rem; text-align: center; box-sizing: border-box;
+    }
+
+    /* --- MEDIA QUERIES --- */
+    @media (max-width: 1200px) {
+        .widget-container { padding: 1.5rem; }
+        .option-table th, .option-table td { padding: 0.5rem; font-size: 0.7rem; }
+    }
+    @media (max-width: 900px) {
+        .main-content { padding-top: 5rem; }
+        .widget-container { padding: 1rem; }
+        .widget-container h2 { font-size: 1.5rem; }
+        .option-table th, .option-table td { padding: 0.5rem; font-size: 0.75rem; }
+        .buy-button, .sell-button { padding: 0.5rem; font-size: 0.7rem; }
+        .summary-value { font-size: 1.1rem; }
+        .lots-override-input { padding: 0.3rem; }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<main class="main-content">
+    
+    <div class="widget-container" id="buy-widget-container">
+        <h2 id="optionsTitle">Call Options</h2>
+        <p>Status: <strong id="buyConnectionStatus" style="color: #ffc107;">Connecting...</strong></p> 
+        <div class="summary-container">
+            <div class="summary-item">
+                <span class="summary-label">Cash Balance</span>
+                <span class="summary-value" id="cashBalanceValue">Loading...</span>
+            </div>
+            <div class="summary-item">
+                <span class="summary-label">Utilized Funds</span>
+                <span class="summary-value" id="utilizedValue">Loading...</span>
+            </div>
+        </div>
+        <div class="toggle-container">
+            <button class="toggle-button active-toggle" id="callBtn">Calls (CE)</button>
+            <button class="toggle-button" id="putBtn">Puts (PE)</button>
+        </div>
+
+        <table class="option-table">
+            <thead>
+                <tr>
+                    <th>LEVEL</th> <th>OPTION_NAME</th> <th>EXPIRY</th>
+                    <th>MARKET_PRICE</th> <th>LOTS</th> <th>LOTS (O)</th>
+                    <th class="center">Action</th>
+                </tr>
+            </thead>
+            <tbody id="optionsTableBody">
+                <tr><td colspan="7" class="no-options">Waiting for data from server...</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    {% include 'sell_widget_partial.html' %}
+
+</main>
+{% endblock %}
+
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // --- A SINGLE SOCKET CONNECTION FOR BOTH WIDGETS ---
+    const socket = io('http://localhost:5001');
+
+    // --- DOM ELEMENTS FOR BUY WIDGET ---
+    const buyWidgetContainer = document.getElementById('buy-widget-container');
+    const optionsTableBody = document.getElementById('optionsTableBody');
+    const buyConnectionStatus = document.getElementById('buyConnectionStatus');
+    const optionsTitle = document.getElementById('optionsTitle');
+    const callBtn = document.getElementById('callBtn');
+    const putBtn = document.getElementById('putBtn');
+    const cashBalanceEl = document.getElementById('cashBalanceValue');
+    const utilizedEl = document.getElementById('utilizedValue');
+    
+    // --- DOM ELEMENTS FOR SELL WIDGET ---
+    const positionsTableBody = document.getElementById('positionsTableBody');
+    const sellConnectionStatus = document.getElementById('sellConnectionStatus');
+
+    // --- STATE VARIABLES ---
+    let allContracts = {};
+    let openPositions = {};
+
+    // --- SOCKET EVENT HANDLERS (COMBINED) ---
+    socket.on('connect', () => {
+        buyConnectionStatus.textContent = 'Connected';
+        buyConnectionStatus.style.color = '#28a745';
+        sellConnectionStatus.textContent = 'Connected';
+        sellConnectionStatus.style.color = '#28a745';
+        
+        socket.emit('request_weekly_options');
+        socket.emit('request_open_positions');
+    });
+
+    socket.on('disconnect', () => {
+        buyConnectionStatus.textContent = 'Disconnected';
+        buyConnectionStatus.style.color = '#dc3545';
+        sellConnectionStatus.textContent = 'Disconnected';
+        sellConnectionStatus.style.color = '#dc3545';
+    });
+
+    socket.on('update_weekly_options', (contracts) => {
+        allContracts = contracts;
+        populateOptionsTable(allContracts, 'CE');
+    });
+    
+    socket.on('update_open_positions', (positions) => {
+        openPositions = positions;
+        populatePositionsTable(openPositions);
+    });
+
+    socket.on('price-updated-order', (tick) => {
+        if (allContracts[tick.token]) {
+            allContracts[tick.token].ltp = tick.ltp;
+        }
+        const priceCell = document.getElementById(`price-${tick.token}`);
+        if (priceCell) {
+            priceCell.textContent = `₹ ${tick.ltp.toFixed(2)}`;
+            priceCell.classList.add('flash');
+            setTimeout(() => priceCell.classList.remove('flash'), 700);
+        }
+    });
+
+    socket.on('price-updated-position', (tick) => {
+        const token = tick.token;
+        const marketPriceCell = document.getElementById(`market-price-${token}`);
+        if (marketPriceCell) {
+            marketPriceCell.textContent = `${tick.ltp.toFixed(2)}`;
+            marketPriceCell.classList.add('flash');
+            setTimeout(() => marketPriceCell.classList.remove('flash'), 700);
+
+            const plClass = (tick.pts_pl || 0) >= 0 ? 'profit' : 'loss';
+            const totalPlCell = document.getElementById(`total-pl-${token}`);
+            const pctCell = document.getElementById(`pct-${token}`);
+            const ptsCell = document.getElementById(`pts-${token}`);
+            
+            totalPlCell.textContent = `${(tick.total_pl || 0).toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+            ptsCell.textContent = (tick.pts_pl || 0).toFixed(2);
+            pctCell.textContent = `${(tick.pct_pl || 0).toFixed(2)}%`;
+
+            [totalPlCell, pctCell, ptsCell].forEach(el => el.className = plClass);
+        }
+    });
+
+    // --- FUNCTIONS FOR BUY WIDGET ---
+    async function fetchFundSummary() {
+        try {
+            cashBalanceEl.textContent = 'Fetching...';
+            utilizedEl.textContent = 'Fetching...';
+            const response = await fetch('http://127.0.0.1:5000/fund_summary');
+            if (!response.ok) { throw new Error(`HTTP Error: ${response.status}`); }
+            const summary = await response.json();
+            cashBalanceEl.textContent = `₹ ${parseFloat(summary.data.cash_balance).toLocaleString('en-IN')}`;
+            utilizedEl.textContent = `₹ ${parseFloat(summary.data.utilized).toLocaleString('en-IN')}`;
+        } catch (error) {
+            console.error("Could not fetch fund summary:", error);
+            cashBalanceEl.textContent = 'Error';
+            utilizedEl.textContent = 'Error';
+        }
+    }
+
+    // --- THIS FUNCTION IS NOW FIXED ---
+    function populateOptionsTable(contracts, optionType) {
+        optionsTableBody.innerHTML = '';
+        // FIX: Use Object.entries to get both the token and the contract object
+        const filteredContracts = Object.entries(contracts).filter(([token, contract]) => contract.call_or_put === optionType);
+
+        if (filteredContracts.length === 0) {
+            optionsTableBody.innerHTML = `<tr><td colspan="7" class="no-options">No ${optionType === 'CE' ? 'call' : 'put'} options found.</td></tr>`;
+            return;
+        }
+        
+        // FIX: Loop through the [token, contract] pairs
+        for (const [token, contract] of filteredContracts) {
+            const row = document.createElement('tr');
+            row.id = `row-${token}`; // Use the correct token for the ID
+            row.innerHTML = `
+                <td>${contract.level || ''}</td>
+                <td>${contract.name || ''}</td>
+                <td>${contract.expiry || ''}</td>
+                <td id="price-${token}">₹ ${(contract.ltp || 0).toFixed(2)}</td>
+                <td id="lots-${token}">${contract.lots || 0}</td>
+                <td><input type="number" class="lots-override-input" id="override-lots-${token}" placeholder="${contract.lots || 0}"></td>
+                <td class="center">
+                    <button class="buy-button" data-token="${token}" data-tradingsymbol="${contract.name}" data-lots="${contract.lots || 0}">Buy</button>
+                </td>
+            `;
+            optionsTableBody.appendChild(row);
+        }
+        addBuyButtonListeners();
+    }
+
+    function addBuyButtonListeners() {
+        document.querySelectorAll('.buy-button').forEach(button => {
+            button.addEventListener('click', function() {
+                const token = this.dataset.token;
+                const overrideInput = document.getElementById(`override-lots-${token}`);
+                const lotsToBuy = (overrideInput && overrideInput.value > 0) ? overrideInput.value : this.dataset.lots;
+                
+                const orderDetails = {
+                    token: token,
+                    tradingsymbol: this.dataset.tradingsymbol,
+                    lots: lotsToBuy
+                };
+                socket.emit('place_buy_order', orderDetails);
+                alert(`Buy order for ${lotsToBuy} lots of ${this.dataset.tradingsymbol} sent!`);
+                fetchFundSummary();
+                location.reload()
+            });
+        });
+    }
+
+    // --- FUNCTIONS FOR SELL WIDGET (Unchanged) ---
+    function populatePositionsTable(positions) {
+        positionsTableBody.innerHTML = '';
+        if (Object.keys(positions).length === 0) {
+            positionsTableBody.innerHTML = `<tr><td colspan="10" class="no-options">No open positions found.</td></tr>`;
+            return;
+        }
+        for (const token in positions) {
+            const pos = positions[token];
+            const plClass = (pos.pts_pl || 0) >= 0 ? 'profit' : 'loss';
+            const row = document.createElement('tr');
+            row.id = `row-${token}`;
+            row.innerHTML = `
+                <td>${pos.level || ''}</td>
+                <td>${pos.tradingsymbol || ''}</td>
+                <td>${(pos.average_price || 0).toFixed(2)}</td>
+                <td id="market-price-${token}">${(pos.latest_price || pos.average_price).toFixed(2)}</td>
+                <td>${pos.lots || 0}</td>
+                <td><input type="number" class="lots-override-input" id="override-lots-sell-${token}" placeholder="${pos.lots || 0}"></td>
+                <td id="pct-${token}" class="${plClass}">${(pos.pct_pl || 0).toFixed(2)}</td>
+                <td id="pts-${token}" class="${plClass}">${(pos.pts_pl || 0).toFixed(2)}</td>
+                <td id="total-pl-${token}" class="${plClass}">${(pos.total_pl || 0).toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+                <td class="center">
+                    <button class="sell-button" data-token="${token}" data-tradingsymbol="${pos.tradingsymbol}" data-lots="${pos.lots || 0}" data-quantity="${pos.net_quantity || 0}" data-lotsize="${pos.lotsize || ''}">Sell</button>
+                </td>
+            `;
+            positionsTableBody.appendChild(row);
+        }
+        addSellButtonListeners();
+    }
+
+    function addSellButtonListeners() {
+        document.querySelectorAll('.sell-button').forEach(button => {
+            button.addEventListener('click', function() {
+                const token = this.dataset.token;
+                const overrideInput = document.getElementById(`override-lots-sell-${token}`);
+                const lotsToSell = (overrideInput && overrideInput.value > 0) ? overrideInput.value : this.dataset.lots;
+                
+                const displayQuantity = lotsToSell * parseInt(this.dataset.lotsize);
+                if (confirm(`Are you sure you want to sell ${displayQuantity} shares (${lotsToSell} lots) of ${this.dataset.tradingsymbol}?`)) {
+                    socket.emit('place_sell_order', { token: token, tradingsymbol: this.dataset.tradingsymbol, lots: lotsToSell });
+                    alert(`Sell order for ${lotsToSell} lots sent!`);
+                }
+                location.reload()
+            });
+        });
+    }
+
+    // --- EVENT LISTENERS & INITIAL CALLS (Unchanged) ---
+    callBtn.addEventListener('click', () => {
+        buyWidgetContainer.classList.remove('put-view');
+        optionsTitle.textContent = 'Call Options';
+        putBtn.classList.remove('active-toggle');
+        callBtn.classList.add('active-toggle');
+        populateOptionsTable(allContracts, 'CE');
+    });
+
+    putBtn.addEventListener('click', () => {
+        buyWidgetContainer.classList.add('put-view');
+        optionsTitle.textContent = 'Put Options';
+        callBtn.classList.remove('active-toggle');
+        putBtn.classList.add('active-toggle');
+        populateOptionsTable(allContracts, 'PE');
+    });
+
+    fetchFundSummary();
+});
+</script>
+{% endblock %}
