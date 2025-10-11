@@ -1,9 +1,13 @@
 import logging
+from datetime import datetime
+import calendar
+from pprint import pprint
 
-from utils import get_trading_symbols_from_json
+from utils import get_trading_symbols_from_json , find_matching_row_in_csv
 from core.kite_connector import KiteSingleton
 from interface.broker_interface import BrokerInterface
 from core.trade_logic import Trader_Singleton
+from adapter.kite_utils import fund_summary_attribute_mgmt
 
 
 class KiteAdapter(BrokerInterface):
@@ -44,7 +48,43 @@ class KiteAdapter(BrokerInterface):
             return None
         
     def fetch_fund_summary(self):
+        try:
+            fund_summary = fund_summary_attribute_mgmt(self.kite.margins())
+            return fund_summary
+        except Exception as e:
+            logging.error(f"Kite fund summary error : {e}")
         return
+    
+    def fetch_instrument_quote(self , exchange , instrument):
+        try:
+            formatted_instrument = f"{exchange}:{instrument}"
+            instrument_quote = self.kite.quote(formatted_instrument)
+            return instrument_quote
+        except Exception as e:
+            logging.error(f"Kite fetch instrument quote error : {e}")
+        
+    def get_near_month_ltp(self , symbol_name):
+        print("here")
+        data = find_matching_row_in_csv("kite_instruments.csv" , "tradingsymbol" , symbol_name)
+        quote = self.fetch_instrument_quote(data["exchange"] , data["tradingsymbol"])
+        formatted_instrument = f"{data["exchange"]}:{data["tradingsymbol"]}" 
+        pprint(quote)
+        return quote[formatted_instrument]["last_price"]
+
+
+    def format_option_symbol(self ,  underlying: str,
+        expiry: datetime.date,
+        strike: int,
+        call_or_put: str) -> str:
+        yy = expiry.year % 100
+        # Get the first letter of the month name, e.g., 'October' -> 'O'
+        month_char = calendar.month_name[expiry.month][0].upper()
+        dd_str = f"{expiry.day:02d}"
+        return f"{underlying}{yy}{month_char}{dd_str}{strike}{call_or_put.upper()}"
+    
+    def buy_units(self, trading_symbol, instrument_token, quantity):
+        return super().buy_units(trading_symbol, instrument_token, quantity)
+    
 
     def sell_units(self, trading_symbol, quantity, exchange):
         try:
@@ -79,6 +119,12 @@ class KiteAdapter(BrokerInterface):
     #         logging.error(f"Kite fetch_instruments_from_json error: {e}")
     #         return None
 
+    def subscribe_to_all(self, instruments):
+        return super().subscribe_to_all(instruments)
+    
+    def unsubscribe_from_all(self, instruments):
+        return super().unsubscribe_from_all(instruments)
+
     def start_socket_connection(self, shutdown_event, trader_instance):
         socket = self.kite_instance.get_kite_socket_connection()
 
@@ -112,6 +158,8 @@ class KiteAdapter(BrokerInterface):
         if shutdown_event:
             shutdown_event.wait()
         socket.close()
+
+    
 
     def dev_start(self):
         self.kite_instance.initialise_kite_for_dev()

@@ -248,7 +248,7 @@ class Trader_Singleton:
 
         # Floor to the nearest lower strike -> ATM (ensures ATM <= current price)
         atm_strike = int((nifty_price // strike_interval) * strike_interval)
-
+        print(atm_strike)
         # Pass the 'today' argument down to the expiry calculation function
         expiry = get_weekly_expiry_date()
 
@@ -262,7 +262,6 @@ class Trader_Singleton:
             }
         elif call_or_put.upper() == "PE":
             strikes = {
-                # for puts, ITM = strikes above spot
                 "ITM2": atm_strike + 2 * strike_interval,
                 "ITM1": atm_strike + 1 * strike_interval,
                 "ATM":  atm_strike,
@@ -272,7 +271,6 @@ class Trader_Singleton:
         else:
             raise ValueError("call_or_put must be 'CE' or 'PE'")
 
-        # Normalize: if any strike < 0, set to None
         for k, v in strikes.items():
             if v is None or v < 0:
                 strikes[k] = None
@@ -289,10 +287,13 @@ class Trader_Singleton:
     def setup_weekly_option_contract_subscriptions(self):
         try:
             nifty_near_month_token = fetch_from_json("constants.json" , "NIFTY_NEAR_MONTH_FUTURE_TOKEN")
-            nifty_near_month_data = find_matching_object("instrument_list.json" , "name" , nifty_near_month_token)
-            nifty_near_month_quote = self._broker.fetch_instrument_quote(nifty_near_month_data["exch_seg"] , nifty_near_month_data["token"])
-            ltp_nifty_near_month = nifty_near_month_quote["data"]["fetched"][0]["ltp"]
-            contracts = self.get_5_weekly_option_contracts(ltp_nifty_near_month , "CE")["symbols"]
+            # nifty_near_month_data = find_matching_object("instrument_list.json" , "name" , nifty_near_month_token)
+            # nifty_near_month_quote = self._broker.fetch_instrument_quote(nifty_near_month_data["exch_seg"] , nifty_near_month_data["token"])
+            # ltp_nifty_near_month = nifty_near_month_quote["data"]["fetched"][0]["ltp"]
+            ltp_nifty_near_month = self._broker.get_near_month_ltp(nifty_near_month_token)
+            print(ltp_nifty_near_month)
+            contracts = self.get_5_weekly_option_contracts(float(ltp_nifty_near_month) , "CE")["symbols"]
+            print(contracts)
             relevant_tokens_to_subscribe = []
             for key , value in contracts.items(): 
                 data = get_instrument_details_from_json(value)

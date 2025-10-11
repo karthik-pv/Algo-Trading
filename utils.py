@@ -2,8 +2,9 @@ import os
 import json
 import ijson
 import logging
+import csv
 from datetime import datetime, time
-from typing import Generator, Dict, Any , List
+from typing import Generator, Dict, Any , List, Optional
 
 
 
@@ -42,6 +43,24 @@ def find_matching_object(filepath: str, attribute_name: str, attribute_value: An
         print(f"Error: The file '{filepath}' was not found.")
     except Exception as e:
         print(f"An error occurred while processing the file: {e}")
+    
+    return None
+
+
+
+def find_matching_row_in_csv(filepath: str, column_name: str, value_to_match: Any) -> Optional[Dict]:
+    try:
+        with open(filepath, mode='r', newline='', encoding='utf-8') as csvfile:
+            reader = csv.DictReader(csvfile)
+            value_str = str(value_to_match)
+            for row in reader:
+                if row.get(column_name) == value_str:
+                    return dict(row) 
+                    
+    except FileNotFoundError:
+        print(f"Error: The file '{filepath}' was not found.")
+    except Exception as e:
+        print(f"An error occurred while processing the CSV file: {e}")
     
     return None
 

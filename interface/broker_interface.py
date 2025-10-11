@@ -28,6 +28,10 @@ class BrokerInterface(ABC):
         pass
 
     @abstractmethod
+    def get_near_month_ltp(self):
+        pass
+
+    @abstractmethod
     def sell_units(self, trading_symbol, instrument_token ,quantity ):
         pass
 

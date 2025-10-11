@@ -1,136 +1,297 @@
 import datetime
-import calendar
-import math
-from typing import Dict, Optional
-from utils import fetch_from_json
+import json
+from typing import List, Dict, Any
 
-def get_weekly_expiry_date(today: Optional[datetime.date] = None) -> datetime.date:
-    """
-    Returns the upcoming weekly expiry date, adjusted for holidays and weekends.
-    Calculates the upcoming Tuesday and then moves backwards to the previous working day
-    if the Tuesday is a holiday or a weekend.
-    """
-    if today is None:
-        today = datetime.date.today()
+# 1. DATA: Provided orders and positions data
+# =================================================
 
-    # Calculate days until the next Tuesday (weekday() == 1)
-    days_until_tuesday = (1 - today.weekday() + 7) % 7
-    expiry_candidate = today + datetime.timedelta(days=days_until_tuesday)
-
-    # If it's Tuesday and past market close, roll over to the next week's Tuesday.
-    if days_until_tuesday == 0 and datetime.datetime.now().time() > datetime.time(15, 30):
-         expiry_candidate += datetime.timedelta(days=7)
-
-    holiday_strings = fetch_from_json("constants.json", "HOLIDAYS")
-    if holiday_strings is None:
-        holidays = set()
-    else:
-        holidays = {datetime.datetime.strptime(d_str, "%d-%m-%Y").date() for d_str in holiday_strings}
-
-    while True:
-        is_weekend = expiry_candidate.weekday() >= 5
-        
-        is_holiday = expiry_candidate in holidays
-
-        if not is_weekend and not is_holiday:
-            return expiry_candidate
-        print(f"Adjusting expiry: {expiry_candidate.strftime('%d-%m-%Y')} is a holiday/weekend. Checking previous day.")
-        expiry_candidate -= datetime.timedelta(days=1)
-
-def format_option_symbol_mstock(
-    underlying: str,
-    expiry: datetime.date,
-    strike: int,
-    call_or_put: str
-) -> str:
-    """
-    Generates an option symbol in the format:
-    <UNDERLYING><YY><MonthChar><DD><STRIKE><CE/PE>
-    Example: 'NIFTY25O0224900PE' for expiry 02-Oct-2025 strike 24900 Put.
-    """
-    yy = expiry.year % 100
-    # Get the first letter of the month name, e.g., 'October' -> 'O'
-    month_char = calendar.month_name[expiry.month][0].upper()
-    dd_str = f"{expiry.day:02d}"
-    return f"{underlying}{yy}{month_char}{dd_str}{strike}{call_or_put.upper()}"
-
-def get_5_weekly_option_contracts(
-    nifty_price: float,
-    call_or_put: str,
-    strike_interval: int = 100,
-    underlying: str = "NIFTY",
-    today: Optional[datetime.date] = None
-) -> Dict[str, any]:
-    """
-    Return 5 weekly option contracts (numeric strikes + MStock-style symbols).
-    Keys returned: ITM2, ITM1, ATM, OTM1, OTM2
-
-    :param nifty_price: current Nifty price (e.g. 24919)
-    :param call_or_put: 'CE' or 'PE'
-    :param strike_interval: strike step (50, 100, ...)
-    :param underlying: underlying symbol prefix
-    :param today: optional date to calculate expiry from (for testing)
-    :return: dict with 'expiry', 'strikes', and 'symbols' sub-dicts
-    """
-    if strike_interval <= 0:
-        raise ValueError("strike_interval must be positive integer")
-
-    # Floor to the nearest lower strike -> ATM (ensures ATM <= current price)
-    atm_strike = int((nifty_price // strike_interval) * strike_interval)
-
-    # Pass the 'today' argument down to the expiry calculation function
-    expiry = get_weekly_expiry_date(today)
-
-    if call_or_put.upper() == "CE":
-        strikes = {
-            "ITM2": atm_strike - 2 * strike_interval,
-            "ITM1": atm_strike - 1 * strike_interval,
-            "ATM":  atm_strike,
-            "OTM1": atm_strike + 1 * strike_interval,
-            "OTM2": atm_strike + 2 * strike_interval,
-        }
-    elif call_or_put.upper() == "PE":
-        strikes = {
-            # for puts, ITM = strikes above spot
-            "ITM2": atm_strike + 2 * strike_interval,
-            "ITM1": atm_strike + 1 * strike_interval,
-            "ATM":  atm_strike,
-            "OTM1": atm_strike - 1 * strike_interval,
-            "OTM2": atm_strike - 2 * strike_interval,
-        }
-    else:
-        raise ValueError("call_or_put must be 'CE' or 'PE'")
-
-    # Normalize: if any strike < 0, set to None
-    for k, v in strikes.items():
-        if v is None or v < 0:
-            strikes[k] = None
-
-    symbols = {
-        k: (format_option_symbol_mstock(underlying, expiry, v, call_or_put) if v is not None else None)
-        for k, v in strikes.items()
+orders_data = [
+    {
+        "average_price": "23.75", "quantity": "150", "timestamp": "2025-Oct-08 15:12:58",
+        "tradingsymbol": "NIFTY-14Oct2025-25300-CE", "transaction_type": "SELL"
+    },
+    {
+        "average_price": "13.8", "quantity": "75", "timestamp": "2025-Oct-08 15:12:58",
+        "tradingsymbol": "NIFTY-14Oct2025-25400-CE", "transaction_type": "SELL"
+    },
+    {
+        "average_price": "26.15", "quantity": "75", "timestamp": "2025-Oct-08 15:11:27",
+        "tradingsymbol": "NIFTY-14Oct2025-25300-CE", "transaction_type": "BUY"
+    },
+    {
+        "average_price": "27.35", "quantity": "75", "timestamp": "2025-Oct-08 15:10:03",
+        "tradingsymbol": "NIFTY-14Oct2025-25300-CE", "transaction_type": "BUY"
+    },
+    {
+        "average_price": "43.7", "quantity": "75", "timestamp": "2025-Oct-08 14:51:26",
+        "tradingsymbol": "NIFTY-14Oct2025-24900-PE", "transaction_type": "SELL"
+    },
+    {
+        "average_price": "41.7", "quantity": "75", "timestamp": "2025-Oct-08 14:49:49",
+        "tradingsymbol": "NIFTY-14Oct2025-24900-PE", "transaction_type": "BUY"
+    },
+    {
+        "average_price": "40.9", "quantity": "75", "timestamp": "2025-Oct-08 14:48:20",
+        "tradingsymbol": "NIFTY-14Oct2025-24900-PE", "transaction_type": "SELL"
+    },
+    {
+        "average_price": "42.3", "quantity": "75", "timestamp": "2025-Oct-08 14:47:57",
+        "tradingsymbol": "NIFTY-14Oct2025-24900-PE", "transaction_type": "BUY"
+    },
+    {
+        "average_price": "41.55", "quantity": "75", "timestamp": "2025-Oct-08 14:34:17",
+        "tradingsymbol": "NIFTY-14Oct2025-24900-PE", "transaction_type": "SELL"
+    },
+    {
+        "average_price": "40.15", "quantity": "75", "timestamp": "2025-Oct-08 14:33:46",
+        "tradingsymbol": "NIFTY-14Oct2025-24900-PE", "transaction_type": "BUY"
+    },
+    {
+        "average_price": "30.1", "quantity": "75", "timestamp": "2025-Oct-08 14:20:32",
+        "tradingsymbol": "NIFTY-14Oct2025-25300-CE", "transaction_type": "SELL"
+    },
+    {
+        "average_price": "32.5", "quantity": "75", "timestamp": "2025-Oct-08 14:17:40",
+        "tradingsymbol": "NIFTY-14Oct2025-25300-CE", "transaction_type": "BUY"
+    },
+    {
+        "average_price": "0", "quantity": "75", "timestamp": "2025-Oct-08 14:16:14",
+        "tradingsymbol": "NIFTY-14Oct2025-25300-CE", "transaction_type": "BUY"
+    },
+    {
+        "average_price": "38.4", "quantity": "75", "timestamp": "2025-Oct-08 14:08:28",
+        "tradingsymbol": "NIFTY-14Oct2025-25300-CE", "transaction_type": "SELL"
+    },
+    {
+        "average_price": "38.8", "quantity": "75", "timestamp": "2025-Oct-08 14:07:58",
+        "tradingsymbol": "NIFTY-14Oct2025-25300-CE", "transaction_type": "BUY"
+    },
+    {
+        "average_price": "24.3", "quantity": "75", "timestamp": "2025-Oct-08 14:05:35",
+        "tradingsymbol": "NIFTY-14Oct2025-25400-CE", "transaction_type": "BUY"
+    },
+    {
+        "average_price": "46.2", "quantity": "75", "timestamp": "2025-Oct-08 13:49:41",
+        "tradingsymbol": "NIFTY-14Oct2025-25300-CE", "transaction_type": "SELL"
+    },
+    {
+        "average_price": "0", "quantity": "225", "timestamp": "2025-Oct-08 13:42:12",
+        "tradingsymbol": "NIFTY-14Oct2025-25300-CE", "transaction_type": "SELL"
+    },
+    {
+        "average_price": "0", "quantity": "1800", "timestamp": "2025-Oct-08 13:42:11",
+        "tradingsymbol": "NIFTY-14Oct2025-25300-CE", "transaction_type": "SELL"
+    },
+    {
+        "average_price": "0", "quantity": "1800", "timestamp": "2025-Oct-08 13:42:11",
+        "tradingsymbol": "NIFTY-14Oct2025-25300-CE", "transaction_type": "SELL"
+    },
+    {
+        "average_price": "0", "quantity": "1800", "timestamp": "2025-Oct-08 13:42:11",
+        "tradingsymbol": "NIFTY-14Oct2025-25300-CE", "transaction_type": "SELL"
+    },
+    {
+        "average_price": "0", "quantity": "1800", "timestamp": "2025-Oct-08 13:39:08",
+        "tradingsymbol": "NIFTY-14Oct2025-25300-CE", "transaction_type": "SELL"
+    },
+    {
+        "average_price": "0", "quantity": "225", "timestamp": "2025-Oct-08 13:39:08",
+        "tradingsymbol": "NIFTY-14Oct2025-25300-CE", "transaction_type": "SELL"
+    },
+    {
+        "average_price": "0", "quantity": "1800", "timestamp": "2025-Oct-08 13:39:08",
+        "tradingsymbol": "NIFTY-14Oct2025-25300-CE", "transaction_type": "SELL"
+    },
+    {
+        "average_price": "0", "quantity": "1800", "timestamp": "2025-Oct-08 13:39:08",
+        "tradingsymbol": "NIFTY-14Oct2025-25300-CE", "transaction_type": "SELL"
+    },
+    {
+        "average_price": "0", "quantity": "1800", "timestamp": "2025-Oct-08 13:37:14",
+        "tradingsymbol": "NIFTY-14Oct2025-25300-CE", "transaction_type": "SELL"
+    },
+    {
+        "average_price": "0", "quantity": "225", "timestamp": "2025-Oct-08 13:37:14",
+        "tradingsymbol": "NIFTY-14Oct2025-25300-CE", "transaction_type": "SELL"
+    },
+    {
+        "average_price": "0", "quantity": "1800", "timestamp": "2025-Oct-08 13:37:14",
+        "tradingsymbol": "NIFTY-14Oct2025-25300-CE", "transaction_type": "SELL"
+    },
+    {
+        "average_price": "0", "quantity": "1800", "timestamp": "2025-Oct-08 13:37:14",
+        "tradingsymbol": "NIFTY-14Oct2025-25300-CE", "transaction_type": "SELL"
+    },
+    {
+        "average_price": "0", "quantity": "1800", "timestamp": "2025-Oct-08 13:34:16",
+        "tradingsymbol": "NIFTY-14Oct2025-25300-CE", "transaction_type": "SELL"
+    },
+    {
+        "average_price": "0", "quantity": "1800", "timestamp": "2025-Oct-08 13:34:16",
+        "tradingsymbol": "NIFTY-14Oct2025-25300-CE", "transaction_type": "SELL"
+    },
+    {
+        "average_price": "0", "quantity": "1800", "timestamp": "2025-Oct-08 13:34:16",
+        "tradingsymbol": "NIFTY-14Oct2025-25300-CE", "transaction_type": "SELL"
+    },
+    {
+        "average_price": "0", "quantity": "225", "timestamp": "2025-Oct-08 13:34:16",
+        "tradingsymbol": "NIFTY-14Oct2025-25300-CE", "transaction_type": "SELL"
+    },
+    {
+        "average_price": "0", "quantity": "1800", "timestamp": "2025-Oct-08 13:33:49",
+        "tradingsymbol": "NIFTY-14Oct2025-25300-CE", "transaction_type": "SELL"
+    },
+    {
+        "average_price": "0", "quantity": "225", "timestamp": "2025-Oct-08 13:33:49",
+        "tradingsymbol": "NIFTY-14Oct2025-25300-CE", "transaction_type": "SELL"
+    },
+    {
+        "average_price": "0", "quantity": "1800", "timestamp": "2025-Oct-08 13:33:49",
+        "tradingsymbol": "NIFTY-14Oct2025-25300-CE", "transaction_type": "SELL"
+    },
+    {
+        "average_price": "0", "quantity": "1800", "timestamp": "2025-Oct-08 13:33:49",
+        "tradingsymbol": "NIFTY-14Oct2025-25300-CE", "transaction_type": "SELL"
+    },
+    {
+        "average_price": "42.95", "quantity": "75", "timestamp": "2025-Oct-08 13:14:12",
+        "tradingsymbol": "NIFTY-14Oct2025-25300-CE", "transaction_type": "BUY"
+    },
+    {
+        "average_price": "38.25", "quantity": "75", "timestamp": "2025-Oct-08 13:07:20",
+        "tradingsymbol": "NIFTY-14Oct2025-24900-PE", "transaction_type": "SELL"
+    },
+    {
+        "average_price": "38.65", "quantity": "75", "timestamp": "2025-Oct-08 13:06:55",
+        "tradingsymbol": "NIFTY-14Oct2025-24900-PE", "transaction_type": "BUY"
+    },
+    {
+        "average_price": "67.1", "quantity": "150", "timestamp": "2025-Oct-08 13:02:31",
+        "tradingsymbol": "NIFTY-14Oct2025-25200-CE", "transaction_type": "SELL"
+    },
+    {
+        "average_price": "0", "quantity": "150", "timestamp": "2025-Oct-08 13:00:24",
+        "tradingsymbol": "NIFTY-14Oct2025-25200-CE", "transaction_type": "BUY"
+    },
+    {
+        "average_price": "0", "quantity": "150", "timestamp": "2025-Oct-08 13:00:18",
+        "tradingsymbol": "NIFTY-14Oct2025-25200-CE", "transaction_type": "BUY"
+    },
+    {
+        "average_price": "69.8", "quantity": "75", "timestamp": "2025-Oct-08 13:00:12",
+        "tradingsymbol": "NIFTY-14Oct2025-25200-CE", "transaction_type": "BUY"
+    },
+    {
+        "average_price": "46.9", "quantity": "75", "timestamp": "2025-Oct-08 12:24:38",
+        "tradingsymbol": "NIFTY-14Oct2025-25200-CE", "transaction_type": "BUY"
     }
+]
 
-    return {"expiry": expiry, "strikes": strikes, "symbols": symbols}
+positions_data = [
+    {
+        "average_price": 39.3,
+        "exchange": "NSE",
+        "instrument": "42703",
+        "instrument_token": "42703",
+        "lotsize": "75",
+        "quantity": 75,
+        "tradingsymbol": "NIFTY-14Oct2025-25400-CE"
+    }
+]
+
+# 2. FUNCTION: The provided calculation logic
+# ===============================================
+
+def calculate_accurate_average_buy_price_and_update_positions(
+    positions: List[Dict[str, Any]], 
+    orders: List[Dict[str, Any]]
+) -> List[Dict[str, Any]]:
+    """
+    Calculates the accurate average buy price for open positions based on the last buy orders.
+    """
+    positions_map = {}
+    for i, p in enumerate(positions):
+        symbol = p.get('tradingsymbol')
+        # Ensure quantity is an integer
+        quantity = int(p.get('quantity', 0))
+        if symbol and quantity > 0:
+            positions_map[symbol] = {
+                'remaining_quantity': quantity,
+                'total_cost': 0.0,
+                'original_index': i
+            }
+
+    # If there are no open positions to calculate, return the original list
+    if not positions_map:
+        return positions
+
+    # Sort orders from most recent to oldest
+    try:
+        # The provided timestamp format is '%Y-%b-%d %H:%M:%S'
+        orders.sort(key=lambda item: datetime.datetime.strptime(item['timestamp'], '%Y-%b-%d %H:%M:%S'), reverse=True)
+    except Exception as e:
+        print(f"Error sorting orders, returning original positions. Error: {e}")
+        return positions
+
+    # Iterate through sorted orders to find the last BUYs that make up the current position
+    for order in orders:
+        symbol = order.get("tradingsymbol")
+        
+        if order.get("transaction_type") != "BUY" or symbol not in positions_map:
+            continue
+            
+        order_quantity = int(order.get("quantity", 0))
+        avg_price = float(order.get("average_price", 0.0))
+        
+        # Ignore orders with no valid quantity or price (e.g., rejected orders)
+        if order_quantity <= 0 or avg_price <= 0.0:
+            continue
+            
+        position_data = positions_map[symbol]
+        
+        # Only process if this position still needs quantity to be accounted for
+        if position_data['remaining_quantity'] <= 0:
+            continue
+        
+        # Determine how much of this order contributes to the current open position
+        consumed_quantity = min(order_quantity, position_data['remaining_quantity'])
+        
+        if consumed_quantity > 0:
+            cost_contribution = consumed_quantity * avg_price
+            position_data['total_cost'] += cost_contribution
+            position_data['remaining_quantity'] -= consumed_quantity
+
+    # Update the original positions list with the newly calculated average price
+    for symbol, data in positions_map.items():
+        original_index = data['original_index']
+        total_cost = data['total_cost']
+        
+        original_quantity = int(positions[original_index].get('quantity', 0))
+        
+        # Calculate the quantity we found buy orders for
+        quantity_accounted_for = original_quantity - data['remaining_quantity']
+
+        if total_cost > 0 and quantity_accounted_for > 0:
+            new_average_price = total_cost / quantity_accounted_for
+            positions[original_index]['average_price'] = round(new_average_price, 2)
+            
+    return positions
 
 
-# ---------- Example usage ----------
+# 3. EXECUTION: Run the function and print the results
+# =======================================================
+
 if __name__ == "__main__":
-    price = 24778.3
-    today_date = datetime.date(2025,10,1) # A Wednesday
-    
-    # Correctly pass 'today' as a keyword argument
-    res_ce = get_5_weekly_option_contracts(price, "CE", strike_interval=100, today=today_date)
-    res_pe = get_5_weekly_option_contracts(price, "PE", strike_interval=100, today=today_date)
+    print("--- Original Positions ---")
+    print(json.dumps(positions_data, indent=2))
+    print("\n" + "="*30 + "\n")
 
-    print(f"Assuming Spot Price: {price} on {today_date.strftime('%Y-%m-%d')}")
-    print(f"Calculated Weekly Expiry: {res_ce['expiry'].strftime('%Y-%m-%d')}\n")
-    
-    print("--- Call Options ---")
-    print("Strikes:", res_ce["strikes"])
-    print("Symbols:", res_ce["symbols"])
-    
-    print("\n--- Put Options ---")
-    print("Strikes:", res_pe["strikes"])
-    print("Symbols:", res_pe["symbols"])
+    # Run the calculation
+    updated_positions = calculate_accurate_average_buy_price_and_update_positions(
+        positions_data, 
+        orders_data
+    )
 
+    print("--- Updated Positions ---")
+    print(json.dumps(updated_positions, indent=2))

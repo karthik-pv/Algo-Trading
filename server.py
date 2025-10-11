@@ -17,7 +17,7 @@ app = Flask(__name__)
 
 BROKER_MAP = {"kite": KiteAdapter, "mstock": MStockAdapter}
 
-CURRENT_BROKER = "mstock"
+CURRENT_BROKER = "kite"
 
 broker: BrokerInterface = BROKER_MAP[CURRENT_BROKER]()
 
@@ -123,13 +123,13 @@ def home_page():
 def widget_one():
     return render_template("widget_one.html")
 
-@app.route("/buy_widget")
-def widget_two():
-    return render_template("buy_widget.html")
+# @app.route("/buy_widget")
+# def widget_two():
+#     return render_template("buy_widget.html")
 
-@app.route("/sell_widget")
-def sell_widget():
-    return render_template("sell_widget.html")
+# @app.route("/sell_widget")
+# def sell_widget():
+#     return render_template("sell_widget.html")
 
 @app.route("/buy_dashboard")
 def dashboard():
@@ -156,9 +156,9 @@ if __name__ == "__main__":
         trader = Trader_Singleton() 
 
         # uncomment for development
-        # broker.dev_start()
+        broker.dev_start()
         # uncomment for prod
-        broker.prod_start()
+        # broker.prod_start()
         # broker.fetch_all_instruments()
         trader.set_broker(broker)
         trader.on_start()
