@@ -19,6 +19,8 @@ BROKER_MAP = {"kite": KiteAdapter, "mstock": MStockAdapter}
 
 CURRENT_BROKER = "kite"
 
+EXCHANGE = "BFO"
+
 broker: BrokerInterface = BROKER_MAP[CURRENT_BROKER]()
 
 shutdown_event = threading.Event()
@@ -160,6 +162,7 @@ if __name__ == "__main__":
         # uncomment for prod
         # broker.prod_start()
         # broker.fetch_all_instruments()
+        broker.download_instrument_list(EXCHANGE)
         trader.set_broker(broker)
         trader.on_start()
         trader.setup_weekly_option_contract_subscriptions()

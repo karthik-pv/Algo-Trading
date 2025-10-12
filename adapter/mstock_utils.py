@@ -41,6 +41,12 @@ def fund_summary_attribute_mgmt(fund_summary):
     cropped_fund_summary["utilized"] = fund_summary["data"][0]["AMOUNT_UTILIZED"]
     return cropped_fund_summary
 
+def instrument_details_attribute_mgmt(instrument_details):
+    instrument_details["tradingsymbol"] = instrument_details["name"]
+    instrument_details["instrument_token"] = instrument_details["token"]
+    instrument_details["lot_size"] = instrument_details["lotsize"]
+    return instrument_details
+
 
 def parse_market_depth(market_depth_data):
     """Parses the 200-byte market depth data into bids and asks."""

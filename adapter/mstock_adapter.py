@@ -9,7 +9,7 @@ from utils import get_trading_symbols_from_json , find_matching_object
 from core.mstock_connector import MStockSingleton
 from interface.broker_interface import BrokerInterface
 from core.trade_logic import Trader_Singleton
-from adapter.mstock_utils import position_attribute_mgmt , fund_summary_attribute_mgmt , order_attribute_mgmt
+from adapter.mstock_utils import position_attribute_mgmt , fund_summary_attribute_mgmt , order_attribute_mgmt , instrument_details_attribute_mgmt
 
 
 class MStockAdapter(BrokerInterface):
@@ -79,6 +79,16 @@ class MStockAdapter(BrokerInterface):
                 f"Error fetching positions: {e} \n\n CONSIDER LOGGING IN AGAIN \n\n"
             )
 
+    def get_ltp(self , tradingsymbol):
+        try:
+            data = self.get_instrument_details(tradingsymbol)
+            print(data)
+            print("HERE 1")
+            ltp = self.fetch_instrument_quote(data["exch_seg"] , data["token"])
+            return 24012.6
+        except Exception as e:
+            logging.error(f"Error getting LTP - {e}")
+
     def fetch_all_trades(self):
         return
     
@@ -96,27 +106,30 @@ class MStockAdapter(BrokerInterface):
         return fund_summary
     
     def fetch_instrument_quote(self , exchange , instrument_token):
-        conn = http.client.HTTPSConnection('api.mstock.trade')
-        headers = {
-                "X-Mirae-Version": "1",
-                "X-PrivateKey": self.mstock_instance._api_key,
-                "Authorization": f"Bearer {self.mstock_instance._access_token}",
-                "Content-Type": "application/json"
+        try:
+            conn = http.client.HTTPSConnection('api.mstock.trade')
+            headers = {
+                    "X-Mirae-Version": "1",
+                    "X-PrivateKey": self.mstock_instance._api_key,
+                    "Authorization": f"Bearer {self.mstock_instance._access_token}",
+                    "Content-Type": "application/json"
+                }
+            json_data = {
+                'mode': 'OHLC',
+                'exchangeTokens': {
+                exchange : [instrument_token]
+                },
             }
-        json_data = {
-            'mode': 'OHLC',
-            'exchangeTokens': {
-               exchange : [instrument_token]
-            },
-        }
-        conn.request(
-            'POST',
-            '/openapi/typeb/instruments/quote',
-            json.dumps(json_data),
-            headers
-        )
-        response = json.loads(conn.getresponse().read().decode("utf-8"))
-        return response
+            conn.request(
+                'POST',
+                '/openapi/typeb/instruments/quote',
+                json.dumps(json_data),
+                headers
+            )
+            response = json.loads(conn.getresponse().read().decode("utf-8"))
+            return response
+        except Exception as e:
+            logging.error(f"Error fetching quotes {e}")
 
 
     def sell_units(self, trading_symbol, instrument_token , quantity):
@@ -135,7 +148,6 @@ class MStockAdapter(BrokerInterface):
             data = find_matching_object("instrument_list.json" , "name" , trading_symbol)
         elif instrument_token:
             data = find_matching_object("instrument_list.json" , "token" , instrument_token)
-        print(data)
         trading_symbol_for_transaction = data["name"]
         instrument_token = data["token"]
         lotsize = data["lotsize"]
@@ -213,6 +225,11 @@ class MStockAdapter(BrokerInterface):
         response = conn.getresponse().read().decode("utf-8")
         self._trader.refresh_open_positions_and_buy_price()
         print(response)
+
+    def get_instrument_details(self , tradingsymbol):
+        data = find_matching_object("instrument_list.json" , "name" , tradingsymbol)
+        updated_data = instrument_details_attribute_mgmt(data)
+        return updated_data
     
     def format_option_symbol(self ,  underlying: str,
         expiry: datetime.date,
@@ -241,3 +258,31 @@ class MStockAdapter(BrokerInterface):
 
     def prod_start(self):
         self.mstock_instance.initialise_for_prod()
+
+    def download_instrument_list(self, exchange: str) -> bool:
+        try:
+            conn = http.client.HTTPSConnection('api.mstock.trade')
+            headers = {
+                "X-Mirae-Version": "1",
+                "X-PrivateKey": self.mstock_instance._api_key,
+                "Authorization": f"Bearer {self.mstock_instance._access_token}",
+                "Content-Type": "application/json"
+            }
+            conn.request('GET', '/openapi/typeb/instruments/OpenAPIScripMaster', headers=headers)
+            response = conn.getresponse()
+            response_body = response.read().decode("utf-8")
+            response_json = json.loads(response_body)
+            file_path = "mstock_instrument_list.json"
+            with open(file_path, 'w') as f:
+                json.dump(response_json, f, indent=4)
+            
+            logging.info(f"✅ Successfully downloaded and saved instrument list data to {file_path}.")
+            return True
+
+        except json.JSONDecodeError:
+            logging.error(f"❌ Error decoding JSON response. Response was: {response_body[:200]}...")
+            return False
+        except Exception as e:
+            logging.error(f"❌ Error downloading instrument list: {e}")
+            return False
+

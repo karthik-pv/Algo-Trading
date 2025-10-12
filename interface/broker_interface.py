@@ -28,7 +28,11 @@ class BrokerInterface(ABC):
         pass
 
     @abstractmethod
-    def get_near_month_ltp(self):
+    def get_ltp(self):
+        pass
+
+    @abstractmethod
+    def get_instrument_details(self , tradingsymbol):
         pass
 
     @abstractmethod
@@ -61,4 +65,8 @@ class BrokerInterface(ABC):
 
     @abstractmethod
     def prod_start():
+        pass
+
+    @abstractmethod
+    def download_instrument_list():
         pass

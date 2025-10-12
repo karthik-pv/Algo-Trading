@@ -1,6 +1,7 @@
 import logging
 from datetime import datetime
 import calendar
+import csv
 from pprint import pprint
 
 from utils import get_trading_symbols_from_json , find_matching_row_in_csv
@@ -63,13 +64,21 @@ class KiteAdapter(BrokerInterface):
         except Exception as e:
             logging.error(f"Kite fetch instrument quote error : {e}")
         
-    def get_near_month_ltp(self , symbol_name):
-        print("here")
-        data = find_matching_row_in_csv("kite_instruments.csv" , "tradingsymbol" , symbol_name)
-        quote = self.fetch_instrument_quote(data["exchange"] , data["tradingsymbol"])
-        formatted_instrument = f"{data["exchange"]}:{data["tradingsymbol"]}" 
-        pprint(quote)
-        return quote[formatted_instrument]["last_price"]
+    def get_ltp(self , symbol_name):
+        try:
+            data = find_matching_row_in_csv("kite_instruments.csv" , "tradingsymbol" , symbol_name)
+            print(data)
+            quote = self.fetch_instrument_quote(data["exchange"] , data["tradingsymbol"])
+            formatted_instrument = f"{data["exchange"]}:{data["tradingsymbol"]}" 
+            pprint(quote)
+            return quote[formatted_instrument]["last_price"]
+        except Exception as e:
+            logging.error(f"Error getting LTP {e}")
+    
+    def get_instrument_details(self, tradingsymbol):
+        data = find_matching_row_in_csv("kite_instruments.csv" , "tradingsymbol" , tradingsymbol)
+        pprint(data)
+        return data
 
 
     def format_option_symbol(self ,  underlying: str,
@@ -77,7 +86,6 @@ class KiteAdapter(BrokerInterface):
         strike: int,
         call_or_put: str) -> str:
         yy = expiry.year % 100
-        # Get the first letter of the month name, e.g., 'October' -> 'O'
         month_char = calendar.month_name[expiry.month][0].upper()
         dd_str = f"{expiry.day:02d}"
         return f"{underlying}{yy}{month_char}{dd_str}{strike}{call_or_put.upper()}"
@@ -166,3 +174,21 @@ class KiteAdapter(BrokerInterface):
 
     def prod_start(self):
         self.kite_instance.initialise_kite_for_prod()
+
+    def download_instrument_list(self,exchange):
+        try:
+            mcx_instruments = self.kite.instruments(exchange)
+            if not mcx_instruments:
+                print("No instruments fetched. Cannot proceed to save.")
+            else:
+                filename = 'kite_instruments.csv'
+                headers = mcx_instruments[0].keys()
+                with open(filename, 'w', newline='') as csvfile:
+                    writer = csv.DictWriter(csvfile, fieldnames=headers)
+                    writer.writeheader()
+                    writer.writerows(mcx_instruments)
+                print(f"\n✅ Successfully saved instruments to {filename}")
+        except NameError:
+            print("\n⚠️ ERROR: The 'kite' object is not defined. Please ensure you have properly initialized and authenticated your KiteConnect object before running this code.")
+        except Exception as e:
+            print(f"\n❌ An error occurred during fetching or saving: {e}")

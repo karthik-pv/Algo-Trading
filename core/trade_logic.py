@@ -2,7 +2,7 @@ import threading
 import logging
 import queue
 import datetime
-from typing import Optional , Dict
+from typing import Optional , Dict , Any
 from flask_socketio import SocketIO
 from interface.broker_interface import BrokerInterface
 
@@ -60,11 +60,11 @@ class Trader_Singleton:
     def weekly_options_initialize(self , token , data , call_or_put , price , level):
         if token not in self._five_weekly_option_contracts:
             self._five_weekly_option_contracts[token] = {}
-        self._five_weekly_option_contracts[token]["name"] = data["name"]
+        self._five_weekly_option_contracts[token]["name"] = data["tradingsymbol"]
         self._five_weekly_option_contracts[token]["expiry"] = data["expiry"]
         self._five_weekly_option_contracts[token]["ltp"] = price
-        self._five_weekly_option_contracts[token]["lotsize"] = data["lotsize"]
-        self._five_weekly_option_contracts[token]["lots"] =  int(((self._fund_summary["cash_balance"] - self._fund_summary["utilized"]) / price) / int(data["lotsize"]))
+        self._five_weekly_option_contracts[token]["lotsize"] = data["lot_size"]
+        self._five_weekly_option_contracts[token]["lots"] =  int(((self._fund_summary["cash_balance"] - self._fund_summary["utilized"]) / price) / int(data["lot_size"]))
         self._five_weekly_option_contracts[token]["call_or_put"] = call_or_put
         self._five_weekly_option_contracts[token]["level"] = level
 
@@ -241,15 +241,14 @@ class Trader_Singleton:
         nifty_price: float,
         call_or_put: str,
         strike_interval: int = 100,
-        underlying: str = "NIFTY"
+        underlying: str = "NIFTY",
+        exchange: str = "NFO"
     ) -> Dict[str, any]:
         if strike_interval <= 0:
             raise ValueError("strike_interval must be positive integer")
-
-        # Floor to the nearest lower strike -> ATM (ensures ATM <= current price)
+        
         atm_strike = int((nifty_price // strike_interval) * strike_interval)
-        print(atm_strike)
-        # Pass the 'today' argument down to the expiry calculation function
+
         expiry = get_weekly_expiry_date()
 
         if call_or_put.upper() == "CE":
@@ -286,26 +285,24 @@ class Trader_Singleton:
 
     def setup_weekly_option_contract_subscriptions(self):
         try:
-            nifty_near_month_token = fetch_from_json("constants.json" , "NIFTY_NEAR_MONTH_FUTURE_TOKEN")
-            # nifty_near_month_data = find_matching_object("instrument_list.json" , "name" , nifty_near_month_token)
-            # nifty_near_month_quote = self._broker.fetch_instrument_quote(nifty_near_month_data["exch_seg"] , nifty_near_month_data["token"])
-            # ltp_nifty_near_month = nifty_near_month_quote["data"]["fetched"][0]["ltp"]
-            ltp_nifty_near_month = self._broker.get_near_month_ltp(nifty_near_month_token)
+            near_month_token = fetch_from_json("constants.json" , "NEAR_MONTH_FUTURE_TOKEN")
+            print(near_month_token)
+            ltp_nifty_near_month = self._broker.get_ltp(near_month_token)
             print(ltp_nifty_near_month)
-            contracts = self.get_5_weekly_option_contracts(float(ltp_nifty_near_month) , "CE")["symbols"]
+            contracts = self.get_5_weekly_option_contracts(float(ltp_nifty_near_month) , "CE" , underlying="SENSEX")["symbols"]
             print(contracts)
             relevant_tokens_to_subscribe = []
             for key , value in contracts.items(): 
-                data = get_instrument_details_from_json(value)
-                price = self._broker.fetch_instrument_quote(data["exch_seg"] , data["token"])["data"]["fetched"][0]["close"]
-                token = data["token"]
+                data = self._broker.get_instrument_details(value)
+                price = self._broker.get_ltp(data["tradingsymbol"])
+                token = data["instrument_token"]
                 relevant_tokens_to_subscribe.append(token)
                 self.weekly_options_initialize(token , data , "CE" , price , level=key)
             contracts = self.get_5_weekly_option_contracts(ltp_nifty_near_month , "PE")["symbols"]
             for key , value in contracts.items(): 
-                data = get_instrument_details_from_json(value)
-                price = self._broker.fetch_instrument_quote(data["exch_seg"] , data["token"])["data"]["fetched"][0]["close"]
-                token = data["token"]
+                data = self._broker.get_instrument_details(value)
+                price = self._broker.get_ltp(data["tradingsymbol"])
+                token = data["instrument_token"]
                 relevant_tokens_to_subscribe.append(token)
                 self.weekly_options_initialize(token , data , "PE" , price , level=key)
             print("++++++++++++++++++++++++++++++++++++++++")
@@ -315,7 +312,7 @@ class Trader_Singleton:
             self._broker.subscribe_to_all(relevant_tokens_to_subscribe)
             return
         except Exception as e:
-            print(e)
+            print(f"Exception in setting up weekly options - {e}")
 
 
 

@@ -1,6 +1,12 @@
 import datetime
+from datetime import date
 import calendar
 from typing import Optional , Dict , List , Any
+from calendar import monthrange
+import holidays
+
+india_holidays = holidays.India()
+
 
 from utils import fetch_from_json , find_matching_object
 
@@ -108,6 +114,56 @@ def nifty_future_symbol(root: str = "NIFTY", today: datetime.date = None) -> str
     mon_name = calendar.month_abbr[month].upper()
     yy = year % 100
     return f"{root}{mon_name}{yy:02d}"
+
+def expiry_filter(exp_date: date, index_name: str,tradingsymbol, expiry_type: str) -> bool:
+    """
+    Filters expiry based on weekly/monthly rules for NIFTY, SENSEX, CRUDE,
+    considering NSE/BSE/MCX holidays.
+
+    :param exp_date: datetime.date object (from instrument['expiry'])
+    :param index_name: "NIFTY", "SENSEX", "CRUDE"
+    :param expiry_type: "WEEKLY" or "MONTHLY"
+    :return: True if the expiry matches the rules and is not a holiday
+    """
+    index_name = index_name.upper()
+    expiry_type = expiry_type.upper()
+
+    if expiry_type == "WEEKLY":
+        # Weekly expiry rules
+        if index_name == "NIFTY":
+            target_weekday = 1  # Tuesday
+        elif index_name == "SENSEX":
+            target_weekday = 3  # Thursday
+        else:
+            # Default weekly = Tuesday
+            target_weekday = 1
+
+        # Check weekday
+        if exp_date.weekday() != target_weekday:
+            return False
+
+    elif expiry_type == "MONTHLY":
+        # Monthly expiry rules
+        if index_name == "CRUDEOIL":
+            month_code = exp_date.strftime("%b").upper()  # "OCT"
+            if month_code not in tradingsymbol:
+                return False
+        else:
+            # Default monthly expiry = last Thursday
+            last_day = monthrange(exp_date.year, exp_date.month)[1]
+            target_day = max(
+                d for d in range(22, 29)
+                if datetime(exp_date.year, exp_date.month, d).weekday() == 3
+            )
+
+        # if exp_date.day != target_day:
+        #     return False
+
+    # Check if the date is a holiday
+    if exp_date in india_holidays:
+        return False
+
+    return True
 
 def get_weekly_expiry_date() -> datetime.date:
 
