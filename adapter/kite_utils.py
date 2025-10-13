@@ -1,3 +1,9 @@
+def position_attribute_mgmt(positions):
+    for position in positions:
+        position["lotsize"] = position["multiplier"]
+    return positions
+    
+
 def fund_summary_attribute_mgmt(fund_summary):
     cropped_fund_summary = {}
     cropped_fund_summary["cash_balance"] = fund_summary["equity"]["available"]["live_balance"]

@@ -82,10 +82,8 @@ class MStockAdapter(BrokerInterface):
     def get_ltp(self , tradingsymbol):
         try:
             data = self.get_instrument_details(tradingsymbol)
-            print(data)
-            print("HERE 1")
-            ltp = self.fetch_instrument_quote(data["exch_seg"] , data["token"])
-            return 24012.6
+            ltp = self.fetch_instrument_quote(data["exch_seg"] , data["token"])["data"]["fetched"][0]["ltp"]
+            return ltp
         except Exception as e:
             logging.error(f"Error getting LTP - {e}")
 

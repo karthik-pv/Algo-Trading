@@ -165,33 +165,93 @@ def expiry_filter(exp_date: date, index_name: str,tradingsymbol, expiry_type: st
 
     return True
 
-def get_weekly_expiry_date() -> datetime.date:
-
+def get_expiry_date(underlying: str) -> datetime.date:
+    """
+    Determines the next valid trading expiry date based on the underlying asset's rules.
+    
+    :param underlying: The asset name ('NIFTY', 'SENSEX', 'CRUDEOIL', etc.)
+    :return: datetime.date object representing the valid expiry date.
+    """
+    underlying = underlying.upper()
     today = datetime.date.today()
+    now_time = datetime.datetime.now().time()
+    market_close_time = datetime.time(15, 30)
 
-    # Calculate days until the next Tuesday (weekday() == 1)
-    days_until_tuesday = (1 - today.weekday() + 7) % 7
-    expiry_candidate = today + datetime.timedelta(days=days_until_tuesday)
+    # =========================================================================
+    # 1. DETERMINE INITIAL EXPIRY CANDIDATE BASED ON ASSET RULES
+    # =========================================================================
+    
+    if underlying == "NIFTY":
+        # Target: Next Tuesday (weekday() == 1)
+        target_weekday = 1
+        days_until_target = (target_weekday - today.weekday() + 7) % 7
+        expiry_candidate = today + datetime.timedelta(days=days_until_target)
+        
+        # Rollover if it's Tuesday and past market close
+        if days_until_target == 0 and now_time > market_close_time:
+             expiry_candidate += datetime.timedelta(days=7)
+             
+    elif underlying == "SENSEX":
+        # Target: Next Thursday (weekday() == 3)
+        target_weekday = 3
+        days_until_target = (target_weekday - today.weekday() + 7) % 7
+        expiry_candidate = today + datetime.timedelta(days=days_until_target)
 
-    # If it's Tuesday and past market close, roll over to the next week's Tuesday.
-    if days_until_tuesday == 0 and datetime.datetime.now().time() > datetime.time(15, 30):
-         expiry_candidate += datetime.timedelta(days=7)
+        # Rollover if it's Thursday and past market close
+        if days_until_target == 0 and now_time > market_close_time:
+             expiry_candidate += datetime.timedelta(days=7)
+             
+    elif underlying == "CRUDEOIL":
+        # Target: 19th of the current month, or next month if the 19th has passed.
+        target_day = 19
+        
+        if today.day > target_day:
+            # If the 19th has passed, roll to the 19th of the next month
+            if today.month == 12:
+                next_month = 1
+                next_year = today.year + 1
+            else:
+                next_month = today.month + 1
+                next_year = today.year
+            expiry_candidate = datetime.date(next_year, next_month, target_day)
+        else:
+            # Use the 19th of the current month
+            expiry_candidate = datetime.date(today.year, today.month, target_day)
+            
+    else:
+        raise ValueError(f"Underlying '{underlying}' not supported for automatic expiry calculation.")
+
+
+    # =========================================================================
+    # 2. HOLIDAY AND WEEKEND ROLLBACK LOGIC
+    # (This ensures the final date is a valid trading day)
+    # =========================================================================
 
     holiday_strings = fetch_from_json("constants.json", "HOLIDAYS")
     if holiday_strings is None:
         holidays = set()
     else:
+        # Assuming HOLIDAYS format is "%d-%m-%Y" (e.g., "15-08-2025")
         holidays = {datetime.datetime.strptime(d_str, "%d-%m-%Y").date() for d_str in holiday_strings}
 
+    final_expiry = expiry_candidate
+    
     while True:
-        is_weekend = expiry_candidate.weekday() >= 5
-        
-        is_holiday = expiry_candidate in holidays
+        is_weekend = final_expiry.weekday() >= 5 # 5=Saturday, 6=Sunday
+        is_holiday = final_expiry in holidays
 
         if not is_weekend and not is_holiday:
-            return expiry_candidate
-        print(f"Adjusting expiry: {expiry_candidate.strftime('%d-%m-%Y')} is a holiday/weekend. Checking previous day.")
-        expiry_candidate -= datetime.timedelta(days=1)
+            # Found a valid trading day
+            return final_expiry
+            
+        print(f"Adjusting expiry: {final_expiry.strftime('%d-%m-%Y')} is a holiday/weekend. Checking previous day.")
+        
+        # Roll back one day
+        final_expiry -= datetime.timedelta(days=1)
+        
+        # Safety check for extreme rollback (optional, but good practice)
+        if final_expiry < today - datetime.timedelta(days=30):
+             raise Exception("Expiry rollback failed: date went too far into the past.")
 
         
 

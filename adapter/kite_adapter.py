@@ -8,7 +8,7 @@ from utils import get_trading_symbols_from_json , find_matching_row_in_csv
 from core.kite_connector import KiteSingleton
 from interface.broker_interface import BrokerInterface
 from core.trade_logic import Trader_Singleton
-from adapter.kite_utils import fund_summary_attribute_mgmt
+from adapter.kite_utils import fund_summary_attribute_mgmt , position_attribute_mgmt
 
 
 class KiteAdapter(BrokerInterface):
@@ -36,7 +36,8 @@ class KiteAdapter(BrokerInterface):
     def fetch_all_positions(self):
         try:
             positions = self.kite.positions()
-            return [p for p in positions["net"] if p["quantity"] > 0]
+            positions = position_attribute_mgmt(positions["net"])
+            return [p for p in positions if p["quantity"] > 0]
         except Exception as e:
             logging.error(f"Kite fetch_all_positions error: {e}")
             return None
@@ -67,10 +68,8 @@ class KiteAdapter(BrokerInterface):
     def get_ltp(self , symbol_name):
         try:
             data = find_matching_row_in_csv("kite_instruments.csv" , "tradingsymbol" , symbol_name)
-            print(data)
             quote = self.fetch_instrument_quote(data["exchange"] , data["tradingsymbol"])
             formatted_instrument = f"{data["exchange"]}:{data["tradingsymbol"]}" 
-            pprint(quote)
             return quote[formatted_instrument]["last_price"]
         except Exception as e:
             logging.error(f"Error getting LTP {e}")
@@ -85,10 +84,19 @@ class KiteAdapter(BrokerInterface):
         expiry: datetime.date,
         strike: int,
         call_or_put: str) -> str:
+        underlying = underlying.upper()
+        call_or_put = call_or_put.upper()
         yy = expiry.year % 100
-        month_char = calendar.month_name[expiry.month][0].upper()
-        dd_str = f"{expiry.day:02d}"
-        return f"{underlying}{yy}{month_char}{dd_str}{strike}{call_or_put.upper()}"
+
+        if underlying == "CRUDEOIL":
+            month_abbr = expiry.strftime('%b').upper()
+            
+            return f"{underlying}M{yy}{month_abbr}{strike}{call_or_put}"
+        else:
+            month_char = calendar.month_name[expiry.month][0].upper()
+            dd_str = f"{expiry.day:02d}"
+            
+            return f"{underlying}{yy}{month_char}{dd_str}{strike}{call_or_put}"
     
     def buy_units(self, trading_symbol, instrument_token, quantity):
         return super().buy_units(trading_symbol, instrument_token, quantity)

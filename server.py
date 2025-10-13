@@ -19,7 +19,7 @@ BROKER_MAP = {"kite": KiteAdapter, "mstock": MStockAdapter}
 
 CURRENT_BROKER = "kite"
 
-EXCHANGE = "BFO"
+EXCHANGE = "MCX"
 
 broker: BrokerInterface = BROKER_MAP[CURRENT_BROKER]()
 

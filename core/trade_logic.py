@@ -6,7 +6,7 @@ from typing import Optional , Dict , Any
 from flask_socketio import SocketIO
 from interface.broker_interface import BrokerInterface
 
-from core.trade_utils import get_weekly_expiry_date , get_instrument_tokens_from_symbol , get_instrument_details_from_json , calculate_accurate_average_buy_price_and_update_positions 
+from core.trade_utils import get_expiry_date , get_instrument_tokens_from_symbol , get_instrument_details_from_json , calculate_accurate_average_buy_price_and_update_positions 
 
 from utils import fetch_from_json , find_matching_object
 import time
@@ -34,7 +34,7 @@ class Trader_Singleton:
     _tick_counter = 0
     _comparison_function = "PNT"
     _use_max_margin = True
-    _sell_mode = "SELL"
+    _sell_mode = "ALERT"
 
     _positions_to_subscribe = []
 
@@ -249,7 +249,7 @@ class Trader_Singleton:
         
         atm_strike = int((nifty_price // strike_interval) * strike_interval)
 
-        expiry = get_weekly_expiry_date()
+        expiry = get_expiry_date(underlying)
 
         if call_or_put.upper() == "CE":
             strikes = {
@@ -289,16 +289,18 @@ class Trader_Singleton:
             print(near_month_token)
             ltp_nifty_near_month = self._broker.get_ltp(near_month_token)
             print(ltp_nifty_near_month)
-            contracts = self.get_5_weekly_option_contracts(float(ltp_nifty_near_month) , "CE" , underlying="SENSEX")["symbols"]
+            contracts = self.get_5_weekly_option_contracts(float(ltp_nifty_near_month) , "CE" , underlying="CRUDEOIL")["symbols"]
             print(contracts)
             relevant_tokens_to_subscribe = []
             for key , value in contracts.items(): 
                 data = self._broker.get_instrument_details(value)
+                print(data)
                 price = self._broker.get_ltp(data["tradingsymbol"])
+                print(price)
                 token = data["instrument_token"]
                 relevant_tokens_to_subscribe.append(token)
                 self.weekly_options_initialize(token , data , "CE" , price , level=key)
-            contracts = self.get_5_weekly_option_contracts(ltp_nifty_near_month , "PE")["symbols"]
+            contracts = self.get_5_weekly_option_contracts(ltp_nifty_near_month , "PE" , underlying="CRUDEOIL")["symbols"]
             for key , value in contracts.items(): 
                 data = self._broker.get_instrument_details(value)
                 price = self._broker.get_ltp(data["tradingsymbol"])
