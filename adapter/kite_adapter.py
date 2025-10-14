@@ -8,7 +8,7 @@ from utils import get_trading_symbols_from_json , find_matching_row_in_csv
 from core.kite_connector import KiteSingleton
 from interface.broker_interface import BrokerInterface
 from core.trade_logic import Trader_Singleton
-from adapter.kite_utils import fund_summary_attribute_mgmt , position_attribute_mgmt
+from adapter.kite_utils import fund_summary_attribute_mgmt , position_attribute_mgmt , orders_attribute_mgmt
 
 
 class KiteAdapter(BrokerInterface):
@@ -21,7 +21,8 @@ class KiteAdapter(BrokerInterface):
 
     def fetch_all_orders(self):
         try:
-            return self.kite.orders()
+            orders = orders_attribute_mgmt(self.kite.orders())
+            return orders
         except Exception as e:
             logging.error(f"Kite fetch_all_orders error: {e}")
             return None
@@ -76,7 +77,6 @@ class KiteAdapter(BrokerInterface):
     
     def get_instrument_details(self, tradingsymbol):
         data = find_matching_row_in_csv("kite_instruments.csv" , "tradingsymbol" , tradingsymbol)
-        pprint(data)
         return data
 
 
@@ -136,8 +136,15 @@ class KiteAdapter(BrokerInterface):
     #         return None
 
     def subscribe_to_all(self, instruments):
-        return super().subscribe_to_all(instruments)
-    
+        try:
+            socket = self.kite_instance.get_kite_socket_connection()
+            instrument_tokens = [int(i) for i in instruments]
+            if socket and socket.is_connected():
+                socket.subscribe(instrument_tokens)
+            logging.debug(f"Subscribed to {instrument_tokens}")
+        except Exception as e:
+            logging.error("Error in subscribing to instruments {e}")
+        
     def unsubscribe_from_all(self, instruments):
         return super().unsubscribe_from_all(instruments)
 
@@ -145,15 +152,14 @@ class KiteAdapter(BrokerInterface):
         socket = self.kite_instance.get_kite_socket_connection()
 
         def on_ticks(ws, ticks):
+            pprint(ticks)
             for tick in ticks:
                 instrument_token = tick["instrument_token"]
-                price = tick["ohlc"]["close"]
-                self._trader.set_latest_price(instrument_token, None, price)
+                price = tick["last_price"]
+                self._trader.set_latest_price(str(instrument_token), None, price)
 
         def on_connect(ws, response):
             logging.info("Connected to Kite WebSocket")
-            instruments = self.fetch_instruments_from_json()
-            ws.set_mode(ws.MODE_FULL, instruments)
 
         def on_close(ws, code, reason):
             logging.warning(f"Kite WebSocket closed: {code}, {reason}")
@@ -171,8 +177,8 @@ class KiteAdapter(BrokerInterface):
         socket.on_order_update = on_order_update
 
         socket.connect(threaded=True)
-        if shutdown_event:
-            shutdown_event.wait()
+        # if shutdown_event:
+        #     shutdown_event.wait()
         socket.close()
 
     

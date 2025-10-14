@@ -104,15 +104,6 @@ def trading_view():
 def run_flask_app():
     app.run(debug=True, use_reloader=False)
 
-
-def start_socket():
-    try:
-        logging.info("Starting broker WebSocket connection...")
-        broker.start_socket_connection(shutdown_event, trader_instance=trader)
-    except Exception as e:
-        logging.error(f"Socket error: {e}")
-
-
 @app.route("/alert")
 def alert_page():
     return render_template("alert.html")
@@ -125,23 +116,13 @@ def home_page():
 def widget_one():
     return render_template("widget_one.html")
 
-# @app.route("/buy_widget")
-# def widget_two():
-#     return render_template("buy_widget.html")
-
-# @app.route("/sell_widget")
-# def sell_widget():
-#     return render_template("sell_widget.html")
-
 @app.route("/buy_dashboard")
 def dashboard():
     return render_template("buy_dashboard.html")
 
 
 async def start_async_connections():
-    """Main async function to run all async brokers."""
     if isinstance(broker, MStockAdapter):   
-        
         if is_market_open():
             flask_thread = threading.Thread(target=run_flask_app, daemon=True)
             flask_thread.start()
@@ -152,11 +133,18 @@ async def start_async_connections():
     else:
         logging.info("M.Stock not selected, skipping async socket start.")
 
+def start_socket():
+    try:
+        logging.info("Starting broker WebSocket connection...")
+        broker.start_socket_connection(shutdown_event, trader_instance=trader)
+        trader.setup_weekly_option_contract_subscriptions()
+    except Exception as e:
+        logging.error(f"Socket error: {e}")
+
 
 if __name__ == "__main__":
     try:
         trader = Trader_Singleton() 
-
         # uncomment for development
         broker.dev_start()
         # uncomment for prod
@@ -165,7 +153,6 @@ if __name__ == "__main__":
         broker.download_instrument_list(EXCHANGE)
         trader.set_broker(broker)
         trader.on_start()
-        trader.setup_weekly_option_contract_subscriptions()
         trader.start_frontend_socket_server(app)
         
 
@@ -174,10 +161,9 @@ if __name__ == "__main__":
             socket_thread.start()
             if is_market_open():
                 trader.start_trading_watcher_thread()
-            app.run(debug=True)
+            app.run(debug=True , use_reloader = False)
         elif CURRENT_BROKER == "mstock":
             if is_market_open():
-                pass
                 trader.start_trading_watcher_thread()
             asyncio.run(start_async_connections())
 

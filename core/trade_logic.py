@@ -110,12 +110,11 @@ class Trader_Singleton:
                 position['pts_pl'] = pts_pl
                 position['pct_pl'] = pct_pl
                 position['total_pl'] = total_pl
-        # --- END ADDED BLOCK ---
         
         logging.debug(f"Updated {key_token}:{attribute_name} to {updated_value}")
 
     def refresh_open_positions_and_buy_price(self):
-        self._broker.unsubscribe_from_all(self.get_relevant_instruments_to_track())
+        # self._broker.unsubscribe_from_all(self.get_relevant_instruments_to_track())
         fund_summary = self._broker.fetch_fund_summary()
         positions_from_broker = self._broker.fetch_all_positions()
         orders_from_broker = self._broker.fetch_all_orders()
@@ -286,17 +285,12 @@ class Trader_Singleton:
     def setup_weekly_option_contract_subscriptions(self):
         try:
             near_month_token = fetch_from_json("constants.json" , "NEAR_MONTH_FUTURE_TOKEN")
-            print(near_month_token)
             ltp_nifty_near_month = self._broker.get_ltp(near_month_token)
-            print(ltp_nifty_near_month)
             contracts = self.get_5_weekly_option_contracts(float(ltp_nifty_near_month) , "CE" , underlying="CRUDEOIL")["symbols"]
-            print(contracts)
             relevant_tokens_to_subscribe = []
             for key , value in contracts.items(): 
                 data = self._broker.get_instrument_details(value)
-                print(data)
                 price = self._broker.get_ltp(data["tradingsymbol"])
-                print(price)
                 token = data["instrument_token"]
                 relevant_tokens_to_subscribe.append(token)
                 self.weekly_options_initialize(token , data , "CE" , price , level=key)
@@ -307,10 +301,6 @@ class Trader_Singleton:
                 token = data["instrument_token"]
                 relevant_tokens_to_subscribe.append(token)
                 self.weekly_options_initialize(token , data , "PE" , price , level=key)
-            print("++++++++++++++++++++++++++++++++++++++++")
-            print(self._five_weekly_option_contracts)
-            print("Subscribing here ++++++++++++++++++++++")
-            print(relevant_tokens_to_subscribe)
             self._broker.subscribe_to_all(relevant_tokens_to_subscribe)
             return
         except Exception as e:
@@ -354,8 +344,6 @@ class Trader_Singleton:
                     'pct_pl': position_info.get('pct_pl'),
                     'total_pl': position_info.get('total_pl')
                 }
-                print("SENDING THE DATA ++++++++++++++++++++++++++++++++++++")
-                print(payload)
                 self.frontend_data_socket.emit('price-updated-position', payload)
             
             
@@ -369,7 +357,7 @@ class Trader_Singleton:
                 }
                 self.frontend_data_socket.emit('price-updated-order', payload)
         except Exception as e:
-            print(e)
+            logging.error("Error setting latest price {e}")
 
         
 

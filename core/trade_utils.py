@@ -40,7 +40,7 @@ def calculate_accurate_average_buy_price_and_update_positions(
         return positions
 
     try:
-        orders.sort(key=lambda item: datetime.datetime.strptime(item['timestamp'], '%Y-%b-%d %H:%M:%S'), reverse=True)
+        orders.sort(key=lambda item: item['timestamp'] if isinstance(item['timestamp'], datetime.datetime) else datetime.datetime.strptime(item['timestamp'], '%Y-%b-%d %H:%M:%S'), reverse=True)
     except Exception as e:
         print(f"Error sorting orders, returning original positions. Error: {e}")
         return positions
