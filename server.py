@@ -10,7 +10,7 @@ from adapter.kite_adapter import KiteAdapter
 from adapter.mstock_adapter import MStockAdapter
 from core.trading_view_handler import trading_view_handle_func
 
-from utils import is_market_open
+from utils import is_market_open , fetch_from_json
 
 
 app = Flask(__name__)
@@ -19,7 +19,7 @@ BROKER_MAP = {"kite": KiteAdapter, "mstock": MStockAdapter}
 
 CURRENT_BROKER = "kite"
 
-EXCHANGE = "MCX"
+EXCHANGE = fetch_from_json("constants.json" , "EXCHANGE")
 
 broker: BrokerInterface = BROKER_MAP[CURRENT_BROKER]()
 
@@ -128,6 +128,7 @@ async def start_async_connections():
             flask_thread.start()
             await broker.start_socket_connection(shutdown_event, trader_instance=trader)
             trader.setup_weekly_option_contract_subscriptions()
+            trader.refresh_subscriptions()
         else:
             run_flask_app()
     else:
@@ -138,6 +139,7 @@ def start_socket():
         logging.info("Starting broker WebSocket connection...")
         broker.start_socket_connection(shutdown_event, trader_instance=trader)
         trader.setup_weekly_option_contract_subscriptions()
+        trader.refresh_subscriptions()
     except Exception as e:
         logging.error(f"Socket error: {e}")
 
@@ -159,8 +161,8 @@ if __name__ == "__main__":
         if CURRENT_BROKER == "kite":
             socket_thread = threading.Thread(target=start_socket, daemon=True)
             socket_thread.start()
-            if is_market_open():
-                trader.start_trading_watcher_thread()
+            # if is_market_open():
+            trader.start_trading_watcher_thread()
             app.run(debug=True , use_reloader = False)
         elif CURRENT_BROKER == "mstock":
             if is_market_open():

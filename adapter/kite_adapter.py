@@ -4,7 +4,7 @@ import calendar
 import csv
 from pprint import pprint
 
-from utils import get_trading_symbols_from_json , find_matching_row_in_csv
+from utils import get_trading_symbols_from_json , find_matching_row_in_csv , fetch_from_json
 from core.kite_connector import KiteSingleton
 from interface.broker_interface import BrokerInterface
 from core.trade_logic import Trader_Singleton
@@ -18,6 +18,7 @@ class KiteAdapter(BrokerInterface):
         self.kite_instance = KiteSingleton()
         self.kite = self.kite_instance.get_kite()
         self.supported_exchanges = ["MCX", "NIFTY"]
+        self._limit_margin = fetch_from_json("constants.json" , "LIMIT_MARGIN")
 
     def fetch_all_orders(self):
         try:
@@ -38,7 +39,9 @@ class KiteAdapter(BrokerInterface):
         try:
             positions = self.kite.positions()
             positions = position_attribute_mgmt(positions["net"])
-            return [p for p in positions if p["quantity"] > 0]
+            positions = [p for p in positions if p["quantity"] > 0]
+            pprint(positions)
+            return positions
         except Exception as e:
             logging.error(f"Kite fetch_all_positions error: {e}")
             return None
@@ -98,20 +101,47 @@ class KiteAdapter(BrokerInterface):
             
             return f"{underlying}{yy}{month_char}{dd_str}{strike}{call_or_put}"
     
-    def buy_units(self, trading_symbol, instrument_token, quantity):
-        return super().buy_units(trading_symbol, instrument_token, quantity)
+    def buy_units(self, trading_symbol, instrument_token, quantity , exchange , ltp):
+        try:
+            if exchange == "MCX":
+                order_type = self.kite.ORDER_TYPE_LIMIT
+                price = ltp+self._limit_margin
+            else:
+                order_type = self.kite.ORDER_TYPE_MARKET
+                price = 0
+            order_id = self.kite.place_order(
+                tradingsymbol=trading_symbol, 
+                exchange = exchange,
+                transaction_type=self.kite.TRANSACTION_TYPE_BUY,
+                quantity=quantity,
+                order_type = order_type,
+                product = self.kite.PRODUCT_MIS,
+                variety=self.kite.VARIETY_REGULAR, 
+                price = price
+            )
+            logging.info("Kite buy order placed successfully")
+            return order_id
+        except Exception as e:
+            logging.error(f"Error in kite buy order {e}")
     
 
-    def sell_units(self, trading_symbol, quantity, exchange):
+    def sell_units(self, trading_symbol, instrument_token , quantity, exchange , ltp):
         try:
+            if exchange == "MCX":
+                order_type = self.kite.ORDER_TYPE_LIMIT
+                price = ltp-self._limit_margin
+            else:
+                order_type = self.kite.ORDER_TYPE_MARKET
+                price = 0
             order_id = self.kite.place_order(
                 tradingsymbol=trading_symbol,
                 exchange=exchange,
                 transaction_type=self.kite.TRANSACTION_TYPE_SELL,
                 quantity=quantity,
-                order_type=self.kite.ORDER_TYPE_MARKET,
+                order_type=order_type,
                 product=self.kite.PRODUCT_MIS,
                 variety=self.kite.VARIETY_REGULAR,
+                price = price
             )
             logging.info(f"Kite Sell order placed successfully. Order ID: {order_id}")
             return order_id
@@ -152,7 +182,6 @@ class KiteAdapter(BrokerInterface):
         socket = self.kite_instance.get_kite_socket_connection()
 
         def on_ticks(ws, ticks):
-            pprint(ticks)
             for tick in ticks:
                 instrument_token = tick["instrument_token"]
                 price = tick["last_price"]

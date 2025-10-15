@@ -11,8 +11,8 @@ from core.trade_utils import get_expiry_date , get_instrument_tokens_from_symbol
 from utils import fetch_from_json , find_matching_object
 import time
 
-PNT_STOP_LOSS = 1
-PNT_BOOK_PROFIT = 1
+PNT_STOP_LOSS = 2
+PNT_BOOK_PROFIT = 2
 
 PCTG_BOOK_PROFIT = 1
 PCTG_STOP_LOSS = 1
@@ -29,12 +29,14 @@ class Trader_Singleton:
     _five_weekly_option_contracts = {}
     _fund_summary = {}
 
+    _near_month_data = {}
     _trading_watcher_thread_running = False
     _stop_event = threading.Event()
     _tick_counter = 0
     _comparison_function = "PNT"
     _use_max_margin = True
-    _sell_mode = "ALERT"
+    _sell_mode = "SELL"
+    _exchange = fetch_from_json("constants.json" , "EXCHANGE")
 
     _positions_to_subscribe = []
 
@@ -67,7 +69,6 @@ class Trader_Singleton:
         self._five_weekly_option_contracts[token]["lots"] =  int(((self._fund_summary["cash_balance"] - self._fund_summary["utilized"]) / price) / int(data["lot_size"]))
         self._five_weekly_option_contracts[token]["call_or_put"] = call_or_put
         self._five_weekly_option_contracts[token]["level"] = level
-
     
     def update_weekly_positions(self, token: str, attribute_name: str, updated_value):
         if token not in self._five_weekly_option_contracts:
@@ -94,8 +95,6 @@ class Trader_Singleton:
             
         self._position_data[key_token][attribute_name] = updated_value
         
-        # --- ADDED: P/L Recalculation Block ---
-        # If the price was updated, recalculate all P/L fields
         if attribute_name == 'latest_price':
             position = self._position_data[key_token]
             buy_price = position.get('average_price', 0)
@@ -114,7 +113,7 @@ class Trader_Singleton:
         logging.debug(f"Updated {key_token}:{attribute_name} to {updated_value}")
 
     def refresh_open_positions_and_buy_price(self):
-        # self._broker.unsubscribe_from_all(self.get_relevant_instruments_to_track())
+        self._broker.unsubscribe_from_all(self.get_relevant_instruments_to_track())
         fund_summary = self._broker.fetch_fund_summary()
         positions_from_broker = self._broker.fetch_all_positions()
         orders_from_broker = self._broker.fetch_all_orders()
@@ -153,7 +152,8 @@ class Trader_Singleton:
                 "instrument_token": position["instrument_token"],
                 "exchange" : position["exchange"],
                 "lotsize" : lotsize,
-                "lots": int(net_qty / lotsize),
+                # "lots": int(net_qty / lotsize), MSTOCK COUPLED CODE 
+                "lots" : net_qty,
                 # ADDED: Initial P/L fields
                 "pts_pl": pts_pl,
                 "pct_pl": pct_pl,
@@ -185,6 +185,7 @@ class Trader_Singleton:
         """Returns a list of instrument tokens currently in the _position_data."""
         instruments = list(self._position_data.keys())
         instruments.extend(self._five_weekly_option_contracts.keys())
+        instruments.extend(self._near_month_data.keys())
         print(instruments)
         return instruments
 
@@ -212,7 +213,7 @@ class Trader_Singleton:
                         print(tradingsymbol)
                         print(instrument_token)
                         print(qty)
-                        broker.sell_units(None,instrument_token,qty)
+                        broker.sell_units(tradingsymbol,instrument_token,qty,exchange,ltp)
                     print("###################################")
                     logging.critical(f"SELL UNITS - {tradingsymbol}")
                     print("###################################")
@@ -240,8 +241,7 @@ class Trader_Singleton:
         nifty_price: float,
         call_or_put: str,
         strike_interval: int = 100,
-        underlying: str = "NIFTY",
-        exchange: str = "NFO"
+        underlying: str = "NIFTY"
     ) -> Dict[str, any]:
         if strike_interval <= 0:
             raise ValueError("strike_interval must be positive integer")
@@ -284,24 +284,26 @@ class Trader_Singleton:
 
     def setup_weekly_option_contract_subscriptions(self):
         try:
-            near_month_token = fetch_from_json("constants.json" , "NEAR_MONTH_FUTURE_TOKEN")
-            ltp_nifty_near_month = self._broker.get_ltp(near_month_token)
+            near_month_symbol = fetch_from_json("constants.json" , "NEAR_MONTH_FUTURE_TOKEN")
+            near_month_token = self._broker.get_instrument_details(near_month_symbol)["instrument_token"]
+            ltp_nifty_near_month = self._broker.get_ltp(near_month_symbol)
+            self._near_month_data[near_month_token] = ltp_nifty_near_month
             contracts = self.get_5_weekly_option_contracts(float(ltp_nifty_near_month) , "CE" , underlying="CRUDEOIL")["symbols"]
-            relevant_tokens_to_subscribe = []
+            #relevant_tokens_to_subscribe = []
             for key , value in contracts.items(): 
                 data = self._broker.get_instrument_details(value)
                 price = self._broker.get_ltp(data["tradingsymbol"])
                 token = data["instrument_token"]
-                relevant_tokens_to_subscribe.append(token)
+                #relevant_tokens_to_subscribe.append(token)
                 self.weekly_options_initialize(token , data , "CE" , price , level=key)
             contracts = self.get_5_weekly_option_contracts(ltp_nifty_near_month , "PE" , underlying="CRUDEOIL")["symbols"]
             for key , value in contracts.items(): 
                 data = self._broker.get_instrument_details(value)
                 price = self._broker.get_ltp(data["tradingsymbol"])
                 token = data["instrument_token"]
-                relevant_tokens_to_subscribe.append(token)
+                #relevant_tokens_to_subscribe.append(token)
                 self.weekly_options_initialize(token , data , "PE" , price , level=key)
-            self._broker.subscribe_to_all(relevant_tokens_to_subscribe)
+            #self._broker.subscribe_to_all(relevant_tokens_to_subscribe)
             return
         except Exception as e:
             print(f"Exception in setting up weekly options - {e}")
@@ -356,8 +358,14 @@ class Trader_Singleton:
                     'lots' : self._five_weekly_option_contracts[token]["lots"]
                 }
                 self.frontend_data_socket.emit('price-updated-order', payload)
+            
+            if token in self._near_month_data:
+                if price/100 != self._near_month_data[token]/100:
+                    print("REFRESHING TABLE")
+                    self.refresh_open_positions_and_buy_price()
+                    self.setup_weekly_option_contract_subscriptions()
         except Exception as e:
-            logging.error("Error setting latest price {e}")
+            logging.error(f"Error setting latest price {e}")
 
         
 
@@ -407,7 +415,6 @@ class Trader_Singleton:
             print(f"Couldnt subscribe to instruments - {e}")
 
     def on_start(self):
-        # Calls the centralized function
         self.refresh_open_positions_and_buy_price()
 
 
@@ -452,10 +459,14 @@ class Trader_Singleton:
             """Handles a sell order request from the frontend."""
             logging.info(f"Received sell order from client: {order_details}")
             print(order_details)
-            self._broker.sell_units(None , order_details["token"] , order_details["lots"])
+            ltp = self._five_weekly_option_contracts[order_details["token"]]["ltp"]
+            print(ltp)
+            self._broker.sell_units(order_details["tradingsymbol"] , order_details["token"] , order_details["lots"] , self._exchange , ltp)
 
         @self.frontend_data_socket.on('place_buy_order')
         def handle_buy_order(order_details):
             logging.info(f"Received buy order from client: {order_details}")
             print(order_details)
-            self._broker.buy_units(None , order_details["token"] , order_details["lots"])
+            ltp = self._five_weekly_option_contracts[order_details["token"]]["ltp"]
+            print(ltp)
+            self._broker.buy_units(order_details["tradingsymbol"] , order_details["token"] , order_details["lots"] , self._exchange , ltp)

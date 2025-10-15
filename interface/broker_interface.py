@@ -36,11 +36,11 @@ class BrokerInterface(ABC):
         pass
 
     @abstractmethod
-    def sell_units(self, trading_symbol, instrument_token ,quantity ):
+    def sell_units(self, trading_symbol, instrument_token ,quantity ,exchange ,ltp):
         pass
 
     @abstractmethod
-    def buy_units(self , trading_symbol , instrument_token , quantity ):
+    def buy_units(self , trading_symbol , instrument_token , quantity , exchange ,ltp):
         pass
 
     @abstractmethod
