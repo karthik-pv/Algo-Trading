@@ -3,10 +3,11 @@ import json
 import logging
 import kiteconnect
 from dotenv import load_dotenv
+from loguru import logger
 
 from utils import get_access_token_from_json
 
-logging.basicConfig(level=logging.DEBUG)
+#logging.basicConfig(level=logging.DEBUG)
 
 load_dotenv()
 
@@ -36,19 +37,20 @@ class KiteSingleton:
             raise ValueError("KITE_API_KEY not found in environment variables")
 
         self._kite = kiteconnect.KiteConnect(api_key=KITE_API_KEY)
-        logging.debug("KiteConnect instance created.")
+        logger.debug("KiteConnect instance created.")
 
     def create_session(self):
-        print(self._kite.login_url())
+        logger.info("Please visit the following URL to authorize the application:")
+        logger.debug(self._kite.login_url())
         request_token = input("Please paste the request token obtained here - ")
         if not KITE_SECRET_KEY:
             raise ValueError("KITE_SECRET_KEY not found in environment variables")
         data = self._kite.generate_session(
             request_token=request_token, api_secret=os.getenv("KITE_SECRET_KEY")
         )
-        logging.debug(f"Profile data received: {data}")
+        logger.debug(f"Profile data received: {data}")
         self.set_access_token(data["access_token"])
-        logging.debug(f"Access token set: {data['access_token']}")
+        logger.debug(f"Access token set: {data['access_token']}")
 
     def get_kite_socket_connection(self):
         if self._kite_socket is None:
@@ -63,7 +65,7 @@ class KiteSingleton:
     def set_access_token(self, access_token):
         self._kite.set_access_token(access_token)
         self._access_token = access_token
-        logging.debug(f"Access token set: {access_token}")
+        logger.debug(f"Access token set: {access_token}")
 
     def get_access_token(self):
         return get_access_token_from_json()
@@ -78,4 +80,4 @@ class KiteSingleton:
     # prod
     def initialise_kite_for_prod(self):
         self.create_session()
-        logging.debug("Kite session created for production.")
+        logger.debug("Kite session created for production.")
