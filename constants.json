@@ -1,6 +1,7 @@
 {
+    "UNDERLYING" :"CRUDEOIL" ,
+    "EXCHANGE" : "MCX",
+    "BROKER" : "MSTOCK",
     "NEAR_MONTH_FUTURE_TOKEN" : "CRUDEOIL25NOVFUT" , 
-    "HOLIDAYS" : ["02-10-2025","21-10-2025"] ,
-    "LIMIT_MARGIN" : 0.5,
-    "EXCHANGE" : "MCX"
+    "LIMIT_MARGIN" : 0.5
 }
