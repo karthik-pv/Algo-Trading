@@ -4,6 +4,7 @@ import calendar
 from typing import Optional , Dict , List , Any
 from calendar import monthrange
 import holidays
+from loguru import logger
 
 india_holidays = holidays.India()
 
@@ -11,6 +12,7 @@ india_holidays = holidays.India()
 from utils import fetch_from_json , find_matching_object
 
 def last_tuesday(year: int, month: int) -> datetime.date:
+    logger.info(f"Calculating last Tuesday for {month}/{year}") 
     """
     Finds the last Tuesday of a given month and year.
     """
@@ -25,6 +27,7 @@ def calculate_accurate_average_buy_price_and_update_positions(
     positions: List[Dict[str, Any]], 
     orders: List[Dict[str, Any]]
 ) -> List[Dict[str, Any]]:
+    logger.debug("Calculating accurate average buy price and updating positions")
     positions_map = {}
     for i, p in enumerate(positions):
         symbol = p.get('tradingsymbol')
@@ -42,7 +45,7 @@ def calculate_accurate_average_buy_price_and_update_positions(
     try:
         orders.sort(key=lambda item: item['timestamp'] if isinstance(item['timestamp'], datetime.datetime) else datetime.datetime.strptime(item['timestamp'], '%Y-%b-%d %H:%M:%S'), reverse=True)
     except Exception as e:
-        print(f"Error sorting orders, returning original positions. Error: {e}")
+        logger.error(f"Error sorting orders, returning original positions. Error: {e}")
         return positions
 
     for order in orders:
@@ -84,6 +87,7 @@ def calculate_accurate_average_buy_price_and_update_positions(
     return positions
 
 def get_current_nifty_future(today: datetime.date = None) -> tuple[int, int]:
+    logger.debug("Calculating current Nifty future month and year")
     """
     Determines the current trading month for Nifty futures based on the last Tuesday expiry.
     """
@@ -107,6 +111,7 @@ def get_current_nifty_future(today: datetime.date = None) -> tuple[int, int]:
             return (this_month + 1, this_year)
 
 def nifty_future_symbol(root: str = "NIFTY", today: datetime.date = None) -> str:
+    logger.debug(f"Generating Nifty future symbol for root: {root}")
     """
     Generates the Nifty future symbol (e.g., NIFTYOCT25) for the current trading month.
     """
@@ -116,6 +121,7 @@ def nifty_future_symbol(root: str = "NIFTY", today: datetime.date = None) -> str
     return f"{root}{mon_name}{yy:02d}"
 
 def expiry_filter(exp_date: date, index_name: str,tradingsymbol, expiry_type: str) -> bool:
+    logger.debug(f"Filtering expiry for {index_name} on {exp_date} as {expiry_type}")
     """
     Filters expiry based on weekly/monthly rules for NIFTY, SENSEX, CRUDE,
     considering NSE/BSE/MCX holidays.
@@ -166,6 +172,7 @@ def expiry_filter(exp_date: date, index_name: str,tradingsymbol, expiry_type: st
     return True
 
 def get_expiry_date(underlying: str) -> datetime.date:
+    logger.debug(f"Calculating expiry date for underlying: {underlying}")
     """
     Determines the next valid trading expiry date based on the underlying asset's rules.
     
@@ -201,7 +208,9 @@ def get_expiry_date(underlying: str) -> datetime.date:
         if days_until_target == 0 and now_time > market_close_time:
              expiry_candidate += datetime.timedelta(days=7)
              
-    elif underlying == "CRUDEOIL":
+    elif underlying == "CRUDEOIL" or underlying == "CRUDEOILM":
+        expiry_candidate = datetime.date(today.year, today.month+1, 19)
+        return expiry_candidate
         # Target: 19th of the current month, or next month if the 19th has passed.
         target_day = 19
         
@@ -228,6 +237,7 @@ def get_expiry_date(underlying: str) -> datetime.date:
     # =========================================================================
 
     holiday_strings = fetch_from_json("constants.json", "HOLIDAYS")
+    logger.debug(f"Fetched holidays: {holiday_strings}")
     if holiday_strings is None:
         holidays = set()
     else:
@@ -244,7 +254,7 @@ def get_expiry_date(underlying: str) -> datetime.date:
             # Found a valid trading day
             return final_expiry
             
-        print(f"Adjusting expiry: {final_expiry.strftime('%d-%m-%Y')} is a holiday/weekend. Checking previous day.")
+        logger.debug(f"Adjusting expiry: {final_expiry.strftime('%d-%m-%Y')} is a holiday/weekend. Checking previous day.")
         
         # Roll back one day
         final_expiry -= datetime.timedelta(days=1)
@@ -257,7 +267,9 @@ def get_expiry_date(underlying: str) -> datetime.date:
 
 
 def get_instrument_tokens_from_symbol(name):
+    logger.debug(f"Fetching instrument token for: {name}")
     return find_matching_object("instrument_list.json" , "name" , name)["token"]
 
 def get_instrument_details_from_json(name):
+    logger.debug(f"Fetching instrument details for: {name}")
     return find_matching_object("instrument_list.json" , "name" , name)

@@ -1,9 +1,11 @@
 import struct
 import logging
 from pprint import pprint
+from loguru import logger
 
 
 def position_attribute_mgmt(positions):
+    logger.info(f"Raw positions data: {positions}")
     updated_positions = []
     if positions:
         for position in positions:
@@ -21,6 +23,7 @@ def position_attribute_mgmt(positions):
     return updated_positions
 
 def order_attribute_mgmt(orders):
+    logger.info(f"Raw orders data: {orders}")
     updated_orders = []
     if orders:
         for order in orders:
@@ -36,12 +39,14 @@ def order_attribute_mgmt(orders):
 
 
 def fund_summary_attribute_mgmt(fund_summary):
+    logger.info(f"Raw fund summary data: {fund_summary}")
     cropped_fund_summary = {}
     cropped_fund_summary["cash_balance"] = fund_summary["data"][0]["AVAILABLE_BALANCE"]
     cropped_fund_summary["utilized"] = fund_summary["data"][0]["AMOUNT_UTILIZED"]
     return cropped_fund_summary
 
 def instrument_details_attribute_mgmt(instrument_details):
+    logger.info(f"Raw instrument details data: {instrument_details}")
     instrument_details["tradingsymbol"] = instrument_details["name"]
     instrument_details["instrument_token"] = instrument_details["token"]
     instrument_details["lot_size"] = instrument_details["lotsize"]
@@ -49,6 +54,7 @@ def instrument_details_attribute_mgmt(instrument_details):
 
 
 def parse_market_depth(market_depth_data):
+    #logger.info(f"Raw market depth data: {market_depth_data}")
     """Parses the 200-byte market depth data into bids and asks."""
     depth_items = []
     item_format = "<hqqh"
@@ -73,8 +79,9 @@ def parse_market_depth(market_depth_data):
 
 
 def parse_quote_message(binary_data):
+    #logger.info(f"Raw binary quote data: {binary_data}")
     if len(binary_data) != 379:
-        logging.error(
+        logger.error(
             f"Incomplete packet. Expected 379 bytes, but got {len(binary_data)}."
         )
         return None
@@ -142,10 +149,7 @@ def parse_quote_message(binary_data):
         return parsed_packet
 
     except struct.error as e:
-        logging.error(f"Failed to unpack quote packet: {e}")
+        logger.error(f"Failed to unpack quote packet: {e}")
         return None
 
 
-# raw_byte_stream = b"\x03\x011333\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00v\x8a\xfeU\x00\x00\x00\x00uz\x01\x00\x00\x00\x00\x00K\x00\x00\x00\x00\x00\x00\x00\xe5{\x01\x00\x00\x00\x00\x00S\xe98\x00\x00\x00\x00\x00\x00\x00\x00\x008\xf2 A\x00\x00\x00\x00&^*A\xd2|\x01\x00\x00\x00\x00\x00\x86}\x01\x00\x00\x00\x00\x00Rz\x01\x00\x00\x00\x00\x00\x9a}\x01\x00\x00\x00\x00\x00v\x8a\xfeU\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x90\x01\x00\x00\x00\x00\x00\x00zz\x01\x00\x00\x00\x00\x00\x02\x00\x00\x00<\x03\x00\x00\x00\x00\x00\x00uz\x01\x00\x00\x00\x00\x00\x02\x00\x00\x00I\x01\x00\x00\x00\x00\x00\x00pz\x01\x00\x00\x00\x00\x00\x05\x00\x00\x00.\x03\x00\x00\x00\x00\x00\x00kz\x01\x00\x00\x00\x00\x00\x06\x00\x00\x00\xb0\x01\x00\x00\x00\x00\x00\x00fz\x01\x00\x00\x00\x00\x00\t\x00\x00\x00=\x01\x00\x00\x00\x00\x00\x00\x84z\x01\x00\x00\x00\x00\x00\x06\x00\x00\x00D\x00\x00\x00\x00\x00\x00\x00\x89z\x01\x00\x00\x00\x00\x00\x02\x00\x00\x00\x1a\x00\x00\x00\x00\x00\x00\x00\x8ez\x01\x00\x00\x00\x00\x00\x02\x00\x00\x00\t\x00\x00\x00\x00\x00\x00\x00\x93z\x01\x00\x00\x00\x00\x00\x01\x00\x00\x00\x08\x01\x00\x00\x00\x00\x00\x00\x98z\x01\x00\x00\x00\x00\x00\x04\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
-# pprint(parse_quote_message(raw_byte_stream))
-# print(parse_quote_message(raw_byte_stream)["close"])
