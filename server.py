@@ -2,6 +2,7 @@ import json
 import threading
 import logging
 import asyncio
+import os
 from flask import Flask, jsonify, request, Response, render_template
 from flask_cors import CORS
 
@@ -83,6 +84,59 @@ EXCHANGE = fetch_from_json("constants.json" , "EXCHANGE")
 broker: BrokerInterface = BROKER_MAP[CURRENT_BROKER]()
 
 shutdown_event = threading.Event()
+
+SETTINGS_FILE = "settings.json"
+
+# Default settings (used if file missing)
+DEFAULT_SETTINGS = {
+    "mode": "ALERT",
+    "pctMargin": 50,
+    "volReduction": 10,
+    "defaultLot": 1,
+    "tolerancePts": 5,
+    "optionPct": False,
+    "optionPts": False,
+    "optionEma": True,
+    "pctProfit": 1.0,
+    "pctLoss": 0.5,
+    "ptsProfit": 20,
+    "ptsLoss": 10,
+    "emaPeriod": 9
+}
+
+@app.route("/settings")
+def settings_page():
+    """Render the settings HTML page."""
+    return render_template("settings.html")
+
+@app.route("/load_settings")
+def load_settings():
+    """Load settings.json and return as JSON."""
+    if not os.path.exists(SETTINGS_FILE):
+        # Create file with defaults if missing
+        with open(SETTINGS_FILE, "w") as f:
+            json.dump(DEFAULT_SETTINGS, f, indent=4)
+        return jsonify(DEFAULT_SETTINGS)
+
+    try:
+        with open(SETTINGS_FILE, "r") as f:
+            settings = json.load(f)
+        return jsonify(settings)
+    except Exception as e:
+        print("Error reading settings:", e)
+        return jsonify(DEFAULT_SETTINGS), 500
+
+@app.route("/save_settings", methods=["POST"])
+def save_settings():
+    """Save settings back to settings.json."""
+    try:
+        data = request.get_json()
+        with open(SETTINGS_FILE, "w") as f:
+            json.dump(data, f, indent=4)
+        return jsonify({"status": "success"})
+    except Exception as e:
+        print("Error saving settings:", e)
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 
 @app.route("/orders")
@@ -195,6 +249,11 @@ def widget_one():
 def dashboard():
     logger.info("Rendering buy dashboard page")
     return render_template("buy_dashboard.html")
+
+@app.route("/settings")
+def settings():
+    logger.info("Rendering settings page")
+    return render_template("settings.html")
 
 
 async def start_async_connections():

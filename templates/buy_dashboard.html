@@ -42,7 +42,7 @@
     #buy-widget-container.put-view .toggle-button.active-toggle { background-color: #c62828; }
     .buy-button { background-color: #28a745; color: white; border: none; padding: 0.6rem 1rem; border-radius: 5px; cursor: pointer; font-size: 0.9rem; font-weight: 500; transition: background-color 0.2s; }
     .buy-button:hover { background-color: #218838; }
-    .expiry-label {font-weight: bold;color: white;min-width: 100px;}
+    .expiry-label {color: white;min-width: 100px;}
 
     .toggle-container {
     width :100%;
@@ -50,10 +50,19 @@
     align-items: center;
     justify-content: space-between; /* 👈 pushes label left, buttons right */
     padding: 8px 12px;
-}
+    }   
+    .toggle-container > div {
+    flex: 0 0 60%;      /* default for left side */
+    }
+
+    .toggle-container > div:last-child {
+        flex: 0 0 40%;      /* right side buttons */
+        display: flex;
+        justify-content: flex-end;
+        gap: 10px;
+    }
 
 .expiry-label {
-    font-weight: bold;
     color: white;
     vertical-align: middle;
 }
@@ -76,6 +85,31 @@
 .active-toggle {
     background-color: #007bff;
     color: black;
+}
+
+/* --- TYPE COLUMN STYLING --- */
+.type-cell {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 8px;
+}
+
+.type-cell label {
+    color: #ccc;
+    font-size: 0.9rem;
+    cursor: pointer;
+}
+
+.type-cell label {
+    color: #ccc;
+    margin: 0 4px;
+    cursor: pointer;
+    font-size: 0.85rem;
+}
+
+.type-cell input[type="radio"] {
+    margin-right: 3px;
 }
 
 
@@ -115,6 +149,7 @@
         .summary-value { font-size: 1.1rem; }
         .lots-override-input { padding: 0.3rem; }
     }
+
 </style>
 {% endblock %}
 
@@ -136,8 +171,9 @@
         </div>
         <div class="toggle-container">
             <div class="toggle-buttons" width ="50%">
-                <label id="underlying" class="expiry-label">Underlying: —</label>
-                <label id="expiryLabel" class="expiry-label">Expiry: —</label>
+                <label id="broker" class="expiry-label">BRO :</label>
+                <label id="underlying" class="expiry-label">UL :</label>
+                <label id="expiryLabel" class="expiry-label">EXP : </label>
             </div>
             <div class="toggle-buttons" width ="50%">
                 <button class="toggle-button active-toggle" id="callBtn">Calls (CE)</button>
@@ -148,8 +184,12 @@
         <table class="option-table">
             <thead>
                 <tr>
-                    <th>Levels</th> <th>Strike Price</th> 
-                    <th>Market Price</th> <th>Lots</th> <th>Lots(O)</th>
+                    <th>Levels</th> 
+                    <th>Strike Price</th> 
+                    <th>Market Price</th> 
+                    <th>Lots</th> 
+                    <th>Lots(O)</th>
+                    <th>Type</th>
                     <th class="center">Action</th>
                 </tr>
             </thead>
@@ -304,12 +344,12 @@ document.addEventListener('DOMContentLoaded', function() {
             const expiry = firstContract.expiry;
             if (expiry) {
                 const date = new Date(expiry);
-                expiryLabel.textContent = `Expiry: ${date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}`;
+                expiryLabel.textContent = `EXP : ${date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}`;
             } else {
-                expiryLabel.textContent = 'Expiry: —';
+                expiryLabel.textContent = 'EXP: ';
             }
         } else {
-            expiryLabel.textContent = 'Expiry: —';
+            expiryLabel.textContent = 'EXP: ';
         }
         
         // FIX: Loop through the [token, contract] pairs
@@ -328,6 +368,11 @@ document.addEventListener('DOMContentLoaded', function() {
                 <td id="price-${token}">₹ ${(contract.ltp || 0).toFixed(2)}</td>
                 <td id="lots-${token}">${contract.lots || 0}</td>
                 <td><input type="number" class="lots-override-input" id="override-lots-${token}" placeholder="${contract.lots || 0}"></td>
+                <td class="type-cell">
+                    <label><input type="radio" name="type-${token}" value="Intra"> I</label>
+                    <label><input type="radio" name="type-${token}" value="Scalping" checked> S</label>
+                    <label><input type="radio" name="type-${token}" value="UltraScalping"> U</label>
+                </td>
                 <td class="center">
                     <button class="buy-button" data-token="${token}" data-tradingsymbol="${contract.name}" data-lots="${contract.lots || 0}">Buy</button>
                 </td>
@@ -362,7 +407,7 @@ document.addEventListener('DOMContentLoaded', function() {
     function populatePositionsTable(positions) {
         positionsTableBody.innerHTML = '';
         if (Object.keys(positions).length === 0) {
-            positionsTableBody.innerHTML = `<tr><td colspan="10" class="no-options">No open positions found.</td></tr>`;
+            positionsTableBody.innerHTML = `<tr><td colspan="11" class="no-options">No open positions found.</td></tr>`;
             return;
         }
         for (const token in positions) {
@@ -377,6 +422,15 @@ document.addEventListener('DOMContentLoaded', function() {
                 <td id="market-price-${token}">${(pos.latest_price || pos.average_price).toFixed(2)}</td>
                 <td>${pos.lots || 0}</td>
                 <td><input type="number" class="lots-override-input" id="override-lots-sell-${token}" placeholder="${pos.lots || 0}"></td>
+
+                <td class="type-cell">
+                    <label><input type="radio" name="sell-type-${token}" value="Intra"> I</label>
+                    <label><input type="radio" name="sell-type-${token}" value="Scalping" checked> S</label>
+                    <label><input type="radio" name="sell-type-${token}" value="UltraScalping"> U</label>
+                </td>
+
+
+
                 <td id="pct-${token}" class="${plClass}">${(pos.pct_pl || 0).toFixed(2)}</td>
                 <td id="pts-${token}" class="${plClass}">${(pos.pts_pl || 0).toFixed(2)}</td>
                 <td id="total-pl-${token}" class="${plClass}">${(pos.total_pl || 0).toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>

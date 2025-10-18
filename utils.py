@@ -74,6 +74,7 @@ def find_matching_row_in_csv(filepath: str, column_name: str, value_to_match: An
 
 
 def write_to_json(data_to_write: dict, file_path: str) -> bool:
+    logger.info(f"Data to write is {data_to_write} file path is  {file_path}")
     try:
         try:
             with open(file_path, 'r') as f:
