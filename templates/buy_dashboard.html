@@ -173,6 +173,7 @@
             <div class="toggle-buttons" width ="50%">
                 <label id="broker" class="expiry-label">BRO :</label>
                 <label id="underlying" class="expiry-label">UL :</label>
+                <label id="ltp" class="expiry-label">LTP :</label>
                 <label id="expiryLabel" class="expiry-label">EXP : </label>
             </div>
             <div class="toggle-buttons" width ="50%">
@@ -336,6 +337,10 @@ document.addEventListener('DOMContentLoaded', function() {
             optionsTableBody.innerHTML = `<tr><td colspan="7" class="no-options">No ${optionType === 'CE' ? 'call' : 'put'} options found.</td></tr>`;
             return;
         }
+
+        // ✅ SORT BY MARKET PRICE (descending or ascending)
+        filteredContracts.sort(([, a], [, b]) => a.ltp - b.ltp);
+
 
         // 🟢 Update expiry label if contracts exist
         const expiryLabel = document.getElementById('expiryLabel');

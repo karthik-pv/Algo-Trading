@@ -4870,3 +4870,1168 @@
 2025-10-18 06:54:36:675 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
 2025-10-18 06:54:41:676 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
 2025-10-18 06:54:41:677 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:09:35:687 | INFO     | server.py                 | <module>                  | ================================================================================ | 
+2025-10-18 07:09:35:688 | INFO     | server.py                 | <module>                  | Starting new session | 
+2025-10-18 07:09:35:688 | INFO     | server.py                 | <module>                  | ================================================================================ | 
+2025-10-18 07:09:35:689 | INFO     | server.py                 | <module>                  | Logger initialized successfully | 
+2025-10-18 07:09:35:690 | INFO     | utils.py                  | fetch_from_json           | Fetching EXCHANGE from constants.json. | 
+2025-10-18 07:09:35:691 | DEBUG    | kite_connector.py         | _initialize_kite          | KiteConnect instance created. | 
+2025-10-18 07:09:35:691 | INFO     | utils.py                  | fetch_from_json           | Fetching LIMIT_MARGIN from constants.json. | 
+2025-10-18 07:09:35:697 | INFO     | server.py                 | <module>                  | Initializing broker and trader... | 
+2025-10-18 07:09:35:698 | INFO     | server.py                 | <module>                  | Using broker: kite | 
+2025-10-18 07:09:35:698 | INFO     | utils.py                  | get_access_token_from_json | Fetching access token from JSON file. | 
+2025-10-18 07:09:35:699 | DEBUG    | kite_connector.py         | set_access_token          | Access token set: 6xNCWKzQp2fILy3KhzULLCzHJlw6JFtW | 
+2025-10-18 07:09:35:700 | INFO     | server.py                 | <module>                  | Starting in development mode... | 
+2025-10-18 07:09:37:405 | INFO     | kite_adapter.py           | download_instrument_list  | Successfully saved instruments to kite_instruments.csv | 
+2025-10-18 07:09:37:413 | INFO     | trade_logic.py            | on_start                  | Trader on_start initialization... | 
+2025-10-18 07:09:37:414 | INFO     | trade_logic.py            | refresh_open_positions_and_buy_price | Refreshing open positions and buy prices... | 
+2025-10-18 07:09:37:546 | ERROR    | kite_adapter.py           | fetch_fund_summary        | Kite fund summary error : Incorrect `api_key` or `access_token`. | 
+2025-10-18 07:09:37:648 | ERROR    | kite_adapter.py           | fetch_all_positions       | Kite fetch_all_positions error: Incorrect `api_key` or `access_token`. | 
+2025-10-18 07:09:37:751 | ERROR    | kite_adapter.py           | fetch_all_orders          | Kite fetch_all_orders error: Incorrect `api_key` or `access_token`. | 
+2025-10-18 07:09:37:751 | DEBUG    | trade_utils.py            | calculate_accurate_average_buy_price_and_update_positions | Calculating accurate average buy price and updating positions | 
+2025-10-18 07:10:29:916 | INFO     | server.py                 | <module>                  | ================================================================================ | 
+2025-10-18 07:10:29:917 | INFO     | server.py                 | <module>                  | Starting new session | 
+2025-10-18 07:10:29:917 | INFO     | server.py                 | <module>                  | ================================================================================ | 
+2025-10-18 07:10:29:918 | INFO     | server.py                 | <module>                  | Logger initialized successfully | 
+2025-10-18 07:10:29:920 | INFO     | utils.py                  | fetch_from_json           | Fetching EXCHANGE from constants.json. | 
+2025-10-18 07:10:29:921 | DEBUG    | kite_connector.py         | _initialize_kite          | KiteConnect instance created. | 
+2025-10-18 07:10:29:922 | INFO     | utils.py                  | fetch_from_json           | Fetching LIMIT_MARGIN from constants.json. | 
+2025-10-18 07:10:29:932 | INFO     | server.py                 | <module>                  | Initializing broker and trader... | 
+2025-10-18 07:10:29:933 | INFO     | kite_connector.py         | create_session            | Please visit the following URL to authorize the application: | 
+2025-10-18 07:10:29:933 | DEBUG    | kite_connector.py         | create_session            | https://kite.zerodha.com/connect/login?api_key=obpjm4dpcuirtjnf&v=3 | 
+2025-10-18 07:11:17:386 | DEBUG    | kite_connector.py         | create_session            | Profile data received: {'user_type': 'individual/ind_with_nom', 'email': 'phv_rao@yahoo.com', 'user_name': 'Padubidri Haridasrao Venkatesh', 'user_shortname': 'Padubidri', 'broker': 'ZERODHA', 'exchanges': ['NCO', 'BFO', 'BSE', 'MF', 'NSE', 'NFO', 'MCX'], 'products': ['CNC', 'NRML', 'MIS', 'BO', 'CO', 'MTF'], 'order_types': ['MARKET', 'LIMIT', 'SL', 'SL-M'], 'avatar_url': None, 'user_id': 'PL9313', 'api_key': 'obpjm4dpcuirtjnf', 'access_token': 'HUdzkAYO1aw5I5uEqiHEvAskL7BUX8st', 'public_token': 'YyjB3Bt4SlJJIf7iDVWBcXw2wcb412cF', 'refresh_token': '', 'enctoken': 'bm35uIBeh/r7UNvtOL0pgk+WtpHTOkCxu1Jz3ONGCaOerVtTSNe0+VNF0EbmeoqBf7N4+jzzqa7bqCk1gBIckkv24EXyYDIRdMnOfQQ4U/trRBDVzhTlIZ27+mtgPJg=', 'login_time': datetime.datetime(2025, 10, 18, 7, 10, 56), 'meta': {'demat_consent': 'ddpi'}} | 
+2025-10-18 07:11:17:387 | DEBUG    | kite_connector.py         | set_access_token          | Access token set: HUdzkAYO1aw5I5uEqiHEvAskL7BUX8st | 
+2025-10-18 07:11:17:388 | DEBUG    | kite_connector.py         | create_session            | Access token set: HUdzkAYO1aw5I5uEqiHEvAskL7BUX8st | 
+2025-10-18 07:11:17:389 | DEBUG    | kite_connector.py         | initialise_kite_for_prod  | Kite session created for production. | 
+2025-10-18 07:11:18:607 | INFO     | kite_adapter.py           | download_instrument_list  | Successfully saved instruments to kite_instruments.csv | 
+2025-10-18 07:11:18:617 | INFO     | trade_logic.py            | on_start                  | Trader on_start initialization... | 
+2025-10-18 07:11:18:617 | INFO     | trade_logic.py            | refresh_open_positions_and_buy_price | Refreshing open positions and buy prices... | 
+2025-10-18 07:11:18:921 | DEBUG    | trade_utils.py            | calculate_accurate_average_buy_price_and_update_positions | Calculating accurate average buy price and updating positions | 
+2025-10-18 07:11:18:922 | ERROR    | trade_logic.py            | refresh_open_positions_and_buy_price | Frontend socket yet to be instantiated | 
+2025-10-18 07:11:18:922 | INFO     | trade_logic.py            | refresh_open_positions_and_buy_price | Updated positions: 0 | 
+2025-10-18 07:11:18:923 | DEBUG    | trade_logic.py            | refresh_open_positions_and_buy_price | {} | 
+2025-10-18 07:11:18:924 | INFO     | trade_logic.py            | start_frontend_socket_server | Starting frontend socket server... | 
+2025-10-18 07:11:18:969 | INFO     | trade_logic.py            | register_socket_handlers  | Registering socket event handlers... | 
+2025-10-18 07:11:18:971 | INFO     | trade_logic.py            | start_frontend_socket_server | Frontend socket server thread has been launched. 🚀 | 
+2025-10-18 07:11:18:973 | INFO     | server.py                 | start_socket              | Starting socket connection... | 
+2025-10-18 07:11:18:973 | INFO     | trade_logic.py            | start_trading_watcher_thread | Starting trading watcher thread... | 
+2025-10-18 07:11:18:974 | INFO     | server.py                 | start_socket              | Starting broker WebSocket connection... | 
+2025-10-18 07:11:18:975 | INFO     | trade_logic.py            | start_trading_watcher_thread | Launching trading watcher thread 🚀 | 
+2025-10-18 07:11:18:977 | INFO     | trade_logic.py            | stop_loss_book_profit_core | Started trading watcher thread | 
+2025-10-18 07:11:18:977 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:11:18:978 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:11:18:978 | INFO     | trade_logic.py            | setup_weekly_option_contract_subscriptions | Setting up weekly option contract subscriptions... | 
+2025-10-18 07:11:18:979 | INFO     | utils.py                  | fetch_from_json           | Fetching NEAR_MONTH_FUTURE_TOKEN from constants.json. | 
+2025-10-18 07:11:18:981 | INFO     | kite_adapter.py           | get_instrument_details    | Fetching instrument details for CRUDEOIL25NOVFUT | 
+2025-10-18 07:11:18:982 | INFO     | utils.py                  | find_matching_row_in_csv  | Searching for row in kite_instruments.csv where tradingsymbol == CRUDEOIL25NOVFUT | 
+2025-10-18 07:11:18:995 | INFO     | kite_adapter.py           | get_instrument_details    | Instrument details fetched: {'instrument_token': '117218823', 'exchange_token': '457886', 'tradingsymbol': 'CRUDEOIL25NOVFUT', 'name': 'CRUDEOIL', 'last_price': '0.0', 'expiry': '2025-11-19', 'strike': '0.0', 'tick_size': '1.0', 'lot_size': '1', 'instrument_type': 'FUT', 'segment': 'MCX-FUT', 'exchange': 'MCX'} | 
+2025-10-18 07:11:18:996 | INFO     | kite_utils.py             | instrument_details_attribute_mgmt | Instrument details before management: {'instrument_token': '117218823', 'exchange_token': '457886', 'tradingsymbol': 'CRUDEOIL25NOVFUT', 'name': 'CRUDEOIL', 'last_price': '0.0', 'expiry': '2025-11-19', 'strike': '0.0', 'tick_size': '1.0', 'lot_size': '1', 'instrument_type': 'FUT', 'segment': 'MCX-FUT', 'exchange': 'MCX'} | 
+2025-10-18 07:11:18:996 | DATA     | kite_adapter.py           | get_instrument_details    | Instrument Details: {'instrument_token': '117218823', 'exchange_token': '457886', 'tradingsymbol': 'CRUDEOIL25NOVFUT', 'name': 'CRUDEOIL', 'last_price': '0.0', 'expiry': '2025-11-19', 'strike': '0.0', 'tick_size': '1.0', 'lot_size': 100, 'instrument_type': 'FUT', 'segment': 'MCX-FUT', 'exchange': 'MCX'} | 
+2025-10-18 07:11:18:997 | INFO     | utils.py                  | find_matching_row_in_csv  | Searching for row in kite_instruments.csv where tradingsymbol == CRUDEOIL25NOVFUT | 
+2025-10-18 07:11:19:126 | INFO     | trade_logic.py            | get_5_weekly_option_contracts | Generating 5 weekly option contracts for CRUDEOIL at price 5041.0 (CE) | 
+2025-10-18 07:11:19:127 | DEBUG    | trade_utils.py            | get_expiry_date           | Calculating expiry date for underlying: CRUDEOIL | 
+2025-10-18 07:11:19:127 | INFO     | trade_logic.py            | get_5_weekly_option_contracts | Calculated ATM Strike: 5000, Expiry Date: 2025-11-19 | 
+2025-10-18 07:11:19:128 | INFO     | kite_adapter.py           | format_option_symbol      | Formatting option symbol for CRUDEOIL, expiry: 2025-11-19, strike: 4800, type: CE | 
+2025-10-18 07:11:19:128 | INFO     | kite_adapter.py           | format_option_symbol      | Formatting option symbol for CRUDEOIL, expiry: 2025-11-19, strike: 4900, type: CE | 
+2025-10-18 07:11:19:129 | INFO     | kite_adapter.py           | format_option_symbol      | Formatting option symbol for CRUDEOIL, expiry: 2025-11-19, strike: 5000, type: CE | 
+2025-10-18 07:11:19:129 | INFO     | kite_adapter.py           | format_option_symbol      | Formatting option symbol for CRUDEOIL, expiry: 2025-11-19, strike: 5100, type: CE | 
+2025-10-18 07:11:19:130 | INFO     | kite_adapter.py           | format_option_symbol      | Formatting option symbol for CRUDEOIL, expiry: 2025-11-19, strike: 5200, type: CE | 
+2025-10-18 07:11:19:130 | DATA     | trade_logic.py            | setup_weekly_option_contract_subscriptions |  Weekly Option Contracts - {'ITM2': 'CRUDEOIL25NOV4800CE', 'ITM1': 'CRUDEOIL25NOV4900CE', 'ATM': 'CRUDEOIL25NOV5000CE', 'OTM1': 'CRUDEOIL25NOV5100CE', 'OTM2': 'CRUDEOIL25NOV5200CE'} | 
+2025-10-18 07:11:19:131 | INFO     | kite_adapter.py           | get_instrument_details    | Fetching instrument details for CRUDEOIL25NOV4800CE | 
+2025-10-18 07:11:19:131 | INFO     | utils.py                  | find_matching_row_in_csv  | Searching for row in kite_instruments.csv where tradingsymbol == CRUDEOIL25NOV4800CE | 
+2025-10-18 07:11:19:135 | INFO     | kite_adapter.py           | get_instrument_details    | Instrument details fetched: {'instrument_token': '119559687', 'exchange_token': '467030', 'tradingsymbol': 'CRUDEOIL25NOV4800CE', 'name': 'CRUDEOIL', 'last_price': '0.0', 'expiry': '2025-11-17', 'strike': '4800.0', 'tick_size': '0.1', 'lot_size': '1', 'instrument_type': 'CE', 'segment': 'MCX-OPT', 'exchange': 'MCX'} | 
+2025-10-18 07:11:19:135 | INFO     | kite_utils.py             | instrument_details_attribute_mgmt | Instrument details before management: {'instrument_token': '119559687', 'exchange_token': '467030', 'tradingsymbol': 'CRUDEOIL25NOV4800CE', 'name': 'CRUDEOIL', 'last_price': '0.0', 'expiry': '2025-11-17', 'strike': '4800.0', 'tick_size': '0.1', 'lot_size': '1', 'instrument_type': 'CE', 'segment': 'MCX-OPT', 'exchange': 'MCX'} | 
+2025-10-18 07:11:19:136 | DATA     | kite_adapter.py           | get_instrument_details    | Instrument Details: {'instrument_token': '119559687', 'exchange_token': '467030', 'tradingsymbol': 'CRUDEOIL25NOV4800CE', 'name': 'CRUDEOIL', 'last_price': '0.0', 'expiry': '2025-11-17', 'strike': '4800.0', 'tick_size': '0.1', 'lot_size': 100, 'instrument_type': 'CE', 'segment': 'MCX-OPT', 'exchange': 'MCX'} | 
+2025-10-18 07:11:19:138 | INFO     | utils.py                  | find_matching_row_in_csv  | Searching for row in kite_instruments.csv where tradingsymbol == CRUDEOIL25NOV4800CE | 
+2025-10-18 07:11:19:152 | INFO     | kite_adapter.py           | on_connect                | Connected to Kite WebSocket | 
+2025-10-18 07:11:19:229 | INFO     | trade_logic.py            | weekly_options_initialize | Initializing weekly option CRUDEOIL25NOV4800CE at LTP 343.1 | 
+2025-10-18 07:11:19:229 | INFO     | trade_logic.py            | weekly_options_initialize |  Determining Lot size 100 | 
+2025-10-18 07:11:19:230 | INFO     | kite_adapter.py           | get_instrument_details    | Fetching instrument details for CRUDEOIL25NOV4900CE | 
+2025-10-18 07:11:19:231 | INFO     | utils.py                  | find_matching_row_in_csv  | Searching for row in kite_instruments.csv where tradingsymbol == CRUDEOIL25NOV4900CE | 
+2025-10-18 07:11:19:233 | INFO     | kite_adapter.py           | get_instrument_details    | Instrument details fetched: {'instrument_token': '119559175', 'exchange_token': '467028', 'tradingsymbol': 'CRUDEOIL25NOV4900CE', 'name': 'CRUDEOIL', 'last_price': '0.0', 'expiry': '2025-11-17', 'strike': '4900.0', 'tick_size': '0.1', 'lot_size': '1', 'instrument_type': 'CE', 'segment': 'MCX-OPT', 'exchange': 'MCX'} | 
+2025-10-18 07:11:19:234 | INFO     | kite_utils.py             | instrument_details_attribute_mgmt | Instrument details before management: {'instrument_token': '119559175', 'exchange_token': '467028', 'tradingsymbol': 'CRUDEOIL25NOV4900CE', 'name': 'CRUDEOIL', 'last_price': '0.0', 'expiry': '2025-11-17', 'strike': '4900.0', 'tick_size': '0.1', 'lot_size': '1', 'instrument_type': 'CE', 'segment': 'MCX-OPT', 'exchange': 'MCX'} | 
+2025-10-18 07:11:19:234 | DATA     | kite_adapter.py           | get_instrument_details    | Instrument Details: {'instrument_token': '119559175', 'exchange_token': '467028', 'tradingsymbol': 'CRUDEOIL25NOV4900CE', 'name': 'CRUDEOIL', 'last_price': '0.0', 'expiry': '2025-11-17', 'strike': '4900.0', 'tick_size': '0.1', 'lot_size': 100, 'instrument_type': 'CE', 'segment': 'MCX-OPT', 'exchange': 'MCX'} | 
+2025-10-18 07:11:19:236 | INFO     | utils.py                  | find_matching_row_in_csv  | Searching for row in kite_instruments.csv where tradingsymbol == CRUDEOIL25NOV4900CE | 
+2025-10-18 07:11:19:332 | INFO     | trade_logic.py            | weekly_options_initialize | Initializing weekly option CRUDEOIL25NOV4900CE at LTP 281.7 | 
+2025-10-18 07:11:19:332 | INFO     | trade_logic.py            | weekly_options_initialize |  Determining Lot size 100 | 
+2025-10-18 07:11:19:333 | INFO     | kite_adapter.py           | get_instrument_details    | Fetching instrument details for CRUDEOIL25NOV5000CE | 
+2025-10-18 07:11:19:333 | INFO     | utils.py                  | find_matching_row_in_csv  | Searching for row in kite_instruments.csv where tradingsymbol == CRUDEOIL25NOV5000CE | 
+2025-10-18 07:11:19:335 | INFO     | kite_adapter.py           | get_instrument_details    | Instrument details fetched: {'instrument_token': '119558663', 'exchange_token': '467026', 'tradingsymbol': 'CRUDEOIL25NOV5000CE', 'name': 'CRUDEOIL', 'last_price': '0.0', 'expiry': '2025-11-17', 'strike': '5000.0', 'tick_size': '0.1', 'lot_size': '1', 'instrument_type': 'CE', 'segment': 'MCX-OPT', 'exchange': 'MCX'} | 
+2025-10-18 07:11:19:336 | INFO     | kite_utils.py             | instrument_details_attribute_mgmt | Instrument details before management: {'instrument_token': '119558663', 'exchange_token': '467026', 'tradingsymbol': 'CRUDEOIL25NOV5000CE', 'name': 'CRUDEOIL', 'last_price': '0.0', 'expiry': '2025-11-17', 'strike': '5000.0', 'tick_size': '0.1', 'lot_size': '1', 'instrument_type': 'CE', 'segment': 'MCX-OPT', 'exchange': 'MCX'} | 
+2025-10-18 07:11:19:336 | DATA     | kite_adapter.py           | get_instrument_details    | Instrument Details: {'instrument_token': '119558663', 'exchange_token': '467026', 'tradingsymbol': 'CRUDEOIL25NOV5000CE', 'name': 'CRUDEOIL', 'last_price': '0.0', 'expiry': '2025-11-17', 'strike': '5000.0', 'tick_size': '0.1', 'lot_size': 100, 'instrument_type': 'CE', 'segment': 'MCX-OPT', 'exchange': 'MCX'} | 
+2025-10-18 07:11:19:337 | INFO     | utils.py                  | find_matching_row_in_csv  | Searching for row in kite_instruments.csv where tradingsymbol == CRUDEOIL25NOV5000CE | 
+2025-10-18 07:11:19:434 | INFO     | trade_logic.py            | weekly_options_initialize | Initializing weekly option CRUDEOIL25NOV5000CE at LTP 224.8 | 
+2025-10-18 07:11:19:435 | INFO     | trade_logic.py            | weekly_options_initialize |  Determining Lot size 100 | 
+2025-10-18 07:11:19:435 | INFO     | kite_adapter.py           | get_instrument_details    | Fetching instrument details for CRUDEOIL25NOV5100CE | 
+2025-10-18 07:11:19:436 | INFO     | utils.py                  | find_matching_row_in_csv  | Searching for row in kite_instruments.csv where tradingsymbol == CRUDEOIL25NOV5100CE | 
+2025-10-18 07:11:19:437 | INFO     | kite_adapter.py           | get_instrument_details    | Instrument details fetched: {'instrument_token': '119558151', 'exchange_token': '467024', 'tradingsymbol': 'CRUDEOIL25NOV5100CE', 'name': 'CRUDEOIL', 'last_price': '0.0', 'expiry': '2025-11-17', 'strike': '5100.0', 'tick_size': '0.1', 'lot_size': '1', 'instrument_type': 'CE', 'segment': 'MCX-OPT', 'exchange': 'MCX'} | 
+2025-10-18 07:11:19:438 | INFO     | kite_utils.py             | instrument_details_attribute_mgmt | Instrument details before management: {'instrument_token': '119558151', 'exchange_token': '467024', 'tradingsymbol': 'CRUDEOIL25NOV5100CE', 'name': 'CRUDEOIL', 'last_price': '0.0', 'expiry': '2025-11-17', 'strike': '5100.0', 'tick_size': '0.1', 'lot_size': '1', 'instrument_type': 'CE', 'segment': 'MCX-OPT', 'exchange': 'MCX'} | 
+2025-10-18 07:11:19:439 | DATA     | kite_adapter.py           | get_instrument_details    | Instrument Details: {'instrument_token': '119558151', 'exchange_token': '467024', 'tradingsymbol': 'CRUDEOIL25NOV5100CE', 'name': 'CRUDEOIL', 'last_price': '0.0', 'expiry': '2025-11-17', 'strike': '5100.0', 'tick_size': '0.1', 'lot_size': 100, 'instrument_type': 'CE', 'segment': 'MCX-OPT', 'exchange': 'MCX'} | 
+2025-10-18 07:11:19:439 | INFO     | utils.py                  | find_matching_row_in_csv  | Searching for row in kite_instruments.csv where tradingsymbol == CRUDEOIL25NOV5100CE | 
+2025-10-18 07:11:19:536 | INFO     | trade_logic.py            | weekly_options_initialize | Initializing weekly option CRUDEOIL25NOV5100CE at LTP 174 | 
+2025-10-18 07:11:19:537 | INFO     | trade_logic.py            | weekly_options_initialize |  Determining Lot size 100 | 
+2025-10-18 07:11:19:537 | INFO     | kite_adapter.py           | get_instrument_details    | Fetching instrument details for CRUDEOIL25NOV5200CE | 
+2025-10-18 07:11:19:538 | INFO     | utils.py                  | find_matching_row_in_csv  | Searching for row in kite_instruments.csv where tradingsymbol == CRUDEOIL25NOV5200CE | 
+2025-10-18 07:11:19:541 | INFO     | kite_adapter.py           | get_instrument_details    | Instrument details fetched: {'instrument_token': '119557639', 'exchange_token': '467022', 'tradingsymbol': 'CRUDEOIL25NOV5200CE', 'name': 'CRUDEOIL', 'last_price': '0.0', 'expiry': '2025-11-17', 'strike': '5200.0', 'tick_size': '0.1', 'lot_size': '1', 'instrument_type': 'CE', 'segment': 'MCX-OPT', 'exchange': 'MCX'} | 
+2025-10-18 07:11:19:542 | INFO     | kite_utils.py             | instrument_details_attribute_mgmt | Instrument details before management: {'instrument_token': '119557639', 'exchange_token': '467022', 'tradingsymbol': 'CRUDEOIL25NOV5200CE', 'name': 'CRUDEOIL', 'last_price': '0.0', 'expiry': '2025-11-17', 'strike': '5200.0', 'tick_size': '0.1', 'lot_size': '1', 'instrument_type': 'CE', 'segment': 'MCX-OPT', 'exchange': 'MCX'} | 
+2025-10-18 07:11:19:543 | DATA     | kite_adapter.py           | get_instrument_details    | Instrument Details: {'instrument_token': '119557639', 'exchange_token': '467022', 'tradingsymbol': 'CRUDEOIL25NOV5200CE', 'name': 'CRUDEOIL', 'last_price': '0.0', 'expiry': '2025-11-17', 'strike': '5200.0', 'tick_size': '0.1', 'lot_size': 100, 'instrument_type': 'CE', 'segment': 'MCX-OPT', 'exchange': 'MCX'} | 
+2025-10-18 07:11:19:543 | INFO     | utils.py                  | find_matching_row_in_csv  | Searching for row in kite_instruments.csv where tradingsymbol == CRUDEOIL25NOV5200CE | 
+2025-10-18 07:11:19:638 | INFO     | trade_logic.py            | weekly_options_initialize | Initializing weekly option CRUDEOIL25NOV5200CE at LTP 135 | 
+2025-10-18 07:11:19:639 | INFO     | trade_logic.py            | weekly_options_initialize |  Determining Lot size 100 | 
+2025-10-18 07:11:19:639 | INFO     | trade_logic.py            | setup_weekly_option_contract_subscriptions | Completed CALL weekly options setup. | 
+2025-10-18 07:11:19:640 | INFO     | trade_logic.py            | setup_weekly_option_contract_subscriptions | Setting up PUT weekly options... | 
+2025-10-18 07:11:19:640 | INFO     | trade_logic.py            | get_5_weekly_option_contracts | Generating 5 weekly option contracts for CRUDEOIL at price 5041 (PE) | 
+2025-10-18 07:11:19:641 | DEBUG    | trade_utils.py            | get_expiry_date           | Calculating expiry date for underlying: CRUDEOIL | 
+2025-10-18 07:11:19:641 | INFO     | trade_logic.py            | get_5_weekly_option_contracts | Calculated ATM Strike: 5000, Expiry Date: 2025-11-19 | 
+2025-10-18 07:11:19:642 | INFO     | kite_adapter.py           | format_option_symbol      | Formatting option symbol for CRUDEOIL, expiry: 2025-11-19, strike: 5200, type: PE | 
+2025-10-18 07:11:19:642 | INFO     | kite_adapter.py           | format_option_symbol      | Formatting option symbol for CRUDEOIL, expiry: 2025-11-19, strike: 5100, type: PE | 
+2025-10-18 07:11:19:643 | INFO     | kite_adapter.py           | format_option_symbol      | Formatting option symbol for CRUDEOIL, expiry: 2025-11-19, strike: 5000, type: PE | 
+2025-10-18 07:11:19:644 | INFO     | kite_adapter.py           | format_option_symbol      | Formatting option symbol for CRUDEOIL, expiry: 2025-11-19, strike: 4900, type: PE | 
+2025-10-18 07:11:19:644 | INFO     | kite_adapter.py           | format_option_symbol      | Formatting option symbol for CRUDEOIL, expiry: 2025-11-19, strike: 4800, type: PE | 
+2025-10-18 07:11:19:645 | INFO     | kite_adapter.py           | get_instrument_details    | Fetching instrument details for CRUDEOIL25NOV5200PE | 
+2025-10-18 07:11:19:645 | INFO     | utils.py                  | find_matching_row_in_csv  | Searching for row in kite_instruments.csv where tradingsymbol == CRUDEOIL25NOV5200PE | 
+2025-10-18 07:11:19:647 | INFO     | kite_adapter.py           | get_instrument_details    | Instrument details fetched: {'instrument_token': '119570439', 'exchange_token': '467072', 'tradingsymbol': 'CRUDEOIL25NOV5200PE', 'name': 'CRUDEOIL', 'last_price': '0.0', 'expiry': '2025-11-17', 'strike': '5200.0', 'tick_size': '0.1', 'lot_size': '1', 'instrument_type': 'PE', 'segment': 'MCX-OPT', 'exchange': 'MCX'} | 
+2025-10-18 07:11:19:648 | INFO     | kite_utils.py             | instrument_details_attribute_mgmt | Instrument details before management: {'instrument_token': '119570439', 'exchange_token': '467072', 'tradingsymbol': 'CRUDEOIL25NOV5200PE', 'name': 'CRUDEOIL', 'last_price': '0.0', 'expiry': '2025-11-17', 'strike': '5200.0', 'tick_size': '0.1', 'lot_size': '1', 'instrument_type': 'PE', 'segment': 'MCX-OPT', 'exchange': 'MCX'} | 
+2025-10-18 07:11:19:649 | DATA     | kite_adapter.py           | get_instrument_details    | Instrument Details: {'instrument_token': '119570439', 'exchange_token': '467072', 'tradingsymbol': 'CRUDEOIL25NOV5200PE', 'name': 'CRUDEOIL', 'last_price': '0.0', 'expiry': '2025-11-17', 'strike': '5200.0', 'tick_size': '0.1', 'lot_size': 100, 'instrument_type': 'PE', 'segment': 'MCX-OPT', 'exchange': 'MCX'} | 
+2025-10-18 07:11:19:650 | INFO     | utils.py                  | find_matching_row_in_csv  | Searching for row in kite_instruments.csv where tradingsymbol == CRUDEOIL25NOV5200PE | 
+2025-10-18 07:11:19:741 | INFO     | trade_logic.py            | weekly_options_initialize | Initializing weekly option CRUDEOIL25NOV5200PE at LTP 287.7 | 
+2025-10-18 07:11:19:741 | INFO     | trade_logic.py            | weekly_options_initialize |  Determining Lot size 100 | 
+2025-10-18 07:11:19:742 | INFO     | kite_adapter.py           | get_instrument_details    | Fetching instrument details for CRUDEOIL25NOV5100PE | 
+2025-10-18 07:11:19:742 | INFO     | utils.py                  | find_matching_row_in_csv  | Searching for row in kite_instruments.csv where tradingsymbol == CRUDEOIL25NOV5100PE | 
+2025-10-18 07:11:19:744 | INFO     | kite_adapter.py           | get_instrument_details    | Instrument details fetched: {'instrument_token': '119570951', 'exchange_token': '467074', 'tradingsymbol': 'CRUDEOIL25NOV5100PE', 'name': 'CRUDEOIL', 'last_price': '0.0', 'expiry': '2025-11-17', 'strike': '5100.0', 'tick_size': '0.1', 'lot_size': '1', 'instrument_type': 'PE', 'segment': 'MCX-OPT', 'exchange': 'MCX'} | 
+2025-10-18 07:11:19:745 | INFO     | kite_utils.py             | instrument_details_attribute_mgmt | Instrument details before management: {'instrument_token': '119570951', 'exchange_token': '467074', 'tradingsymbol': 'CRUDEOIL25NOV5100PE', 'name': 'CRUDEOIL', 'last_price': '0.0', 'expiry': '2025-11-17', 'strike': '5100.0', 'tick_size': '0.1', 'lot_size': '1', 'instrument_type': 'PE', 'segment': 'MCX-OPT', 'exchange': 'MCX'} | 
+2025-10-18 07:11:19:745 | DATA     | kite_adapter.py           | get_instrument_details    | Instrument Details: {'instrument_token': '119570951', 'exchange_token': '467074', 'tradingsymbol': 'CRUDEOIL25NOV5100PE', 'name': 'CRUDEOIL', 'last_price': '0.0', 'expiry': '2025-11-17', 'strike': '5100.0', 'tick_size': '0.1', 'lot_size': 100, 'instrument_type': 'PE', 'segment': 'MCX-OPT', 'exchange': 'MCX'} | 
+2025-10-18 07:11:19:746 | INFO     | utils.py                  | find_matching_row_in_csv  | Searching for row in kite_instruments.csv where tradingsymbol == CRUDEOIL25NOV5100PE | 
+2025-10-18 07:11:19:843 | INFO     | trade_logic.py            | weekly_options_initialize | Initializing weekly option CRUDEOIL25NOV5100PE at LTP 236.4 | 
+2025-10-18 07:11:19:844 | INFO     | trade_logic.py            | weekly_options_initialize |  Determining Lot size 100 | 
+2025-10-18 07:11:19:845 | INFO     | kite_adapter.py           | get_instrument_details    | Fetching instrument details for CRUDEOIL25NOV5000PE | 
+2025-10-18 07:11:19:845 | INFO     | utils.py                  | find_matching_row_in_csv  | Searching for row in kite_instruments.csv where tradingsymbol == CRUDEOIL25NOV5000PE | 
+2025-10-18 07:11:19:848 | INFO     | kite_adapter.py           | get_instrument_details    | Instrument details fetched: {'instrument_token': '119571463', 'exchange_token': '467076', 'tradingsymbol': 'CRUDEOIL25NOV5000PE', 'name': 'CRUDEOIL', 'last_price': '0.0', 'expiry': '2025-11-17', 'strike': '5000.0', 'tick_size': '0.1', 'lot_size': '1', 'instrument_type': 'PE', 'segment': 'MCX-OPT', 'exchange': 'MCX'} | 
+2025-10-18 07:11:19:849 | INFO     | kite_utils.py             | instrument_details_attribute_mgmt | Instrument details before management: {'instrument_token': '119571463', 'exchange_token': '467076', 'tradingsymbol': 'CRUDEOIL25NOV5000PE', 'name': 'CRUDEOIL', 'last_price': '0.0', 'expiry': '2025-11-17', 'strike': '5000.0', 'tick_size': '0.1', 'lot_size': '1', 'instrument_type': 'PE', 'segment': 'MCX-OPT', 'exchange': 'MCX'} | 
+2025-10-18 07:11:19:850 | DATA     | kite_adapter.py           | get_instrument_details    | Instrument Details: {'instrument_token': '119571463', 'exchange_token': '467076', 'tradingsymbol': 'CRUDEOIL25NOV5000PE', 'name': 'CRUDEOIL', 'last_price': '0.0', 'expiry': '2025-11-17', 'strike': '5000.0', 'tick_size': '0.1', 'lot_size': 100, 'instrument_type': 'PE', 'segment': 'MCX-OPT', 'exchange': 'MCX'} | 
+2025-10-18 07:11:19:852 | INFO     | utils.py                  | find_matching_row_in_csv  | Searching for row in kite_instruments.csv where tradingsymbol == CRUDEOIL25NOV5000PE | 
+2025-10-18 07:11:19:946 | INFO     | trade_logic.py            | weekly_options_initialize | Initializing weekly option CRUDEOIL25NOV5000PE at LTP 187.2 | 
+2025-10-18 07:11:19:946 | INFO     | trade_logic.py            | weekly_options_initialize |  Determining Lot size 100 | 
+2025-10-18 07:11:19:947 | INFO     | kite_adapter.py           | get_instrument_details    | Fetching instrument details for CRUDEOIL25NOV4900PE | 
+2025-10-18 07:11:19:947 | INFO     | utils.py                  | find_matching_row_in_csv  | Searching for row in kite_instruments.csv where tradingsymbol == CRUDEOIL25NOV4900PE | 
+2025-10-18 07:11:19:950 | INFO     | kite_adapter.py           | get_instrument_details    | Instrument details fetched: {'instrument_token': '119571975', 'exchange_token': '467078', 'tradingsymbol': 'CRUDEOIL25NOV4900PE', 'name': 'CRUDEOIL', 'last_price': '0.0', 'expiry': '2025-11-17', 'strike': '4900.0', 'tick_size': '0.1', 'lot_size': '1', 'instrument_type': 'PE', 'segment': 'MCX-OPT', 'exchange': 'MCX'} | 
+2025-10-18 07:11:19:951 | INFO     | kite_utils.py             | instrument_details_attribute_mgmt | Instrument details before management: {'instrument_token': '119571975', 'exchange_token': '467078', 'tradingsymbol': 'CRUDEOIL25NOV4900PE', 'name': 'CRUDEOIL', 'last_price': '0.0', 'expiry': '2025-11-17', 'strike': '4900.0', 'tick_size': '0.1', 'lot_size': '1', 'instrument_type': 'PE', 'segment': 'MCX-OPT', 'exchange': 'MCX'} | 
+2025-10-18 07:11:19:952 | DATA     | kite_adapter.py           | get_instrument_details    | Instrument Details: {'instrument_token': '119571975', 'exchange_token': '467078', 'tradingsymbol': 'CRUDEOIL25NOV4900PE', 'name': 'CRUDEOIL', 'last_price': '0.0', 'expiry': '2025-11-17', 'strike': '4900.0', 'tick_size': '0.1', 'lot_size': 100, 'instrument_type': 'PE', 'segment': 'MCX-OPT', 'exchange': 'MCX'} | 
+2025-10-18 07:11:19:953 | INFO     | utils.py                  | find_matching_row_in_csv  | Searching for row in kite_instruments.csv where tradingsymbol == CRUDEOIL25NOV4900PE | 
+2025-10-18 07:12:36:013 | INFO     | server.py                 | <module>                  | ================================================================================ | 
+2025-10-18 07:12:36:014 | INFO     | server.py                 | <module>                  | Starting new session | 
+2025-10-18 07:12:36:014 | INFO     | server.py                 | <module>                  | ================================================================================ | 
+2025-10-18 07:12:36:015 | INFO     | server.py                 | <module>                  | Logger initialized successfully | 
+2025-10-18 07:12:36:016 | INFO     | utils.py                  | fetch_from_json           | Fetching EXCHANGE from constants.json. | 
+2025-10-18 07:12:36:017 | DEBUG    | kite_connector.py         | _initialize_kite          | KiteConnect instance created. | 
+2025-10-18 07:12:36:017 | INFO     | utils.py                  | fetch_from_json           | Fetching LIMIT_MARGIN from constants.json. | 
+2025-10-18 07:12:36:023 | INFO     | server.py                 | <module>                  | Initializing broker and trader... | 
+2025-10-18 07:12:36:024 | INFO     | server.py                 | <module>                  | Using broker: kite | 
+2025-10-18 07:12:36:024 | INFO     | utils.py                  | get_access_token_from_json | Fetching access token from JSON file. | 
+2025-10-18 07:12:36:026 | DEBUG    | kite_connector.py         | set_access_token          | Access token set: HUdzkAYO1aw5I5uEqiHEvAskL7BUX8st | 
+2025-10-18 07:12:37:701 | INFO     | kite_adapter.py           | download_instrument_list  | Successfully saved instruments to kite_instruments.csv | 
+2025-10-18 07:12:37:716 | INFO     | trade_logic.py            | on_start                  | Trader on_start initialization... | 
+2025-10-18 07:12:37:717 | INFO     | trade_logic.py            | refresh_open_positions_and_buy_price | Refreshing open positions and buy prices... | 
+2025-10-18 07:12:37:982 | DEBUG    | trade_utils.py            | calculate_accurate_average_buy_price_and_update_positions | Calculating accurate average buy price and updating positions | 
+2025-10-18 07:12:37:983 | ERROR    | trade_logic.py            | refresh_open_positions_and_buy_price | Frontend socket yet to be instantiated | 
+2025-10-18 07:12:37:983 | INFO     | trade_logic.py            | refresh_open_positions_and_buy_price | Updated positions: 0 | 
+2025-10-18 07:12:37:984 | DEBUG    | trade_logic.py            | refresh_open_positions_and_buy_price | {} | 
+2025-10-18 07:12:37:984 | INFO     | trade_logic.py            | start_frontend_socket_server | Starting frontend socket server... | 
+2025-10-18 07:12:38:027 | INFO     | trade_logic.py            | register_socket_handlers  | Registering socket event handlers... | 
+2025-10-18 07:12:38:029 | INFO     | trade_logic.py            | start_frontend_socket_server | Frontend socket server thread has been launched. 🚀 | 
+2025-10-18 07:12:38:029 | INFO     | server.py                 | start_socket              | Starting socket connection... | 
+2025-10-18 07:12:38:030 | INFO     | trade_logic.py            | start_trading_watcher_thread | Starting trading watcher thread... | 
+2025-10-18 07:12:38:030 | INFO     | server.py                 | start_socket              | Starting broker WebSocket connection... | 
+2025-10-18 07:12:38:031 | INFO     | trade_logic.py            | start_trading_watcher_thread | Launching trading watcher thread 🚀 | 
+2025-10-18 07:12:38:031 | INFO     | trade_logic.py            | stop_loss_book_profit_core | Started trading watcher thread | 
+2025-10-18 07:12:38:035 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:12:38:036 | INFO     | trade_logic.py            | setup_weekly_option_contract_subscriptions | Setting up weekly option contract subscriptions... | 
+2025-10-18 07:12:38:038 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:12:38:038 | INFO     | utils.py                  | fetch_from_json           | Fetching NEAR_MONTH_FUTURE_TOKEN from constants.json. | 
+2025-10-18 07:12:38:041 | INFO     | kite_adapter.py           | get_instrument_details    | Fetching instrument details for CRUDEOIL25NOVFUT | 
+2025-10-18 07:12:38:042 | INFO     | utils.py                  | find_matching_row_in_csv  | Searching for row in kite_instruments.csv where tradingsymbol == CRUDEOIL25NOVFUT | 
+2025-10-18 07:12:38:056 | INFO     | kite_adapter.py           | get_instrument_details    | Instrument details fetched: {'instrument_token': '117218823', 'exchange_token': '457886', 'tradingsymbol': 'CRUDEOIL25NOVFUT', 'name': 'CRUDEOIL', 'last_price': '0.0', 'expiry': '2025-11-19', 'strike': '0.0', 'tick_size': '1.0', 'lot_size': '1', 'instrument_type': 'FUT', 'segment': 'MCX-FUT', 'exchange': 'MCX'} | 
+2025-10-18 07:12:38:057 | INFO     | kite_utils.py             | instrument_details_attribute_mgmt | Instrument details before management: {'instrument_token': '117218823', 'exchange_token': '457886', 'tradingsymbol': 'CRUDEOIL25NOVFUT', 'name': 'CRUDEOIL', 'last_price': '0.0', 'expiry': '2025-11-19', 'strike': '0.0', 'tick_size': '1.0', 'lot_size': '1', 'instrument_type': 'FUT', 'segment': 'MCX-FUT', 'exchange': 'MCX'} | 
+2025-10-18 07:12:38:058 | DATA     | kite_adapter.py           | get_instrument_details    | Instrument Details: {'instrument_token': '117218823', 'exchange_token': '457886', 'tradingsymbol': 'CRUDEOIL25NOVFUT', 'name': 'CRUDEOIL', 'last_price': '0.0', 'expiry': '2025-11-19', 'strike': '0.0', 'tick_size': '1.0', 'lot_size': 100, 'instrument_type': 'FUT', 'segment': 'MCX-FUT', 'exchange': 'MCX'} | 
+2025-10-18 07:12:38:059 | INFO     | utils.py                  | find_matching_row_in_csv  | Searching for row in kite_instruments.csv where tradingsymbol == CRUDEOIL25NOVFUT | 
+2025-10-18 07:12:38:180 | INFO     | trade_logic.py            | get_5_weekly_option_contracts | Generating 5 weekly option contracts for CRUDEOIL at price 5041.0 (CE) | 
+2025-10-18 07:12:38:180 | DEBUG    | trade_utils.py            | get_expiry_date           | Calculating expiry date for underlying: CRUDEOIL | 
+2025-10-18 07:12:38:181 | INFO     | trade_logic.py            | get_5_weekly_option_contracts | Calculated ATM Strike: 5000, Expiry Date: 2025-11-19 | 
+2025-10-18 07:12:38:181 | INFO     | kite_adapter.py           | format_option_symbol      | Formatting option symbol for CRUDEOIL, expiry: 2025-11-19, strike: 4800, type: CE | 
+2025-10-18 07:12:38:182 | INFO     | kite_adapter.py           | format_option_symbol      | Formatting option symbol for CRUDEOIL, expiry: 2025-11-19, strike: 4900, type: CE | 
+2025-10-18 07:12:38:183 | INFO     | kite_adapter.py           | format_option_symbol      | Formatting option symbol for CRUDEOIL, expiry: 2025-11-19, strike: 5000, type: CE | 
+2025-10-18 07:12:38:184 | INFO     | kite_adapter.py           | format_option_symbol      | Formatting option symbol for CRUDEOIL, expiry: 2025-11-19, strike: 5100, type: CE | 
+2025-10-18 07:12:38:184 | INFO     | kite_adapter.py           | format_option_symbol      | Formatting option symbol for CRUDEOIL, expiry: 2025-11-19, strike: 5200, type: CE | 
+2025-10-18 07:12:38:185 | DATA     | trade_logic.py            | setup_weekly_option_contract_subscriptions |  Weekly Option Contracts - {'ITM2': 'CRUDEOIL25NOV4800CE', 'ITM1': 'CRUDEOIL25NOV4900CE', 'ATM': 'CRUDEOIL25NOV5000CE', 'OTM1': 'CRUDEOIL25NOV5100CE', 'OTM2': 'CRUDEOIL25NOV5200CE'} | 
+2025-10-18 07:12:38:186 | INFO     | kite_adapter.py           | get_instrument_details    | Fetching instrument details for CRUDEOIL25NOV4800CE | 
+2025-10-18 07:12:38:186 | INFO     | utils.py                  | find_matching_row_in_csv  | Searching for row in kite_instruments.csv where tradingsymbol == CRUDEOIL25NOV4800CE | 
+2025-10-18 07:12:38:191 | INFO     | kite_adapter.py           | get_instrument_details    | Instrument details fetched: {'instrument_token': '119559687', 'exchange_token': '467030', 'tradingsymbol': 'CRUDEOIL25NOV4800CE', 'name': 'CRUDEOIL', 'last_price': '0.0', 'expiry': '2025-11-17', 'strike': '4800.0', 'tick_size': '0.1', 'lot_size': '1', 'instrument_type': 'CE', 'segment': 'MCX-OPT', 'exchange': 'MCX'} | 
+2025-10-18 07:12:38:191 | INFO     | kite_utils.py             | instrument_details_attribute_mgmt | Instrument details before management: {'instrument_token': '119559687', 'exchange_token': '467030', 'tradingsymbol': 'CRUDEOIL25NOV4800CE', 'name': 'CRUDEOIL', 'last_price': '0.0', 'expiry': '2025-11-17', 'strike': '4800.0', 'tick_size': '0.1', 'lot_size': '1', 'instrument_type': 'CE', 'segment': 'MCX-OPT', 'exchange': 'MCX'} | 
+2025-10-18 07:12:38:192 | DATA     | kite_adapter.py           | get_instrument_details    | Instrument Details: {'instrument_token': '119559687', 'exchange_token': '467030', 'tradingsymbol': 'CRUDEOIL25NOV4800CE', 'name': 'CRUDEOIL', 'last_price': '0.0', 'expiry': '2025-11-17', 'strike': '4800.0', 'tick_size': '0.1', 'lot_size': 100, 'instrument_type': 'CE', 'segment': 'MCX-OPT', 'exchange': 'MCX'} | 
+2025-10-18 07:12:38:193 | INFO     | utils.py                  | find_matching_row_in_csv  | Searching for row in kite_instruments.csv where tradingsymbol == CRUDEOIL25NOV4800CE | 
+2025-10-18 07:12:38:200 | INFO     | kite_adapter.py           | on_connect                | Connected to Kite WebSocket | 
+2025-10-18 07:12:38:281 | INFO     | trade_logic.py            | weekly_options_initialize | Initializing weekly option CRUDEOIL25NOV4800CE at LTP 343.1 | 
+2025-10-18 07:12:38:282 | INFO     | trade_logic.py            | weekly_options_initialize |  Determining Lot size 100 | 
+2025-10-18 07:12:38:282 | INFO     | kite_adapter.py           | get_instrument_details    | Fetching instrument details for CRUDEOIL25NOV4900CE | 
+2025-10-18 07:12:38:283 | INFO     | utils.py                  | find_matching_row_in_csv  | Searching for row in kite_instruments.csv where tradingsymbol == CRUDEOIL25NOV4900CE | 
+2025-10-18 07:12:38:285 | INFO     | kite_adapter.py           | get_instrument_details    | Instrument details fetched: {'instrument_token': '119559175', 'exchange_token': '467028', 'tradingsymbol': 'CRUDEOIL25NOV4900CE', 'name': 'CRUDEOIL', 'last_price': '0.0', 'expiry': '2025-11-17', 'strike': '4900.0', 'tick_size': '0.1', 'lot_size': '1', 'instrument_type': 'CE', 'segment': 'MCX-OPT', 'exchange': 'MCX'} | 
+2025-10-18 07:12:38:286 | INFO     | kite_utils.py             | instrument_details_attribute_mgmt | Instrument details before management: {'instrument_token': '119559175', 'exchange_token': '467028', 'tradingsymbol': 'CRUDEOIL25NOV4900CE', 'name': 'CRUDEOIL', 'last_price': '0.0', 'expiry': '2025-11-17', 'strike': '4900.0', 'tick_size': '0.1', 'lot_size': '1', 'instrument_type': 'CE', 'segment': 'MCX-OPT', 'exchange': 'MCX'} | 
+2025-10-18 07:12:38:287 | DATA     | kite_adapter.py           | get_instrument_details    | Instrument Details: {'instrument_token': '119559175', 'exchange_token': '467028', 'tradingsymbol': 'CRUDEOIL25NOV4900CE', 'name': 'CRUDEOIL', 'last_price': '0.0', 'expiry': '2025-11-17', 'strike': '4900.0', 'tick_size': '0.1', 'lot_size': 100, 'instrument_type': 'CE', 'segment': 'MCX-OPT', 'exchange': 'MCX'} | 
+2025-10-18 07:12:38:287 | INFO     | utils.py                  | find_matching_row_in_csv  | Searching for row in kite_instruments.csv where tradingsymbol == CRUDEOIL25NOV4900CE | 
+2025-10-18 07:12:38:383 | INFO     | trade_logic.py            | weekly_options_initialize | Initializing weekly option CRUDEOIL25NOV4900CE at LTP 281.7 | 
+2025-10-18 07:12:38:384 | INFO     | trade_logic.py            | weekly_options_initialize |  Determining Lot size 100 | 
+2025-10-18 07:12:38:384 | INFO     | kite_adapter.py           | get_instrument_details    | Fetching instrument details for CRUDEOIL25NOV5000CE | 
+2025-10-18 07:12:38:385 | INFO     | utils.py                  | find_matching_row_in_csv  | Searching for row in kite_instruments.csv where tradingsymbol == CRUDEOIL25NOV5000CE | 
+2025-10-18 07:12:38:386 | INFO     | kite_adapter.py           | get_instrument_details    | Instrument details fetched: {'instrument_token': '119558663', 'exchange_token': '467026', 'tradingsymbol': 'CRUDEOIL25NOV5000CE', 'name': 'CRUDEOIL', 'last_price': '0.0', 'expiry': '2025-11-17', 'strike': '5000.0', 'tick_size': '0.1', 'lot_size': '1', 'instrument_type': 'CE', 'segment': 'MCX-OPT', 'exchange': 'MCX'} | 
+2025-10-18 07:12:38:387 | INFO     | kite_utils.py             | instrument_details_attribute_mgmt | Instrument details before management: {'instrument_token': '119558663', 'exchange_token': '467026', 'tradingsymbol': 'CRUDEOIL25NOV5000CE', 'name': 'CRUDEOIL', 'last_price': '0.0', 'expiry': '2025-11-17', 'strike': '5000.0', 'tick_size': '0.1', 'lot_size': '1', 'instrument_type': 'CE', 'segment': 'MCX-OPT', 'exchange': 'MCX'} | 
+2025-10-18 07:12:38:387 | DATA     | kite_adapter.py           | get_instrument_details    | Instrument Details: {'instrument_token': '119558663', 'exchange_token': '467026', 'tradingsymbol': 'CRUDEOIL25NOV5000CE', 'name': 'CRUDEOIL', 'last_price': '0.0', 'expiry': '2025-11-17', 'strike': '5000.0', 'tick_size': '0.1', 'lot_size': 100, 'instrument_type': 'CE', 'segment': 'MCX-OPT', 'exchange': 'MCX'} | 
+2025-10-18 07:12:38:388 | INFO     | utils.py                  | find_matching_row_in_csv  | Searching for row in kite_instruments.csv where tradingsymbol == CRUDEOIL25NOV5000CE | 
+2025-10-18 07:12:38:486 | INFO     | trade_logic.py            | weekly_options_initialize | Initializing weekly option CRUDEOIL25NOV5000CE at LTP 224.8 | 
+2025-10-18 07:12:38:486 | INFO     | trade_logic.py            | weekly_options_initialize |  Determining Lot size 100 | 
+2025-10-18 07:12:38:487 | INFO     | kite_adapter.py           | get_instrument_details    | Fetching instrument details for CRUDEOIL25NOV5100CE | 
+2025-10-18 07:12:38:487 | INFO     | utils.py                  | find_matching_row_in_csv  | Searching for row in kite_instruments.csv where tradingsymbol == CRUDEOIL25NOV5100CE | 
+2025-10-18 07:12:38:489 | INFO     | kite_adapter.py           | get_instrument_details    | Instrument details fetched: {'instrument_token': '119558151', 'exchange_token': '467024', 'tradingsymbol': 'CRUDEOIL25NOV5100CE', 'name': 'CRUDEOIL', 'last_price': '0.0', 'expiry': '2025-11-17', 'strike': '5100.0', 'tick_size': '0.1', 'lot_size': '1', 'instrument_type': 'CE', 'segment': 'MCX-OPT', 'exchange': 'MCX'} | 
+2025-10-18 07:12:38:490 | INFO     | kite_utils.py             | instrument_details_attribute_mgmt | Instrument details before management: {'instrument_token': '119558151', 'exchange_token': '467024', 'tradingsymbol': 'CRUDEOIL25NOV5100CE', 'name': 'CRUDEOIL', 'last_price': '0.0', 'expiry': '2025-11-17', 'strike': '5100.0', 'tick_size': '0.1', 'lot_size': '1', 'instrument_type': 'CE', 'segment': 'MCX-OPT', 'exchange': 'MCX'} | 
+2025-10-18 07:12:38:491 | DATA     | kite_adapter.py           | get_instrument_details    | Instrument Details: {'instrument_token': '119558151', 'exchange_token': '467024', 'tradingsymbol': 'CRUDEOIL25NOV5100CE', 'name': 'CRUDEOIL', 'last_price': '0.0', 'expiry': '2025-11-17', 'strike': '5100.0', 'tick_size': '0.1', 'lot_size': 100, 'instrument_type': 'CE', 'segment': 'MCX-OPT', 'exchange': 'MCX'} | 
+2025-10-18 07:12:38:492 | INFO     | utils.py                  | find_matching_row_in_csv  | Searching for row in kite_instruments.csv where tradingsymbol == CRUDEOIL25NOV5100CE | 
+2025-10-18 07:12:38:588 | INFO     | trade_logic.py            | weekly_options_initialize | Initializing weekly option CRUDEOIL25NOV5100CE at LTP 174 | 
+2025-10-18 07:12:38:588 | INFO     | trade_logic.py            | weekly_options_initialize |  Determining Lot size 100 | 
+2025-10-18 07:12:38:589 | INFO     | kite_adapter.py           | get_instrument_details    | Fetching instrument details for CRUDEOIL25NOV5200CE | 
+2025-10-18 07:12:38:589 | INFO     | utils.py                  | find_matching_row_in_csv  | Searching for row in kite_instruments.csv where tradingsymbol == CRUDEOIL25NOV5200CE | 
+2025-10-18 07:12:38:591 | INFO     | kite_adapter.py           | get_instrument_details    | Instrument details fetched: {'instrument_token': '119557639', 'exchange_token': '467022', 'tradingsymbol': 'CRUDEOIL25NOV5200CE', 'name': 'CRUDEOIL', 'last_price': '0.0', 'expiry': '2025-11-17', 'strike': '5200.0', 'tick_size': '0.1', 'lot_size': '1', 'instrument_type': 'CE', 'segment': 'MCX-OPT', 'exchange': 'MCX'} | 
+2025-10-18 07:12:38:592 | INFO     | kite_utils.py             | instrument_details_attribute_mgmt | Instrument details before management: {'instrument_token': '119557639', 'exchange_token': '467022', 'tradingsymbol': 'CRUDEOIL25NOV5200CE', 'name': 'CRUDEOIL', 'last_price': '0.0', 'expiry': '2025-11-17', 'strike': '5200.0', 'tick_size': '0.1', 'lot_size': '1', 'instrument_type': 'CE', 'segment': 'MCX-OPT', 'exchange': 'MCX'} | 
+2025-10-18 07:12:38:592 | DATA     | kite_adapter.py           | get_instrument_details    | Instrument Details: {'instrument_token': '119557639', 'exchange_token': '467022', 'tradingsymbol': 'CRUDEOIL25NOV5200CE', 'name': 'CRUDEOIL', 'last_price': '0.0', 'expiry': '2025-11-17', 'strike': '5200.0', 'tick_size': '0.1', 'lot_size': 100, 'instrument_type': 'CE', 'segment': 'MCX-OPT', 'exchange': 'MCX'} | 
+2025-10-18 07:12:38:593 | INFO     | utils.py                  | find_matching_row_in_csv  | Searching for row in kite_instruments.csv where tradingsymbol == CRUDEOIL25NOV5200CE | 
+2025-10-18 07:12:38:691 | INFO     | trade_logic.py            | weekly_options_initialize | Initializing weekly option CRUDEOIL25NOV5200CE at LTP 135 | 
+2025-10-18 07:12:38:692 | INFO     | trade_logic.py            | weekly_options_initialize |  Determining Lot size 100 | 
+2025-10-18 07:12:38:692 | INFO     | trade_logic.py            | setup_weekly_option_contract_subscriptions | Completed CALL weekly options setup. | 
+2025-10-18 07:12:38:693 | INFO     | trade_logic.py            | setup_weekly_option_contract_subscriptions | Setting up PUT weekly options... | 
+2025-10-18 07:12:38:693 | INFO     | trade_logic.py            | get_5_weekly_option_contracts | Generating 5 weekly option contracts for CRUDEOIL at price 5041 (PE) | 
+2025-10-18 07:12:38:694 | DEBUG    | trade_utils.py            | get_expiry_date           | Calculating expiry date for underlying: CRUDEOIL | 
+2025-10-18 07:12:38:695 | INFO     | trade_logic.py            | get_5_weekly_option_contracts | Calculated ATM Strike: 5000, Expiry Date: 2025-11-19 | 
+2025-10-18 07:12:38:695 | INFO     | kite_adapter.py           | format_option_symbol      | Formatting option symbol for CRUDEOIL, expiry: 2025-11-19, strike: 5200, type: PE | 
+2025-10-18 07:12:38:696 | INFO     | kite_adapter.py           | format_option_symbol      | Formatting option symbol for CRUDEOIL, expiry: 2025-11-19, strike: 5100, type: PE | 
+2025-10-18 07:12:38:697 | INFO     | kite_adapter.py           | format_option_symbol      | Formatting option symbol for CRUDEOIL, expiry: 2025-11-19, strike: 5000, type: PE | 
+2025-10-18 07:12:38:699 | INFO     | kite_adapter.py           | format_option_symbol      | Formatting option symbol for CRUDEOIL, expiry: 2025-11-19, strike: 4900, type: PE | 
+2025-10-18 07:12:38:700 | INFO     | kite_adapter.py           | format_option_symbol      | Formatting option symbol for CRUDEOIL, expiry: 2025-11-19, strike: 4800, type: PE | 
+2025-10-18 07:12:38:701 | INFO     | kite_adapter.py           | get_instrument_details    | Fetching instrument details for CRUDEOIL25NOV5200PE | 
+2025-10-18 07:12:38:701 | INFO     | utils.py                  | find_matching_row_in_csv  | Searching for row in kite_instruments.csv where tradingsymbol == CRUDEOIL25NOV5200PE | 
+2025-10-18 07:12:38:704 | INFO     | kite_adapter.py           | get_instrument_details    | Instrument details fetched: {'instrument_token': '119570439', 'exchange_token': '467072', 'tradingsymbol': 'CRUDEOIL25NOV5200PE', 'name': 'CRUDEOIL', 'last_price': '0.0', 'expiry': '2025-11-17', 'strike': '5200.0', 'tick_size': '0.1', 'lot_size': '1', 'instrument_type': 'PE', 'segment': 'MCX-OPT', 'exchange': 'MCX'} | 
+2025-10-18 07:12:38:705 | INFO     | kite_utils.py             | instrument_details_attribute_mgmt | Instrument details before management: {'instrument_token': '119570439', 'exchange_token': '467072', 'tradingsymbol': 'CRUDEOIL25NOV5200PE', 'name': 'CRUDEOIL', 'last_price': '0.0', 'expiry': '2025-11-17', 'strike': '5200.0', 'tick_size': '0.1', 'lot_size': '1', 'instrument_type': 'PE', 'segment': 'MCX-OPT', 'exchange': 'MCX'} | 
+2025-10-18 07:12:38:706 | DATA     | kite_adapter.py           | get_instrument_details    | Instrument Details: {'instrument_token': '119570439', 'exchange_token': '467072', 'tradingsymbol': 'CRUDEOIL25NOV5200PE', 'name': 'CRUDEOIL', 'last_price': '0.0', 'expiry': '2025-11-17', 'strike': '5200.0', 'tick_size': '0.1', 'lot_size': 100, 'instrument_type': 'PE', 'segment': 'MCX-OPT', 'exchange': 'MCX'} | 
+2025-10-18 07:12:38:706 | INFO     | utils.py                  | find_matching_row_in_csv  | Searching for row in kite_instruments.csv where tradingsymbol == CRUDEOIL25NOV5200PE | 
+2025-10-18 07:12:38:793 | INFO     | trade_logic.py            | weekly_options_initialize | Initializing weekly option CRUDEOIL25NOV5200PE at LTP 287.7 | 
+2025-10-18 07:12:38:794 | INFO     | trade_logic.py            | weekly_options_initialize |  Determining Lot size 100 | 
+2025-10-18 07:12:38:794 | INFO     | kite_adapter.py           | get_instrument_details    | Fetching instrument details for CRUDEOIL25NOV5100PE | 
+2025-10-18 07:12:38:794 | INFO     | utils.py                  | find_matching_row_in_csv  | Searching for row in kite_instruments.csv where tradingsymbol == CRUDEOIL25NOV5100PE | 
+2025-10-18 07:12:38:797 | INFO     | kite_adapter.py           | get_instrument_details    | Instrument details fetched: {'instrument_token': '119570951', 'exchange_token': '467074', 'tradingsymbol': 'CRUDEOIL25NOV5100PE', 'name': 'CRUDEOIL', 'last_price': '0.0', 'expiry': '2025-11-17', 'strike': '5100.0', 'tick_size': '0.1', 'lot_size': '1', 'instrument_type': 'PE', 'segment': 'MCX-OPT', 'exchange': 'MCX'} | 
+2025-10-18 07:12:38:797 | INFO     | kite_utils.py             | instrument_details_attribute_mgmt | Instrument details before management: {'instrument_token': '119570951', 'exchange_token': '467074', 'tradingsymbol': 'CRUDEOIL25NOV5100PE', 'name': 'CRUDEOIL', 'last_price': '0.0', 'expiry': '2025-11-17', 'strike': '5100.0', 'tick_size': '0.1', 'lot_size': '1', 'instrument_type': 'PE', 'segment': 'MCX-OPT', 'exchange': 'MCX'} | 
+2025-10-18 07:12:38:798 | DATA     | kite_adapter.py           | get_instrument_details    | Instrument Details: {'instrument_token': '119570951', 'exchange_token': '467074', 'tradingsymbol': 'CRUDEOIL25NOV5100PE', 'name': 'CRUDEOIL', 'last_price': '0.0', 'expiry': '2025-11-17', 'strike': '5100.0', 'tick_size': '0.1', 'lot_size': 100, 'instrument_type': 'PE', 'segment': 'MCX-OPT', 'exchange': 'MCX'} | 
+2025-10-18 07:12:38:799 | INFO     | utils.py                  | find_matching_row_in_csv  | Searching for row in kite_instruments.csv where tradingsymbol == CRUDEOIL25NOV5100PE | 
+2025-10-18 07:12:38:898 | INFO     | trade_logic.py            | weekly_options_initialize | Initializing weekly option CRUDEOIL25NOV5100PE at LTP 236.4 | 
+2025-10-18 07:12:38:899 | INFO     | trade_logic.py            | weekly_options_initialize |  Determining Lot size 100 | 
+2025-10-18 07:12:38:899 | INFO     | kite_adapter.py           | get_instrument_details    | Fetching instrument details for CRUDEOIL25NOV5000PE | 
+2025-10-18 07:12:38:900 | INFO     | utils.py                  | find_matching_row_in_csv  | Searching for row in kite_instruments.csv where tradingsymbol == CRUDEOIL25NOV5000PE | 
+2025-10-18 07:12:38:902 | INFO     | kite_adapter.py           | get_instrument_details    | Instrument details fetched: {'instrument_token': '119571463', 'exchange_token': '467076', 'tradingsymbol': 'CRUDEOIL25NOV5000PE', 'name': 'CRUDEOIL', 'last_price': '0.0', 'expiry': '2025-11-17', 'strike': '5000.0', 'tick_size': '0.1', 'lot_size': '1', 'instrument_type': 'PE', 'segment': 'MCX-OPT', 'exchange': 'MCX'} | 
+2025-10-18 07:12:38:903 | INFO     | kite_utils.py             | instrument_details_attribute_mgmt | Instrument details before management: {'instrument_token': '119571463', 'exchange_token': '467076', 'tradingsymbol': 'CRUDEOIL25NOV5000PE', 'name': 'CRUDEOIL', 'last_price': '0.0', 'expiry': '2025-11-17', 'strike': '5000.0', 'tick_size': '0.1', 'lot_size': '1', 'instrument_type': 'PE', 'segment': 'MCX-OPT', 'exchange': 'MCX'} | 
+2025-10-18 07:12:38:905 | DATA     | kite_adapter.py           | get_instrument_details    | Instrument Details: {'instrument_token': '119571463', 'exchange_token': '467076', 'tradingsymbol': 'CRUDEOIL25NOV5000PE', 'name': 'CRUDEOIL', 'last_price': '0.0', 'expiry': '2025-11-17', 'strike': '5000.0', 'tick_size': '0.1', 'lot_size': 100, 'instrument_type': 'PE', 'segment': 'MCX-OPT', 'exchange': 'MCX'} | 
+2025-10-18 07:12:38:906 | INFO     | utils.py                  | find_matching_row_in_csv  | Searching for row in kite_instruments.csv where tradingsymbol == CRUDEOIL25NOV5000PE | 
+2025-10-18 07:12:38:998 | INFO     | trade_logic.py            | weekly_options_initialize | Initializing weekly option CRUDEOIL25NOV5000PE at LTP 187.2 | 
+2025-10-18 07:12:38:999 | INFO     | trade_logic.py            | weekly_options_initialize |  Determining Lot size 100 | 
+2025-10-18 07:12:38:999 | INFO     | kite_adapter.py           | get_instrument_details    | Fetching instrument details for CRUDEOIL25NOV4900PE | 
+2025-10-18 07:12:38:999 | INFO     | utils.py                  | find_matching_row_in_csv  | Searching for row in kite_instruments.csv where tradingsymbol == CRUDEOIL25NOV4900PE | 
+2025-10-18 07:12:39:001 | INFO     | kite_adapter.py           | get_instrument_details    | Instrument details fetched: {'instrument_token': '119571975', 'exchange_token': '467078', 'tradingsymbol': 'CRUDEOIL25NOV4900PE', 'name': 'CRUDEOIL', 'last_price': '0.0', 'expiry': '2025-11-17', 'strike': '4900.0', 'tick_size': '0.1', 'lot_size': '1', 'instrument_type': 'PE', 'segment': 'MCX-OPT', 'exchange': 'MCX'} | 
+2025-10-18 07:12:39:002 | INFO     | kite_utils.py             | instrument_details_attribute_mgmt | Instrument details before management: {'instrument_token': '119571975', 'exchange_token': '467078', 'tradingsymbol': 'CRUDEOIL25NOV4900PE', 'name': 'CRUDEOIL', 'last_price': '0.0', 'expiry': '2025-11-17', 'strike': '4900.0', 'tick_size': '0.1', 'lot_size': '1', 'instrument_type': 'PE', 'segment': 'MCX-OPT', 'exchange': 'MCX'} | 
+2025-10-18 07:12:39:002 | DATA     | kite_adapter.py           | get_instrument_details    | Instrument Details: {'instrument_token': '119571975', 'exchange_token': '467078', 'tradingsymbol': 'CRUDEOIL25NOV4900PE', 'name': 'CRUDEOIL', 'last_price': '0.0', 'expiry': '2025-11-17', 'strike': '4900.0', 'tick_size': '0.1', 'lot_size': 100, 'instrument_type': 'PE', 'segment': 'MCX-OPT', 'exchange': 'MCX'} | 
+2025-10-18 07:12:39:003 | INFO     | utils.py                  | find_matching_row_in_csv  | Searching for row in kite_instruments.csv where tradingsymbol == CRUDEOIL25NOV4900PE | 
+2025-10-18 07:12:39:100 | INFO     | trade_logic.py            | weekly_options_initialize | Initializing weekly option CRUDEOIL25NOV4900PE at LTP 144.8 | 
+2025-10-18 07:12:39:100 | INFO     | trade_logic.py            | weekly_options_initialize |  Determining Lot size 100 | 
+2025-10-18 07:12:39:101 | INFO     | kite_adapter.py           | get_instrument_details    | Fetching instrument details for CRUDEOIL25NOV4800PE | 
+2025-10-18 07:12:39:101 | INFO     | utils.py                  | find_matching_row_in_csv  | Searching for row in kite_instruments.csv where tradingsymbol == CRUDEOIL25NOV4800PE | 
+2025-10-18 07:12:39:103 | INFO     | kite_adapter.py           | get_instrument_details    | Instrument details fetched: {'instrument_token': '119572487', 'exchange_token': '467080', 'tradingsymbol': 'CRUDEOIL25NOV4800PE', 'name': 'CRUDEOIL', 'last_price': '0.0', 'expiry': '2025-11-17', 'strike': '4800.0', 'tick_size': '0.1', 'lot_size': '1', 'instrument_type': 'PE', 'segment': 'MCX-OPT', 'exchange': 'MCX'} | 
+2025-10-18 07:12:39:104 | INFO     | kite_utils.py             | instrument_details_attribute_mgmt | Instrument details before management: {'instrument_token': '119572487', 'exchange_token': '467080', 'tradingsymbol': 'CRUDEOIL25NOV4800PE', 'name': 'CRUDEOIL', 'last_price': '0.0', 'expiry': '2025-11-17', 'strike': '4800.0', 'tick_size': '0.1', 'lot_size': '1', 'instrument_type': 'PE', 'segment': 'MCX-OPT', 'exchange': 'MCX'} | 
+2025-10-18 07:12:39:104 | DATA     | kite_adapter.py           | get_instrument_details    | Instrument Details: {'instrument_token': '119572487', 'exchange_token': '467080', 'tradingsymbol': 'CRUDEOIL25NOV4800PE', 'name': 'CRUDEOIL', 'last_price': '0.0', 'expiry': '2025-11-17', 'strike': '4800.0', 'tick_size': '0.1', 'lot_size': 100, 'instrument_type': 'PE', 'segment': 'MCX-OPT', 'exchange': 'MCX'} | 
+2025-10-18 07:12:39:105 | INFO     | utils.py                  | find_matching_row_in_csv  | Searching for row in kite_instruments.csv where tradingsymbol == CRUDEOIL25NOV4800PE | 
+2025-10-18 07:12:39:202 | INFO     | trade_logic.py            | weekly_options_initialize | Initializing weekly option CRUDEOIL25NOV4800PE at LTP 112.5 | 
+2025-10-18 07:12:39:203 | INFO     | trade_logic.py            | weekly_options_initialize |  Determining Lot size 100 | 
+2025-10-18 07:12:39:203 | INFO     | trade_logic.py            | setup_weekly_option_contract_subscriptions | Completed PUT weekly options setup. | 
+2025-10-18 07:12:39:204 | INFO     | trade_logic.py            | refresh_subscriptions     | Refreshing subscriptions to instruments... | 
+2025-10-18 07:12:39:204 | INFO     | trade_logic.py            | refresh_open_positions_and_buy_price | Refreshing open positions and buy prices... | 
+2025-10-18 07:12:39:509 | DEBUG    | trade_utils.py            | calculate_accurate_average_buy_price_and_update_positions | Calculating accurate average buy price and updating positions | 
+2025-10-18 07:12:39:510 | INFO     | trade_logic.py            | refresh_open_positions_and_buy_price | Updated positions: 0 | 
+2025-10-18 07:12:39:510 | DEBUG    | trade_logic.py            | refresh_open_positions_and_buy_price | {} | 
+2025-10-18 07:12:39:511 | INFO     | trade_logic.py            | get_relevant_instruments_to_track | Compiling list of relevant instruments to track... | 
+2025-10-18 07:12:39:511 | INFO     | trade_logic.py            | get_relevant_instruments_to_track | Subscribing to 11 instruments. | 
+2025-10-18 07:12:39:512 | DEBUG    | kite_adapter.py           | subscribe_to_all          | Subscribed to [119559687, 119559175, 119558663, 119558151, 119557639, 119570439, 119570951, 119571463, 119571975, 119572487, 117218823] | 
+2025-10-18 07:12:43:054 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:12:43:055 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:12:48:056 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:12:48:057 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:12:53:064 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:12:53:065 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:12:58:083 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:12:58:084 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:13:03:094 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:13:03:094 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:13:08:107 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:13:08:108 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:13:13:110 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:13:13:111 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:13:18:113 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:13:18:114 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:13:23:124 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:13:23:126 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:13:28:136 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:13:28:137 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:13:33:150 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:13:33:151 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:13:38:158 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:13:38:159 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:13:43:172 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:13:43:173 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:13:48:174 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:13:48:175 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:13:53:178 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:13:53:179 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:13:58:197 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:13:58:197 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:14:03:203 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:14:03:203 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:14:08:209 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:14:08:210 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:14:13:224 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:14:13:225 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:14:18:241 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:14:18:242 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:14:23:258 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:14:23:258 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:14:28:277 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:14:28:278 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:14:33:296 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:14:33:296 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:14:38:298 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:14:38:299 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:14:43:306 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:14:43:307 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:14:48:324 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:14:48:325 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:14:53:327 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:14:53:328 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:14:58:334 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:14:58:335 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:15:03:338 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:15:03:339 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:15:08:347 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:15:08:348 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:15:13:349 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:15:13:350 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:15:18:354 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:15:18:355 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:15:23:375 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:15:23:376 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:15:28:386 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:15:28:387 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:15:33:387 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:15:33:388 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:15:38:397 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:15:38:398 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:15:43:408 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:15:43:410 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:15:48:412 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:15:48:413 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:15:53:415 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:15:53:416 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:15:58:417 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:15:58:418 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:16:03:434 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:16:03:435 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:16:08:442 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:16:08:442 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:16:13:450 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:16:13:450 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:16:18:467 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:16:18:468 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:16:23:482 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:16:23:483 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:16:28:492 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:16:28:493 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:16:33:512 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:16:33:513 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:16:38:524 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:16:38:525 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:16:43:526 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:16:43:527 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:16:48:534 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:16:48:535 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:16:53:557 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:16:53:558 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:16:58:567 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:16:58:568 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:17:03:585 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:17:03:586 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:17:06:665 | INFO     | server.py                 | dashboard                 | Rendering buy dashboard page | 
+2025-10-18 07:17:06:908 | INFO     | server.py                 | get_fund_summary          | Fetching fund summary | 
+2025-10-18 07:17:06:917 | INFO     | trade_logic.py            | handle_connect            | Client connected to socket server. | 
+2025-10-18 07:17:06:938 | INFO     | trade_logic.py            | handle_request_weekly_options | Received 'request_weekly_options' from client. Sending weekly contracts... | 
+2025-10-18 07:17:06:949 | INFO     | trade_logic.py            | handle_request_open_positions | Received 'request_open_positions' from client. Sending position data... | 
+2025-10-18 07:17:06:992 | DATA     | server.py                 | get_fund_summary          | Fund Summary: {'cash_balance': 2467.7, 'utilized': 0} | 
+2025-10-18 07:17:08:599 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:17:08:600 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:17:13:616 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:17:13:617 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:17:18:638 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:17:18:639 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:17:23:656 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:17:23:659 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:17:28:664 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:17:28:665 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:17:33:666 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:17:33:667 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:17:38:673 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:17:38:675 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:17:43:680 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:17:43:681 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:17:48:683 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:17:48:685 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:17:53:690 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:17:53:691 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:17:58:696 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:17:58:697 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:18:03:700 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:18:03:701 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:18:08:707 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:18:08:708 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:18:13:716 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:18:13:717 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:18:18:732 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:18:18:733 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:18:23:743 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:18:23:743 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:18:28:744 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:18:28:744 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:18:33:750 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:18:33:750 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:18:38:756 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:18:38:757 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:18:43:771 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:18:43:772 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:18:48:780 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:18:48:780 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:18:53:783 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:18:53:783 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:18:58:785 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:18:58:786 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:19:03:792 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:19:03:793 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:19:08:799 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:19:08:800 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:19:13:806 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:19:13:807 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:19:18:822 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:19:18:823 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:19:23:825 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:19:23:826 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:19:28:840 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:19:28:841 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:19:33:855 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:19:33:855 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:19:38:866 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:19:38:868 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:19:43:869 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:19:43:871 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:19:48:875 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:19:48:875 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:19:53:886 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:19:53:888 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:19:58:894 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:19:58:895 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:20:03:898 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:20:03:900 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:20:08:903 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:20:08:904 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:20:13:906 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:20:13:907 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:20:18:921 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:20:18:922 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:20:23:925 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:20:23:925 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:20:28:926 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:20:28:942 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:20:33:955 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:20:33:957 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:20:38:955 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:20:38:956 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:20:43:966 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:20:43:967 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:20:48:978 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:20:48:978 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:20:53:991 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:20:53:992 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:20:59:001 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:20:59:002 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:21:04:003 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:21:04:004 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:21:09:017 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:21:09:018 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:21:14:029 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:21:14:030 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:21:19:041 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:21:19:043 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:21:19:531 | INFO     | trade_logic.py            | handle_disconnect         | Client disconnected. | 
+2025-10-18 07:21:19:571 | INFO     | server.py                 | dashboard                 | Rendering buy dashboard page | 
+2025-10-18 07:21:19:712 | INFO     | server.py                 | get_fund_summary          | Fetching fund summary | 
+2025-10-18 07:21:19:722 | INFO     | trade_logic.py            | handle_connect            | Client connected to socket server. | 
+2025-10-18 07:21:19:751 | INFO     | trade_logic.py            | handle_request_weekly_options | Received 'request_weekly_options' from client. Sending weekly contracts... | 
+2025-10-18 07:21:19:760 | INFO     | trade_logic.py            | handle_request_open_positions | Received 'request_open_positions' from client. Sending position data... | 
+2025-10-18 07:21:19:896 | DATA     | server.py                 | get_fund_summary          | Fund Summary: {'cash_balance': 2467.7, 'utilized': 0} | 
+2025-10-18 07:21:24:042 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:21:24:043 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:21:29:044 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:21:29:047 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:21:34:064 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:21:34:065 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:21:39:084 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:21:39:085 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:21:44:099 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:21:44:100 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:21:49:109 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:21:49:109 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:21:54:117 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:21:54:118 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:21:59:121 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:21:59:123 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:22:04:133 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:22:04:134 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:22:09:147 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:22:09:147 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:22:14:151 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:22:14:152 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:22:19:163 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:22:19:164 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:22:24:176 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:22:24:177 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:22:29:191 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:22:29:192 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:22:34:201 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:22:34:202 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:22:39:216 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:22:39:217 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:22:44:220 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:22:44:220 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:22:49:222 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:22:49:223 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:22:54:224 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:22:54:226 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:22:59:243 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:22:59:244 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:23:04:263 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:23:04:265 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:23:09:281 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:23:09:283 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:23:14:295 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:23:14:296 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:23:19:298 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:23:19:299 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:23:24:314 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:23:24:315 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:23:29:328 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:23:29:329 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:23:34:335 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:23:34:336 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:23:39:337 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:23:39:338 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:23:44:345 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:23:44:346 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:23:49:361 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:23:49:362 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:23:54:376 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:23:54:376 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:23:59:380 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:23:59:381 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:24:04:388 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:24:04:389 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:24:09:394 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:24:09:395 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:24:14:406 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:24:14:406 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:24:19:417 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:24:19:418 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:24:24:432 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:24:24:432 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:24:29:446 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:24:29:447 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:24:34:457 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:24:34:458 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:24:39:467 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:24:39:467 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:24:44:484 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:24:44:485 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:24:49:495 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:24:49:496 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:24:54:507 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:24:54:508 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:24:59:514 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:24:59:514 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:25:04:525 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:25:04:526 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:25:09:537 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:25:09:539 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:25:14:542 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:25:14:543 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:25:19:546 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:25:19:547 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:25:24:566 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:25:24:567 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:25:29:586 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:25:29:589 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:25:34:602 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:25:34:603 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:25:39:617 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:25:39:618 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:25:44:638 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:25:44:640 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:25:49:653 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:25:49:654 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:25:54:669 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:25:54:670 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:25:59:679 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:25:59:681 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:26:04:691 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:26:04:692 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:26:09:709 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:26:09:711 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:26:14:711 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:26:14:713 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:26:19:712 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:26:19:713 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:26:24:721 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:26:24:722 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:26:29:735 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:26:29:737 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:26:34:738 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:26:34:739 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:26:39:742 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:26:39:743 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:26:44:748 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:26:44:749 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:26:49:751 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:26:49:752 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:26:54:754 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:26:54:755 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:26:59:768 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:26:59:769 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:27:04:771 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:27:04:772 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:27:09:777 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:27:09:778 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:27:14:791 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:27:14:792 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:27:19:793 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:27:19:794 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:27:24:794 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:27:24:795 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:27:29:812 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:27:29:813 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:27:34:826 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:27:34:828 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:27:39:844 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:27:39:846 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:27:44:860 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:27:44:862 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:27:48:107 | INFO     | trade_logic.py            | handle_disconnect         | Client disconnected. | 
+2025-10-18 07:27:48:158 | INFO     | server.py                 | dashboard                 | Rendering buy dashboard page | 
+2025-10-18 07:27:48:306 | INFO     | server.py                 | get_fund_summary          | Fetching fund summary | 
+2025-10-18 07:27:48:319 | INFO     | trade_logic.py            | handle_connect            | Client connected to socket server. | 
+2025-10-18 07:27:48:340 | INFO     | trade_logic.py            | handle_request_weekly_options | Received 'request_weekly_options' from client. Sending weekly contracts... | 
+2025-10-18 07:27:48:352 | INFO     | trade_logic.py            | handle_request_open_positions | Received 'request_open_positions' from client. Sending position data... | 
+2025-10-18 07:27:48:413 | DATA     | server.py                 | get_fund_summary          | Fund Summary: {'cash_balance': 2467.7, 'utilized': 0} | 
+2025-10-18 07:27:49:876 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:27:49:876 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:27:54:884 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:27:54:886 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:27:59:901 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:27:59:902 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:28:04:908 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:28:04:909 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:28:09:910 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:28:09:910 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:28:14:921 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:28:14:922 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:28:19:928 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:28:19:929 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:28:24:940 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:28:24:941 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:28:29:953 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:28:29:955 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:28:34:956 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:28:34:957 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:28:39:957 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:28:39:959 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:28:44:973 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:28:44:974 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:28:49:990 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:28:49:993 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:28:55:010 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:28:55:011 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:29:00:024 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:29:00:025 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:29:05:032 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:29:05:032 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:29:10:047 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:29:10:049 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:29:15:067 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:29:15:068 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:29:20:081 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:29:20:083 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:29:25:085 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:29:25:086 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:29:30:088 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:29:30:089 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:29:35:094 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:29:35:095 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:29:40:097 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:29:40:098 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:29:45:101 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:29:45:102 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:29:50:121 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:29:50:122 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:29:55:140 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:29:55:141 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:30:00:161 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:30:00:164 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:30:05:176 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:30:05:177 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:30:10:176 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:30:10:179 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:30:15:195 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:30:15:198 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:30:20:199 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:30:20:200 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:30:25:206 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:30:25:207 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:30:30:214 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:30:30:215 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:30:35:221 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:30:35:222 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:30:40:225 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:30:40:226 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:30:45:226 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:30:45:228 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:30:50:228 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:30:50:229 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:30:55:244 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:30:55:245 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:31:00:264 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:31:00:266 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:31:05:281 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:31:05:284 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:31:10:299 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:31:10:302 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:31:15:317 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:31:15:318 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:31:20:341 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:31:20:342 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:31:25:357 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:31:25:358 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:31:30:357 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:31:30:358 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:31:35:362 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:31:35:363 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:31:40:364 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:31:40:365 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:31:45:378 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:31:45:380 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:31:50:389 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:31:50:391 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:31:55:406 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:31:55:407 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:32:00:411 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:32:00:414 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:32:05:420 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:32:05:421 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:32:10:432 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:32:10:434 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:32:15:451 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:32:15:452 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:32:20:461 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:32:20:462 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:32:25:470 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:32:25:470 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:32:30:475 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:32:30:475 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:32:35:479 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:32:35:480 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:32:40:495 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:32:40:497 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:32:45:511 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:32:45:512 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:32:50:511 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:32:50:512 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:32:55:514 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:32:55:516 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:33:00:528 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:33:00:529 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:33:05:542 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:33:05:543 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:33:10:557 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:33:10:558 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:33:15:560 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:33:15:561 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:33:20:568 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:33:20:569 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:33:25:573 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:33:25:574 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:33:30:577 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:33:30:578 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:33:35:581 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:33:35:583 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:33:40:585 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:33:40:587 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:33:45:599 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:33:45:599 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:33:50:606 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:33:50:607 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:33:55:626 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:33:55:627 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:34:00:642 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:34:00:643 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:34:05:651 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:34:05:653 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:34:10:669 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:34:10:670 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:34:15:689 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:34:15:690 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:34:20:698 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:34:20:698 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:34:25:701 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:34:25:702 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:34:30:705 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:34:30:707 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:34:35:708 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:34:35:709 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:34:40:713 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:34:40:714 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:34:45:734 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:34:45:737 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:34:50:742 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:34:50:743 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:34:55:745 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:34:55:746 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:35:00:746 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:35:00:746 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:35:05:751 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:35:05:753 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:35:10:759 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:35:10:760 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:35:15:765 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:35:15:766 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:35:20:776 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:35:20:777 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:35:25:777 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:35:25:778 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:35:30:788 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:35:30:788 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:35:35:791 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:35:35:792 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:35:40:793 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:35:40:794 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:35:45:797 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:35:45:798 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:35:50:801 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:35:50:802 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:35:55:819 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:35:55:821 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:36:00:831 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:36:00:831 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:36:05:847 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:36:05:849 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:36:10:846 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:36:10:847 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:36:15:860 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:36:15:861 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:36:20:874 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:36:20:877 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:36:25:877 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:36:25:878 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:36:30:880 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:36:30:881 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:36:35:900 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:36:35:903 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:36:40:917 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:36:40:918 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:36:45:931 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:36:45:932 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:36:50:934 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:36:50:936 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:36:55:936 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:36:55:937 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:37:00:949 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:37:00:949 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:37:05:953 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:37:05:955 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:37:10:966 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:37:10:967 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:37:15:967 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:37:15:968 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:37:20:986 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:37:20:987 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:37:26:003 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:37:26:004 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:37:31:020 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:37:31:022 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:37:36:036 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:37:36:040 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:37:41:036 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:37:41:036 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:37:46:046 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:37:46:047 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:37:51:049 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:37:51:050 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:37:56:052 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:37:56:053 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:38:01:066 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:38:01:067 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:38:06:079 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:38:06:081 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:38:11:082 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:38:11:083 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:38:16:082 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:38:16:083 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:38:21:084 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:38:21:085 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:38:26:085 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:38:26:086 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:38:31:103 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:38:31:103 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:38:36:119 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:38:36:119 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:38:41:133 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:38:41:134 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:38:46:150 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:38:46:151 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:38:51:165 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:38:51:166 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:38:56:185 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:38:56:187 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:39:01:199 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:39:01:200 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:39:06:200 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:39:06:201 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:39:11:203 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:39:11:204 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:39:16:208 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:39:16:209 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:39:21:213 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:39:21:214 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:39:26:220 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:39:26:221 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:39:31:232 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:39:31:233 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:39:36:236 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:39:36:238 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:39:41:250 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:39:41:251 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:39:46:270 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:39:46:271 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:39:51:286 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:39:51:287 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:39:56:306 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:39:56:310 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:40:01:315 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:40:01:316 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:40:06:324 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:40:06:325 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:40:11:325 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:40:11:326 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:40:16:328 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:40:16:329 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:40:21:341 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:40:21:343 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:40:26:357 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:40:26:358 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:40:31:372 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:40:31:372 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:40:36:388 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:40:36:389 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:40:41:391 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:40:41:392 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:40:46:395 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:40:46:396 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:40:51:398 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:40:51:399 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:40:56:420 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:40:56:421 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:41:01:435 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:41:01:436 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:41:06:449 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:41:06:450 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:41:11:463 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:41:11:464 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:41:16:474 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:41:16:475 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:41:21:475 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:41:21:476 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:41:26:475 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:41:26:476 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:41:31:488 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:41:31:489 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:41:36:491 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:41:36:492 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:41:41:492 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:41:41:493 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:41:46:507 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:41:46:509 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:41:51:523 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:41:51:524 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:41:56:532 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:41:56:533 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:42:01:548 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:42:01:549 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:42:06:557 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:42:06:558 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:42:11:563 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:42:11:564 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:42:16:564 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:42:16:565 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:42:21:581 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:42:21:581 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:42:26:593 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:42:26:594 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:42:31:595 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:42:31:596 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:42:36:596 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:42:36:597 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:42:41:603 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:42:41:603 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:42:46:615 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:42:46:615 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:42:51:616 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:42:51:617 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:42:56:625 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:42:56:626 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:43:01:640 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:43:01:642 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:43:06:644 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:43:06:645 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:43:11:654 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:43:11:655 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:43:16:663 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:43:16:665 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:43:21:669 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:43:21:670 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:43:26:673 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:43:26:674 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:43:31:686 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:43:31:687 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:43:36:694 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:43:36:695 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:43:41:700 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:43:41:702 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:43:46:707 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:43:46:708 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:43:51:713 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:43:51:715 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:43:56:736 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:43:56:736 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:44:01:739 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:44:01:740 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:44:06:748 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:44:06:749 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:44:11:751 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:44:11:752 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:44:16:768 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:44:16:768 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:44:21:782 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:44:21:783 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:44:26:796 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:44:26:797 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:44:31:801 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:44:31:802 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:44:36:814 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:44:36:814 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:44:41:832 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:44:41:833 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:44:46:845 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:44:46:846 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:44:51:859 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:44:51:860 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:44:56:880 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:44:56:882 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:45:01:898 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:45:01:898 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:45:06:915 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:45:06:916 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:45:11:935 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:45:11:936 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:45:16:953 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:45:16:954 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:45:21:975 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:45:21:976 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:45:26:997 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:45:26:998 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:45:32:018 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:45:32:020 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:45:37:034 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:45:37:035 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:45:42:039 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:45:42:039 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:45:47:044 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:45:47:046 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:45:52:045 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:45:52:047 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:45:57:051 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:45:57:053 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:46:02:065 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:46:02:066 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:46:07:074 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:46:07:075 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:46:12:076 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:46:12:078 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:46:17:088 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:46:17:089 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:46:22:096 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:46:22:097 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:46:27:106 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:46:27:107 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:46:32:112 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:46:32:112 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:46:37:130 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:46:37:131 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:46:42:135 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:46:42:135 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:46:47:142 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:46:47:143 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:46:52:143 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:46:52:145 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:46:57:149 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:46:57:151 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:47:02:156 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:47:02:157 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:47:07:161 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:47:07:163 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:47:12:168 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:47:12:169 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:47:17:189 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:47:17:191 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:47:22:207 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:47:22:207 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:47:27:225 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:47:27:226 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:47:32:240 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:47:32:241 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:47:37:260 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:47:37:261 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:47:42:279 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:47:42:280 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:47:47:284 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:47:47:285 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:47:52:290 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:47:52:291 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:47:57:299 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:47:57:300 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:48:02:312 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:48:02:313 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:48:07:324 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:48:07:325 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 
+2025-10-18 07:48:12:345 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | Evaluating open positions for stop-loss/book-profit... | 
+2025-10-18 07:48:12:346 | DEBUG    | trade_logic.py            | stop_loss_book_profit_core | {} | 

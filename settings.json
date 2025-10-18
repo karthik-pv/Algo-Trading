@@ -12,8 +12,8 @@
     "PCT_LOSS": "4",
     "PTS_PROFIT": "20",
     "PTS_LOSS": "10",
-    "INTRA_EMA": "15sEMA9",
-    "SCALPING_EMA": "1mEMA50",
-    "ULTRA_SCALPING_EMA": "1mEMA9",
+    "INTRA_EMA": "1mEMA50",
+    "SCALPING_EMA": "1mEMA9",
+    "ULTRA_SCALPING_EMA": "15sEMA9",
     "EMA_TOLERANCE_PTS": "5"
 }

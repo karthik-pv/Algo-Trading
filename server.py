@@ -22,7 +22,7 @@ logger.remove()
 
 # File logging
 logger.add(
-    "app.log",
+    "logs/app.log",
     rotation="10 MB",
     retention="7 days",
     level="DEBUG",
@@ -289,7 +289,7 @@ if __name__ == "__main__":
         # uncomment for development
         logger.info(f"Using broker: {CURRENT_BROKER}")
         broker.dev_start()
-        logger.info("Starting in development mode...")
+        #logger.info("Starting in development mode...")
         # uncomment for prod
         #broker.prod_start()
         #logger.info("Starting in production mode...")
