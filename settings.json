@@ -1,6 +1,6 @@
 {
     "MODE": "EXECUTION",
-    "MARGIN_USAGE_PCT": "90",
+    "MARGIN_USAGE_PCT": "0.9",
     "DEFAULT_LOT_SIZE": "1",
     "SELL_TRIGGER_PCT": true,
     "SELL_TRIGGER_PTS": true,

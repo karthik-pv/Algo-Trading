@@ -40,6 +40,8 @@ class Trader_Singleton:
     _exchange = fetch_from_json("constants.json" , "EXCHANGE")
     _underlying = fetch_from_json("constants.json" , "UNDERLYING")
 
+    _cash_balance_margin_pct = fetch_from_json("settings.json" , "MARGIN_USAGE_PCT")
+
     _positions_to_subscribe = []
 
 
@@ -69,7 +71,7 @@ class Trader_Singleton:
         self._five_weekly_option_contracts[token]["expiry"] = data["expiry"]
         self._five_weekly_option_contracts[token]["ltp"] = price
         self._five_weekly_option_contracts[token]["lotsize"] = data["lot_size"]
-        self._five_weekly_option_contracts[token]["lots"] =  int(((self._fund_summary["cash_balance"]) / price) / int(data["lot_size"]))
+        self._five_weekly_option_contracts[token]["lots"] =  int(((self._fund_summary["cash_balance"]*self._cash_balance_margin_pct) / price) / int(data["lot_size"]))
         logger.info(f" Determining Lot size {int(data["lot_size"])}")
         self._five_weekly_option_contracts[token]["call_or_put"] = call_or_put
         self._five_weekly_option_contracts[token]["level"] = level
