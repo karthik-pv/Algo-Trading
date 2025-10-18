@@ -1,11 +1,12 @@
 import os
 import json
+from datetime import datetime
 import logging
 import kiteconnect
 from dotenv import load_dotenv
 from loguru import logger
 
-from utils import get_access_token_from_json
+from utils import get_access_token_from_json , write_to_json , fetch_from_json
 
 #logging.basicConfig(level=logging.DEBUG)
 
@@ -42,7 +43,7 @@ class KiteSingleton:
     def create_session(self):
         logger.info("Please visit the following URL to authorize the application:")
         logger.debug(self._kite.login_url())
-        request_token = input("Please paste the request token obtained here - ")
+        request_token = input("Enter request token here - ")
         if not KITE_SECRET_KEY:
             raise ValueError("KITE_SECRET_KEY not found in environment variables")
         data = self._kite.generate_session(
@@ -50,7 +51,9 @@ class KiteSingleton:
         )
         logger.debug(f"Profile data received: {data}")
         self.set_access_token(data["access_token"])
+        write_to_json({"kite_access_token" : data["access_token"] , "kite_last_token_timestamp" : datetime.now().isoformat()} , "access_token.json")
         logger.debug(f"Access token set: {data['access_token']}")
+
 
     def get_kite_socket_connection(self):
         if self._kite_socket is None:
@@ -79,5 +82,13 @@ class KiteSingleton:
 
     # prod
     def initialise_kite_for_prod(self):
-        self.create_session()
+        last_updated_date = fetch_from_json("access_token.json" , "kite_last_token_timestamp")
+        last_update_datetime = datetime.fromisoformat(last_updated_date)
+        today_date = datetime.now().date()
+        if not last_update_datetime.date() == today_date:
+            self.create_session()
+        else:
+            logging.debug("Access token already generated for the day")
+            access_token = fetch_from_json("access_token.json" , "kite_access_token")
+            self.set_access_token(access_token)
         logger.debug("Kite session created for production.")

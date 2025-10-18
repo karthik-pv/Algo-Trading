@@ -5,7 +5,7 @@ import datetime
 import calendar
 import requests
 
-from utils import get_trading_symbols_from_json , find_matching_object
+from utils import get_trading_symbols_from_json , find_matching_object , fetch_from_json
 from core.mstock_connector import MStockSingleton
 from interface.broker_interface import BrokerInterface
 from core.trade_logic import Trader_Singleton
@@ -49,7 +49,7 @@ class MStockAdapter(BrokerInterface):
             }
         conn.request('GET', '/openapi/typeb/instruments/OpenAPIScripMaster', headers=headers)
         instrument_data = json.loads(conn.getresponse().read().decode("utf-8"))
-        filename = "../instrument_list.json"
+        filename = "../mstock_instrument_list.json"
         with open(filename, 'w', encoding='utf-8') as f:
             json.dump(instrument_data, f, ensure_ascii=False, indent=4)
         return
@@ -143,7 +143,7 @@ class MStockAdapter(BrokerInterface):
             logger.error(f"Error fetching quotes {e}")
 
 
-    def sell_units(self, trading_symbol, instrument_token , quantity):
+    def sell_units(self, trading_symbol, instrument_token , quantity , exchange , ltp):
         logger.info(f"Selling units: {quantity} of {trading_symbol} ({instrument_token}) via M.Stock...")
         conn = http.client.HTTPSConnection('api.mstock.trade')
         headers = {
@@ -152,11 +152,11 @@ class MStockAdapter(BrokerInterface):
                 "Authorization": f"Bearer {self.mstock_instance._access_token}",
                 "Content-Type": "application/json"
             }
-        trading_symbol_for_transaction = find_matching_object("instrument_list.json" , "token" , instrument_token)["name"]
+        trading_symbol_for_transaction = find_matching_object("mstock_instrument_list.json" , "token" , instrument_token)["name"]
         if trading_symbol:
-            data = find_matching_object("instrument_list.json" , "name" , trading_symbol)
+            data = find_matching_object("mstock_instrument_list.json" , "name" , trading_symbol)
         elif instrument_token:
-            data = find_matching_object("instrument_list.json" , "token" , instrument_token)
+            data = find_matching_object("mstock_instrument_list.json" , "token" , instrument_token)
         trading_symbol_for_transaction = data["name"]
         instrument_token = data["token"]
         lotsize = data["lotsize"]
@@ -164,7 +164,7 @@ class MStockAdapter(BrokerInterface):
             'variety': 'NORMAL',
             'tradingsymbol': trading_symbol_for_transaction,
             'symboltoken': instrument_token,
-            'exchange': "NFO",
+            'exchange': exchange,
             'transactiontype': 'SELL',
             'ordertype': 'MARKET',
             'quantity': str(int(quantity) * int(lotsize)),
@@ -190,7 +190,7 @@ class MStockAdapter(BrokerInterface):
         logger.debug("Sell order response: {response}", response=response)
         
 
-    def buy_units(self, trading_symbol = None, instrument_token = None, quantity = 0,exchamge="",ltp=0):
+    def buy_units(self, trading_symbol = None, instrument_token = None, quantity = 0, exchange="",ltp=0):
         logger.info(f"Buying units: {quantity} of {trading_symbol} ({instrument_token}) via M.Stock...")
         conn = http.client.HTTPSConnection('api.mstock.trade')
         headers = {
@@ -200,9 +200,9 @@ class MStockAdapter(BrokerInterface):
                 "Content-Type": "application/json"
             }
         if trading_symbol:
-            data = find_matching_object("instrument_list.json" , "name" , trading_symbol)
+            data = find_matching_object("mstock_instrument_list.json" , "name" , trading_symbol)
         elif instrument_token:
-            data = find_matching_object("instrument_list.json" , "token" , instrument_token)
+            data = find_matching_object("mstock_instrument_list.json" , "token" , instrument_token)
         trading_symbol_for_transaction = data["name"]
         instrument_token = data["token"]
         lotsize = data["lotsize"]
@@ -210,7 +210,7 @@ class MStockAdapter(BrokerInterface):
             'variety': 'NORMAL',
             'tradingsymbol': trading_symbol_for_transaction,
             'symboltoken': instrument_token,
-            'exchange': "NFO",
+            'exchange': exchange,
             'transactiontype': 'BUY',
             'ordertype': 'MARKET',
             'quantity': str(int(quantity) * int(lotsize)),
@@ -239,7 +239,7 @@ class MStockAdapter(BrokerInterface):
 
     def get_instrument_details(self , tradingsymbol):
         logger.info(f"Getting instrument details for {tradingsymbol} from M.Stock...")
-        data = find_matching_object("instrument_list.json" , "name" , tradingsymbol)
+        data = find_matching_object("mstock_instrument_list.json" , "name" , tradingsymbol)
         updated_data = instrument_details_attribute_mgmt(data)
         return updated_data
     
@@ -276,7 +276,8 @@ class MStockAdapter(BrokerInterface):
 
     def prod_start(self):
         logger.info("Starting M.StockAdapter in production mode...")
-        self.mstock_instance.initialise_for_prod()
+        if self.mstock_instance.initialise_for_prod():
+            self.download_instrument_list()
 
     def download_instrument_list(self, exchange: str) -> bool:
         logger.info(f"Downloading instrument list for exchange: {exchange} from M.Stock...")
@@ -292,8 +293,7 @@ class MStockAdapter(BrokerInterface):
             response = conn.getresponse()
             response_body = response.read().decode("utf-8")
             response_json = json.loads(response_body)
-            #file_path = "mstock_instrument_list.json"
-            file_path = "instrument_list.json"
+            file_path = "mstock_instrument_list.json"
             with open(file_path, 'w') as f:
                 json.dump(response_json, f, indent=4)
             
