@@ -29,19 +29,90 @@
         border-color: #c62828;
         box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6), 0 0 20px rgba(211, 47, 47, 0.35);
     }
+
     #buy-widget-container h2 { text-align: center; margin-bottom: 0.5rem; color: #66bb6a; transition: color 0.4s ease; }
     #buy-widget-container.put-view h2 { color: #ef5350; }
     .summary-container { display: flex; justify-content: space-evenly; padding: 1rem 0; margin: 1rem 0; border-top: 1px solid #444; border-bottom: 1px solid #444; }
     .summary-item { text-align: center; }
     .summary-label { display: block; font-size: 0.8rem; color: #aaa; text-transform: uppercase; letter-spacing: 0.5px; }
     .summary-value { display: block; font-size: 1.4rem; font-weight: 600; color: #ffffff; margin-top: 0.25rem; }
-    .toggle-container { display: flex; justify-content: center; margin-bottom: 1.5rem; border: 1px solid #444; border-radius: 7px; overflow: hidden; width: fit-content; margin-left: auto; margin-right: auto; }
     .toggle-button { background-color: transparent; color: #ccc; border: none; padding: 0.6rem 1.2rem; cursor: pointer; font-size: 0.9rem; font-weight: 500; transition: background-color 0.3s; }
     .toggle-button:first-child { border-right: 1px solid #444; }
     .toggle-button.active-toggle { background-color: #2e7d32; color: white; }
     #buy-widget-container.put-view .toggle-button.active-toggle { background-color: #c62828; }
     .buy-button { background-color: #28a745; color: white; border: none; padding: 0.6rem 1rem; border-radius: 5px; cursor: pointer; font-size: 0.9rem; font-weight: 500; transition: background-color 0.2s; }
     .buy-button:hover { background-color: #218838; }
+    .expiry-label {color: white;min-width: 100px;}
+
+    .toggle-container {
+    width :100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between; /* 👈 pushes label left, buttons right */
+    padding: 8px 12px;
+    }   
+    .toggle-container > div {
+    flex: 0 0 60%;      /* default for left side */
+    }
+
+    .toggle-container > div:last-child {
+        flex: 0 0 40%;      /* right side buttons */
+        display: flex;
+        justify-content: flex-end;
+        gap: 10px;
+    }
+
+.expiry-label {
+    color: white;
+    vertical-align: middle;
+}
+
+.toggle-buttons {
+    display: flex;
+    gap: 10px; /* spacing between buttons */
+    color: black;
+}
+
+.toggle-button {
+    padding: 6px 12px;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    background-color: #eee;
+    color: black;
+}
+
+.active-toggle {
+    background-color: #007bff;
+    color: black;
+}
+
+/* --- TYPE COLUMN STYLING --- */
+.type-cell {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 8px;
+}
+
+.type-cell label {
+    color: #ccc;
+    font-size: 0.9rem;
+    cursor: pointer;
+}
+
+.type-cell label {
+    color: #ccc;
+    margin: 0 4px;
+    cursor: pointer;
+    font-size: 0.85rem;
+}
+
+.type-cell input[type="radio"] {
+    margin-right: 3px;
+}
+
+
     
     /* --- STYLES FROM SELL WIDGET --- */
     #sell-widget-container { width: 1150px; max-width: 95%; }
@@ -59,7 +130,7 @@
     .flash { animation: price-flash 0.7s ease-out; }
     @keyframes price-flash { from { background-color: rgba(76, 175, 80, 0.5); } to { background-color: transparent; } }
     .lots-override-input {
-        width: 90%; padding: 0.5rem; background-color: #1a1a1a;
+        width: 40%; padding: 0.5rem; background-color: #1a1a1a;
         border: 1px solid #555; color: white; border-radius: 4px;
         font-size: 0.9rem; text-align: center; box-sizing: border-box;
     }
@@ -78,6 +149,7 @@
         .summary-value { font-size: 1.1rem; }
         .lots-override-input { padding: 0.3rem; }
     }
+
 </style>
 {% endblock %}
 
@@ -85,7 +157,7 @@
 <main class="main-content">
     
     <div class="widget-container" id="buy-widget-container">
-        <h2 id="optionsTitle">Call Options</h2>
+        <h2 id="optionsTitle">Buy Options</h2>
         <p>Status: <strong id="buyConnectionStatus" style="color: #ffc107;">Connecting...</strong></p> 
         <div class="summary-container">
             <div class="summary-item">
@@ -98,15 +170,27 @@
             </div>
         </div>
         <div class="toggle-container">
-            <button class="toggle-button active-toggle" id="callBtn">Calls (CE)</button>
-            <button class="toggle-button" id="putBtn">Puts (PE)</button>
+            <div class="toggle-buttons" width ="50%">
+                <label id="broker" class="expiry-label">BRO :</label>
+                <label id="underlying" class="expiry-label">UL :</label>
+                <label id="ltp" class="expiry-label">LTP :</label>
+                <label id="expiryLabel" class="expiry-label">EXP : </label>
+            </div>
+            <div class="toggle-buttons" width ="50%">
+                <button class="toggle-button active-toggle" id="callBtn">Calls (CE)</button>
+                <button class="toggle-button" id="putBtn">Puts (PE)</button>
+            </div>
         </div>
 
         <table class="option-table">
             <thead>
                 <tr>
-                    <th>LEVEL</th> <th>OPTION_NAME</th> <th>EXPIRY</th>
-                    <th>MARKET_PRICE</th> <th>LOTS</th> <th>LOTS (O)</th>
+                    <th>Levels</th> 
+                    <th>Strike Price</th> 
+                    <th>Market Price</th> 
+                    <th>Lots</th> 
+                    <th>Lots(O)</th>
+                    <th>Type</th>
                     <th class="center">Action</th>
                 </tr>
             </thead>
@@ -224,8 +308,27 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
+    async function fetchConstants() {
+        try {
+            
+            const response = await fetch('http://127.0.0.1:5000/fund_summary');
+            if (!response.ok) { throw new Error(`HTTP Error: ${response.status}`); }
+            const summary = await response.json();
+            cashBalanceEl.textContent = `₹ ${parseFloat(summary.data.cash_balance).toLocaleString('en-IN')}`;
+            utilizedEl.textContent = `₹ ${parseFloat(summary.data.utilized).toLocaleString('en-IN')}`;
+        } catch (error) {
+            console.error("Could not fetch fund summary:", error);
+            cashBalanceEl.textContent = 'Error';
+            utilizedEl.textContent = 'Error';
+        }
+    }
+
     // --- THIS FUNCTION IS NOW FIXED ---
-    function populateOptionsTable(contracts, optionType) {
+    function populateOptionsTable(contracts, optionType) 
+    {
+        // alert("contracts: " + JSON.stringify(contracts));
+        // alert("populateOptionsTable called for " + optionType);
+
         optionsTableBody.innerHTML = '';
         // FIX: Use Object.entries to get both the token and the contract object
         const filteredContracts = Object.entries(contracts).filter(([token, contract]) => contract.call_or_put === optionType);
@@ -234,18 +337,47 @@ document.addEventListener('DOMContentLoaded', function() {
             optionsTableBody.innerHTML = `<tr><td colspan="7" class="no-options">No ${optionType === 'CE' ? 'call' : 'put'} options found.</td></tr>`;
             return;
         }
+
+        // ✅ SORT BY MARKET PRICE (descending or ascending)
+        filteredContracts.sort(([, a], [, b]) => a.ltp - b.ltp);
+
+
+        // 🟢 Update expiry label if contracts exist
+        const expiryLabel = document.getElementById('expiryLabel');
+        if (filteredContracts.length > 0) {
+            const firstContract = filteredContracts[0][1];
+            const expiry = firstContract.expiry;
+            if (expiry) {
+                const date = new Date(expiry);
+                expiryLabel.textContent = `EXP : ${date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}`;
+            } else {
+                expiryLabel.textContent = 'EXP: ';
+            }
+        } else {
+            expiryLabel.textContent = 'EXP: ';
+        }
         
         // FIX: Loop through the [token, contract] pairs
         for (const [token, contract] of filteredContracts) {
+            
+            
+            // Works for NIFTY, SENSEX, and CRUDEOIL option symbols
+            const match = contract.name.match(/(?:NIFTY|SENSEX)\d{2}[A-Z]{3}(\d{5})(?=CE|PE$)|CRUDEOIL\d{2}[A-Z]{3}(\d{4})(?=CE|PE$)/i);
+            const strikePrice = match ? (match[1] || match[2]) : contract.name;
+
             const row = document.createElement('tr');
             row.id = `row-${token}`; // Use the correct token for the ID
             row.innerHTML = `
                 <td>${contract.level || ''}</td>
-                <td>${contract.name || ''}</td>
-                <td>${contract.expiry || ''}</td>
+                <td>${strikePrice || ''}</td>
                 <td id="price-${token}">₹ ${(contract.ltp || 0).toFixed(2)}</td>
                 <td id="lots-${token}">${contract.lots || 0}</td>
                 <td><input type="number" class="lots-override-input" id="override-lots-${token}" placeholder="${contract.lots || 0}"></td>
+                <td class="type-cell">
+                    <label><input type="radio" name="type-${token}" value="Intra"> I</label>
+                    <label><input type="radio" name="type-${token}" value="Scalping" checked> S</label>
+                    <label><input type="radio" name="type-${token}" value="UltraScalping"> U</label>
+                </td>
                 <td class="center">
                     <button class="buy-button" data-token="${token}" data-tradingsymbol="${contract.name}" data-lots="${contract.lots || 0}">Buy</button>
                 </td>
@@ -253,6 +385,7 @@ document.addEventListener('DOMContentLoaded', function() {
             optionsTableBody.appendChild(row);
         }
         addBuyButtonListeners();
+        
     }
 
     function addBuyButtonListeners() {
@@ -279,7 +412,7 @@ document.addEventListener('DOMContentLoaded', function() {
     function populatePositionsTable(positions) {
         positionsTableBody.innerHTML = '';
         if (Object.keys(positions).length === 0) {
-            positionsTableBody.innerHTML = `<tr><td colspan="10" class="no-options">No open positions found.</td></tr>`;
+            positionsTableBody.innerHTML = `<tr><td colspan="11" class="no-options">No open positions found.</td></tr>`;
             return;
         }
         for (const token in positions) {
@@ -294,6 +427,15 @@ document.addEventListener('DOMContentLoaded', function() {
                 <td id="market-price-${token}">${(pos.latest_price || pos.average_price).toFixed(2)}</td>
                 <td>${pos.lots || 0}</td>
                 <td><input type="number" class="lots-override-input" id="override-lots-sell-${token}" placeholder="${pos.lots || 0}"></td>
+
+                <td class="type-cell">
+                    <label><input type="radio" name="sell-type-${token}" value="Intra"> I</label>
+                    <label><input type="radio" name="sell-type-${token}" value="Scalping" checked> S</label>
+                    <label><input type="radio" name="sell-type-${token}" value="UltraScalping"> U</label>
+                </td>
+
+
+
                 <td id="pct-${token}" class="${plClass}">${(pos.pct_pl || 0).toFixed(2)}</td>
                 <td id="pts-${token}" class="${plClass}">${(pos.pts_pl || 0).toFixed(2)}</td>
                 <td id="total-pl-${token}" class="${plClass}">${(pos.total_pl || 0).toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
@@ -326,7 +468,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // --- EVENT LISTENERS & INITIAL CALLS (Unchanged) ---
     callBtn.addEventListener('click', () => {
         buyWidgetContainer.classList.remove('put-view');
-        optionsTitle.textContent = 'Call Options';
+        //optionsTitle.textContent = 'Call Options';
         putBtn.classList.remove('active-toggle');
         callBtn.classList.add('active-toggle');
         populateOptionsTable(allContracts, 'CE');
@@ -334,7 +476,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     putBtn.addEventListener('click', () => {
         buyWidgetContainer.classList.add('put-view');
-        optionsTitle.textContent = 'Put Options';
+        //optionsTitle.textContent = 'Put Options';
         callBtn.classList.remove('active-toggle');
         putBtn.classList.add('active-toggle');
         populateOptionsTable(allContracts, 'PE');
