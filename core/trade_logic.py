@@ -38,6 +38,7 @@ class Trader_Singleton:
     _use_max_margin = True
     _sell_mode = "SELL"
     _exchange = fetch_from_json("constants.json" , "EXCHANGE")
+    _underlying = fetch_from_json("constants.json" , "UNDERLYING")
 
     _positions_to_subscribe = []
 
@@ -265,6 +266,10 @@ class Trader_Singleton:
             raise ValueError("strike_interval must be positive integer")
         
         atm_strike = int((nifty_price // strike_interval) * strike_interval)
+        remainder = nifty_price%100
+        if remainder >= 50:
+            atm_strike+=100
+        
 
         expiry = get_expiry_date(underlying)
 
@@ -300,17 +305,17 @@ class Trader_Singleton:
 
         return {"expiry": expiry, "strikes": strikes, "symbols": symbols}
 
-        
 
     def setup_weekly_option_contract_subscriptions(self):
         logger.info("Setting up weekly option contract subscriptions...")
-        try:
+        try:    
             near_month_symbol = fetch_from_json("constants.json" , "NEAR_MONTH_FUTURE_TOKEN")
+            logger.debug(near_month_symbol)
             near_month_token = self._broker.get_instrument_details(near_month_symbol)["instrument_token"]
+            logger.debug(near_month_symbol)
             ltp_nifty_near_month = self._broker.get_ltp(near_month_symbol)
             self._near_month_data[near_month_token] = ltp_nifty_near_month
-
-            contracts = self.get_5_weekly_option_contracts(float(ltp_nifty_near_month) , "CE" , underlying="CRUDEOIL")["symbols"]
+            contracts = self.get_5_weekly_option_contracts(float(ltp_nifty_near_month) , "CE" , underlying=self._underlying)["symbols"]
             logger.log("DATA",f" Weekly Option Contracts - {contracts}")
             #relevant_tokens_to_subscribe = []
             for key , value in contracts.items(): 
@@ -321,7 +326,7 @@ class Trader_Singleton:
                 self.weekly_options_initialize(token , data , "CE" , price , level=key)
             logger.info("Completed CALL weekly options setup.")
             logger.info("Setting up PUT weekly options...")
-            contracts = self.get_5_weekly_option_contracts(ltp_nifty_near_month , "PE" , underlying="CRUDEOIL")["symbols"]
+            contracts = self.get_5_weekly_option_contracts(ltp_nifty_near_month , "PE" , underlying=self._underlying)["symbols"]
             for key , value in contracts.items(): 
                 data = self._broker.get_instrument_details(value)
                 price = self._broker.get_ltp(data["tradingsymbol"])
@@ -394,6 +399,12 @@ class Trader_Singleton:
                     logger.info("REFRESHING WEEKLY OPTIONS")
                     self.refresh_open_positions_and_buy_price()
                     self.setup_weekly_option_contract_subscriptions()
+                elif (int(price)%100 >= 50 and int(self._near_month_data[token])<50) or (int(price)%100 < 50 and int(self._near_month_data[token])>=50):
+                    logger.info(f"NEAR MONTH FUTURE PRICE CHANGED - {self._near_month_data[token]} to {price}")
+                    logger.info("REFRESHING WEEKLY OPTIONS")
+                    self.refresh_open_positions_and_buy_price()
+                    self.setup_weekly_option_contract_subscriptions()
+                self._near_month_data[token] = price
         except Exception as e:
             logger.error(f"Error setting latest price {e}")
 

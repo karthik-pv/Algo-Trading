@@ -87,31 +87,22 @@
     color: black;
 }
 
-/* --- TYPE COLUMN STYLING --- */
 .type-cell {
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    gap: 8px;
-}
-
-.type-cell label {
-    color: #ccc;
-    font-size: 0.9rem;
-    cursor: pointer;
-}
-
-.type-cell label {
-    color: #ccc;
-    margin: 0 4px;
-    cursor: pointer;
-    font-size: 0.85rem;
-}
-
-.type-cell input[type="radio"] {
-    margin-right: 3px;
-}
-
+        /* Removed flex properties, rely on parent TD's text-align: center */
+        white-space: nowrap; /* Prevent labels from wrapping */
+    }
+    .type-cell label {
+        color: #ccc;
+        margin: 0 3px; /* Reduced horizontal margin */
+        cursor: pointer;
+        font-size: 0.8rem; /* Slightly smaller font */
+        vertical-align: middle; /* Align labels vertically with radio buttons */
+    }
+    .type-cell input[type="radio"] {
+        margin-right: 2px; /* Reduced margin to the right of the radio button */
+        vertical-align: middle; /* Align radio buttons vertically */
+        transform: scale(0.9); /* Slightly smaller radio buttons */
+    }
 
     
     /* --- STYLES FROM SELL WIDGET --- */
@@ -362,9 +353,10 @@ document.addEventListener('DOMContentLoaded', function() {
             
             
             // Works for NIFTY, SENSEX, and CRUDEOIL option symbols
-            const match = contract.name.match(/(?:NIFTY|SENSEX)\d{2}[A-Z]{3}(\d{5})(?=CE|PE$)|CRUDEOIL\d{2}[A-Z]{3}(\d{4})(?=CE|PE$)/i);
+            const regex = /(?:NIFTY|SENSEX)\d{2}[A-Z]\d{2}(\d{5})(?=CE|PE$)|CRUDEOILM?\d{2}[A-Z]{3}(\d{4,5})(?=CE|PE$)/i;
+            const match = contract.name.match(regex);
+            // If match is found, group 1 has NIFTY/SENSEX strike, group 2 has CRUDEOIL strike
             const strikePrice = match ? (match[1] || match[2]) : contract.name;
-
             const row = document.createElement('tr');
             row.id = `row-${token}`; // Use the correct token for the ID
             row.innerHTML = `

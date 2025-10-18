@@ -172,104 +172,40 @@ def expiry_filter(exp_date: date, index_name: str,tradingsymbol, expiry_type: st
     return True
 
 def get_expiry_date(underlying: str) -> datetime.date:
-    logger.debug(f"Calculating expiry date for underlying: {underlying}")
-    """
-    Determines the next valid trading expiry date based on the underlying asset's rules.
-    
-    :param underlying: The asset name ('NIFTY', 'SENSEX', 'CRUDEOIL', etc.)
-    :return: datetime.date object representing the valid expiry date.
-    """
     underlying = underlying.upper()
-    today = datetime.date.today()
-    now_time = datetime.datetime.now().time()
-    market_close_time = datetime.time(15, 30)
+    month_map = {
+        'JAN': 1, 'FEB': 2, 'MAR': 3, 'APR': 4, 'MAY': 5, 'JUN': 6,
+        'JUL': 7, 'AUG': 8, 'SEP': 9, 'OCT': 10, 'NOV': 11, 'DEC': 12
+    }
+    try:
+        year_str = fetch_from_json("constants.json", "EXPIRY_YEAR")
+        month_abbr = fetch_from_json("constants.json", "EXPIRY_MONTH")
+        year = int(year_str)
+        month = month_map[month_abbr.upper()]
 
-    # =========================================================================
-    # 1. DETERMINE INITIAL EXPIRY CANDIDATE BASED ON ASSET RULES
-    # =========================================================================
-    
-    if underlying == "NIFTY":
-        # Target: Next Tuesday (weekday() == 1)
-        target_weekday = 1
-        days_until_target = (target_weekday - today.weekday() + 7) % 7
-        expiry_candidate = today + datetime.timedelta(days=days_until_target)
-        
-        # Rollover if it's Tuesday and past market close
-        if days_until_target == 0 and now_time > market_close_time:
-             expiry_candidate += datetime.timedelta(days=7)
-             
-    elif underlying == "SENSEX":
-        # Target: Next Thursday (weekday() == 3)
-        target_weekday = 3
-        days_until_target = (target_weekday - today.weekday() + 7) % 7
-        expiry_candidate = today + datetime.timedelta(days=days_until_target)
-
-        # Rollover if it's Thursday and past market close
-        if days_until_target == 0 and now_time > market_close_time:
-             expiry_candidate += datetime.timedelta(days=7)
-             
-    elif underlying == "CRUDEOIL" or underlying == "CRUDEOILM":
-        expiry_candidate = datetime.date(today.year, today.month+1, 19)
-        return expiry_candidate
-        # Target: 19th of the current month, or next month if the 19th has passed.
-        target_day = 19
-        
-        if today.day > target_day:
-            # If the 19th has passed, roll to the 19th of the next month
-            if today.month == 12:
-                next_month = 1
-                next_year = today.year + 1
-            else:
-                next_month = today.month + 1
-                next_year = today.year
-            expiry_candidate = datetime.date(next_year, next_month, target_day)
+        if underlying == "NIFTY":
+            day_str = fetch_from_json("constants.json", "NIFTY_EXPIRY_DATE")
+            day = int(day_str)
+        elif underlying == "SENSEX":
+            day_str = fetch_from_json("constants.json", "SENSEX_EXPIRY_DATE")
+            day = int(day_str)
+        elif underlying == "CRUDEOIL" or underlying == "CRUDEOILM":
+            day = 19
         else:
-            # Use the 19th of the current month
-            expiry_candidate = datetime.date(today.year, today.month, target_day)
+            raise ValueError(f"Underlying '{underlying}' not supported for pre-defined expiry.")
             
-    else:
-        raise ValueError(f"Underlying '{underlying}' not supported for automatic expiry calculation.")
+        final_expiry = datetime.date(year, month, day)
+        logger.debug(f"Expiry is {final_expiry}")
+        return final_expiry
 
-
-    # =========================================================================
-    # 2. HOLIDAY AND WEEKEND ROLLBACK LOGIC
-    # (This ensures the final date is a valid trading day)
-    # =========================================================================
-
-    holiday_strings = fetch_from_json("constants.json", "HOLIDAYS")
-    logger.debug(f"Fetched holidays: {holiday_strings}")
-    if holiday_strings is None:
-        holidays = set()
-    else:
-        # Assuming HOLIDAYS format is "%d-%m-%Y" (e.g., "15-08-2025")
-        holidays = {datetime.datetime.strptime(d_str, "%d-%m-%Y").date() for d_str in holiday_strings}
-
-    final_expiry = expiry_candidate
-    
-    while True:
-        is_weekend = final_expiry.weekday() >= 5 # 5=Saturday, 6=Sunday
-        is_holiday = final_expiry in holidays
-
-        if not is_weekend and not is_holiday:
-            # Found a valid trading day
-            return final_expiry
-            
-        logger.debug(f"Adjusting expiry: {final_expiry.strftime('%d-%m-%Y')} is a holiday/weekend. Checking previous day.")
-        
-        # Roll back one day
-        final_expiry -= datetime.timedelta(days=1)
-        
-        # Safety check for extreme rollback (optional, but good practice)
-        if final_expiry < today - datetime.timedelta(days=30):
-             raise Exception("Expiry rollback failed: date went too far into the past.")
-
-        
-
+    except (TypeError, KeyError, ValueError) as e:
+        logger.error(f"Failed to construct expiry date. Check 'constants.json' and underlying. Error: {e}")
+        raise
 
 def get_instrument_tokens_from_symbol(name):
     logger.debug(f"Fetching instrument token for: {name}")
-    return find_matching_object("instrument_list.json" , "name" , name)["token"]
+    return find_matching_object("mstock_instrument_list.json" , "name" , name)["token"]
 
 def get_instrument_details_from_json(name):
     logger.debug(f"Fetching instrument details for: {name}")
-    return find_matching_object("instrument_list.json" , "name" , name)
+    return find_matching_object("mstock_instrument_list.json" , "name" , name)

@@ -224,8 +224,11 @@ class KiteAdapter(BrokerInterface):
     def dev_start(self):
         self.kite_instance.initialise_kite_for_dev()
 
-    def prod_start(self):
-        self.kite_instance.initialise_kite_for_prod()
+    def prod_start(self , request_token=None):
+        if request_token:
+            self.kite_instance.start_session(request_token)
+        else:
+            self.kite_instance.initialise_kite_for_prod()
 
     def download_instrument_list(self,exchange):
         try:

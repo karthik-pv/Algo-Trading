@@ -197,8 +197,10 @@ class MStockSingleton:
         if not last_update_datetime.date() == today_date:
             self.create_session()
             logger.debug("MStock session created for production.")
+            return True
         else:
             access_token = fetch_from_json("access_token.json", "mstock_jwt_token")
             logger.debug(access_token)
             logger.info("Fetched access token from JSON for production.")
             self.set_access_token(access_token)
+            return False

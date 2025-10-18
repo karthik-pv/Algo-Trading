@@ -75,9 +75,9 @@ logger.info("Logger initialized successfully")
 app = Flask(__name__)
 CORS(app)
 
-BROKER_MAP = {"kite": KiteAdapter, "mstock": MStockAdapter}
+BROKER_MAP = {"KITE": KiteAdapter, "MSTOCK": MStockAdapter}
 
-CURRENT_BROKER = "kite"
+CURRENT_BROKER = fetch_from_json("constants.json" , "BROKER")
 
 EXCHANGE = fetch_from_json("constants.json" , "EXCHANGE")
 
@@ -225,6 +225,11 @@ def trading_view():
     res = trading_view_handle_func(data)
     return jsonify(res)
 
+@app.route("/kite_callback")
+def kite_login_callback():
+    request_token = request.args["request_token"]
+    
+
 
 def run_flask_app():
     logger.info("Starting Flask app...")
@@ -288,25 +293,25 @@ if __name__ == "__main__":
         trader = Trader_Singleton() 
         # uncomment for development
         logger.info(f"Using broker: {CURRENT_BROKER}")
-        broker.dev_start()
+        # broker.dev_start()
         #logger.info("Starting in development mode...")
         # uncomment for prod
-        #broker.prod_start()
+        broker.prod_start()
         #logger.info("Starting in production mode...")
-        #broker.fetch_all_instruments()
+        # broker.fetch_all_instruments()
         broker.download_instrument_list(EXCHANGE)
         trader.set_broker(broker)
         trader.on_start()
         trader.start_frontend_socket_server(app)
         
 
-        if CURRENT_BROKER == "kite":
+        if CURRENT_BROKER == "KITE":
             socket_thread = threading.Thread(target=start_socket, daemon=True)
             socket_thread.start()
             # if is_market_open():
             trader.start_trading_watcher_thread()
             app.run(debug=True , use_reloader = False)
-        elif CURRENT_BROKER == "mstock":
+        elif CURRENT_BROKER == "MSTOCK":
             if is_market_open():
                 trader.start_trading_watcher_thread()
             asyncio.run(start_async_connections())
