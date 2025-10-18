@@ -1,6 +1,87 @@
+import json
 from loguru import logger
 
 def trading_view_handle_func(data):
-    logger.debug(f"Received data from TradingView: {data}")
-    val = data["name"]
-    return {"msg" : "done"}
+    # logger.debug(f"Received data from TradingView: {data}")
+    # val = data["name"]
+    # return {"msg" : "done"}
+
+    # Paste JSON above as a raw string
+    data = json.loads("""
+    {
+        "EMA": {
+            "15s": {"EMA9": 22345.12, "EMA21": 22340.45, "EMA50": 22320.85, "EMA100": 22290.33, "EMA200": 22210.12},
+            "1m": {"EMA9": 22346.20, "EMA21": 22341.10, "EMA50": 22321.05, "EMA100": 22291.40, "EMA200": 22211.25},
+            "5m": {"EMA9": 22350.30, "EMA21": 22343.00, "EMA50": 22322.90, "EMA100": 22293.50, "EMA200": 22215.40},
+            "30m": {"EMA9": 22380.15, "EMA21": 22360.80, "EMA50": 22340.50, "EMA100": 22310.00, "EMA200": 22250.60},
+            "2h": {"EMA9": 22410.50, "EMA21": 22385.00, "EMA50": 22355.60, "EMA100": 22320.80, "EMA200": 22270.10},
+            "D": {"EMA9": 22480.00, "EMA21": 22420.50, "EMA50": 22360.40, "EMA100": 22290.70, "EMA200": 22180.30}
+        },
+        "PVT": {
+            "15s": 102345.5,
+            "1m": 105432.3,
+            "5m": 108900.8,
+            "30m": 120300.4,
+            "2h": 145600.2,
+            "D": 189000.0
+        },
+        "VWAP": {"5m": 22355.60}
+        }
+        """)
+
+    # --- 6️⃣ Optional: pretty-print the entire JSON
+    print("\nFull JSON (formatted):")
+    print(json.dumps(data, indent=2))
+
+
+    # # Sell Trigger Logic based on EMAs
+    # STOP_LOSS_INTRA_EMA = data["EMA"]["1m"]["EMA50"]
+    # STOP_LOSS_SCALPING_EMA = data["EMA"]["1m"]["EMA9"]
+    # STOP_LOSS_ULTRA_SCALPING_EMA = data["EMA"]["15s"]["EMA21"]
+
+    # ORDER_STRATEGY_TYPE => SELECTED BY USER WHILE PLACING ORDER USING RADIO BUTTON
+    #     CAN BE  ORDER_STRATEGY_TYPE_INTRA OR 
+    #             ORDER_STRATEGY_TYPE_SCALPING OR 
+    #             ORDER_STRATEGY_TYPE_ULTRA_SCALPING
+
+    # USER CONFIGURES SELL TRIGGER IN SETTINGS PAGE
+    #     SELL_TRIGGER_EMA CAN BE TRUE  
+    #     SELL_TRIGGER_PCT CAN BE TRUE  
+    #     SELL_TRIGGER_PTS CAN BE TRUE
+    
+    # USER CONFIGURES EMA_TOLERANCE_PTS IN SETTINGS PAGE 
+    
+
+
+    # # STOP LOSS CHECK BASED ON EMA
+    # if SELL_TRIGGER_EMA == TRUE AND ORDER_STRATEGY_TYPE == ORDER_STRATEGY_TYPE_INTRA AND LTP < AVG_BUY_PRICE and  LTP < (STOP_LOSS_INTRA_EMA - EMA_TOLERANCE_PTS)
+    #     TRIGGER SELL
+    # if SELL_TRIGGER_EMA == TRUE AND ORDER_STRATEGY_TYPE == ORDER_STRATEGY_TYPE_SCALPING AND LTP < AVG_BUY_PRICE and  ltp < (STOP_LOSS_SCALPING_EMA - EMA_TOLERANCE_PTS)
+    #     TRIGGER SELL
+    # if SELL_TRIGGER_EMA == TRUE AND ORDER_STRATEGY_TYPE == ORDER_STRATEGY_TYPE_ULTRA_SCALPING AND LTP < AVG_BUY_PRICE and  ltp < (STOP_LOSS_ULTRA_SCALPING_EMA - EMA_TOLERANCE_PTS)
+    #     TRIGGER SELL
+
+
+    # # STOP LOSS CHECK BASED ON PTS
+    # IF SELL_TRIGGER_PTS == TRUE AND LTP < AVG_BUY_PRICE AND AVG_BUY_PRICE - LTP > PTS_LOSS 
+    #     TRIGGER SELL
+    
+    # # STOP LOSS CHECK BASED ON PCT
+    # IF SELL_TRIGGER_PCT == TRUE AND LTP < AVG_BUY_PRICE AND (AVG_BUY_PRICE - LTP)*100/ AVG_BUY_PRICE > PCT_LOSS 
+    #     TRIGGER SELL
+
+
+    # # BOOK PROFIT CHECK BASED ON PTS FOR ULTRA SCALPING ORDER TYPE
+    # IF SELL_TRIGGER_PTS == TRUE AND ORDER_STRATEGY_TYPE == ORDER_STRATEGY_TYPE_ULTRA_SCALPING AND  LTP > AVG_BUY_PRICE AND AVG_BUY_PRICE - LTP > PTS_PROFIT
+    #     TRIGGER SELL
+
+
+    # # BOOK PROFIT CHECK BASED ON PTS FOR SCALPING ORDER TYPE
+    # IF SELL_TRIGGER_PTS == TRUE AND ORDER_STRATEGY_TYPE == ORDER_STRATEGY_TYPE_ULTRA_SCALPINGAND AND LTP > AVG_BUY_PRICE AND AVG_BUY_PRICE - LTP > (PTS_PROFIT * PTS_SCALPING_FACTOR)
+    #     TRIGGER SELL
+
+    # # BOOK PROFIT CHECK BASED ON PCT FOR INTRA ORDER TYPE
+    # IF SELL_TRIGGER_PTS == TRUE AND ORDER_STRATEGY_TYPE == ORDER_STRATEGY_TYPE_INTRA AND LTP > AVG_BUY_PRICE AND AVG_BUY_PRICE - LTP > (PTS_PROFIT * PTS_INTRA_FACTOR)
+    #     TRIGGER SELL
+
+    
