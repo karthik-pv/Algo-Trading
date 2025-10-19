@@ -1,5 +1,5 @@
 {
-    "MODE": "EXECUTION",
+    "MODE": "ALERT",
     "MARGIN_USAGE_PCT": 0.9,
     "DEFAULT_LOT_SIZE": "1",
     "SELL_TRIGGER_PCT": false,

@@ -40,7 +40,7 @@ class Trader_Singleton:
     _tick_counter = 0
     _comparison_function = "PNT"
     _use_max_margin = True
-    _sell_mode = "ALERT"
+    _sell_mode = fetch_from_json("settings.json" , "MODE")
     _broker_string = fetch_from_json("constants.json" , "BROKER")
     _exchange = fetch_from_json("constants.json" , "EXCHANGE")
     _underlying = fetch_from_json("constants.json" , "UNDERLYING")
@@ -241,7 +241,7 @@ class Trader_Singleton:
                 
                 logger.debug(f"DECISION TO SELL {tradingsymbol} - {sell}")
                 if sell:
-                    if self._sell_mode == "SELL":
+                    if self._sell_mode == "EXECUTION":
                         logger.info(f"Placing SELL order for {tradingsymbol} {instrument_token} : {qty} lots at LTP {ltp}")
                         broker.sell_units(tradingsymbol,instrument_token,qty,exchange,ltp)
                     logger.critical(f"SELL UNITS - {tradingsymbol}")
