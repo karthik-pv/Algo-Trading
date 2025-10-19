@@ -17,7 +17,8 @@ from utils import is_market_open , fetch_from_json
 from loguru import logger
 
 
-
+logging.getLogger("urllib3").setLevel(logging.WARNING) # Avoids any degug messages from urlib3
+logging.getLogger('werkzeug').setLevel(logging.ERROR)
 logger.remove()
 
 # File logging
@@ -36,16 +37,20 @@ logger.add(
     )
 )
 
-# Console logging
+#Console logging
 logger.add(
     sink=lambda msg: print(msg, end=""),
     colorize=True,
     format= "<green>{time:YYYY-MM-DD HH:mm:ss}</green> | "
             "<level>{level: <8}</level> | "
             "<cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - |"
-            "<level>{message}</level> |"
+            "<level>{message}</level> |")
+
+
+
+
            
-)
+
 
 # # Add a new handler that prints only the message for errors
 # logger.add(lambda msg: print(msg, end=""), level="ERROR", format="{message}")
@@ -298,8 +303,8 @@ if __name__ == "__main__":
         # uncomment for prod
         broker.prod_start()
         #logger.info("Starting in production mode...")
-        # broker.fetch_all_instruments()
-        broker.download_instrument_list(EXCHANGE)
+        #broker.fetch_all_instruments()
+        #broker.download_instrument_list(EXCHANGE)
         trader.set_broker(broker)
         trader.on_start()
         trader.start_frontend_socket_server(app)
