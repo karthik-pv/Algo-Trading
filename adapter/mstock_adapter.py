@@ -5,7 +5,7 @@ import datetime
 import calendar
 import requests
 
-from utils import get_trading_symbols_from_json , find_matching_object , fetch_from_json
+from utils import get_trading_symbols_from_json , find_matching_object , fetch_from_json , write_to_json
 from core.mstock_connector import MStockSingleton
 from interface.broker_interface import BrokerInterface
 from core.trade_logic import Trader_Singleton
@@ -283,8 +283,12 @@ class MStockAdapter(BrokerInterface):
             self.download_instrument_list(None)
 
     def download_instrument_list(self, exchange: str) -> bool:
-        logger.info(f"Downloading instrument list for exchange: {exchange} from M.Stock...")
+        last_downloaded_date_string = fetch_from_json("access_token.json" , "mstock_last_downloaded_instruments_timestamp")
+        last_downloaded_date = datetime.datetime.fromisoformat(last_downloaded_date_string)
+        if last_downloaded_date.date() == datetime.datetime.now().date():
+            return
         try:
+            logger.info(f"Downloading instrument list for exchange: {exchange} from M.Stock...")
             conn = http.client.HTTPSConnection('api.mstock.trade')
             headers = {
                 "X-Mirae-Version": "1",
@@ -301,6 +305,7 @@ class MStockAdapter(BrokerInterface):
                 json.dump(response_json, f, indent=4)
             
             logger.info(f"✅ Successfully downloaded and saved instrument list data to {file_path}.")
+            write_to_json({"mstock_last_downloaded_instruments_timestamp" : datetime.datetime.now().isoformat()} , "access_token.json")
             return True
 
         except json.JSONDecodeError:

@@ -1,6 +1,6 @@
 {
     "EXCHANGE" : "NFO",
-    "BROKER" : "MSTOCK", 
+    "BROKER" : "KITE", 
     "UNDERLYING" :"NIFTY" ,    
     "NEAR_MONTH_FUTURE_TOKEN" : "NIFTY25OCTFUT" , 
     "NIFTY_EXPIRY_DATE"	: "20",

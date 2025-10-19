@@ -304,7 +304,7 @@ if __name__ == "__main__":
         broker.prod_start()
         #logger.info("Starting in production mode...")
         #broker.fetch_all_instruments()
-        #broker.download_instrument_list(EXCHANGE)
+        broker.download_instrument_list(EXCHANGE)
         trader.set_broker(broker)
         trader.on_start()
         trader.start_frontend_socket_server(app)
@@ -314,7 +314,7 @@ if __name__ == "__main__":
             socket_thread = threading.Thread(target=start_socket, daemon=True)
             socket_thread.start()
             # if is_market_open():
-            trader.start_trading_watcher_thread()
+            # trader.start_trading_watcher_thread()
             app.run(debug=True , use_reloader = False)
         elif CURRENT_BROKER == "MSTOCK":
             if is_market_open():

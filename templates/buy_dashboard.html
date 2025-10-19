@@ -36,6 +36,38 @@
     .summary-item { text-align: center; }
     .summary-label { display: block; font-size: 0.8rem; color: #aaa; text-transform: uppercase; letter-spacing: 0.5px; }
     .summary-value { display: block; font-size: 1.4rem; font-weight: 600; color: #ffffff; margin-top: 0.25rem; }
+    .header-info-container {
+        display: flex;
+        justify-content: space-between; /* Pushes info left, toggles right */
+        align-items: center;
+        flex-wrap: wrap; /* Allow wrapping on smaller screens */
+        padding: 0.5rem 0;
+        margin-bottom: 1.5rem;
+        border-bottom: 1px solid #444; /* Add a separator */
+    }
+    .header-details {
+        display: flex;
+        flex-wrap: wrap; /* Allow details to wrap */
+        gap: 1.5rem; /* Space between BRO, EXC, UL etc. */
+        align-items: center;
+    }
+    .header-label {
+        font-size: 0.75rem; /* Smaller label font */
+        color: #999;       /* Dimmer label color */
+        text-transform: uppercase;
+        margin-right: 0.3rem; /* Space between label and value */
+    }
+    .header-value {
+        font-size: 0.9rem; /* Keep value font size slightly larger */
+        color: #eee;       /* Bright value color */
+        font-weight: 500;
+    }
+    .header-toggles {
+        display: flex;
+        border: 1px solid #444;
+        border-radius: 7px;
+        overflow: hidden;
+    }
     .toggle-button { background-color: transparent; color: #ccc; border: none; padding: 0.6rem 1.2rem; cursor: pointer; font-size: 0.9rem; font-weight: 500; transition: background-color 0.3s; }
     .toggle-button:first-child { border-right: 1px solid #444; }
     .toggle-button.active-toggle { background-color: #2e7d32; color: white; }
@@ -167,10 +199,11 @@
         </div>
         <div class="toggle-container">
             <div class="toggle-buttons" width ="50%">
-                <label id="broker" class="expiry-label">BRO :</label>
-                <label id="underlying" class="expiry-label">UL :</label>
-                <label id="ltp" class="expiry-label">LTP :</label>
-                <label id="expiryLabel" class="expiry-label">EXP : </label>
+                <label id="broker" class="expiry-label">BRO: <span id="brokerValue">--</span></label>
+                <label id="exchange" class="expiry-label">EXC: <span id="exchangeValue">--</span></label>
+                <label id="underlying" class="expiry-label">UL: <span id="underlyingValue">--</span></label>
+                <label id="ltp" class="expiry-label">LTP: <span id="ltpValue">--</span></label>
+                <label id="expiryLabel" class="expiry-label">EXP: <span id="expiryValue">--</span></label>
             </div>
             <div class="toggle-buttons" width ="50%">
                 <button class="toggle-button active-toggle" id="callBtn">Calls (CE)</button>
@@ -201,14 +234,13 @@
 </main>
 {% endblock %}
 
-
 {% block scripts %}
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-    // --- A SINGLE SOCKET CONNECTION FOR BOTH WIDGETS ---
+    // --- SOCKET CONNECTION ---
     const socket = io('http://localhost:5001');
 
-    // --- DOM ELEMENTS FOR BUY WIDGET ---
+    // --- DOM ELEMENTS (BUY) ---
     const buyWidgetContainer = document.getElementById('buy-widget-container');
     const optionsTableBody = document.getElementById('optionsTableBody');
     const buyConnectionStatus = document.getElementById('buyConnectionStatus');
@@ -217,8 +249,14 @@ document.addEventListener('DOMContentLoaded', function() {
     const putBtn = document.getElementById('putBtn');
     const cashBalanceEl = document.getElementById('cashBalanceValue');
     const utilizedEl = document.getElementById('utilizedValue');
-    
-    // --- DOM ELEMENTS FOR SELL WIDGET ---
+    const brokerValueEl = document.getElementById('brokerValue');
+    const exchangeValueEl = document.getElementById('exchangeValue');
+    const underlyingValueEl = document.getElementById('underlyingValue');
+    const ltpValueEl = document.getElementById('ltpValue');
+    const expiryValueEl = document.getElementById('expiryValue');
+
+    // --- DOM ELEMENTS (SELL) ---
+    // Ensure these IDs exist in 'sell_widget_partial.html'
     const positionsTableBody = document.getElementById('positionsTableBody');
     const sellConnectionStatus = document.getElementById('sellConnectionStatus');
 
@@ -226,13 +264,14 @@ document.addEventListener('DOMContentLoaded', function() {
     let allContracts = {};
     let openPositions = {};
 
-    // --- SOCKET EVENT HANDLERS (COMBINED) ---
+    // --- SOCKET EVENT HANDLERS ---
     socket.on('connect', () => {
         buyConnectionStatus.textContent = 'Connected';
         buyConnectionStatus.style.color = '#28a745';
-        sellConnectionStatus.textContent = 'Connected';
-        sellConnectionStatus.style.color = '#28a745';
-        
+        if (sellConnectionStatus) { // Check if element exists
+            sellConnectionStatus.textContent = 'Connected';
+            sellConnectionStatus.style.color = '#28a745';
+        }
         socket.emit('request_weekly_options');
         socket.emit('request_open_positions');
     });
@@ -240,54 +279,93 @@ document.addEventListener('DOMContentLoaded', function() {
     socket.on('disconnect', () => {
         buyConnectionStatus.textContent = 'Disconnected';
         buyConnectionStatus.style.color = '#dc3545';
-        sellConnectionStatus.textContent = 'Disconnected';
-        sellConnectionStatus.style.color = '#dc3545';
+        if (sellConnectionStatus) {
+            sellConnectionStatus.textContent = 'Disconnected';
+            sellConnectionStatus.style.color = '#dc3545';
+        }
+    });
+
+    socket.on('setup_data', (data) => {
+        if (data.broker) brokerValueEl.textContent = data.broker;
+        if (data.exchange) exchangeValueEl.textContent = data.exchange;
+        if (data.underlying) underlyingValueEl.textContent = data.underlying;
+    });
+
+    socket.on('near-month-ltp-updated', (payload) => {
+        if (payload.ltp !== undefined) {
+            ltpValueEl.textContent = payload.ltp.toFixed(2);
+        }
     });
 
     socket.on('update_weekly_options', (contracts) => {
         allContracts = contracts;
         populateOptionsTable(allContracts, 'CE');
     });
-    
+
     socket.on('update_open_positions', (positions) => {
         openPositions = positions;
-        populatePositionsTable(openPositions);
+        // Check if the sell widget's table body exists before populating
+        if (positionsTableBody) {
+            populatePositionsTable(openPositions);
+        }
     });
 
-    socket.on('price-updated-order', (tick) => {
-        if (allContracts[tick.token]) {
-            allContracts[tick.token].ltp = tick.ltp;
+    // --- UNIFIED PRICE HANDLER ---
+    const unifiedPriceHandler = (tick) => {
+        const token = tick.token;
+
+        // --- Update Buy Widget Data & UI ---
+        if (allContracts[token]) {
+            allContracts[token].ltp = tick.ltp;
+             if (tick.lots !== undefined) { // Check if lots data is in tick
+                 allContracts[token].lots = tick.lots;
+             }
         }
-        const priceCell = document.getElementById(`price-${tick.token}`);
+        const priceCell = document.getElementById(`price-${token}`);
         if (priceCell) {
             priceCell.textContent = `₹ ${tick.ltp.toFixed(2)}`;
             priceCell.classList.add('flash');
             setTimeout(() => priceCell.classList.remove('flash'), 700);
         }
-    });
+        const lotsCell = document.getElementById(`lots-${token}`);
+        if (lotsCell && tick.lots !== undefined) {
+             lotsCell.textContent = tick.lots;
+             const overrideInput = document.getElementById(`override-lots-${token}`);
+             if (overrideInput && !overrideInput.value) {
+                overrideInput.placeholder = tick.lots;
+             }
+         }
 
-    socket.on('price-updated-position', (tick) => {
-        const token = tick.token;
+        // --- Update Sell Widget Data & UI ---
+         if (openPositions[token]) {
+            openPositions[token].latest_price = tick.ltp;
+            openPositions[token].pts_pl = tick.pts_pl;
+            openPositions[token].pct_pl = tick.pct_pl;
+            openPositions[token].total_pl = tick.total_pl;
+        }
         const marketPriceCell = document.getElementById(`market-price-${token}`);
-        if (marketPriceCell) {
-            marketPriceCell.textContent = `${tick.ltp.toFixed(2)}`;
+        if (marketPriceCell && tick.pts_pl !== undefined) { // Check if P/L data exists
+            marketPriceCell.textContent = `₹ ${tick.ltp.toFixed(2)}`; // Add currency symbol
             marketPriceCell.classList.add('flash');
             setTimeout(() => marketPriceCell.classList.remove('flash'), 700);
 
-            const plClass = (tick.pts_pl || 0) >= 0 ? 'profit' : 'loss';
+            const plClass = tick.pts_pl >= 0 ? 'profit' : 'loss';
             const totalPlCell = document.getElementById(`total-pl-${token}`);
             const pctCell = document.getElementById(`pct-${token}`);
             const ptsCell = document.getElementById(`pts-${token}`);
-            
-            totalPlCell.textContent = `${(tick.total_pl || 0).toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
-            ptsCell.textContent = (tick.pts_pl || 0).toFixed(2);
-            pctCell.textContent = `${(tick.pct_pl || 0).toFixed(2)}%`;
 
-            [totalPlCell, pctCell, ptsCell].forEach(el => el.className = plClass);
+            // Check if cells exist before updating
+            if (totalPlCell) totalPlCell.textContent = `₹ ${(tick.total_pl || 0).toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+            if (ptsCell) ptsCell.textContent = (tick.pts_pl || 0).toFixed(2);
+            if (pctCell) pctCell.textContent = `${(tick.pct_pl || 0).toFixed(2)}%`;
+
+            [totalPlCell, pctCell, ptsCell].forEach(el => { if(el) el.className = plClass });
         }
-    });
+    };
+    socket.on('price-updated', unifiedPriceHandler); // Listen for the single unified event
 
-    // --- FUNCTIONS FOR BUY WIDGET ---
+
+    // --- UTILITY FUNCTIONS ---
     async function fetchFundSummary() {
         try {
             cashBalanceEl.textContent = 'Fetching...';
@@ -304,66 +382,41 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
-    async function fetchConstants() {
-        try {
-            
-            const response = await fetch('http://127.0.0.1:5000/fund_summary');
-            if (!response.ok) { throw new Error(`HTTP Error: ${response.status}`); }
-            const summary = await response.json();
-            cashBalanceEl.textContent = `₹ ${parseFloat(summary.data.cash_balance).toLocaleString('en-IN')}`;
-            utilizedEl.textContent = `₹ ${parseFloat(summary.data.utilized).toLocaleString('en-IN')}`;
-        } catch (error) {
-            console.error("Could not fetch fund summary:", error);
-            cashBalanceEl.textContent = 'Error';
-            utilizedEl.textContent = 'Error';
+    function mapValueToStrategy(value) {
+        switch (value) {
+            case 'Intra': return 'INTRA';
+            case 'Scalping': return 'SCALPING';
+            case 'UltraScalping': return 'ULTRA_SCALPING';
+            default: return 'UNKNOWN';
         }
     }
 
-    // --- THIS FUNCTION IS NOW FIXED ---
-    function populateOptionsTable(contracts, optionType) 
-    {
-        // alert("contracts: " + JSON.stringify(contracts));
-        // alert("populateOptionsTable called for " + optionType);
-
+    // --- TABLE POPULATION & LISTENERS ---
+    function populateOptionsTable(contracts, optionType) {
         optionsTableBody.innerHTML = '';
-        // FIX: Use Object.entries to get both the token and the contract object
         const filteredContracts = Object.entries(contracts).filter(([token, contract]) => contract.call_or_put === optionType);
-
         if (filteredContracts.length === 0) {
             optionsTableBody.innerHTML = `<tr><td colspan="7" class="no-options">No ${optionType === 'CE' ? 'call' : 'put'} options found.</td></tr>`;
             return;
         }
-
-        // ✅ SORT BY MARKET PRICE (descending or ascending)
         filteredContracts.sort(([, a], [, b]) => a.ltp - b.ltp);
 
-
-        // 🟢 Update expiry label if contracts exist
-        const expiryLabel = document.getElementById('expiryLabel');
         if (filteredContracts.length > 0) {
             const firstContract = filteredContracts[0][1];
-            const expiry = firstContract.expiry;
-            if (expiry) {
-                const date = new Date(expiry);
-                expiryLabel.textContent = `EXP : ${date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}`;
-            } else {
-                expiryLabel.textContent = 'EXP: ';
-            }
-        } else {
-            expiryLabel.textContent = 'EXP: ';
-        }
-        
-        // FIX: Loop through the [token, contract] pairs
+            if (firstContract && firstContract.expiry) {
+                 try {
+                     const date = new Date(firstContract.expiry);
+                     expiryValueEl.textContent = date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }).replace(' ', '-');
+                 } catch (e) { expiryValueEl.textContent = '--'; }
+            } else { expiryValueEl.textContent = '--'; }
+        } else { expiryValueEl.textContent = '--'; }
+
         for (const [token, contract] of filteredContracts) {
-            
-            
-            // Works for NIFTY, SENSEX, and CRUDEOIL option symbols
             const regex = /(?:NIFTY|SENSEX)\d{2}[A-Z]\d{2}(\d{5})(?=CE|PE$)|CRUDEOILM?\d{2}[A-Z]{3}(\d{4,5})(?=CE|PE$)/i;
             const match = contract.name.match(regex);
-            // If match is found, group 1 has NIFTY/SENSEX strike, group 2 has CRUDEOIL strike
             const strikePrice = match ? (match[1] || match[2]) : contract.name;
             const row = document.createElement('tr');
-            row.id = `row-${token}`; // Use the correct token for the ID
+            row.id = `row-${token}`;
             row.innerHTML = `
                 <td>${contract.level || ''}</td>
                 <td>${strikePrice || ''}</td>
@@ -382,60 +435,50 @@ document.addEventListener('DOMContentLoaded', function() {
             optionsTableBody.appendChild(row);
         }
         addBuyButtonListeners();
-        
+        addStrategyRadioListeners();
     }
 
     function addBuyButtonListeners() {
-        document.querySelectorAll('.buy-button').forEach(button => {
+        optionsTableBody.querySelectorAll('.buy-button').forEach(button => {
             button.addEventListener('click', function() {
                 const token = this.dataset.token;
                 const overrideInput = document.getElementById(`override-lots-${token}`);
                 const lotsToBuy = (overrideInput && overrideInput.value > 0) ? overrideInput.value : this.dataset.lots;
-                
-                const orderDetails = {
-                    token: token,
-                    tradingsymbol: this.dataset.tradingsymbol,
-                    lots: lotsToBuy
-                };
+                const orderDetails = { token: token, tradingsymbol: this.dataset.tradingsymbol, lots: lotsToBuy };
                 socket.emit('place_buy_order', orderDetails);
                 alert(`Buy order for ${lotsToBuy} lots of ${this.dataset.tradingsymbol} sent!`);
                 fetchFundSummary();
-                location.reload()
             });
         });
     }
 
-    // --- FUNCTIONS FOR SELL WIDGET (Unchanged) ---
     function populatePositionsTable(positions) {
+        if (!positionsTableBody) return;
         positionsTableBody.innerHTML = '';
-        if (Object.keys(positions).length === 0) {
-            positionsTableBody.innerHTML = `<tr><td colspan="11" class="no-options">No open positions found.</td></tr>`;
+        if (!positions || Object.keys(positions).length === 0) {
+            positionsTableBody.innerHTML = `<tr><td colspan="10" class="no-options">No open positions found.</td></tr>`; // Colspan is 10
             return;
         }
         for (const token in positions) {
             const pos = positions[token];
             const plClass = (pos.pts_pl || 0) >= 0 ? 'profit' : 'loss';
             const row = document.createElement('tr');
-            row.id = `row-${token}`;
+            row.id = `row-sell-${token}`; // Correct ID prefix
             row.innerHTML = `
                 <td>${pos.level || ''}</td>
                 <td>${pos.tradingsymbol || ''}</td>
-                <td>${(pos.average_price || 0).toFixed(2)}</td>
-                <td id="market-price-${token}">${(pos.latest_price || pos.average_price).toFixed(2)}</td>
+                <td>₹ ${(pos.average_price || 0).toFixed(2)}</td>
+                <td id="market-price-${token}">₹ ${(pos.latest_price || pos.average_price).toFixed(2)}</td>
                 <td>${pos.lots || 0}</td>
                 <td><input type="number" class="lots-override-input" id="override-lots-sell-${token}" placeholder="${pos.lots || 0}"></td>
-
                 <td class="type-cell">
                     <label><input type="radio" name="sell-type-${token}" value="Intra"> I</label>
                     <label><input type="radio" name="sell-type-${token}" value="Scalping" checked> S</label>
                     <label><input type="radio" name="sell-type-${token}" value="UltraScalping"> U</label>
                 </td>
-
-
-
-                <td id="pct-${token}" class="${plClass}">${(pos.pct_pl || 0).toFixed(2)}</td>
+                <td id="total-pl-${token}" class="${plClass}">₹ ${(pos.total_pl || 0).toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+                <td id="pct-${token}" class="${plClass}">${(pos.pct_pl || 0).toFixed(2)}%</td>
                 <td id="pts-${token}" class="${plClass}">${(pos.pts_pl || 0).toFixed(2)}</td>
-                <td id="total-pl-${token}" class="${plClass}">${(pos.total_pl || 0).toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
                 <td class="center">
                     <button class="sell-button" data-token="${token}" data-tradingsymbol="${pos.tradingsymbol}" data-lots="${pos.lots || 0}" data-quantity="${pos.net_quantity || 0}" data-lotsize="${pos.lotsize || ''}">Sell</button>
                 </td>
@@ -443,29 +486,82 @@ document.addEventListener('DOMContentLoaded', function() {
             positionsTableBody.appendChild(row);
         }
         addSellButtonListeners();
+        addStrategyRadioListeners();
     }
 
+    // --- THIS IS THE SINGLE, CORRECT addSellButtonListeners ---
     function addSellButtonListeners() {
-        document.querySelectorAll('.sell-button').forEach(button => {
+        if (!positionsTableBody) return;
+        positionsTableBody.querySelectorAll('.sell-button').forEach(button => {
             button.addEventListener('click', function() {
                 const token = this.dataset.token;
                 const overrideInput = document.getElementById(`override-lots-sell-${token}`);
                 const lotsToSell = (overrideInput && overrideInput.value > 0) ? overrideInput.value : this.dataset.lots;
-                
-                const displayQuantity = lotsToSell * parseInt(this.dataset.lotsize);
+                const lotSize = parseInt(this.dataset.lotsize || 0);
+                const displayQuantity = (lotSize > 0) ? (lotsToSell * lotSize) : this.dataset.quantity; // Calculate quantity based on lots
+
                 if (confirm(`Are you sure you want to sell ${displayQuantity} shares (${lotsToSell} lots) of ${this.dataset.tradingsymbol}?`)) {
                     socket.emit('place_sell_order', { token: token, tradingsymbol: this.dataset.tradingsymbol, lots: lotsToSell });
                     alert(`Sell order for ${lotsToSell} lots sent!`);
+                    // Maybe refresh positions via socket event instead of reload
+                    // socket.emit('request_open_positions');
                 }
-                location.reload()
             });
         });
     }
 
-    // --- EVENT LISTENERS & INITIAL CALLS (Unchanged) ---
+    // --- STRATEGY RADIO LISTENERS ---
+    function addStrategyRadioListeners() {
+        // Listener for BUY table radios
+        optionsTableBody.querySelectorAll('input[type="radio"][name^="type-"]').forEach(radio => {
+            // Use named function for potential removal later if needed
+            radio.removeEventListener('change', handleBuyRadioChange);
+            radio.addEventListener('change', handleBuyRadioChange);
+        });
+
+        // Listener for SELL table radios
+        if (positionsTableBody) {
+            positionsTableBody.querySelectorAll('input[type="radio"][name^="sell-type-"]').forEach(radio => {
+                // Use named function
+                radio.removeEventListener('change', handleSellRadioChange);
+                radio.addEventListener('change', handleSellRadioChange);
+            });
+        }
+    }
+
+    function handleBuyRadioChange(event) {
+        if (event.target.checked) {
+            const token = event.target.name.replace('type-', '');
+            const row = document.getElementById(`row-${token}`); // Use correct ID prefix for buy table
+            if (!row) return;
+            const buyButton = row.querySelector('.buy-button');
+            const tradingsymbol = buyButton ? buyButton.dataset.tradingsymbol : '';
+            const selectedValue = event.target.value;
+            let strategyType = mapValueToStrategy(selectedValue);
+            const payload = { "tradingsymbol": tradingsymbol, "instrument_token": token, "strategy_type": strategyType };
+            console.log('Emitting order strategy update:', payload);
+            socket.emit('order_strategy_data_updated_orders', payload);
+        }
+    }
+
+    function handleSellRadioChange(event) {
+         if (event.target.checked) {
+            const token = event.target.name.replace('sell-type-', '');
+            const row = document.getElementById(`row-sell-${token}`); // Correct ID prefix for sell table
+            if (!row) return;
+            const sellButton = row.querySelector('.sell-button');
+            const tradingsymbol = sellButton ? sellButton.dataset.tradingsymbol : '';
+            const selectedValue = event.target.value;
+            let strategyType = mapValueToStrategy(selectedValue);
+            const payload = { "tradingsymbol": tradingsymbol, "instrument_token": token, "strategy_type": strategyType };
+            console.log('Emitting position strategy update:', payload);
+            socket.emit('order_strategy_data_updated_positions', payload);
+        }
+    }
+
+    // --- EVENT LISTENERS & INITIAL CALLS ---
     callBtn.addEventListener('click', () => {
         buyWidgetContainer.classList.remove('put-view');
-        //optionsTitle.textContent = 'Call Options';
         putBtn.classList.remove('active-toggle');
         callBtn.classList.add('active-toggle');
         populateOptionsTable(allContracts, 'CE');
@@ -473,7 +569,6 @@ document.addEventListener('DOMContentLoaded', function() {
 
     putBtn.addEventListener('click', () => {
         buyWidgetContainer.classList.add('put-view');
-        //optionsTitle.textContent = 'Put Options';
         callBtn.classList.remove('active-toggle');
         putBtn.classList.add('active-toggle');
         populateOptionsTable(allContracts, 'PE');

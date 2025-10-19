@@ -195,14 +195,10 @@ class MStockSingleton:
         last_update_datetime = datetime.datetime.fromisoformat(last_updated_date)
         today_date = datetime.datetime.now().date()
         if not last_update_datetime.date() == today_date:
-            logger.debug("not the same date..so instrument list will be downloaded")
             self.create_session()
             logger.debug("MStock session created for production.")
-            return True
         else:
-            logger.debug("same date..so instrument list will not be downloaded")
             access_token = fetch_from_json("access_token.json", "mstock_jwt_token")
             logger.debug(access_token)
             logger.info("Fetched access token from JSON for production.")
             self.set_access_token(access_token)
-            return False

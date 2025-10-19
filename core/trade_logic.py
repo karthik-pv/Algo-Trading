@@ -12,11 +12,15 @@ from core.trade_utils import get_expiry_date , get_instrument_tokens_from_symbol
 from utils import fetch_from_json , find_matching_object
 import time
 
-PNT_STOP_LOSS = 10
-PNT_BOOK_PROFIT = 5
+PNT_STOP_LOSS = float(fetch_from_json("settings.json", "PTS_LOSS"))
+PNT_BOOK_PROFIT = float(fetch_from_json("settings.json", "PTS_PROFIT"))
 
-PCTG_BOOK_PROFIT = 1
-PCTG_STOP_LOSS = 1
+PCTG_BOOK_PROFIT = float(fetch_from_json("settings.json", "PCT_PROFIT"))
+PCTG_STOP_LOSS = float(fetch_from_json("settings.json", "PCT_LOSS"))
+
+PTS_PROFIT_INTRA_FACTOR = float(fetch_from_json("settings.json", "PTS_PROFIT_INTRA_FACTOR"))
+PTS_PROFIT_SCALPING_FACTOR = float(fetch_from_json("settings.json", "PTS_PROFIT_SCALPING_FACTOR"))
+PTS_PROFIT_ULTRA_SCALPING_FACTOR = float(fetch_from_json("settings.json", "PTS_PROFIT_ULTRA_SCALPING_FACTOR"))
 
 
 class Trader_Singleton:
@@ -36,9 +40,12 @@ class Trader_Singleton:
     _tick_counter = 0
     _comparison_function = "PNT"
     _use_max_margin = True
-    _sell_mode = "SELL"
+    _sell_mode = "ALERT"
+    _broker_string = fetch_from_json("constants.json" , "BROKER")
     _exchange = fetch_from_json("constants.json" , "EXCHANGE")
     _underlying = fetch_from_json("constants.json" , "UNDERLYING")
+    _near_month_future_symbol = fetch_from_json("constants.json" , "NEAR_MONTH_FUTURE_TOKEN")
+    _order_strategy_mapping = {}
 
     _cash_balance_margin_pct = fetch_from_json("settings.json" , "MARGIN_USAGE_PCT")
 
@@ -67,6 +74,7 @@ class Trader_Singleton:
         logger.info(f"Initializing weekly option {data['tradingsymbol']} at LTP {price}")
         if token not in self._five_weekly_option_contracts:
             self._five_weekly_option_contracts[token] = {}
+        
         self._five_weekly_option_contracts[token]["name"] = data["tradingsymbol"]
         self._five_weekly_option_contracts[token]["expiry"] = data["expiry"]
         self._five_weekly_option_contracts[token]["ltp"] = price
@@ -173,7 +181,8 @@ class Trader_Singleton:
                 # ADDED: Initial P/L fields
                 "pts_pl": pts_pl,
                 "pct_pl": pct_pl,
-                "total_pl": total_pl
+                "total_pl": total_pl,
+                "order_strategy" : self._order_strategy_mapping.get(position["instrument_token"], "SCALPING")
             })
             # --- END MODIFIED BLOCK ---
 
@@ -241,8 +250,8 @@ class Trader_Singleton:
     # ---------------------- DECISION MAKER ----------------------------
 
     def to_sell_or_not_to_sell(self,buy_price , current_price):
-        logger.debug(f"Deciding to sell or not: Buy Price = {buy_price}, Current Price = {current_price}")
         # that is the question 
+        logger.debug(f"Deciding to sell or not: Buy Price = {buy_price}, Current Price = {current_price}")
         if self._comparison_function == "PCT":
             diff = self.calculate_pctg_difference(buy_price,current_price)
             if diff >= PCTG_BOOK_PROFIT or abs(diff) >= PCTG_STOP_LOSS:
@@ -327,6 +336,7 @@ class Trader_Singleton:
                 token = data["instrument_token"]
                 #relevant_tokens_to_subscribe.append(token)
                 self.weekly_options_initialize(token , data , "CE" , price , level=key)
+                self._order_strategy_mapping["token"] = "SCALPING"
             logger.info("Completed CALL weekly options setup.")
             logger.info("Setting up PUT weekly options...")
             contracts = self.get_5_weekly_option_contracts(ltp_nifty_near_month , "PE" , underlying=self._underlying)["symbols"]
@@ -336,6 +346,7 @@ class Trader_Singleton:
                 token = data["instrument_token"]
                 #relevant_tokens_to_subscribe.append(token)
                 self.weekly_options_initialize(token , data , "PE" , price , level=key)
+                self._order_strategy_mapping["token"] = "SCALPING"
             #self._broker.subscribe_to_all(relevant_tokens_to_subscribe)
             logger.info("Completed PUT weekly options setup.")
             return
@@ -408,6 +419,8 @@ class Trader_Singleton:
                     self.refresh_open_positions_and_buy_price()
                     self.setup_weekly_option_contract_subscriptions()
                 self._near_month_data[token] = price
+                payload = {"ltp" : price}
+                self.frontend_data_socket.emit('near-month-ltp-updated', payload)
         except Exception as e:
             logger.error(f"Error setting latest price {e}")
 
@@ -473,13 +486,24 @@ class Trader_Singleton:
 
     def register_socket_handlers(self):
         logger.info("Registering socket event handlers...")
+
         @self.frontend_data_socket.on('connect')
         def handle_connect():
+            logger.debug(self._near_month_data)
+            self.frontend_data_socket.emit(
+                'setup_data',
+                {
+                    "broker" : self._broker_string , 
+                    "exchange" : self._exchange ,
+                    "underlying" : self._near_month_future_symbol
+                }
+            )
             logger.info("Client connected to socket server.")
 
         @self.frontend_data_socket.on('disconnect')
         def handle_disconnect():
             logger.info("Client disconnected.")
+
 
         @self.frontend_data_socket.on('request_weekly_options')
         def handle_request_weekly_options():
@@ -503,6 +527,20 @@ class Trader_Singleton:
                 'update_open_positions',
                 self._position_data
             )
+
+        @self.frontend_data_socket.on("order_strategy_data_updated_positions")
+        def handle_order_strategy_type_positions(order_strategy_details):
+            logger.info(
+                "Received updated order strategy type for positions"
+            )
+            logger.debug(order_strategy_details)
+
+        @self.frontend_data_socket.on("order_strategy_data_updated_orders")
+        def handle_order_strategy_type_orders(order_strategy_details):
+            logger.info(
+                "Received updated order strategy type for orders"
+            )
+            logger.debug(order_strategy_details)
 
         @self.frontend_data_socket.on('place_sell_order')
         def handle_sell_order(order_details):
