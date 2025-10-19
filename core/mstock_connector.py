@@ -30,14 +30,14 @@ class MStockSingleton:
     _trader = None
 
     def __new__(cls):
-        logger.debug("Creating MStockSingleton instance...")
+        logger.info("Creating MStockSingleton instance...")
         if cls._instance is None:
             cls._instance = super(MStockSingleton, cls).__new__(cls)
             cls._instance._initialize_client()
         return cls._instance
 
     def _initialize_client(self):
-        logger.debug("Initializing M.Stock client...")
+        logger.info("Initializing M.Stock client...")
         self._api_key = MSTOCK_API_KEY
         if not self._api_key:
             raise ValueError("MSTOCK_API_KEY not found in environment variables")
@@ -195,10 +195,12 @@ class MStockSingleton:
         last_update_datetime = datetime.datetime.fromisoformat(last_updated_date)
         today_date = datetime.datetime.now().date()
         if not last_update_datetime.date() == today_date:
+            logger.debug("not the same date..so instrument list will be downloaded")
             self.create_session()
             logger.debug("MStock session created for production.")
             return True
         else:
+            logger.debug("same date..so instrument list will not be downloaded")
             access_token = fetch_from_json("access_token.json", "mstock_jwt_token")
             logger.debug(access_token)
             logger.info("Fetched access token from JSON for production.")
