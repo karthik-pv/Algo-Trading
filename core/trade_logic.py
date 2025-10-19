@@ -235,8 +235,9 @@ class Trader_Singleton:
                 exchange = data.get("exchange")
                 tradingsymbol = data.get("tradingsymbol")
                 instrument_token = data.get("instrument_token")
-
-                sell = self.to_sell_or_not_to_sell(buy_price , ltp)
+                order_strategy_type = data.get("order_strategy" , "DEFAULT")
+                logger.debug(order_strategy_type)
+                sell = self.to_sell_or_not_to_sell(buy_price , ltp , order_strategy_type)
                 
                 logger.debug(f"DECISION TO SELL {tradingsymbol} - {sell}")
                 if sell:
@@ -249,16 +250,25 @@ class Trader_Singleton:
 
     # ---------------------- DECISION MAKER ----------------------------
 
-    def to_sell_or_not_to_sell(self,buy_price , current_price):
+    def to_sell_or_not_to_sell(self,buy_price , current_price , order_strategy_type):
         # that is the question 
         logger.debug(f"Deciding to sell or not: Buy Price = {buy_price}, Current Price = {current_price}")
+        PROFIT_FACTOR = 1
+
+        if order_strategy_type == "INTRA":
+            PROFIT_FACTOR = PTS_PROFIT_INTRA_FACTOR
+        elif order_strategy_type == "SCALPING":
+            PROFIT_FACTOR = PTS_PROFIT_SCALPING_FACTOR
+        elif order_strategy_type == "ULTRA_SCALPING":
+            PROFIT_FACTOR = PTS_PROFIT_ULTRA_SCALPING_FACTOR
+        logging.debug(PROFIT_FACTOR)
         if self._comparison_function == "PCT":
             diff = self.calculate_pctg_difference(buy_price,current_price)
             if diff >= PCTG_BOOK_PROFIT or abs(diff) >= PCTG_STOP_LOSS:
                 return True
         if self._comparison_function == "PNT":
             diff = self.calculate_point_difference(buy_price,current_price)
-            if diff >= PNT_BOOK_PROFIT or abs(diff) >= PNT_STOP_LOSS:
+            if diff >= PNT_BOOK_PROFIT*PROFIT_FACTOR or abs(diff) >= PNT_STOP_LOSS:
                 return True
         return False
         
@@ -336,7 +346,7 @@ class Trader_Singleton:
                 token = data["instrument_token"]
                 #relevant_tokens_to_subscribe.append(token)
                 self.weekly_options_initialize(token , data , "CE" , price , level=key)
-                self._order_strategy_mapping["token"] = "SCALPING"
+                self._order_strategy_mapping[token] = "SCALPING"
             logger.info("Completed CALL weekly options setup.")
             logger.info("Setting up PUT weekly options...")
             contracts = self.get_5_weekly_option_contracts(ltp_nifty_near_month , "PE" , underlying=self._underlying)["symbols"]
@@ -346,7 +356,7 @@ class Trader_Singleton:
                 token = data["instrument_token"]
                 #relevant_tokens_to_subscribe.append(token)
                 self.weekly_options_initialize(token , data , "PE" , price , level=key)
-                self._order_strategy_mapping["token"] = "SCALPING"
+                self._order_strategy_mapping[token] = "SCALPING"
             #self._broker.subscribe_to_all(relevant_tokens_to_subscribe)
             logger.info("Completed PUT weekly options setup.")
             return
@@ -490,14 +500,24 @@ class Trader_Singleton:
         @self.frontend_data_socket.on('connect')
         def handle_connect():
             logger.debug(self._near_month_data)
+            payload = {
+                    "broker" : self._broker_string , 
+                    "exchange" : self._exchange ,
+                    "underlying" : self._near_month_future_symbol, 
+                    "positions_data" : self._position_data,
+                    "order_strategy_mapping" : self._order_strategy_mapping
+                }
             self.frontend_data_socket.emit(
                 'setup_data',
                 {
                     "broker" : self._broker_string , 
                     "exchange" : self._exchange ,
-                    "underlying" : self._near_month_future_symbol
+                    "underlying" : self._near_month_future_symbol, 
+                    "positions_data" : self._position_data,
+                    "order_strategy_mapping" : self._order_strategy_mapping
                 }
             )
+            logger.debug(payload)
             logger.info("Client connected to socket server.")
 
         @self.frontend_data_socket.on('disconnect')
@@ -534,6 +554,8 @@ class Trader_Singleton:
                 "Received updated order strategy type for positions"
             )
             logger.debug(order_strategy_details)
+            self.position_data_update(order_strategy_details["instrument_token"] , "order_strategy" , order_strategy_details["strategy_type"])
+            logger.debug(self._position_data)
 
         @self.frontend_data_socket.on("order_strategy_data_updated_orders")
         def handle_order_strategy_type_orders(order_strategy_details):
@@ -541,6 +563,8 @@ class Trader_Singleton:
                 "Received updated order strategy type for orders"
             )
             logger.debug(order_strategy_details)
+            self._order_strategy_mapping[order_strategy_details["instrument_token"]] = order_strategy_details["strategy_type"]
+            logger.debug(self._order_strategy_mapping)
 
         @self.frontend_data_socket.on('place_sell_order')
         def handle_sell_order(order_details):

@@ -10,7 +10,7 @@
     "PTS_PROFIT_ULTRA_SCALPING_FACTOR": "1",
     "PCT_PROFIT": "3",
     "PCT_LOSS": "4",
-    "PTS_PROFIT": "5",
+    "PTS_PROFIT": "1",
     "PTS_LOSS": "10",
     "INTRA_EMA": "1mEMA50",
     "SCALPING_EMA": "1mEMA9",
