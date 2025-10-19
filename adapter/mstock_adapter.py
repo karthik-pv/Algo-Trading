@@ -280,8 +280,7 @@ class MStockAdapter(BrokerInterface):
     def prod_start(self):
         logger.info("Starting M.StockAdapter in production mode...")
         if self.mstock_instance.initialise_for_prod():
-            EXCHANGE = fetch_from_json("constants.json" , "EXCHANGE")
-            self.download_instrument_list(EXCHANGE)
+            self.download_instrument_list(None)
 
     def download_instrument_list(self, exchange: str) -> bool:
         logger.info(f"Downloading instrument list for exchange: {exchange} from M.Stock...")
