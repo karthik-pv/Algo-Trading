@@ -88,20 +88,25 @@
 }
 
 .type-cell {
-        /* Removed flex properties, rely on parent TD's text-align: center */
-        white-space: nowrap; /* Prevent labels from wrapping */
+            white-space: nowrap;
+            text-align: center;
     }
     .type-cell label {
+        margin: 0 1px;
         color: #ccc;
-        margin: 0 3px; /* Reduced horizontal margin */
         cursor: pointer;
         font-size: 0.8rem; /* Slightly smaller font */
         vertical-align: middle; /* Align labels vertically with radio buttons */
     }
     .type-cell input[type="radio"] {
-        margin-right: 2px; /* Reduced margin to the right of the radio button */
+        margin-right: 1px; /* Reduced margin to the right of the radio button */
         vertical-align: middle; /* Align radio buttons vertically */
         transform: scale(0.9); /* Slightly smaller radio buttons */
+    }
+    .type-cell input[type="radio"] {
+    margin: 0 2px;
+    transform: scale(0.9); /* slightly smaller radios */
+    vertical-align: middle;
     }
 
     
@@ -121,7 +126,7 @@
     .flash { animation: price-flash 0.7s ease-out; }
     @keyframes price-flash { from { background-color: rgba(76, 175, 80, 0.5); } to { background-color: transparent; } }
     .lots-override-input {
-        width: 40%; padding: 0.5rem; background-color: #1a1a1a;
+        width: 60px; padding: 0.5rem; background-color: #1a1a1a;
         border: 1px solid #555; color: white; border-radius: 4px;
         font-size: 0.9rem; text-align: center; box-sizing: border-box;
     }

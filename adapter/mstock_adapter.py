@@ -137,7 +137,10 @@ class MStockAdapter(BrokerInterface):
                 headers
             )
             response = json.loads(conn.getresponse().read().decode("utf-8"))
-            logger.debug("Instrument quote response: {response}", response=response)
+            if not response.get("status", True):
+                logger.error("Instrument quote failed: {}", response)
+            else:
+                logger.debug("Instrument quote response: {}", response)
             return response
         except Exception as e:
             logger.error(f"Error fetching quotes {e}")
@@ -277,7 +280,7 @@ class MStockAdapter(BrokerInterface):
     def prod_start(self):
         logger.info("Starting M.StockAdapter in production mode...")
         if self.mstock_instance.initialise_for_prod():
-            self.download_instrument_list()
+            self.download_instrument_list(None)
 
     def download_instrument_list(self, exchange: str) -> bool:
         logger.info(f"Downloading instrument list for exchange: {exchange} from M.Stock...")

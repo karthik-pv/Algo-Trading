@@ -198,7 +198,7 @@ class Trader_Singleton:
         logger.debug(self._position_data)
 
     def get_relevant_instruments_to_track(self):
-        logger.info("Compiling list of relevant instruments to track...")
+        logger.info("Compiling list of relevant instruments to track: 1) Positions, 2) 5 Weekly Options and 3) Near Month Future")
         """Returns a list of instrument tokens currently in the _position_data."""
         instruments = list(self._position_data.keys())
         instruments.extend(self._five_weekly_option_contracts.keys())
@@ -211,8 +211,8 @@ class Trader_Singleton:
     def stop_loss_book_profit_core(self, broker: BrokerInterface):
         logger.info("Started trading watcher thread")
         while not self._stop_event.is_set():
-            logger.debug("Evaluating open positions for stop-loss/book-profit...")
-            logger.debug(self._position_data)
+            # logger.debug("Evaluating open positions for stop-loss/book-profit...")
+            # logger.debug(self._position_data)
             
             
             for token , data in list(self._position_data.items()):
@@ -316,6 +316,7 @@ class Trader_Singleton:
             near_month_token = self._broker.get_instrument_details(near_month_symbol)["instrument_token"]
             logger.debug(near_month_symbol)
             ltp_nifty_near_month = self._broker.get_ltp(near_month_symbol)
+            logger.info(f"LTP_NIFTY_NEAR_MONTH:{ltp_nifty_near_month}")
             self._near_month_data[near_month_token] = ltp_nifty_near_month
             contracts = self.get_5_weekly_option_contracts(float(ltp_nifty_near_month) , "CE" , underlying=self._underlying)["symbols"]
             logger.log("DATA",f" Weekly Option Contracts - {contracts}")
