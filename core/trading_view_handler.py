@@ -2,36 +2,36 @@ import json
 from loguru import logger
 
 def trading_view_handle_func(data):
-    # logger.debug(f"Received data from TradingView: {data}")
+    logger.debug(f"Received data from TradingView: {data}")
     # val = data["name"]
     # return {"msg" : "done"}
 
     # Paste JSON above as a raw string
-    data = json.loads("""
-    {
-        "EMA": {
-            "15s": {"EMA9": 22345.12, "EMA21": 22340.45, "EMA50": 22320.85, "EMA100": 22290.33, "EMA200": 22210.12},
-            "1m": {"EMA9": 22346.20, "EMA21": 22341.10, "EMA50": 22321.05, "EMA100": 22291.40, "EMA200": 22211.25},
-            "5m": {"EMA9": 22350.30, "EMA21": 22343.00, "EMA50": 22322.90, "EMA100": 22293.50, "EMA200": 22215.40},
-            "30m": {"EMA9": 22380.15, "EMA21": 22360.80, "EMA50": 22340.50, "EMA100": 22310.00, "EMA200": 22250.60},
-            "2h": {"EMA9": 22410.50, "EMA21": 22385.00, "EMA50": 22355.60, "EMA100": 22320.80, "EMA200": 22270.10},
-            "D": {"EMA9": 22480.00, "EMA21": 22420.50, "EMA50": 22360.40, "EMA100": 22290.70, "EMA200": 22180.30}
-        },
-        "PVT": {
-            "15s": 102345.5,
-            "1m": 105432.3,
-            "5m": 108900.8,
-            "30m": 120300.4,
-            "2h": 145600.2,
-            "D": 189000.0
-        },
-        "VWAP": {"5m": 22355.60}
-        }
-        """)
+    # data = json.loads("""
+    # {
+    #     "EMA": {
+    #         "15s": {"EMA9": 22345.12, "EMA21": 22340.45, "EMA50": 22320.85, "EMA100": 22290.33, "EMA200": 22210.12},
+    #         "1m": {"EMA9": 22346.20, "EMA21": 22341.10, "EMA50": 22321.05, "EMA100": 22291.40, "EMA200": 22211.25},
+    #         "5m": {"EMA9": 22350.30, "EMA21": 22343.00, "EMA50": 22322.90, "EMA100": 22293.50, "EMA200": 22215.40},
+    #         "30m": {"EMA9": 22380.15, "EMA21": 22360.80, "EMA50": 22340.50, "EMA100": 22310.00, "EMA200": 22250.60},
+    #         "2h": {"EMA9": 22410.50, "EMA21": 22385.00, "EMA50": 22355.60, "EMA100": 22320.80, "EMA200": 22270.10},
+    #         "D": {"EMA9": 22480.00, "EMA21": 22420.50, "EMA50": 22360.40, "EMA100": 22290.70, "EMA200": 22180.30}
+    #     },
+    #     "PVT": {
+    #         "15s": 102345.5,
+    #         "1m": 105432.3,
+    #         "5m": 108900.8,
+    #         "30m": 120300.4,
+    #         "2h": 145600.2,
+    #         "D": 189000.0
+    #     },
+    #     "VWAP": {"5m": 22355.60}
+    #     }
+    #     """)
 
-    # --- 6️⃣ Optional: pretty-print the entire JSON
-    print("\nFull JSON (formatted):")
-    print(json.dumps(data, indent=2))
+    # # --- 6️⃣ Optional: pretty-print the entire JSON
+    # print("\nFull JSON (formatted):")
+    # print(json.dumps(data, indent=2))
 
 
     # # Sell Trigger Logic based on EMAs
