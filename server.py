@@ -91,6 +91,7 @@ broker: BrokerInterface = BROKER_MAP[CURRENT_BROKER]()
 shutdown_event = threading.Event()
 
 SETTINGS_FILE = "settings.json"
+CONSTANTS_FILE = "constants.json"
 
 # Default settings (used if file missing)
 DEFAULT_SETTINGS = {
@@ -113,6 +114,9 @@ DEFAULT_SETTINGS = {
 def settings_page():
     """Render the settings HTML page."""
     return render_template("settings.html")
+
+
+
 
 @app.route("/load_settings")
 def load_settings():
@@ -143,6 +147,33 @@ def save_settings():
         print("Error saving settings:", e)
         return jsonify({"status": "error", "message": str(e)}), 500
 
+
+@app.route("/constants")
+def constants():
+    return render_template("constants.html")
+
+
+@app.route("/load", methods=["GET"])
+def load_constants():
+    if not os.path.exists(CONSTANTS_FILE):
+        return jsonify({"error": "constants.json not found"}), 404
+    with open(CONSTANTS_FILE, "r") as f:
+        data = json.load(f)
+    return jsonify(data)
+
+@app.route("/save", methods=["POST"])
+def save_constants():
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "No data received"}), 400
+    try:
+        with open(CONSTANTS_FILE, "w") as f:
+            json.dump(data, f, indent=4)
+        return jsonify({"message": "Saved successfully"})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+    
 
 @app.route("/orders")
 def get_orders():
