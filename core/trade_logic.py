@@ -122,12 +122,13 @@ class Trader_Singleton:
             position = self._position_data[key_token]
             buy_price = position.get('average_price', 0)
             net_qty = position.get('net_quantity', 0)
+            lotsize = position.get('lotsize', 0)
             
             if buy_price > 0:
                 # Recalculate and store the new P/L values
                 pts_pl = self.calculate_point_difference(buy_price, updated_value)
                 pct_pl = self.calculate_pctg_difference(buy_price, updated_value)
-                total_pl = pts_pl * net_qty
+                total_pl = pts_pl * net_qty * lotsize
                 
                 position['pts_pl'] = pts_pl
                 position['pct_pl'] = pct_pl
@@ -232,7 +233,7 @@ class Trader_Singleton:
                 qty = data.get("lots")
                 buy_price = data.get("average_price")
                 ltp = data.get("latest_price")
-                exchange = data.get("exchange")
+                exchange = self._exchange
                 tradingsymbol = data.get("tradingsymbol")
                 instrument_token = data.get("instrument_token")
                 order_strategy_type = data.get("order_strategy" , "DEFAULT")
@@ -241,8 +242,8 @@ class Trader_Singleton:
                 
                 logger.debug(f"DECISION TO SELL {tradingsymbol} - {sell}")
                 if sell:
+                    logger.info(f"Placing SELL order for {tradingsymbol} {instrument_token} : {qty} lots at LTP {ltp}")
                     if self._sell_mode == "EXECUTION":
-                        logger.info(f"Placing SELL order for {tradingsymbol} {instrument_token} : {qty} lots at LTP {ltp}")
                         broker.sell_units(tradingsymbol,instrument_token,qty,exchange,ltp)
                     logger.critical(f"SELL UNITS - {tradingsymbol}")
 

@@ -147,97 +147,101 @@ class MStockAdapter(BrokerInterface):
 
 
     def sell_units(self, trading_symbol, instrument_token , quantity , exchange , ltp):
-        logger.info(f"Selling units: {quantity} of {trading_symbol} ({instrument_token}) via M.Stock...")
-        conn = http.client.HTTPSConnection('api.mstock.trade')
-        headers = {
-                "X-Mirae-Version": "1",
-                "X-PrivateKey": self.mstock_instance._api_key,
-                "Authorization": f"Bearer {self.mstock_instance._access_token}",
-                "Content-Type": "application/json"
+        try:
+            logger.info(f"Selling units: {quantity} of {trading_symbol} ({instrument_token}) via M.Stock...")
+            quantity = 1
+            conn = http.client.HTTPSConnection('api.mstock.trade')
+            headers = {
+                    "X-Mirae-Version": "1",
+                    "X-PrivateKey": self.mstock_instance._api_key,
+                    "Authorization": f"Bearer {self.mstock_instance._access_token}",
+                    "Content-Type": "application/json"
+                }
+            logger.debug(instrument_token)
+            data = find_matching_object("mstock_instrument_list.json" , "token" ,str(instrument_token))
+            trading_symbol_for_transaction = data["name"]
+            instrument_token = data["token"]
+            lotsize = data["lotsize"]
+            json_data = { 
+                'variety': 'NORMAL',
+                'tradingsymbol': trading_symbol_for_transaction,
+                'symboltoken': instrument_token,
+                'exchange': exchange,
+                'transactiontype': 'SELL',
+                'ordertype': 'MARKET',
+                'quantity': str(int(quantity) * int(lotsize)),
+                'producttype': 'CARRYFORWARD',
+                'price': "0.00",
+                'triggerprice': '0.00',
+                'squareoff': '0.00',
+                'stoploss': '0.00',
+                'trailingStopLoss': '',
+                'disclosedquantity': '0',
+                'duration': 'DAY',
+                'ordertag': 'my_algo',
             }
-        trading_symbol_for_transaction = find_matching_object("mstock_instrument_list.json" , "token" , instrument_token)["name"]
-        if trading_symbol:
-            data = find_matching_object("mstock_instrument_list.json" , "name" , trading_symbol)
-        elif instrument_token:
-            data = find_matching_object("mstock_instrument_list.json" , "token" , instrument_token)
-        trading_symbol_for_transaction = data["name"]
-        instrument_token = data["token"]
-        lotsize = data["lotsize"]
-        json_data = { 
-            'variety': 'NORMAL',
-            'tradingsymbol': trading_symbol_for_transaction,
-            'symboltoken': instrument_token,
-            'exchange': exchange,
-            'transactiontype': 'SELL',
-            'ordertype': 'MARKET',
-            'quantity': str(int(quantity) * int(lotsize)),
-            'producttype': 'INTRADAY',
-            'price': "0.00",
-            'triggerprice': '0.00',
-            'squareoff': '0.00',
-            'stoploss': '0.00',
-            'trailingStopLoss': '',
-            'disclosedquantity': '0',
-            'duration': 'DAY',
-            'ordertag': 'my_algo',
-        }
-        logger.debug("Sell order payload: {json_data}", json_data=json_data)
-        conn.request(
-            'POST',
-            '/openapi/typeb/orders/regular',
-            json.dumps(json_data),
-            headers
-        )
-        response = conn.getresponse().read().decode("utf-8")
-        self._trader.refresh_open_positions_and_buy_price()
-        logger.debug("Sell order response: {response}", response=response)
+            logger.debug("Sell order payload: {json_data}", json_data=json_data)
+            conn.request(
+                'POST',
+                '/openapi/typeb/orders/regular',
+                json.dumps(json_data),
+                headers
+            )
+            response = conn.getresponse().read().decode("utf-8")
+            self._trader.refresh_open_positions_and_buy_price()
+            logger.debug("Sell order response: {response}", response=response)
+        except Exception as e:
+            logger.error(f"Error selling units {e}")
         
 
     def buy_units(self, trading_symbol = None, instrument_token = None, quantity = 0, exchange="",ltp=0):
-        logger.info(f"Buying units: {quantity} of {trading_symbol} ({instrument_token}) via M.Stock...")
-        conn = http.client.HTTPSConnection('api.mstock.trade')
-        headers = {
-                "X-Mirae-Version": "1",
-                "X-PrivateKey": self.mstock_instance._api_key,
-                "Authorization": f"Bearer {self.mstock_instance._access_token}",
-                "Content-Type": "application/json"
+        try:
+            logger.info(f"Buying units: {quantity} of {trading_symbol} ({instrument_token}) via M.Stock...")
+            conn = http.client.HTTPSConnection('api.mstock.trade')
+            headers = {
+                    "X-Mirae-Version": "1",
+                    "X-PrivateKey": self.mstock_instance._api_key,
+                    "Authorization": f"Bearer {self.mstock_instance._access_token}",
+                    "Content-Type": "application/json"
+                }
+            if trading_symbol:
+                data = find_matching_object("mstock_instrument_list.json" , "name" , trading_symbol)
+            elif instrument_token:
+                data = find_matching_object("mstock_instrument_list.json" , "token" , instrument_token)
+            trading_symbol_for_transaction = data["name"]
+            instrument_token = data["token"]
+            lotsize = data["lotsize"]
+            json_data = { 
+                'variety': 'NORMAL',
+                'tradingsymbol': trading_symbol_for_transaction,
+                'symboltoken': instrument_token,
+                'exchange': exchange,
+                'transactiontype': 'BUY',
+                'ordertype': 'MARKET',
+                'quantity': str(int(quantity) * int(lotsize)),
+                'producttype': 'CARRYFORWARD',
+                'price': "0.00",
+                'triggerprice': '0.00',
+                'squareoff': '0.00',
+                'stoploss': '0.00',
+                'trailingStopLoss': '',
+                'disclosedquantity': '0',
+                'duration': 'DAY',
+                'ordertag': 'my_algo',
             }
-        if trading_symbol:
-            data = find_matching_object("mstock_instrument_list.json" , "name" , trading_symbol)
-        elif instrument_token:
-            data = find_matching_object("mstock_instrument_list.json" , "token" , instrument_token)
-        trading_symbol_for_transaction = data["name"]
-        instrument_token = data["token"]
-        lotsize = data["lotsize"]
-        json_data = { 
-            'variety': 'NORMAL',
-            'tradingsymbol': trading_symbol_for_transaction,
-            'symboltoken': instrument_token,
-            'exchange': exchange,
-            'transactiontype': 'BUY',
-            'ordertype': 'MARKET',
-            'quantity': str(int(quantity) * int(lotsize)),
-            'producttype': 'INTRADAY',
-            'price': "0.00",
-            'triggerprice': '0.00',
-            'squareoff': '0.00',
-            'stoploss': '0.00',
-            'trailingStopLoss': '',
-            'disclosedquantity': '0',
-            'duration': 'DAY',
-            'ordertag': 'my_algo',
-        }
-        logger.debug("Buy order payload: {json_data}", json_data=json_data)
-        
-        conn.request(
-            'POST',
-            '/openapi/typeb/orders/regular',
-            json.dumps(json_data),
-            headers
-        )
-        response = conn.getresponse().read().decode("utf-8")
-        self._trader.refresh_open_positions_and_buy_price()
-        logger.debug("Buy order response: {response}", response=response)
+            logger.debug("Buy order payload: {json_data}", json_data=json_data)
+            
+            conn.request(
+                'POST',
+                '/openapi/typeb/orders/regular',
+                json.dumps(json_data),
+                headers
+            )
+            response = conn.getresponse().read().decode("utf-8")
+            self._trader.refresh_open_positions_and_buy_price()
+            logger.debug("Buy order response: {response}", response=response)
+        except Exception as e:
+            logger.debug(f"Error in mstock buy {e}")
         
 
     def get_instrument_details(self , tradingsymbol):

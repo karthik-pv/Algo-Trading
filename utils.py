@@ -8,8 +8,6 @@ from typing import Generator, Dict, Any , List, Optional
 from logging import Logger
 from loguru import logger
 
-
-
 def get_access_token_from_json():
     logger.info("Fetching access token from JSON file.")
     current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -49,8 +47,6 @@ def find_matching_object(filepath: str, attribute_name: str, attribute_value: An
         logger.error(f"Error: The file '{filepath}' was not found.")
     except Exception as e:
         logger.error(f"An error occurred while processing the file: {e}")
-    
-    return None
 
 
 

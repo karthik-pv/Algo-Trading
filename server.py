@@ -344,8 +344,8 @@ if __name__ == "__main__":
         if CURRENT_BROKER == "KITE":
             socket_thread = threading.Thread(target=start_socket, daemon=True)
             socket_thread.start()
-            # if is_market_open():
-            trader.start_trading_watcher_thread()
+            if is_market_open():
+                trader.start_trading_watcher_thread()
             app.run(debug=True , use_reloader = False)
         elif CURRENT_BROKER == "MSTOCK":
             if is_market_open():

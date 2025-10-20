@@ -325,7 +325,7 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         const priceCell = document.getElementById(`price-${token}`);
         if (priceCell) {
-            priceCell.textContent = `₹ ${tick.ltp.toFixed(2)}`;
+            priceCell.textContent = `${tick.ltp.toFixed(2)}`;
             priceCell.classList.add('flash');
             setTimeout(() => priceCell.classList.remove('flash'), 700);
         }
@@ -352,7 +352,7 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         const marketPriceCell = document.getElementById(`market-price-${token}`);
         if (marketPriceCell) { // Check if the row exists in the sell table
-            marketPriceCell.textContent = `₹ ${tick.ltp.toFixed(2)}`; // Always update LTP
+            marketPriceCell.textContent = `${tick.ltp.toFixed(2)}`; // Always update LTP
             marketPriceCell.classList.add('flash');
             setTimeout(() => marketPriceCell.classList.remove('flash'), 700);
 
@@ -363,7 +363,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 const pctCell = document.getElementById(`pct-${token}`);
                 const ptsCell = document.getElementById(`pts-${token}`);
 
-                if (totalPlCell) totalPlCell.textContent = `₹ ${(tick.total_pl || 0).toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+                if (totalPlCell) totalPlCell.textContent = `${(tick.total_pl || 0).toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
                 if (ptsCell) ptsCell.textContent = (tick.pts_pl || 0).toFixed(2);
                 if (pctCell) pctCell.textContent = `${(tick.pct_pl || 0).toFixed(2)}%`;
 
@@ -380,8 +380,8 @@ document.addEventListener('DOMContentLoaded', function() {
             const response = await fetch('http://127.0.0.1:5000/fund_summary');
             if (!response.ok) { throw new Error(`HTTP Error: ${response.status}`); }
             const summary = await response.json();
-            cashBalanceEl.textContent = `₹ ${parseFloat(summary.data.cash_balance).toLocaleString('en-IN')}`;
-            utilizedEl.textContent = `₹ ${parseFloat(summary.data.utilized).toLocaleString('en-IN')}`;
+            cashBalanceEl.textContent = `${parseFloat(summary.data.cash_balance).toLocaleString('en-IN')}`;
+            utilizedEl.textContent = `${parseFloat(summary.data.utilized).toLocaleString('en-IN')}`;
         } catch (error) {
             console.error("Could not fetch fund summary:", error);
             cashBalanceEl.textContent = 'Error';
@@ -431,7 +431,7 @@ document.addEventListener('DOMContentLoaded', function() {
             row.innerHTML = `
                 <td>${contract.level || ''}</td>
                 <td>${strikePrice || ''}</td>
-                <td id="price-${token}">₹ ${(contract.ltp || 0).toFixed(2)}</td>
+                <td id="price-${token}">${(contract.ltp || 0).toFixed(2)}</td>
                 <td id="lots-${token}">${contract.lots || 0}</td>
                 <td><input type="number" class="lots-override-input" id="override-lots-${token}" placeholder="${contract.lots || 0}"></td>
                 <td class="type-cell">
@@ -482,8 +482,8 @@ document.addEventListener('DOMContentLoaded', function() {
             row.innerHTML = `
                 <td>${pos.level || ''}</td>
                 <td>${pos.tradingsymbol || ''}</td>
-                <td>₹ ${(pos.average_price || 0).toFixed(2)}</td>
-                <td id="market-price-${token}">₹ ${(pos.latest_price || pos.average_price).toFixed(2)}</td>
+                <td>${(pos.average_price || 0).toFixed(2)}</td>
+                <td id="market-price-${token}">${(pos.latest_price || pos.average_price).toFixed(2)}</td>
                 <td>${pos.lots || 0}</td>
                 <td><input type="number" class="lots-override-input" id="override-lots-sell-${token}" placeholder="${pos.lots || 0}"></td>
                 <td class="type-cell">
@@ -491,9 +491,10 @@ document.addEventListener('DOMContentLoaded', function() {
                     <label><input type="radio" name="sell-type-${token}" value="Scalping" ${isScalpingChecked}> S</label>
                     <label><input type="radio" name="sell-type-${token}" value="UltraScalping" ${isUltraChecked}> U</label>
                 </td>
-                <td id="total-pl-${token}" class="${plClass}">₹ ${(pos.total_pl || 0).toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
-                <td id="pct-${token}" class="${plClass}">${(pos.pct_pl || 0).toFixed(2)}%</td>
+                
+                <td id="pct-${token}" class="${plClass}">${(pos.pct_pl || 0).toFixed(2)}</td>
                 <td id="pts-${token}" class="${plClass}">${(pos.pts_pl || 0).toFixed(2)}</td>
+                <td id="total-pl-${token}" class="${plClass}">${(pos.total_pl || 0).toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
                 <td class="center">
                     <button class="sell-button" data-token="${token}" data-tradingsymbol="${pos.tradingsymbol}" data-lots="${pos.lots || 0}" data-quantity="${pos.net_quantity || 0}" data-lotsize="${pos.lotsize || ''}">Sell</button>
                 </td>
@@ -512,7 +513,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 const overrideInput = document.getElementById(`override-lots-sell-${token}`);
                 const lotsToSell = (overrideInput && overrideInput.value > 0) ? overrideInput.value : this.dataset.lots;
                 const lotSize = parseInt(this.dataset.lotsize || 0);
-                const displayQuantity = (lotSize > 0) ? (lotsToSell * lotSize) : this.dataset.quantity;
+                const displayQuantity = (lotSize > 0) ? (lotsToSell) : this.dataset.quantity;
                 if (confirm(`Are you sure you want to sell ${displayQuantity} shares (${lotsToSell} lots) of ${this.dataset.tradingsymbol}?`)) {
                     socket.emit('place_sell_order', { token: token, tradingsymbol: this.dataset.tradingsymbol, lots: lotsToSell });
                     alert(`Sell order for ${lotsToSell} lots sent!`);

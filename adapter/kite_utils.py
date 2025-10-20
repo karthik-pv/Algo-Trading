@@ -1,8 +1,8 @@
+from loguru import logger
+
 def position_attribute_mgmt(positions):
     for position in positions:
-        position["lotsize"] = position["multiplier"]
         position["instrument_token"] = str(position["instrument_token"])
-        position["net_qty"] = position["quantity"]
     return positions
     
 

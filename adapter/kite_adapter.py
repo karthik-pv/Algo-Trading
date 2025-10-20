@@ -20,6 +20,7 @@ class KiteAdapter(BrokerInterface):
         self.kite = self.kite_instance.get_kite()
         self.supported_exchanges = ["MCX", "NIFTY"]
         self._limit_margin = fetch_from_json("constants.json" , "LIMIT_MARGIN")
+        self._instrument_cache = {}
 
     def fetch_all_orders(self):
         try:
@@ -42,6 +43,9 @@ class KiteAdapter(BrokerInterface):
             positions = self.kite.positions()
             positions = position_attribute_mgmt(positions["net"])
             positions = [p for p in positions if p["quantity"] > 0]
+            for position in positions:
+                position["lotsize"] = int(self.get_instrument_details(position["tradingsymbol"])["lot_size"])
+                position["quantity"] = position["quantity"]/position["lotsize"]
             pprint(positions)
             return positions
         except Exception as e:
@@ -81,13 +85,20 @@ class KiteAdapter(BrokerInterface):
             logger.error(f"Error getting LTP {e}")
     
     def get_instrument_details(self, tradingsymbol):
-        logger.info(f"Fetching instrument details for {tradingsymbol}")
-        data = find_matching_row_in_csv("kite_instruments.csv" , "tradingsymbol" , tradingsymbol)
-        logger.info(f"Instrument details fetched: {data}")
-        data = instrument_details_attribute_mgmt(data)
-        logger.log("DATA", f"Instrument Details: {data}")   
-        return data
-
+        logger.info(f"Attempting to fetch instrument details for {tradingsymbol}")
+        if tradingsymbol in self._instrument_cache:
+            logger.info(f"Cache HIT for instrument: {tradingsymbol}")
+            return self._instrument_cache[tradingsymbol]
+        logger.info(f"Cache MISS for instrument: {tradingsymbol}. Fetching from source (CSV).")
+        data = find_matching_row_in_csv("kite_instruments.csv", "tradingsymbol", tradingsymbol)
+        if not data:
+            logger.error(f"No instrument details found for {tradingsymbol} in kite_instruments.csv")
+            return None
+        logger.info(f"Instrument details fetched from CSV: {data}")
+        processed_data = instrument_details_attribute_mgmt(data)
+        logger.log("DATA", f"Instrument Details (processed): {processed_data}")
+        self._instrument_cache[tradingsymbol] = processed_data
+        return processed_data
 
     def format_option_symbol(self ,  underlying: str,
         expiry: datetime.date,
@@ -116,13 +127,13 @@ class KiteAdapter(BrokerInterface):
                 price = ltp+self._limit_margin
             else:
                 order_type = self.kite.ORDER_TYPE_MARKET
-                quantity = int(quantity) *75
                 price = 0
+            lotsize = self.get_instrument_details(trading_symbol)["lot_size"]
             order_id = self.kite.place_order(
                 tradingsymbol=trading_symbol, 
                 exchange = exchange,
                 transaction_type=self.kite.TRANSACTION_TYPE_BUY,
-                quantity=quantity,
+                quantity= str(int(quantity) * int(lotsize)),
                 order_type = order_type,
                 product = self.kite.PRODUCT_MIS,
                 variety=self.kite.VARIETY_REGULAR, 
@@ -142,11 +153,12 @@ class KiteAdapter(BrokerInterface):
             else:
                 order_type = self.kite.ORDER_TYPE_MARKET
                 price = 0
+            lotsize = self.get_instrument_details(trading_symbol)["lot_size"]
             order_id = self.kite.place_order(
                 tradingsymbol=trading_symbol,
                 exchange=exchange,
                 transaction_type=self.kite.TRANSACTION_TYPE_SELL,
-                quantity=quantity,
+                quantity= int(quantity) * int(lotsize),
                 order_type=order_type,
                 product=self.kite.PRODUCT_MIS,
                 variety=self.kite.VARIETY_REGULAR,

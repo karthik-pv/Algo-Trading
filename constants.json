@@ -1,8 +1,8 @@
 {
-    "EXCHANGE" : "NFO",
-    "BROKER" : "MSTOCK", 
-    "UNDERLYING" :"NIFTY" ,    
-    "NEAR_MONTH_FUTURE_TOKEN" : "NIFTY25OCTFUT" , 
+    "EXCHANGE" : "BFO",
+    "BROKER" : "KITE", 
+    "UNDERLYING" :"SENSEX" ,    
+    "NEAR_MONTH_FUTURE_TOKEN" : "SENSEX25OCTFUT" , 
     "NIFTY_EXPIRY_DATE"	: "20",
     "SENSEX_EXPIRY_DATE" : "23",
     "EXPIRY_MONTH" :  "OCT",
