@@ -38,7 +38,7 @@ class Trader_Singleton:
     _trading_watcher_thread_running = False
     _stop_event = threading.Event()
     _tick_counter = 0
-    _comparison_function = "PNT"
+    _comparison_function = fetch_from_json("settings.json" , "COMPARISON_FUNCTION")
     _use_max_margin = True
     _sell_mode = fetch_from_json("settings.json" , "MODE")
     _broker_string = fetch_from_json("constants.json" , "BROKER")
@@ -263,11 +263,11 @@ class Trader_Singleton:
         elif order_strategy_type == "ULTRA_SCALPING":
             PROFIT_FACTOR = PTS_PROFIT_ULTRA_SCALPING_FACTOR
         logging.debug(PROFIT_FACTOR)
-        if self._comparison_function == "PCT":
+        if "PCT" in self._comparison_function:
             diff = self.calculate_pctg_difference(buy_price,current_price)
             if diff >= PCTG_BOOK_PROFIT or abs(diff) >= PCTG_STOP_LOSS:
                 return True
-        if self._comparison_function == "PNT":
+        if "PNT" in self._comparison_function:
             diff = self.calculate_point_difference(buy_price,current_price)
             if diff >= PNT_BOOK_PROFIT*PROFIT_FACTOR or abs(diff) >= PNT_STOP_LOSS:
                 return True
@@ -386,7 +386,6 @@ class Trader_Singleton:
     # ---------------------- TICK HANDLER ----------------------
 
     def set_latest_price(self, instrument_token, tradingsymbol, price):
-        #logger.debug(f"Setting latest price for {tradingsymbol} ({instrument_token}) to {price}")
         try:
             token = instrument_token
             if token in self._position_data:
@@ -416,20 +415,10 @@ class Trader_Singleton:
                     'ltp': price,
                     'lots' : self._five_weekly_option_contracts[token]["lots"]
                 }
-                logger.debug("UPDATING ORDER PRICES")
+                # logger.debug("UPDATING ORDER PRICES")
                 self.frontend_data_socket.emit('price-updated-order', payload)
             
             if token in self._near_month_data:
-                if int(price)//100 != int(self._near_month_data[token])//100:
-                    logger.info(f"NEAR MONTH FUTURE PRICE CHANGED - {self._near_month_data[token]} to {price}")
-                    logger.info("REFRESHING WEEKLY OPTIONS")
-                    # self.refresh_open_positions_and_buy_price()
-                    # self.setup_weekly_option_contract_subscriptions()
-                elif (int(price)%100 >= 50 and int(self._near_month_data[token])<50) or (int(price)%100 < 50 and int(self._near_month_data[token])>=50):
-                    logger.info(f"NEAR MONTH FUTURE PRICE CHANGED - {self._near_month_data[token]} to {price}")
-                    logger.info("REFRESHING WEEKLY OPTIONS")
-                    # self.refresh_open_positions_and_buy_price()
-                    # self.setup_weekly_option_contract_subscriptions()
                 self._near_month_data[token] = price
                 payload = {"ltp" : price}
                 self.frontend_data_socket.emit('near-month-ltp-updated', payload)
@@ -525,6 +514,12 @@ class Trader_Singleton:
         @self.frontend_data_socket.on('disconnect')
         def handle_disconnect():
             logger.info("Client disconnected.")
+
+        @self.frontend_data_socket.on('refresh-options-table')
+        def refresh_table():
+            logger.info("Refreshing frontend options table")
+            self.refresh_open_positions_and_buy_price()
+            self.setup_weekly_option_contract_subscriptions()
 
 
         @self.frontend_data_socket.on('request_weekly_options')

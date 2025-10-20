@@ -110,7 +110,7 @@ class KiteAdapter(BrokerInterface):
 
         logger.info(f"Formatting option symbol for {underlying}, expiry: {expiry}, strike: {strike}, type: {call_or_put}")
 
-        if underlying == "CRUDEOIL":
+        if underlying == "CRUDEOIL" or underlying == "CRUDEOILM":
             month_abbr = expiry.strftime('%b').upper()
             
             return f"{underlying}{yy}{month_abbr}{strike}{call_or_put}"
@@ -129,6 +129,7 @@ class KiteAdapter(BrokerInterface):
                 order_type = self.kite.ORDER_TYPE_MARKET
                 price = 0
             lotsize = self.get_instrument_details(trading_symbol)["lot_size"]
+            logger.debug(f"Quantity - {int(quantity) * int(lotsize)}")
             order_id = self.kite.place_order(
                 tradingsymbol=trading_symbol, 
                 exchange = exchange,
@@ -154,6 +155,7 @@ class KiteAdapter(BrokerInterface):
                 order_type = self.kite.ORDER_TYPE_MARKET
                 price = 0
             lotsize = self.get_instrument_details(trading_symbol)["lot_size"]
+            logger.debug(f"Quantity - {int(quantity) * int(lotsize)}")
             order_id = self.kite.place_order(
                 tradingsymbol=trading_symbol,
                 exchange=exchange,
@@ -169,22 +171,6 @@ class KiteAdapter(BrokerInterface):
         except Exception as e:
             logger.error(f"Kite sell_units error: {e}")
             return None
-
-    # def fetch_instruments_from_json(self):
-    #     try:
-    #         instruments = self.kite.instruments()
-    #         trading_symbols = get_trading_symbols_from_json()
-    #         # trading_symbols = ["CRUDEOILM25SEP5400PE"]
-    #         relevant_instruments = [
-    #             inst["instrument_token"]
-    #             for inst in instruments
-    #             if inst["tradingsymbol"] in trading_symbols
-    #             and inst["exchange"] in self.supported_exchanges
-    #         ]
-    #         return relevant_instruments if relevant_instruments else []
-    #     except Exception as e:
-    #         logger.error(f"Kite fetch_instruments_from_json error: {e}")
-    #         return None
 
     def subscribe_to_all(self, instruments):
         try:

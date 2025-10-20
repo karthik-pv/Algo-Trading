@@ -178,6 +178,20 @@
         .lots-override-input { padding: 0.3rem; }
     }
 
+    #refreshBtn {
+        padding: 0.6rem 0.8rem; /* Tighter padding for an icon */
+        font-size: 1.1rem;      /* Make the icon a bit bigger */
+        line-height: 1.2;       /* Helps vertical alignment */
+    }
+    #refreshBtn:hover {
+        background-color: #444; /* Add a hover effect */
+    }
+    #refreshBtn:disabled {
+        color: #666;
+        cursor: not-allowed;
+        background-color: transparent;
+    }
+
 </style>
 {% endblock %}
 
@@ -206,6 +220,8 @@
                 <label id="expiryLabel" class="expiry-label">EXP: <span id="expiryValue">--</span></label>
             </div>
             <div class="toggle-buttons" width ="50%">
+
+                <button class="toggle-button" id="refreshBtn" title="Refresh Options">&#x21bb;</button>
                 <button class="toggle-button active-toggle" id="callBtn">Calls (CE)</button>
                 <button class="toggle-button" id="putBtn">Puts (PE)</button>
             </div>
@@ -247,6 +263,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const optionsTitle = document.getElementById('optionsTitle');
     const callBtn = document.getElementById('callBtn');
     const putBtn = document.getElementById('putBtn');
+    const refreshBtn = document.getElementById('refreshBtn');
     const cashBalanceEl = document.getElementById('cashBalanceValue');
     const utilizedEl = document.getElementById('utilizedValue');
     const brokerValueEl = document.getElementById('brokerValue');
@@ -579,6 +596,19 @@ document.addEventListener('DOMContentLoaded', function() {
         callBtn.classList.remove('active-toggle');
         putBtn.classList.add('active-toggle');
         populateOptionsTable(allContracts, 'PE');
+    });
+
+    refreshBtn.addEventListener('click', () => {
+        console.log('Refresh button clicked. Emitting refresh-options-table event.');
+        socket.emit('refresh-options-table');
+
+        // Optional: Disable button to prevent spamming
+        refreshBtn.disabled = true;
+        refreshBtn.textContent = '...';
+        setTimeout(() => {
+            refreshBtn.disabled = false;
+            refreshBtn.innerHTML = '&#x21bb;'; // Put the icon back
+        }, 1000);
     });
 
     fetchFundSummary();
