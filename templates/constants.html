@@ -1,0 +1,308 @@
+{% extends "base.html" %}
+
+{% block title %}Constants{% endblock %}
+
+{% block head_styles %}
+<style>
+.main-content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 2rem 1rem;
+}
+
+.widget-container {
+    background-color: #2c2c2c;
+    padding: 2rem;
+    border-radius: 12px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
+    border: 1px solid #444;
+    width: 850px;
+    max-width: 95%;
+}
+
+h2 {
+    text-align: center;
+    color: #66bb6a;
+    margin-bottom: 1.8rem;
+}
+
+form {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.double-row {
+    display: flex;
+    gap: 2rem;
+    align-items: flex-start;
+}
+
+.form-group {
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
+    flex: 1;
+}
+
+label {
+    color: #ccc;
+    font-size: 0.95rem;
+    font-weight: 500;
+    min-width: 180px; /* Fixed width for all labels */
+}
+
+select,
+input[type="number"],
+input[type="text"] {
+    background-color: #1a1a1a;
+    border: 1px solid #555;
+    color: white;
+    padding: 0.45rem 0.6rem;
+    border-radius: 6px;
+    font-size: 0.9rem;
+    width: auto;
+    min-width: 120px;
+    max-width: 180px;
+}
+
+select:focus,
+input:focus {
+    border-color: #66bb6a;
+    outline: none;
+}
+
+.buttons {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 1rem;
+    margin-top: 1.5rem;
+}
+
+.btn {
+    border: none;
+    padding: 0.7rem 1.4rem;
+    border-radius: 8px;
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background-color 0.3s ease;
+}
+
+#saveBtn {
+    background-color: #28a745;
+    color: white;
+}
+
+#saveBtn:hover {
+    background-color: #218838;
+}
+
+#cancelBtn {
+    background-color: #c62828;
+    color: white;
+}
+
+#cancelBtn:hover {
+    background-color: #a12020;
+}
+
+#status {
+    color: #66bb6a;
+    font-weight: 500;
+    min-width: 200px;
+    text-align: left;
+}
+
+@media (max-width: 700px) {
+    .double-row {
+        flex-direction: column;
+    }
+    .form-group {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+    label {
+        min-width: unset;
+    }
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<main class="main-content">
+    <div class="widget-container">
+        <h2>Constants Editor</h2>
+
+        <form id="constantsForm">
+            <!-- Row 1: Exchange + Broker -->
+            <div class="double-row">
+                <div class="form-group">
+                    <label>Exchange</label>
+                    <select id="EXCHANGE">
+                        <option>MCX</option><option>NFO</option><option>BFO</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Broker</label>
+                    <select id="BROKER">
+                        <option>MSTOCK</option><option>KITE</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- Row 2: Underlying + Near Month Future Token -->
+            <div class="double-row">
+                <div class="form-group">
+                    <label>Underlying</label>
+                    <select id="UNDERLYING">
+                        <option>NIFTY</option><option>SENSEX</option>
+                        <option>CRUDEOIL</option><option>CRUDEOILM</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Near Month Future Token</label>
+                    <select id="NEAR_MONTH_FUTURE_TOKEN">
+                        <option>NIFTY25OCTFUT</option>
+                        <option>NIFTY25NOVFUT</option>
+                        <option>NIFTY25DECFUT</option>
+                        <option>SENSEX25OCTFUT</option>
+                        <option>SENSEX25NOVFUT</option>
+                        <option>SENSEX25DECFUT</option>
+                        <option>CRUDEOIL25OCTFUT</option>
+                        <option>CRUDEOIL25NOVFUT</option>
+                        <option>CRUDEOIL25DECFUT</option>
+                        <option>CRUDEOILM25OCTFUT</option>
+                        <option>CRUDEOILM25NOVFUT</option>
+                        <option>CRUDEOILM25DECFUT</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- Row 3: NIFTY / SENSEX Expiry Date -->
+            <div class="double-row">
+                <div class="form-group">
+                    <label>NIFTY Expiry Date</label>
+                    <select id="NIFTY_EXPIRY_DATE"></select>
+                </div>
+                <div class="form-group">
+                    <label>SENSEX Expiry Date</label>
+                    <select id="SENSEX_EXPIRY_DATE"></select>
+                </div>
+            </div>
+
+            <!-- Row 4: Expiry Month / Year -->
+            <div class="double-row">
+                <div class="form-group">
+                    <label>Expiry Month</label>
+                    <select id="EXPIRY_MONTH">
+                        <option>JAN</option><option>FEB</option><option>MAR</option><option>APR</option>
+                        <option>MAY</option><option>JUN</option><option>JUL</option><option>AUG</option>
+                        <option>SEP</option><option>OCT</option><option>NOV</option><option>DEC</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Expiry Year</label>
+                    <select id="EXPIRY_YEAR">
+                        <option>2025</option><option>2026</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- Row 5: Limit Margin -->
+            <div class="form-group">
+                <label>Limit Margin</label>
+                <input type="number" id="LIMIT_MARGIN" step="0.01">
+            </div>
+
+            <!-- Row 6: Lot Size NIFTY / SENSEX -->
+            <div class="double-row">
+                <div class="form-group">
+                    <label>Lot Size NIFTY</label>
+                    <input type="number" id="LOT_SIZE_NIFTY">
+                </div>
+                <div class="form-group">
+                    <label>Lot Size SENSEX</label>
+                    <input type="number" id="LOT_SIZE_SENSEX">
+                </div>
+            </div>
+
+            <!-- Row 7: Lot Size CRUDEOIL / CRUDEOILM -->
+            <div class="double-row">
+                <div class="form-group">
+                    <label>Lot Size CRUDEOIL</label>
+                    <input type="number" id="LOT_SIZE_CRUDEOIL">
+                </div>
+                <div class="form-group">
+                    <label>Lot Size CRUDEOILM</label>
+                    <input type="number" id="LOT_SIZE_CRUDEOILM">
+                </div>
+            </div>
+
+            <!-- Buttons -->
+            <div class="buttons">
+                <button type="button" class="btn" id="saveBtn">💾 Save</button>
+                <button type="button" class="btn" id="cancelBtn">❌ Cancel</button>
+                <span id="status"></span>
+            </div>
+        </form>
+    </div>
+</main>
+
+<script>
+// Fill expiry days 1–31
+function populateDays(id) {
+    const sel = document.getElementById(id);
+    const today = new Date(); // reference year/month doesn't matter for day calculation
+    for (let i = 1; i <= 31; i++) {
+        // Use a fixed month and year for day calculation (e.g., Jan 2025)
+        const date = new Date(2025, 0, i); // Month is 0-based: 0 = January
+        const dayStr = date.toLocaleDateString('en-US', { weekday: 'short' }); // "Mon", "Tue", etc.
+        const opt = document.createElement("option");
+        opt.value = i;           // numeric date is the value saved
+        opt.textContent = `${i} ${dayStr}`; // display "20 Mon"
+        sel.appendChild(opt);
+    }
+}
+populateDays("NIFTY_EXPIRY_DATE");
+populateDays("SENSEX_EXPIRY_DATE");
+
+let constants = {};
+
+async function loadConstants() {
+    const res = await fetch("/load");
+    constants = await res.json();
+    for (const [key, val] of Object.entries(constants)) {
+        const el = document.getElementById(key);
+        if (el) el.value = val;
+    }
+}
+
+async function saveConstants() {
+    const updated = {};
+    document.querySelectorAll("#constantsForm select, #constantsForm input").forEach(el => {
+        updated[el.id] = el.value;
+    });
+    const res = await fetch("/save", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify(updated)
+    });
+    const data = await res.json();
+    const status = document.getElementById("status");
+    if (data.message) {
+        status.textContent = "✅ " + data.message;
+        status.style.color = "#66bb6a";
+    } else {
+        status.textContent = "❌ " + (data.error || "Unknown error");
+        status.style.color = "#ff9800";
+    }
+}
+
+document.getElementById("saveBtn").addEventListener("click", saveConstants);
+document.getElementById("cancelBtn").addEventListener("click", loadConstants);
+loadConstants();
+</script>
+{% endblock %}
