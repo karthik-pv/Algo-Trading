@@ -415,19 +415,20 @@ class Trader_Singleton:
                     'ltp': price,
                     'lots' : self._five_weekly_option_contracts[token]["lots"]
                 }
+                logger.debug("UPDATING ORDER PRICES")
                 self.frontend_data_socket.emit('price-updated-order', payload)
             
             if token in self._near_month_data:
                 if int(price)//100 != int(self._near_month_data[token])//100:
                     logger.info(f"NEAR MONTH FUTURE PRICE CHANGED - {self._near_month_data[token]} to {price}")
                     logger.info("REFRESHING WEEKLY OPTIONS")
-                    self.refresh_open_positions_and_buy_price()
-                    self.setup_weekly_option_contract_subscriptions()
+                    # self.refresh_open_positions_and_buy_price()
+                    # self.setup_weekly_option_contract_subscriptions()
                 elif (int(price)%100 >= 50 and int(self._near_month_data[token])<50) or (int(price)%100 < 50 and int(self._near_month_data[token])>=50):
                     logger.info(f"NEAR MONTH FUTURE PRICE CHANGED - {self._near_month_data[token]} to {price}")
                     logger.info("REFRESHING WEEKLY OPTIONS")
-                    self.refresh_open_positions_and_buy_price()
-                    self.setup_weekly_option_contract_subscriptions()
+                    # self.refresh_open_positions_and_buy_price()
+                    # self.setup_weekly_option_contract_subscriptions()
                 self._near_month_data[token] = price
                 payload = {"ltp" : price}
                 self.frontend_data_socket.emit('near-month-ltp-updated', payload)

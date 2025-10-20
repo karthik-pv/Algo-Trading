@@ -240,7 +240,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // --- SOCKET CONNECTION ---
     const socket = io('http://localhost:5001');
 
-    // --- DOM ELEMENTS (BUY) ---
+    // --- DOM ELEMENTS ---
     const buyWidgetContainer = document.getElementById('buy-widget-container');
     const optionsTableBody = document.getElementById('optionsTableBody');
     const buyConnectionStatus = document.getElementById('buyConnectionStatus');
@@ -254,21 +254,19 @@ document.addEventListener('DOMContentLoaded', function() {
     const underlyingValueEl = document.getElementById('underlyingValue');
     const ltpValueEl = document.getElementById('ltpValue');
     const expiryValueEl = document.getElementById('expiryValue');
-
-    // --- DOM ELEMENTS (SELL) ---
-    // Ensure these IDs exist in 'sell_widget_partial.html'
     const positionsTableBody = document.getElementById('positionsTableBody');
     const sellConnectionStatus = document.getElementById('sellConnectionStatus');
 
     // --- STATE VARIABLES ---
     let allContracts = {};
     let openPositions = {};
+    let orderStrategyMapping = {}; // To store strategies from setup_data
 
     // --- SOCKET EVENT HANDLERS ---
     socket.on('connect', () => {
         buyConnectionStatus.textContent = 'Connected';
         buyConnectionStatus.style.color = '#28a745';
-        if (sellConnectionStatus) { // Check if element exists
+        if (sellConnectionStatus) {
             sellConnectionStatus.textContent = 'Connected';
             sellConnectionStatus.style.color = '#28a745';
         }
@@ -289,12 +287,11 @@ document.addEventListener('DOMContentLoaded', function() {
         if (data.broker) brokerValueEl.textContent = data.broker;
         if (data.exchange) exchangeValueEl.textContent = data.exchange;
         if (data.underlying) underlyingValueEl.textContent = data.underlying;
-        // Store the mapping received from backend
         if (data.order_strategy_mapping) {
             orderStrategyMapping = data.order_strategy_mapping;
             console.log("Received strategy mapping:", orderStrategyMapping);
         }
-        // Repopulate tables if data is already loaded, to apply strategies
+        // Repopulate tables if needed to apply initial strategies
         if (Object.keys(allContracts).length > 0) populateOptionsTable(allContracts, callBtn.classList.contains('active-toggle') ? 'CE' : 'PE');
         if (Object.keys(openPositions).length > 0 && positionsTableBody) populatePositionsTable(openPositions);
     });
@@ -307,25 +304,22 @@ document.addEventListener('DOMContentLoaded', function() {
 
     socket.on('update_weekly_options', (contracts) => {
         allContracts = contracts;
-        populateOptionsTable(allContracts, 'CE');
+        populateOptionsTable(allContracts, 'CE'); // Default view
     });
 
     socket.on('update_open_positions', (positions) => {
         openPositions = positions;
-        // Check if the sell widget's table body exists before populating
         if (positionsTableBody) {
             populatePositionsTable(openPositions);
         }
     });
 
-    // --- UNIFIED PRICE HANDLER ---
-    const unifiedPriceHandler = (tick) => {
+   socket.on('price-updated-order', (tick) => {
         const token = tick.token;
-
-        // --- Update Buy Widget Data & UI ---
+        // Update Buy Widget Data & UI
         if (allContracts[token]) {
             allContracts[token].ltp = tick.ltp;
-             if (tick.lots !== undefined) { // Check if lots data is in tick
+             if (tick.lots !== undefined) {
                  allContracts[token].lots = tick.lots;
              }
         }
@@ -343,35 +337,40 @@ document.addEventListener('DOMContentLoaded', function() {
                 overrideInput.placeholder = tick.lots;
              }
          }
+    });
 
-        // --- Update Sell Widget Data & UI ---
-         if (openPositions[token]) {
+    socket.on('price-updated-position', (tick) => {
+        const token = tick.token;
+         // Update Sell Widget Data & UI
+         if (openPositions[token]) { // Update internal data first
             openPositions[token].latest_price = tick.ltp;
-            openPositions[token].pts_pl = tick.pts_pl;
-            openPositions[token].pct_pl = tick.pct_pl;
-            openPositions[token].total_pl = tick.total_pl;
+            if (tick.pts_pl !== undefined) { // Only update if P/L data exists
+                openPositions[token].pts_pl = tick.pts_pl;
+                openPositions[token].pct_pl = tick.pct_pl;
+                openPositions[token].total_pl = tick.total_pl;
+            }
         }
         const marketPriceCell = document.getElementById(`market-price-${token}`);
-        if (marketPriceCell && tick.pts_pl !== undefined) { // Check if P/L data exists
-            marketPriceCell.textContent = `₹ ${tick.ltp.toFixed(2)}`; // Add currency symbol
+        if (marketPriceCell) { // Check if the row exists in the sell table
+            marketPriceCell.textContent = `₹ ${tick.ltp.toFixed(2)}`; // Always update LTP
             marketPriceCell.classList.add('flash');
             setTimeout(() => marketPriceCell.classList.remove('flash'), 700);
 
-            const plClass = tick.pts_pl >= 0 ? 'profit' : 'loss';
-            const totalPlCell = document.getElementById(`total-pl-${token}`);
-            const pctCell = document.getElementById(`pct-${token}`);
-            const ptsCell = document.getElementById(`pts-${token}`);
+            // Update P/L Cells ONLY if P/L data is present in the tick
+            if (tick.pts_pl !== undefined) {
+                const plClass = tick.pts_pl >= 0 ? 'profit' : 'loss';
+                const totalPlCell = document.getElementById(`total-pl-${token}`);
+                const pctCell = document.getElementById(`pct-${token}`);
+                const ptsCell = document.getElementById(`pts-${token}`);
 
-            // Check if cells exist before updating
-            if (totalPlCell) totalPlCell.textContent = `₹ ${(tick.total_pl || 0).toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
-            if (ptsCell) ptsCell.textContent = (tick.pts_pl || 0).toFixed(2);
-            if (pctCell) pctCell.textContent = `${(tick.pct_pl || 0).toFixed(2)}%`;
+                if (totalPlCell) totalPlCell.textContent = `₹ ${(tick.total_pl || 0).toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+                if (ptsCell) ptsCell.textContent = (tick.pts_pl || 0).toFixed(2);
+                if (pctCell) pctCell.textContent = `${(tick.pct_pl || 0).toFixed(2)}%`;
 
-            [totalPlCell, pctCell, ptsCell].forEach(el => { if(el) el.className = plClass });
+                [totalPlCell, pctCell, ptsCell].forEach(el => { if(el) el.className = plClass });
+            }
         }
-    };
-    socket.on('price-updated', unifiedPriceHandler); // Listen for the single unified event
-
+    });
 
     // --- UTILITY FUNCTIONS ---
     async function fetchFundSummary() {
@@ -400,12 +399,24 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     // --- TABLE POPULATION & LISTENERS ---
-   function populateOptionsTable(contracts, optionType) {
+    function populateOptionsTable(contracts, optionType) {
         optionsTableBody.innerHTML = '';
         const filteredContracts = Object.entries(contracts).filter(([token, contract]) => contract.call_or_put === optionType);
-        if (filteredContracts.length === 0) { /* ... unchanged ... */ }
+        if (filteredContracts.length === 0) {
+            optionsTableBody.innerHTML = `<tr><td colspan="7" class="no-options">No ${optionType === 'CE' ? 'call' : 'put'} options found.</td></tr>`;
+            return;
+        }
         filteredContracts.sort(([, a], [, b]) => a.ltp - b.ltp);
-        // ... (Expiry label update remains unchanged) ...
+
+        if (filteredContracts.length > 0) {
+            const firstContract = filteredContracts[0][1];
+            if (firstContract && firstContract.expiry) {
+                 try {
+                     const date = new Date(firstContract.expiry);
+                     expiryValueEl.textContent = date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }).replace(' ', '-');
+                 } catch (e) { expiryValueEl.textContent = '--'; }
+            } else { expiryValueEl.textContent = '--'; }
+        } else { expiryValueEl.textContent = '--'; }
 
         for (const [token, contract] of filteredContracts) {
             const regex = /(?:NIFTY|SENSEX)\d{2}[A-Z]\d{2}(\d{5})(?=CE|PE$)|CRUDEOILM?\d{2}[A-Z]{3}(\d{4,5})(?=CE|PE$)/i;
@@ -413,15 +424,10 @@ document.addEventListener('DOMContentLoaded', function() {
             const strikePrice = match ? (match[1] || match[2]) : contract.name;
             const row = document.createElement('tr');
             row.id = `row-${token}`;
-
-            // --- Determine initial checked state for radio buttons ---
-            // Get strategy from mapping, default to SCALPING if not found
             const currentStrategy = orderStrategyMapping[token] || 'SCALPING';
             const isIntraChecked = currentStrategy === 'INTRA' ? 'checked' : '';
             const isScalpingChecked = currentStrategy === 'SCALPING' ? 'checked' : '';
             const isUltraChecked = currentStrategy === 'ULTRA_SCALPING' ? 'checked' : '';
-            // --- End determination ---
-
             row.innerHTML = `
                 <td>${contract.level || ''}</td>
                 <td>${strikePrice || ''}</td>
@@ -440,7 +446,7 @@ document.addEventListener('DOMContentLoaded', function() {
             optionsTableBody.appendChild(row);
         }
         addBuyButtonListeners();
-        addStrategyRadioListeners(); // Re-attach listeners
+        addStrategyRadioListeners();
     }
 
     function addBuyButtonListeners() {
@@ -461,23 +467,18 @@ document.addEventListener('DOMContentLoaded', function() {
         if (!positionsTableBody) return;
         positionsTableBody.innerHTML = '';
         if (!positions || Object.keys(positions).length === 0) {
-             positionsTableBody.innerHTML = `<tr><td colspan="10" class="no-options">No open positions found.</td></tr>`;
-             return;
+            positionsTableBody.innerHTML = `<tr><td colspan="10" class="no-options">No open positions found.</td></tr>`;
+            return;
         }
         for (const token in positions) {
             const pos = positions[token];
             const plClass = (pos.pts_pl || 0) >= 0 ? 'profit' : 'loss';
             const row = document.createElement('tr');
-            row.id = `row-sell-${token}`; // Correct ID prefix
-
-            // --- Determine initial checked state for radio buttons ---
-            // Get strategy directly from position data, default to SCALPING
-            const currentStrategy = pos.order_strategy || 'SCALPING'; // Use the field from backend
+            row.id = `row-sell-${token}`;
+            const currentStrategy = pos.order_strategy || 'SCALPING';
             const isIntraChecked = currentStrategy === 'INTRA' ? 'checked' : '';
             const isScalpingChecked = currentStrategy === 'SCALPING' ? 'checked' : '';
             const isUltraChecked = currentStrategy === 'ULTRA_SCALPING' ? 'checked' : '';
-            // --- End determination ---
-
             row.innerHTML = `
                 <td>${pos.level || ''}</td>
                 <td>${pos.tradingsymbol || ''}</td>
@@ -500,10 +501,9 @@ document.addEventListener('DOMContentLoaded', function() {
             positionsTableBody.appendChild(row);
         }
         addSellButtonListeners();
-        addStrategyRadioListeners(); // Re-attach listeners
+        addStrategyRadioListeners();
     }
 
-    // --- THIS IS THE SINGLE, CORRECT addSellButtonListeners ---
     function addSellButtonListeners() {
         if (!positionsTableBody) return;
         positionsTableBody.querySelectorAll('.sell-button').forEach(button => {
@@ -512,13 +512,10 @@ document.addEventListener('DOMContentLoaded', function() {
                 const overrideInput = document.getElementById(`override-lots-sell-${token}`);
                 const lotsToSell = (overrideInput && overrideInput.value > 0) ? overrideInput.value : this.dataset.lots;
                 const lotSize = parseInt(this.dataset.lotsize || 0);
-                const displayQuantity = (lotSize > 0) ? (lotsToSell * lotSize) : this.dataset.quantity; // Calculate quantity based on lots
-
+                const displayQuantity = (lotSize > 0) ? (lotsToSell * lotSize) : this.dataset.quantity;
                 if (confirm(`Are you sure you want to sell ${displayQuantity} shares (${lotsToSell} lots) of ${this.dataset.tradingsymbol}?`)) {
                     socket.emit('place_sell_order', { token: token, tradingsymbol: this.dataset.tradingsymbol, lots: lotsToSell });
                     alert(`Sell order for ${lotsToSell} lots sent!`);
-                    // Maybe refresh positions via socket event instead of reload
-                    // socket.emit('request_open_positions');
                 }
             });
         });
@@ -526,17 +523,12 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // --- STRATEGY RADIO LISTENERS ---
     function addStrategyRadioListeners() {
-        // Listener for BUY table radios
         optionsTableBody.querySelectorAll('input[type="radio"][name^="type-"]').forEach(radio => {
-            // Use named function for potential removal later if needed
             radio.removeEventListener('change', handleBuyRadioChange);
             radio.addEventListener('change', handleBuyRadioChange);
         });
-
-        // Listener for SELL table radios
         if (positionsTableBody) {
             positionsTableBody.querySelectorAll('input[type="radio"][name^="sell-type-"]').forEach(radio => {
-                // Use named function
                 radio.removeEventListener('change', handleSellRadioChange);
                 radio.addEventListener('change', handleSellRadioChange);
             });
@@ -546,7 +538,7 @@ document.addEventListener('DOMContentLoaded', function() {
     function handleBuyRadioChange(event) {
         if (event.target.checked) {
             const token = event.target.name.replace('type-', '');
-            const row = document.getElementById(`row-${token}`); // Use correct ID prefix for buy table
+            const row = document.getElementById(`row-${token}`);
             if (!row) return;
             const buyButton = row.querySelector('.buy-button');
             const tradingsymbol = buyButton ? buyButton.dataset.tradingsymbol : '';
@@ -561,7 +553,7 @@ document.addEventListener('DOMContentLoaded', function() {
     function handleSellRadioChange(event) {
          if (event.target.checked) {
             const token = event.target.name.replace('sell-type-', '');
-            const row = document.getElementById(`row-sell-${token}`); // Correct ID prefix for sell table
+            const row = document.getElementById(`row-sell-${token}`);
             if (!row) return;
             const sellButton = row.querySelector('.sell-button');
             const tradingsymbol = sellButton ? sellButton.dataset.tradingsymbol : '';
