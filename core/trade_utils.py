@@ -11,6 +11,7 @@ india_holidays = holidays.India()
 
 from utils import fetch_from_json , find_matching_object
 
+
 def last_tuesday(year: int, month: int) -> datetime.date:
     logger.info(f"Calculating last Tuesday for {month}/{year}") 
     """
@@ -28,6 +29,9 @@ def calculate_accurate_average_buy_price_and_update_positions(
     orders: List[Dict[str, Any]]
 ) -> List[Dict[str, Any]]:
     logger.debug("Calculating accurate average buy price and updating positions")
+    if not positions or not orders:
+        return positions or []
+
     positions_map = {}
     for i, p in enumerate(positions):
         symbol = p.get('tradingsymbol')
@@ -204,8 +208,8 @@ def get_expiry_date(underlying: str) -> datetime.date:
 
 def get_instrument_tokens_from_symbol(name):
     logger.debug(f"Fetching instrument token for: {name}")
-    return find_matching_object("mstock_instrument_list.json" , "name" , name)["token"]
+    return find_matching_object("mstock_instrument_list_reduced.json" , "name" , name)["token"]
 
 def get_instrument_details_from_json(name):
     logger.debug(f"Fetching instrument details for: {name}")
-    return find_matching_object("mstock_instrument_list.json" , "name" , name)
+    return find_matching_object("mstock_instrument_list_reduced.json" , "name" , name)

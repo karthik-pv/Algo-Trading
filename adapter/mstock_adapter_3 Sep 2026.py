@@ -4,7 +4,6 @@ import json
 import logging
 import datetime
 import calendar
-import time
 import requests
 import os
 import tempfile
@@ -494,22 +493,12 @@ class MStockAdapter(BrokerInterface):
             # ---------------------------------------------------------
             for quote in fetched:
 
-                # token = str(
-                #     quote.get("token")
-                #     or quote.get("symboltoken")
-                #     or quote.get("instrument_token")
-                #     or ""
-                # )
-
-                # MSTOCK_SENSEX 
                 token = str(
                     quote.get("token")
-                    or quote.get("symbolToken")
                     or quote.get("symboltoken")
                     or quote.get("instrument_token")
                     or ""
                 )
-
 
                 if not token:
                     logger.warning(
@@ -724,23 +713,13 @@ class MStockAdapter(BrokerInterface):
                 'ordertag': 'my_algo',
             }
             logger.debug(f"Sell order payload: {json_data}")
-            order_request_start = time.perf_counter()
             conn.request(
                 'POST',
                 '/openapi/typeb/orders/regular',
                 json.dumps(json_data),
                 headers
             )
-            order_request_sent = time.perf_counter()
             response = conn.getresponse().read().decode("utf-8")
-            order_response_received = time.perf_counter()
-            logger.debug(
-                f"M.Stock BUY HTTP TIMING | "
-                f"request_to_send={order_request_sent - order_request_start:.3f}s | "
-                f"response_wait={order_response_received - order_request_sent:.3f}s | "
-                f"total={order_response_received - order_request_start:.3f}s"
-            )
-            logger.debug(f"Buy order response: {response}")
             conn.close()
             logger.debug(f"Sell order executed. Response: {response}")
             
@@ -767,7 +746,7 @@ class MStockAdapter(BrokerInterface):
                 raise
 
             self._trader.frontend_data_socket.emit('sell_order_result',{"success": True, "tradingsymbol": trading_symbol , "Quantity": quantity})
-            #self._trader.frontend_data_socket.emit('status_message', {"message": "Refreshing position now..."})
+            self._trader.frontend_data_socket.emit('status_message', {"message": "Refreshing position now..."})
             logger.info("Refreshing open positions and buy prices after SELL...This would update the fund summar / cash balance as well")
             self._trader.refresh_open_pos_buy_price()
 
@@ -940,28 +919,14 @@ class MStockAdapter(BrokerInterface):
                         "Content-Type": "application/json"
                 }
 
-                order_request_start = time.perf_counter()
-
                 conn.request(
                     'POST',
                     '/openapi/typeb/orders/regular',
                     json.dumps(json_data),
                     headers
                 )
-
-                order_request_sent = time.perf_counter()
                 
                 raw_response = conn.getresponse().read().decode("utf-8")
-
-                order_response_received = time.perf_counter()
-
-                logger.debug(
-                    f"M.Stock BUY HTTP TIMING | "
-                    f"request_to_send={order_request_sent - order_request_start:.3f}s | "
-                    f"response_wait={order_response_received - order_request_sent:.3f}s | "
-                    f"total={order_response_received - order_request_start:.3f}s"
-                )                
-
                 logger.debug(f"Buy order response raw: {raw_response}")
                 conn.close()
                 
@@ -985,21 +950,6 @@ class MStockAdapter(BrokerInterface):
                         raise Exception(api_error)
                     else:
                         self._trader.frontend_data_socket.emit('buy_order_result',{"success": True, "tradingsymbol": trading_symbol , "Quantity": quantity})
-                        # FAST POSITION GRID UPDATE
-                        # Do this immediately after successful BUY,
-                        # before any SELL handling or REST position refresh.
-                        if (
-                            self._trader._broker_string == "MSTOCK"
-                            and self._trader._underlying == "SENSEX"
-                        ):
-                            self._trader.fast_update_position_after_buy(
-                                trading_symbol=trading_symbol,
-                                instrument_token=instrument_token,
-                                quantity=int(qty) // int(lotsize),
-                                lotsize=lotsize,
-                                executed_buy_price=ltp,
-                                exchange=exchange
-                            )                        
                         # Checking what time advantage we get by placing sell order immediately after buy order even before position / order refresh happens
 
                         # self._trader.frontend_data_socket.emit('buy_order_result',{"success": True, "tradingsymbol": trading_symbol , "Quantity": quantity})
@@ -1413,125 +1363,22 @@ class MStockAdapter(BrokerInterface):
         except Exception as e:
             logger.error(f"MStock unsubscribe failed: {e}")
 
-    # def subscribe_to_all(self, instruments):
-    #     logger.info("Subscribing to all instruments in M.Stock...")
-    #     if not instruments:
-    #         return
-    #     try:
-    #         loop = asyncio.get_running_loop()
-    #         loop.create_task(self.mstock_instance._subscribe_to_instruments(instruments))
-    #         return
-    #     except RuntimeError:
-    #         pass
-
-    #     logger.info("No running loop detected; running MStock subscribe synchronously.")
-    #     try:
-    #         asyncio.run(self.mstock_instance._subscribe_to_instruments(instruments))
-    #     except Exception as e:
-    #         logger.error(f"MStock subscribe failed: {e}")
-
-    # MSTOCK_SENSEX
-
     def subscribe_to_all(self, instruments):
         logger.info("Subscribing to all instruments in M.Stock...")
-
         if not instruments:
-            logger.info("No instruments to subscribe.")
             return
-
         try:
-            # Group tokens by M.Stock exchange type.
-            #
-            # M.Stock WebSocket expects:
-            #   exchangeType 2 -> NSE
-            #   exchangeType 3 -> BSE
-            #
-            # The instrument master gives us the exchange segment
-            # (exch_seg), so do not assume every token belongs to NSE.
+            loop = asyncio.get_running_loop()
+            loop.create_task(self.mstock_instance._subscribe_to_instruments(instruments))
+            return
+        except RuntimeError:
+            pass
 
-            exchange_tokens = {}
-
-            for instrument_token in instruments:
-
-                token = str(instrument_token)
-
-                try:
-                    data = find_matching_object(
-                        self._MSTOCK_INSTRUMENT_FILE,
-                        "token",
-                        token
-                    )
-
-                    if not data:
-                        logger.warning(
-                            f"Instrument details not found for token {token}. "
-                            f"Skipping WebSocket subscription."
-                        )
-                        continue
-
-                    exchange = str(data.get("exch_seg", "")).upper()
-
-                    if exchange in ("NSE", "NFO"):
-                        exchange_type = 2
-
-                    elif exchange in ("BSE", "BFO"):
-                        exchange_type = 3 if exchange == "BSE" else 4
-
-                    else:
-                        logger.warning(
-                            f"Unknown M.Stock exchange '{exchange}' "
-                            f"for token {token}. Skipping subscription."
-                        )
-                        continue
-
-                    exchange_tokens.setdefault(exchange_type, []).append(token)
-
-                    logger.debug(
-                        f"M.Stock subscription mapping: "
-                        f"token={token}, exchange={exchange}, "
-                        f"exchangeType={exchange_type}"
-                    )
-
-                except Exception as e:
-                    logger.error(
-                        f"Error resolving exchange for token {token}: {e}"
-                    )
-
-            if not exchange_tokens:
-                logger.warning(
-                    "No valid instruments available for M.Stock subscription."
-                )
-                return
-
-            logger.info(
-                f"M.Stock exchange-grouped subscriptions: {exchange_tokens}"
-            )
-
-            try:
-                loop = asyncio.get_running_loop()
-
-                loop.create_task(
-                    self.mstock_instance._subscribe_to_instruments(
-                        exchange_tokens
-                    )
-                )
-                return
-
-            except RuntimeError:
-                pass
-
-            logger.info(
-                "No running loop detected; running M.Stock subscribe synchronously."
-            )
-
-            asyncio.run(
-                self.mstock_instance._subscribe_to_instruments(
-                    exchange_tokens
-                )
-            )
-
+        logger.info("No running loop detected; running MStock subscribe synchronously.")
+        try:
+            asyncio.run(self.mstock_instance._subscribe_to_instruments(instruments))
         except Exception as e:
-            logger.error(f"M.Stock subscribe failed: {e}")
+            logger.error(f"MStock subscribe failed: {e}")
 
     async def start_socket_connection(self, shutdown_event, trader_instance):
         logger.info("Starting socket connection in M.StockAdapter...")
@@ -1785,25 +1632,8 @@ class MStockAdapter(BrokerInterface):
             nifty_opts = opt_df[opt_df["symbol"].str.upper().str.contains("NIFTY")]
             sensex_opts = opt_df[opt_df["symbol"].str.upper().str.contains("SENSEX")]
 
-            # expiry_nifty_date = nifty_opts.sort_values("expiry")["expiry"].dropna().iloc[0] if not nifty_opts.empty else None
-            # expiry_sensex_date = sensex_opts.sort_values("expiry")["expiry"].dropna().iloc[0] if not sensex_opts.empty else None
-            
-            today = pd.Timestamp.now().normalize()
-
-            future_nifty_opts = nifty_opts[nifty_opts["expiry"] >= today]
-            future_sensex_opts = sensex_opts[sensex_opts["expiry"] >= today]
-
-            expiry_nifty_date = (
-                future_nifty_opts.sort_values("expiry")["expiry"].dropna().iloc[0]
-                if not future_nifty_opts.empty
-                else None
-            )
-
-            expiry_sensex_date = (
-                future_sensex_opts.sort_values("expiry")["expiry"].dropna().iloc[0]
-                if not future_sensex_opts.empty
-                else None
-            )            
+            expiry_nifty_date = nifty_opts.sort_values("expiry")["expiry"].dropna().iloc[0] if not nifty_opts.empty else None
+            expiry_sensex_date = sensex_opts.sort_values("expiry")["expiry"].dropna().iloc[0] if not sensex_opts.empty else None
 
             expiry_nifty = expiry_nifty_date.strftime("%d") if expiry_nifty_date is not None else ""
             expiry_sensex = expiry_sensex_date.strftime("%d") if expiry_sensex_date is not None else ""

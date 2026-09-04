@@ -1,8 +1,25 @@
 import json
 from loguru import logger
+from core import shared_state  # Import the shared state
+from core.trade_logic import Trader_Singleton
 
-def trading_view_handle_func(data):
+def trading_view_handle_func(data , trader : Trader_Singleton):
     logger.debug(f"Received data from TradingView: {data}")
+    try:
+        # Store latest TradingView data in shared state
+        #shared_state.latest_tradingview_data = data
+        trader.process_TradingView_Data(data)
+        
+        # logger.debug(f"Updated shared_state with latest TradingView data.")
+        # logger.debug(f"1m EMA50: {data['EMA']['1m']['EMA50']}")
+        
+        return {"status": "success", "msg": "Data stored successfully"}
+    except Exception as e:
+        logger.error(f"Error handling TradingView data: {e}")
+        return {"status": "error", "msg": str(e)}
+    
+    
+    #logger.debug(f"1m EMA is:{data["EMA"]["1m"]["EMA50"]}")
     # val = data["name"]
     # return {"msg" : "done"}
 

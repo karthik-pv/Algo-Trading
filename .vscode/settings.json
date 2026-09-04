@@ -1,0 +1,11 @@
+{
+  "workbench.colorCustomizations": {
+    "titleBar.activeBackground": "#FF7722",
+    "titleBar.activeForeground": "#FFFFFF",
+    "activityBar.background": "#FF7722",
+    "statusBar.background": "#FF7722",
+    "statusBar.foreground": "#FFFFFF"
+  },
+  "window.title": "🟧 Ayodhya-Style Saffron — ${folderName}",
+  "workbench.colorTheme": "Dark+"
+}

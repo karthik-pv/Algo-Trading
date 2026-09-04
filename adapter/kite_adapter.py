@@ -9,7 +9,20 @@ from utils import get_trading_symbols_from_json , find_matching_row_in_csv , fet
 from core.kite_connector import KiteSingleton
 from interface.broker_interface import BrokerInterface
 from core.trade_logic import Trader_Singleton
-from adapter.kite_utils import fund_summary_attribute_mgmt , position_attribute_mgmt , orders_attribute_mgmt, instrument_details_attribute_mgmt
+from adapter.kite_utils import fund_summary_attribute_mgmt , position_attribute_mgmt , orders_attribute_mgmt, instr_det_attrib_mgmt
+
+import pandas as pd
+import json
+
+from utils import is_market_open
+
+from core import shared_state
+
+from utils import clear_json_cache
+
+import os
+
+
 
 
 class KiteAdapter(BrokerInterface):
@@ -18,17 +31,120 @@ class KiteAdapter(BrokerInterface):
         self._trader = Trader_Singleton()
         self.kite_instance = KiteSingleton()
         self.kite = self.kite_instance.get_kite()
-        self.supported_exchanges = ["MCX", "NIFTY"]
+        self._underlying = fetch_from_json("constants.json" , "UNDERLYING")
+        
         self._limit_margin = fetch_from_json("constants.json" , "LIMIT_MARGIN")
-        self._instrument_cache = {}
+        self._ORDER_FREEZE_LIMIT = fetch_from_json("constants.json", f"{'NIFTY' if self._underlying == 'NIFTY' else 'SENSEX'}_ORDER_FREEZE_LIMIT")
 
+        self._instrument_cache = {}       # stores processed instruments keyed by tradingsymbol
+        self._instrument_data_loaded = {}  # raw data loaded from CSV once
+        self._csv_loaded = False           # flag to check if CSV has been read
+
+        self.constants = {
+            "EXCHANGE": "",
+            "NEAR_MONTH_FUTURE_TOKEN": "",
+            "EXPIRY_MONTH": "",
+            "EXPIRY_YEAR": "",
+            "NIFTY_EXPIRY_DATE": "",
+            "SENSEX_EXPIRY_DATE": "",
+            "NEAR_FUTURE_NEAR_OPTION_EXPIRE_TOGETHER": False
+        }
+    
+    def update_constants(self, new_values: dict):
+        """Update dictionary with new values"""
+        self.constants.update(new_values)
+
+    def get_constant(self, key):
+        """Retrieve a specific value"""
+        return self.constants.get(key)
+
+    def show_constants(self):
+        """Print or return the full dictionary"""
+        logger.debug(f"Updated Constants are : {self.constants}")
+
+
+    def _load_instruments_from_csv(self, csv_path="kite_instruments.csv"):
+        """Loads all instrument data from CSV into memory once."""
+        logger.info("Loading instrument data from CSV into memory...")
+        try:
+            with open(csv_path, mode="r", encoding="utf-8") as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    ts = row.get("tradingsymbol")
+                    if ts:
+                        self._instrument_data_loaded[ts] = row
+            self._csv_loaded = True
+            logger.info(f"Loaded {len(self._instrument_data_loaded)} instruments into memory.")
+        except Exception as e:
+            logger.error(f"Failed to load instrument CSV: {e}")
+
+
+    def get_instrument_details(self, tradingsymbol):
+        logger.info(f"Attempting to fetch instrument details for {tradingsymbol}")
+
+        # ✅ 1. Check processed cache first
+        if tradingsymbol in self._instrument_cache:
+            logger.info(f"Cache HIT for instrument: {tradingsymbol}")
+            return self._instrument_cache[tradingsymbol]
+
+        # ✅ 2. Ensure CSV is loaded into memory
+        if not self._csv_loaded:
+            self._load_instruments_from_csv()
+
+        # ✅ 3. Lookup instrument in preloaded memory
+        data = self._instrument_data_loaded.get(tradingsymbol)
+        if not data:
+            logger.error(f"No instrument details found for {tradingsymbol} in in-memory CSV data.")
+            return None
+
+        logger.info(f"Cache MISS for instrument: {tradingsymbol}. Using in-memory CSV data.")
+        processed_data = instr_det_attrib_mgmt(data)
+        logger.log(logging.INFO, f"Instrument Details (processed): {processed_data}")
+
+        # ✅ 4. Cache processed result for next time
+        self._instrument_cache[tradingsymbol] = processed_data
+        return processed_data
+
+
+    def fetch_expiries(self , underlying):
+        logger.info(f"fetch_expiries {underlying} from M.Stock...")
+    
     def fetch_all_orders(self):
         try:
             orders = orders_attribute_mgmt(self.kite.orders())
+            #logger.debug(f"Fetched Orders: {orders}")
             return orders
         except Exception as e:
             logger.error(f"Kite fetch_all_orders error: {e}")
-            return None
+            return []
+        
+    def fetch_all_orders_for_export(self):
+        """
+        Fetch orders from Kite and normalize fields
+        to match mStock structure.
+        """
+        try:
+            orders = self.kite.orders()
+
+            normalized = []
+
+            for o in orders:
+
+                normalized.append({
+                    "timestamp": o.get("exchange_timestamp") or o.get("order_timestamp"),
+                    "tradingsymbol": o.get("tradingsymbol"),
+                    "transaction_type": o.get("transaction_type"),
+                    "quantity": o.get("filled_quantity"),
+                    "average_price": o.get("average_price"),
+                    "order_status": o.get("status"),
+                    "order_id": o.get("order_id")
+                })
+
+            return normalized
+
+        except Exception:
+            logger.exception("Kite order fetch failed")
+            return []        
 
     def fetch_all_instruments(self):
         try:
@@ -40,17 +156,54 @@ class KiteAdapter(BrokerInterface):
 
     def fetch_all_positions(self):
         try:
-            positions = self.kite.positions()
-            positions = position_attribute_mgmt(positions["net"])
-            positions = [p for p in positions if p["quantity"] > 0]
+            raw_positions = self.kite.positions()
+            if isinstance(raw_positions, dict):
+                positions = raw_positions.get("net", [])
+            else:
+                positions = raw_positions or []
+
+            if not positions:
+                logger.info("Kite returned no open positions on startup refresh.")
+                return []
+
+            positions = position_attribute_mgmt(positions)
+            positions = [
+                p for p in positions
+                if float(p.get("quantity", 0) or 0) > 0
+            ]
+
             for position in positions:
-                position["lotsize"] = int(self.get_instrument_details(position["tradingsymbol"])["lot_size"])
-                position["quantity"] = position["quantity"]/position["lotsize"]
+                tradingsymbol = position.get("tradingsymbol") or position.get("symbol")
+                if not tradingsymbol:
+                    logger.warning(f"Skipping Kite position entry with no tradingsymbol: {position}")
+                    continue
+
+                position["tradingsymbol"] = tradingsymbol
+                instrument_details = self.get_instrument_details(tradingsymbol)
+                if instrument_details and instrument_details.get("lot_size"):
+                    position["lotsize"] = int(instrument_details["lot_size"])
+                else:
+                    logger.warning(
+                        f"Missing instrument details for {tradingsymbol}. Using lot_size=1 so refresh can continue."
+                    )
+                    position["lotsize"] = 1
+
+                position["quantity"] = float(position.get("quantity", 0) or 0)
+                position["average_price"] = float(position.get("average_price", 0) or 0)
+                position["instrument_token"] = str(position.get("instrument_token", position.get("token", 0)))
+                position["exchange"] = position.get("exchange", "NFO")
+
+                if position["exchange"] != "MCX":
+                    try:
+                        position["quantity"] = position["quantity"] / position["lotsize"]
+                    except ZeroDivisionError:
+                        position["quantity"] = float(position.get("quantity", 0) or 0)
+
             pprint(positions)
             return positions
         except Exception as e:
             logger.error(f"Kite fetch_all_positions error: {e}")
-            return None
+            return []
 
     def fetch_all_trades(self):
         try:
@@ -60,6 +213,7 @@ class KiteAdapter(BrokerInterface):
             return None
         
     def fetch_fund_summary(self):
+        logger.info("Calling fetch_fund_summary of Kite Connect")
         try:
             fund_summary = fund_summary_attribute_mgmt(self.kite.margins())
             return fund_summary
@@ -70,6 +224,7 @@ class KiteAdapter(BrokerInterface):
     def fetch_instrument_quote(self , exchange , instrument):
         try:
             formatted_instrument = f"{exchange}:{instrument}"
+            logger.info(f"Fetching quote for {formatted_instrument} from Kite API...")
             instrument_quote = self.kite.quote(formatted_instrument)
             return instrument_quote
         except Exception as e:
@@ -84,21 +239,24 @@ class KiteAdapter(BrokerInterface):
         except Exception as e:
             logger.error(f"Error getting LTP {e}")
     
-    def get_instrument_details(self, tradingsymbol):
-        logger.info(f"Attempting to fetch instrument details for {tradingsymbol}")
-        if tradingsymbol in self._instrument_cache:
-            logger.info(f"Cache HIT for instrument: {tradingsymbol}")
-            return self._instrument_cache[tradingsymbol]
-        logger.info(f"Cache MISS for instrument: {tradingsymbol}. Fetching from source (CSV).")
-        data = find_matching_row_in_csv("kite_instruments.csv", "tradingsymbol", tradingsymbol)
-        if not data:
-            logger.error(f"No instrument details found for {tradingsymbol} in kite_instruments.csv")
-            return None
-        logger.info(f"Instrument details fetched from CSV: {data}")
-        processed_data = instrument_details_attribute_mgmt(data)
-        logger.log("DATA", f"Instrument Details (processed): {processed_data}")
-        self._instrument_cache[tradingsymbol] = processed_data
-        return processed_data
+    # def get_instrument_details(self, tradingsymbol):
+    #     logger.info(f"Attempting to fetch instrument details for {tradingsymbol}")
+        
+    #     if tradingsymbol in self._instrument_cache:
+    #         logger.info(f"Cache HIT for instrument: {tradingsymbol}")
+    #         return self._instrument_cache[tradingsymbol]
+        
+    #     logger.info(f"Cache MISS for instrument: {tradingsymbol}. Fetching from source (CSV).")
+        
+    #     data = find_matching_row_in_csv("kite_instruments.csv", "tradingsymbol", tradingsymbol)
+    #     if not data:
+    #         logger.error(f"No instrument details found for {tradingsymbol} in kite_instruments.csv")
+    #         return None
+    #     logger.info(f"Instrument details fetched from CSV: {data}")
+    #     processed_data = instr_det_attrib_mgmt(data)
+    #     logger.log("DATA", f"Instrument Details (processed): {processed_data}")
+    #     self._instrument_cache[tradingsymbol] = processed_data
+    #     return processed_data
 
     def format_option_symbol(self ,  underlying: str,
         expiry: datetime.date,
@@ -108,6 +266,7 @@ class KiteAdapter(BrokerInterface):
         call_or_put = call_or_put.upper()
         yy = expiry.year % 100
 
+
         logger.info(f"Formatting option symbol for {underlying}, expiry: {expiry}, strike: {strike}, type: {call_or_put}")
 
         if underlying == "CRUDEOIL" or underlying == "CRUDEOILM":
@@ -115,61 +274,217 @@ class KiteAdapter(BrokerInterface):
             
             return f"{underlying}{yy}{month_abbr}{strike}{call_or_put}"
         else:
-            month_char = calendar.month_name[expiry.month][0].upper()
-            dd_str = f"{expiry.day:02d}"
+
+            #FUTURE AND OPTIONS EXPIRING TOGETHER
+            # Get the first letter of the month name, e.g., 'October' -> 'O'
+            # if the weekly expiry doesnt coincide with monthly expiry of the near month future token ..then it would be first letter of the month followed by 2 digits of expiry date
+            # if the weekly expiry coincides with monthly expiry of the near month future token ..then it would be first three letters of the month and no digits of expiry date
             
+            if self.get_constant("NEAR_FUTURE_NEAR_OPTION_EXPIRE_TOGETHER"): 
+                month_char = calendar.month_name[expiry.month][:3].upper()
+                dd_str=""
+            else:
+                #month_char = calendar.month_name[expiry.month][0].upper()
+                month_char = str(expiry.month)
+                dd_str = f"{expiry.day:02d}"        
+
+            logger.info(f"{underlying}{yy}{month_char}{dd_str}{strike}{call_or_put}")
             return f"{underlying}{yy}{month_char}{dd_str}{strike}{call_or_put}"
     
-    def buy_units(self, trading_symbol, instrument_token, quantity , exchange , ltp):
+    #self._broker.buy_units(order_details["tradingsymbol"] , order_details["token"] , order_details["lots"] , self._exchange , ltp,self._mode,sell_mode,target_profit)
+    def buy_units(self, trading_symbol, instrument_token, quantity , exchange , ltp,mode="",sell_mode="",target_profit=0):
+        logger.info(f"Buying units: {quantity} of {trading_symbol} ({instrument_token}) via KiteAPI...Current LTP: {ltp}...Mode is {mode}. Sell Mode is {sell_mode}, target_profit is {target_profit}")
+        #logger.debug(f"Inside Buy Units trading symbol: {trading_symbol} instrument token: {instrument_token}, quantity: {quantity} lots, exchange: {exchange}, ltp: {ltp}" )
+        # data = shared_state.latest_tradingview_data
+        # if not data:
+        #     logger.warning("No TradingView data available for validation.")
+        #     return
+        
+        # pvt_30m = data['PVT']['30m']
+        # logger.debug(f"pvt_30m is : {pvt_30m}")
         try:
+            lotsize = self.get_instrument_details(trading_symbol)["lot_size"]
             if exchange == "MCX":
                 order_type = self.kite.ORDER_TYPE_LIMIT
-                price = ltp+self._limit_margin
-            else:
-                order_type = self.kite.ORDER_TYPE_MARKET
-                price = 0
-            lotsize = self.get_instrument_details(trading_symbol)["lot_size"]
-            logger.debug(f"Quantity - {int(quantity) * int(lotsize)}")
-            order_id = self.kite.place_order(
-                tradingsymbol=trading_symbol, 
-                exchange = exchange,
-                transaction_type=self.kite.TRANSACTION_TYPE_BUY,
-                quantity= str(int(quantity) * int(lotsize)),
-                order_type = order_type,
-                product = self.kite.PRODUCT_MIS,
-                variety=self.kite.VARIETY_REGULAR, 
-                price = price
+                price = float(ltp)+float(self._limit_margin)
+
+                order_id = self.kite.place_order(
+                    tradingsymbol=trading_symbol, 
+                    exchange = exchange,
+                    transaction_type=self.kite.TRANSACTION_TYPE_BUY,
+                    quantity= str(quantity),
+                    order_type = order_type,
+                    product = self.kite.PRODUCT_MIS,
+                    variety=self.kite.VARIETY_REGULAR, 
+                    price = price
             )
+            else:
+                # order_type = self.kite.ORDER_TYPE_MARKET
+                # quantity = int(quantity) * int(lotsize)
+                # price = 0
+
+                # Changed from Market to Limit to avoid KiteConnection library upgrade and to mimic the market protection 
+                order_type = self.kite.ORDER_TYPE_LIMIT
+                quantity = int(quantity) * int(lotsize)
+                #price = 0
+                price = float(ltp)+float(self._limit_margin) 
+
+
+
+                #This checks if the quantity is greater the Order Freeze Limit..
+                #If so then it check if it can be converted into 2 legs or more
+                #if Not reset the quantity to max order freeze limit so that quantity could be executed as normal order
+                #If it can be converted intio more than 2 legs that it takes the iceberg route
+
+                if quantity > int(self._ORDER_FREEZE_LIMIT):
+                    if quantity // int(self._ORDER_FREEZE_LIMIT) == 1:
+                        logger.info(f"Quantity {quantity} is more thae than Order Freeze Limit {self._ORDER_FREEZE_LIMIT} but not big enough for 2 iceberg legs. So restricting it Order freeze limit (normal order)")
+                        quantity = self._ORDER_FREEZE_LIMIT
+
+                if int(quantity) <= int(self._ORDER_FREEZE_LIMIT):
+                    logger.debug(f"Quantity - {int(quantity)}. Executing for Normal Order")
+                    order_id = self.kite.place_order(
+                        tradingsymbol=trading_symbol, 
+                        exchange = exchange,
+                        transaction_type=self.kite.TRANSACTION_TYPE_BUY,
+                        quantity= str(quantity),
+                        order_type = order_type,
+                        product = self.kite.PRODUCT_MIS,
+                        variety=self.kite.VARIETY_REGULAR, 
+                        price = price
+                    )
+                else:
+                    logger.debug(f"Quantity - {int(quantity)}. Executing as an Iceberg Order")
+                    order_type = self.kite.ORDER_TYPE_LIMIT # Iceberg order cannot be of type Market
+                    
+                    iceberg_legs = quantity // int(self._ORDER_FREEZE_LIMIT) # This will be 2 or more
+                    
+                    price = float(ltp)+float(self._limit_margin) 
+                    logger.debug(f"Arrived iceberg legs - {iceberg_legs} with iceberg quantity {self._ORDER_FREEZE_LIMIT}")
+                    order_id = self.kite.place_order(
+                        tradingsymbol=trading_symbol, 
+                        exchange = exchange,
+                        transaction_type=self.kite.TRANSACTION_TYPE_BUY,
+                        quantity= str(quantity),
+                        order_type = order_type,
+                        product = self.kite.PRODUCT_MIS,
+                        variety="iceberg", 
+                        price = price,
+                        iceberg_legs=iceberg_legs,
+                        iceberg_quantity= self._ORDER_FREEZE_LIMIT
+                    )
             logger.info("Kite buy order placed successfully")
+            self._trader.frontend_data_socket.emit('status_message',{"success": True, "message": "Order placed successfully"})
             return order_id
         except Exception as e:
             logger.error(f"Error in kite buy order {e}")
+            self._trader.frontend_data_socket.emit('status_message', {"success": False, "message": "Error placing order..."})
     
 
     def sell_units(self, trading_symbol, instrument_token , quantity, exchange , ltp):
+        logger.debug(f"Inside sell units trading symbol: {trading_symbol} instrument token: {instrument_token} quantity: {quantity} exchange: {exchange} ltp: {ltp}" )
         try:
+            lotsize = self.get_instrument_details(trading_symbol)["lot_size"]
             if exchange == "MCX":
                 order_type = self.kite.ORDER_TYPE_LIMIT
-                price = ltp-self._limit_margin
+                price = float(ltp)-float(self._limit_margin)
+                order_id = self.kite.place_order(
+                    tradingsymbol=trading_symbol, 
+                    exchange = exchange,
+                    transaction_type=self.kite.TRANSACTION_TYPE_SELL,
+                    quantity= str(quantity),
+                    order_type = order_type,
+                    product = self.kite.PRODUCT_MIS,
+                    variety=self.kite.VARIETY_REGULAR, 
+                    price = price
+                )                
             else:
-                order_type = self.kite.ORDER_TYPE_MARKET
-                price = 0
-            lotsize = self.get_instrument_details(trading_symbol)["lot_size"]
-            logger.debug(f"Quantity - {int(quantity) * int(lotsize)}")
-            order_id = self.kite.place_order(
-                tradingsymbol=trading_symbol,
-                exchange=exchange,
-                transaction_type=self.kite.TRANSACTION_TYPE_SELL,
-                quantity= int(quantity) * int(lotsize),
-                order_type=order_type,
-                product=self.kite.PRODUCT_MIS,
-                variety=self.kite.VARIETY_REGULAR,
-                price = price
-            )
+                # Changed from Market to Limit to avoid KiteConnection library upgrade and to mimic the market protection 
+                order_type = self.kite.ORDER_TYPE_LIMIT
+                quantity = int(quantity) * int(lotsize)
+                #price = 0
+                price = float(ltp)-float(self._limit_margin) 
+
+                #This checks if the quantity is greater the Order Freeze Limit..
+                #If so then it check if it can be converted into 2 legs or more
+                #if Not reset the quantity to max order freeze limit so that quantity could be executed as normal order
+                #If it can be converted intio more than 2 legs that it takes the iceberg route
+
+                if quantity > int(self._ORDER_FREEZE_LIMIT):
+                    if quantity // int(self._ORDER_FREEZE_LIMIT) == 1:
+                        logger.info(f"Quantity {quantity} is more than than Order Freeze Limit {self._ORDER_FREEZE_LIMIT} but not big enough for 2 iceberg legs. So restricting it Order freeze limit (normal order)")
+                        quantity = self._ORDER_FREEZE_LIMIT
+
+                if int(quantity) <= int(self._ORDER_FREEZE_LIMIT):
+                    logger.debug(f"Quantity - {int(quantity)}. ")
+                    logger.debug(
+                        "Placing SELL Normal order",
+                        extra={
+                            "tradingsymbol": trading_symbol,
+                            "exchange": exchange,
+                            "transaction_type": self.kite.TRANSACTION_TYPE_SELL,
+                            "quantity": quantity,
+                            "order_type": order_type,
+                            "product": self.kite.PRODUCT_MIS,
+                            "variety": self.kite.VARIETY_REGULAR,
+                            "price": price,
+                            "ltp": ltp
+                        }
+                    )
+
+                    order_id = self.kite.place_order(
+                        tradingsymbol=trading_symbol, 
+                        exchange = exchange,
+                        transaction_type=self.kite.TRANSACTION_TYPE_SELL,
+                        quantity= str(quantity),
+                        order_type = order_type,
+                        product = self.kite.PRODUCT_MIS,
+                        variety=self.kite.VARIETY_REGULAR, 
+                        price = price
+                    )
+                else:
+                    logger.debug(f"Quantity - {int(quantity)}. Executing as an Iceberg Order")
+                    order_type = self.kite.ORDER_TYPE_LIMIT # Iceberg order cannot be of type Market
+                    
+                    iceberg_legs = quantity // int(self._ORDER_FREEZE_LIMIT) # This will be 2 or more
+                    
+                    price = float(ltp)-float(self._limit_margin) 
+                    logger.debug(f"Arrived iceberg legs - {iceberg_legs} with iceberg quantity {self._ORDER_FREEZE_LIMIT}")
+                    logger.debug(
+                        "Placing SELL ICEBERG order",
+                        extra={
+                            "tradingsymbol": trading_symbol,
+                            "exchange": exchange,
+                            "transaction_type": self.kite.TRANSACTION_TYPE_SELL,
+                            "quantity": quantity,
+                            "order_type": order_type,
+                            "product": self.kite.PRODUCT_MIS,
+                            "variety": "iceberg",
+                            "price": price,
+                            "iceberg_legs": iceberg_legs,
+                            "iceberg_quantity": self._ORDER_FREEZE_LIMIT,
+                            "ltp": ltp
+                        }
+                    )                    
+                    order_id = self.kite.place_order(
+                        tradingsymbol=trading_symbol, 
+                        exchange = exchange,
+                        transaction_type=self.kite.TRANSACTION_TYPE_SELL,
+                        quantity= str(quantity),
+                        order_type = order_type,
+                        product = self.kite.PRODUCT_MIS,
+                        variety="iceberg", 
+                        price = price,
+                        iceberg_legs=iceberg_legs,
+                        iceberg_quantity= self._ORDER_FREEZE_LIMIT
+                    )
+
             logger.info(f"Kite Sell order placed successfully. Order ID: {order_id}")
+            self._trader.frontend_data_socket.emit('status_message',{"success": True, "message": "Order executed successfully"})
             return order_id
         except Exception as e:
             logger.error(f"Kite sell_units error: {e}")
+            self._trader.frontend_data_socket.emit('status_message', {"success": False, "message": "Error placing order..."})
             return None
 
     def subscribe_to_all(self, instruments):
@@ -178,6 +493,7 @@ class KiteAdapter(BrokerInterface):
             instrument_tokens = [int(i) for i in instruments]
             if socket and socket.is_connected():
                 socket.subscribe(instrument_tokens)
+                socket.set_mode(socket.MODE_FULL, instrument_tokens)
             logger.debug(f"Subscribed to {instrument_tokens}")
         except Exception as e:
             logger.error("Error in subscribing to instruments {e}")
@@ -196,16 +512,40 @@ class KiteAdapter(BrokerInterface):
 
         def on_connect(ws, response):
             logger.info("Connected to Kite WebSocket")
+            self._trader.setup_woc_subscriptions()
 
         def on_close(ws, code, reason):
             logger.warning(f"Kite WebSocket closed: {code}, {reason}")
 
+        # def on_order_update(ws, data):
+        #     logger.info(f"Kite Order update: {data}")
+        #     self._trader.refresh_open_pos_buy_price()
+        #     subscribe_instruments = self._trader.get_relevant_instruments_to_track()
+        #     if subscribe_instruments:
+        #         try:
+        #             subscribe_instruments_list = [int(i) for i in subscribe_instruments]
+        #             ws.subscribe(subscribe_instruments_list)
+        #             ws.set_mode(ws.MODE_FULL, subscribe_instruments_list)
+        #         except Exception as e:
+        #             logger.error(f"Error casting elements of subscribe_instruments to int: {e}. Instruments: {subscribe_instruments}")
+
+
         def on_order_update(ws, data):
             logger.info(f"Kite Order update: {data}")
-            self._trader.refresh_open_positions_and_buy_price()
+            try:
+                self._trader.refresh_open_pos_buy_price()
+            except Exception as e:
+                logger.error(f"Failed to refresh positions after Kite order update: {e}", exc_info=True)
+                return
+
             subscribe_instruments = self._trader.get_relevant_instruments_to_track()
             if subscribe_instruments:
-                ws.subscribe(subscribe_instruments)
+                try:
+                    subscribe_instruments_list = [int(i) for i in subscribe_instruments]
+                    ws.subscribe(subscribe_instruments_list)
+                    ws.set_mode(ws.MODE_FULL, subscribe_instruments_list)
+                except Exception as e:
+                    logger.error(f"Error casting elements of subscribe_instruments to int: {e}. Instruments: {subscribe_instruments}")
 
         socket.on_ticks = on_ticks
         socket.on_connect = on_connect
@@ -215,7 +555,7 @@ class KiteAdapter(BrokerInterface):
         socket.connect(threaded=True)
         # if shutdown_event:
         #     shutdown_event.wait()
-        socket.close()
+        #socket.close()
 
     
 
@@ -228,7 +568,39 @@ class KiteAdapter(BrokerInterface):
         else:
             self.kite_instance.initialise_kite_for_prod()
 
-    def download_instrument_list(self,exchange):
+    def download_instrument_list(self,exchange,underlying):
+        
+        filename = "kite_instruments.csv"
+        token_file = "access_token.json"
+
+        # ✅ Check if instruments already downloaded today
+        try:
+            if os.path.exists(filename) and os.path.exists(token_file):
+
+                with open(token_file, "r") as f:
+                    token_data = json.load(f)
+
+                last_run = token_data.get("kite_last_downloaded_instruments_timestamp")
+
+                if last_run:
+                    last_run_date = datetime.fromisoformat(last_run).date()
+                    today = datetime.now().date()
+                    # Forcing to download everyday as for some reason it is not getting downloaded at all as the date all the time remains the same
+                    # Look into this issue later
+                    if last_run_date == today:
+                        logger.info(f"{filename} already downloaded today. Using existing file.")
+
+                        # still update constants from existing file
+                        self.update_instrument_constants(filename, underlying, "constants.json")
+                        return
+
+        except Exception as e:
+            logger.warning(f"Could not validate last run timestamp: {e}")
+
+        logger.info(f"Downloading Instrument List for {exchange} and {underlying}")
+
+        
+        logger.info(f"Downloading Instrument List for {exchange} and {underlying}")
         try:
             mcx_instruments = self.kite.instruments(exchange)
             if not mcx_instruments:
@@ -241,7 +613,228 @@ class KiteAdapter(BrokerInterface):
                     writer.writeheader()
                     writer.writerows(mcx_instruments)
                 logger.info(f"Successfully saved instruments to {filename}")
+
+                from utils import write_to_json
+                write_to_json({"kite_last_downloaded_instruments_timestamp": datetime.now().isoformat()}, "access_token.json")
+
+                self.update_instrument_constants("kite_instruments.csv", underlying, "constants.json")
+
         except NameError:
             logger.error("The 'kite' object is not defined. Please ensure you have properly initialized and authenticated your KiteConnect object before running this code.")
         except Exception as e:
             logger.error(f"An error occurred during fetching or saving: {e}")
+
+    
+
+    def update_constants_file(self,data, json_file="constants.json"):
+        logger.info("Constants file going to be updated")
+        """Update or create constants.json with the given data."""
+        try:
+            # Load existing constants
+            with open(json_file, "r") as f:
+                constants = json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError):
+            constants = {}
+
+        # Update keys
+        constants.update(data)
+
+        # Write back to file (pretty format)
+        with open(json_file, "w") as f:
+            json.dump(constants, f, indent=4)
+
+        logger.info("Constants file updated successfully.")
+
+
+    def update_instrument_constants(self,csv_file, underlying, json_file="constants.json"):
+        logger.debug(f"instrument constants to be updated for {csv_file} and for underlying {underlying}")
+        df = pd.read_csv(csv_file)
+        underlying = underlying.upper().strip()
+
+        # Mapping for index family
+        index_mapping = {
+            'NIFTY': ['NIFTY'],
+            'SENSEX': ['SENSEX'],
+            'CRUDEOIL':['CRUDEOIL'],
+            'CRUDEOILM':['CRUDEOILM']
+        }
+
+        # --- 1️⃣ Find nearest future ---
+        fut_df = df[
+            (df['instrument_type'] == 'FUT') &
+            (df['name'].isin(index_mapping.get(underlying, [underlying])))
+        ].copy()
+
+        if fut_df.empty:
+            raise ValueError(f"No futures found for {underlying}")
+
+        fut_df['expiry'] = pd.to_datetime(fut_df['expiry'])
+        nearest_future = fut_df.sort_values('expiry').iloc[0]
+
+        exchange = nearest_future['exchange']
+        trading_symbol = nearest_future['tradingsymbol']
+        expiry_date_future = nearest_future['expiry']
+        expiry_month = expiry_date_future.strftime('%b').upper()
+        expiry_year = expiry_date_future.strftime('%Y')
+
+        # --- 2️⃣ Find nearest weekly options ---
+        opt_df = df[
+            (df['instrument_type'].isin(['CE', 'PE'])) &
+            (df['name'].isin(['NIFTY', 'BANKNIFTY', 'SENSEX']))
+        ].copy()
+
+        expiry_nifty = None
+        expiry_sensex = None
+        expire_together = False  # default
+
+        if not opt_df.empty:
+            opt_df['expiry'] = pd.to_datetime(opt_df['expiry'])
+            nifty_weekly = opt_df[opt_df['name'] == 'NIFTY'].sort_values('expiry')
+            sensex_weekly = opt_df[opt_df['name'].isin(['SENSEX'])].sort_values('expiry')
+
+            expiry_nifty_date = nifty_weekly['expiry'].iloc[0] if not nifty_weekly.empty else None
+            expiry_sensex_date = sensex_weekly['expiry'].iloc[0] if not sensex_weekly.empty else None
+
+            expiry_nifty = expiry_nifty_date.strftime('%d') if expiry_nifty_date is not None else ""
+            expiry_sensex = expiry_sensex_date.strftime('%d') if expiry_sensex_date is not None else ""
+
+            # --- 3️⃣ Determine if near future and near option expire together ---
+            if underlying == "NIFTY" and expiry_nifty_date is not None:
+                expire_together = expiry_nifty_date.date() == expiry_date_future.date()
+            elif underlying == "SENSEX" and expiry_sensex_date is not None:
+                expire_together = expiry_sensex_date.date() == expiry_date_future.date()
+
+        # --- 4️⃣ Prepare update dictionary ---
+        update_data = {
+            "EXCHANGE": exchange,
+            "NEAR_MONTH_FUTURE_TOKEN": trading_symbol,
+            #"NEAR_MONTH_FUTURE_TOKEN": "CRUDEOILM25DECFUT",
+            "EXPIRY_MONTH": expiry_month,
+            #"EXPIRY_MONTH": "DEC",
+            "EXPIRY_YEAR": expiry_year,
+            "NIFTY_EXPIRY_DATE": expiry_nifty,
+            "SENSEX_EXPIRY_DATE": expiry_sensex,
+            "NEAR_FUTURE_NEAR_OPTION_EXPIRE_TOGETHER": expire_together
+        }
+
+        self._trader._exchange = exchange
+        self._trader._near_month_future_symbol = trading_symbol
+
+
+        # --- 5️⃣ Write to constants.json ---
+        self.update_constants_file(update_data, json_file)
+        clear_json_cache("constants.json")
+        self.update_constants(update_data)
+        logger.debug(self.show_constants())
+
+    def get_quote(self, tradingsymbol):
+
+        logger.info(f"Getting Quote for {tradingsymbol} from Kite API...")
+
+        try:
+
+            data = self.get_instrument_details(tradingsymbol)
+
+            # 🟢 Skip REST calls when market closed
+            if not is_market_open():
+
+                logger.info("Market closed — using instrument last_price")
+
+                price = float(data.get("last_price", 0))
+
+                if price > 0:
+                    return [price, price]
+
+            quote = self.fetch_instrument_quote(data["exchange"], tradingsymbol)
+
+            logger.debug(f"Raw quote data received: {quote}")
+
+            # Kite response key format
+            key = f"{data['exchange']}:{tradingsymbol}"
+
+            if not quote or key not in quote:
+                raise Exception(f"Quote missing for {key}")
+
+            q = quote[key]
+
+            ltp = q["last_price"]
+            open_price = q["ohlc"]["open"]
+
+            return [ltp, open_price]
+
+        except Exception as e:
+
+            logger.error(f"Fetch Instrument Quote failed for {tradingsymbol}: {e}")
+
+            if "NIFTY" in tradingsymbol.upper():
+
+                if tradingsymbol.endswith(("CE", "PE")):
+                    logger.warning(f"Returning fallback option LTP 100 for {tradingsymbol}.")
+                    return [100, 100]
+
+                logger.warning(
+                    f"Returning fallback LTP {self._trader._NIFTY_FALLBACK_LTP} for NIFTY."
+                )
+                return [
+                    self._trader._NIFTY_FALLBACK_LTP,
+                    self._trader._NIFTY_FALLBACK_LTP,
+                ]
+
+            elif "SENSEX" in tradingsymbol.upper():
+
+                logger.warning(
+                    f"Returning fallback LTP {self._trader._SENSEX_FALLBACK_LTP} for SENSEX."
+                )
+                return [
+                    self._trader._SENSEX_FALLBACK_LTP,
+                    self._trader._SENSEX_FALLBACK_LTP,
+                ]
+
+            else:
+
+                logger.warning(
+                    f"Returning fallback LTP {self._trader._NIFTY_FALLBACK_LTP}."
+                )
+                return [
+                    self._trader._NIFTY_FALLBACK_LTP,
+                    self._trader._NIFTY_FALLBACK_LTP,
+                ]
+            
+    def get_quotes_batch(self, symbols):
+
+        try:
+
+            instruments = [f"NFO:{s}" for s in symbols]
+
+            logger.info(f"Fetching batch quotes for {len(instruments)} instruments")
+
+            data = self.kite.quote(instruments)
+
+            result = {}
+
+            for sym in symbols:
+
+                key = f"NFO:{sym}"
+
+                if key in data:
+
+                    q = data[key]
+
+                    result[sym] = [
+                        q["last_price"],
+                        q["ohlc"]["open"]
+                    ]
+
+            return result
+
+        except Exception as e:
+
+            logger.error(f"Batch quote failed: {e}")
+            return {}            
+        
+    def fetch_all_pending_orders(self):
+        logger.info("Fetching pending orders from Kite API...")
+        # This was implemented in MStock when user wants to cancel an order for one or the other reason. We are not using this feature in MStock itself. So for now dont need to implement this in Kite. We can always implement this in future if we want to use the order cancellation feature.
+        return []
+
+

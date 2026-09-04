@@ -3,8 +3,13 @@ import threading
 import logging
 import asyncio
 import os
+import pandas as pd
+
 from flask import Flask, jsonify, request, Response, render_template
 from flask_cors import CORS
+from datetime import datetime
+from datetime import timedelta
+
 
 from core.trade_logic import Trader_Singleton
 from interface.broker_interface import BrokerInterface
@@ -12,18 +17,53 @@ from adapter.kite_adapter import KiteAdapter
 from adapter.mstock_adapter import MStockAdapter
 from core.trading_view_handler import trading_view_handle_func
 
-from utils import is_market_open , fetch_from_json
+from utils import is_market_open , fetch_from_json,backup_old_logs
+
+from adapter.mstock_utils import save_orders_to_csv 
 
 from loguru import logger
+
+import tempfile
+from flask import request, send_file
+
 
 
 logging.getLogger("urllib3").setLevel(logging.WARNING) # Avoids any degug messages from urlib3
 logging.getLogger('werkzeug').setLevel(logging.ERROR)
+
+logging.getLogger('websockets').setLevel(logging.WARNING)
+logging.getLogger('kiteconnect').setLevel(logging.WARNING)
+
 logger.remove()
 
 # File logging
+# logger.add(
+#     "logs/app.log",
+#     rotation="10 MB",
+#     retention="7 days",
+#     level="DEBUG",
+#     format=(
+#         "{time:YYYY-MM-DD HH:mm:ss:SSS} | "
+#         "{level:<8} | "
+#         "{file:<25} | "
+#         "{function:<25} | "
+#         "{message} | "
+        
+#     )
+# )
+
+#Every new session creates a new log file
+
+# Create folder name in mm_dd format
+folder_name = datetime.now().strftime("%m_%d")
+log_dir = os.path.join("logs", folder_name)
+os.makedirs(log_dir, exist_ok=True)
+
+session_time = datetime.now().strftime("%Y%m%d_%H%M%S")
+log_file = os.path.join(log_dir, f"app_{session_time}.log")
+
 logger.add(
-    "logs/app.log",
+    log_file,
     rotation="10 MB",
     retention="7 days",
     level="DEBUG",
@@ -31,11 +71,11 @@ logger.add(
         "{time:YYYY-MM-DD HH:mm:ss:SSS} | "
         "{level:<8} | "
         "{file:<25} | "
-        "{function:<25} | "
+        "{function:<28} | "
         "{message} | "
-        
-    )
+    ),
 )
+
 
 #Console logging
 logger.add(
@@ -83,10 +123,22 @@ CORS(app)
 BROKER_MAP = {"KITE": KiteAdapter, "MSTOCK": MStockAdapter}
 
 CURRENT_BROKER = fetch_from_json("constants.json" , "BROKER")
+UNDERLYING = fetch_from_json("constants.json" , "UNDERLYING")
 
-EXCHANGE = fetch_from_json("constants.json" , "EXCHANGE")
+logger.debug(f"Current Broker is {CURRENT_BROKER} and underlying is {UNDERLYING}")
+
+if UNDERLYING == "NIFTY":
+    EXCHANGE = "NFO"
+elif UNDERLYING == "SENSEX":
+    EXCHANGE = "BFO"
+elif UNDERLYING == "CRUDEOIL" :
+    EXCHANGE = "MCX"
+elif UNDERLYING == "CRUDEOILM" :
+    EXCHANGE = "MCX"
 
 broker: BrokerInterface = BROKER_MAP[CURRENT_BROKER]()
+
+trader = Trader_Singleton()
 
 shutdown_event = threading.Event()
 
@@ -148,6 +200,26 @@ def save_settings():
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
+@app.route("/update_sell_mode", methods=["POST"])
+def update_sell_mode():
+    try:
+        data = request.json
+        new_mode = data.get("mode")
+
+        with open("settings.json", "r") as f:
+            settings = json.load(f)
+
+        settings["MODE"] = new_mode  # ✅ ONLY UPDATES MODE
+
+        with open("settings.json", "w") as f:
+            json.dump(settings, f, indent=4)
+
+        return jsonify({"success": True})
+
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)})
+
+
 @app.route("/constants")
 def constants():
     return render_template("constants.html")
@@ -181,6 +253,214 @@ def get_orders():
     orders = broker.fetch_all_orders()
     logger.log("DATA", f"Orders: {orders}")
     return jsonify(orders if orders else {"error": "Could not fetch orders"})
+
+
+@app.route("/import_executed_trades_kite", methods=["POST"])
+def import_executed_trades_kite_route():
+    """
+    Flask endpoint:
+    - receives trade_date
+    - loads all orders via KiteAdapter.fetch_all_orders()
+    - filters by date
+    - calls save_orders_to_csv()
+    """
+    try:
+        payload = request.get_json(silent=True)
+
+        if not payload or "trade_date" not in payload:
+            return jsonify({"success": False, "error": "Missing trade_date"}), 400
+
+        trade_date = payload["trade_date"]
+
+        # 1️⃣ Fetch all orders
+        all_orders = broker.fetch_all_orders_for_export()
+
+        if not all_orders:
+            return jsonify({"success": False, "error": "No orders found"}), 404
+
+        df = pd.DataFrame(all_orders)
+
+        if "timestamp" not in df.columns:
+            return jsonify({"success": False, "error": "timestamp missing"}), 500
+
+        df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce")
+
+        target_date = pd.to_datetime(trade_date).date()
+
+        # 2️⃣ Filter date
+        df = df[df["timestamp"].dt.date == target_date]
+
+        # 3️⃣ Keep executed trades
+        df = df[df["order_status"].astype(str).str.lower() == "complete"]
+
+        if df.empty:
+            return jsonify({
+                "success": False,
+                "error": f"No executed trades on {trade_date}"
+            })
+
+        filtered_orders = df.to_dict(orient="records")
+
+        filename = f"kite_executed_{trade_date}.csv"
+
+        save_orders_to_csv(filtered_orders, filename)
+
+        return jsonify({
+            "success": True,
+            "message": f"{len(filtered_orders)} trades saved to {filename}"
+        })
+
+    except Exception as e:
+        logger.exception("Error importing Kite trades")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/import_executed_trades", methods=["POST"])
+def import_executed_trades_route():
+    """
+    Flask endpoint:
+    - receives trade_date from Utilities.html
+    - loads all orders via MStockAdapter.fetch_all_orders()
+    - filters orders by date
+    - calls adapter.save_orders_to_csv()
+    """
+    try:
+        payload = request.get_json(silent=True)
+        logger.info(f"Import executed trades payload: {payload}")
+        if not payload or "trade_date" not in payload:
+            return jsonify({
+                "success": False,
+                "error": "Missing trade_date"
+            }), 400
+
+        trade_date = payload["trade_date"]
+
+        # 1️⃣ Fetch all orders
+        all_orders = broker.fetch_all_orders()
+        logger.info(f"Total orders fetched: {len(all_orders)}")
+
+
+        if not all_orders:
+            return jsonify({
+                "success": False,
+                "error": "No orders found"
+            }), 404
+
+        df = pd.DataFrame(all_orders)
+
+        # timestamp must exist
+        if "timestamp" not in df.columns:
+            return jsonify({"success": False, "error": "timestamp missing"}), 500
+
+        df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce")
+
+        # 2️⃣ Filter by selected date
+        target_date = pd.to_datetime(trade_date).date()
+        df = df[df["timestamp"].dt.date == target_date]
+
+        # 3️⃣ Keep only executed/traded orders
+        df = df[df["status"].astype(str).str.lower() == "COMPLETE"]
+        #df = df[df["order_status"].astype(str).str.lower() == "traded"]
+
+        if df.empty:
+            return jsonify({
+                "success": False,
+                "error": f"No executed trades on {trade_date}"
+            })
+
+        filtered_orders = df.to_dict(orient="records")
+
+        logger.info(f"Filtered executed orders count: {filtered_orders}")
+
+        # 3️⃣ Save to CSV using adapter's routine
+        filename = f"mstock_executed_{trade_date}.csv"
+        save_orders_to_csv(filtered_orders, filename)
+
+        return jsonify({
+            "success": True,
+            "message": f"{len(filtered_orders)} trades saved to {filename}"
+        })
+
+    except Exception as e:
+        logger.error(f"Error importing executed trades: {e}")
+        # import traceback
+        # traceback.print_exc()
+        # return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/import_executed_trades_kite", methods=["POST"])
+def import_executed_trades_kite():
+    """
+    Flask endpoint for Kite Connect:
+    - receives trade_date
+    - loads all orders via kite.orders()
+    - filters executed trades by date
+    - saves to CSV
+    """
+    try:
+        payload = request.get_json(silent=True)
+
+        if not payload or "trade_date" not in payload:
+            return jsonify({
+                "success": False,
+                "error": "Missing trade_date"
+            }), 400
+
+        trade_date = payload["trade_date"]
+
+        # 1️⃣ Fetch all orders from Kite
+        all_orders = kite.orders()
+
+        if not all_orders:
+            return jsonify({
+                "success": False,
+                "error": "No orders found"
+            }), 404
+
+        df = pd.DataFrame(all_orders)
+
+        if "order_timestamp" not in df.columns:
+            return jsonify({
+                "success": False,
+                "error": "order_timestamp missing"
+            }), 500
+
+        # Convert timestamp
+        df["order_timestamp"] = pd.to_datetime(
+            df["order_timestamp"], errors="coerce"
+        )
+
+        # 2️⃣ Filter by date
+        target_date = pd.to_datetime(trade_date).date()
+
+        df = df[df["order_timestamp"].dt.date == target_date]
+
+        # 3️⃣ Keep only executed trades
+        df = df[df["status"].str.upper() == "COMPLETE"]
+
+        if df.empty:
+            return jsonify({
+                "success": False,
+                "error": f"No executed trades on {trade_date}"
+            })
+
+        filtered_orders = df.to_dict(orient="records")
+
+        # 4️⃣ Save CSV
+        filename = f"kite_executed_{trade_date}.csv"
+        save_orders_to_csv(filtered_orders, filename)
+
+        return jsonify({
+            "success": True,
+            "message": f"{len(filtered_orders)} trades saved to {filename}"
+        })
+
+    except Exception as e:
+        logger.error(f"Error importing executed trades: {e}")
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
 
 
 @app.route("/instruments")
@@ -220,11 +500,17 @@ def get_fund_summary():
     logger.log("DATA", f"Fund Summary: {fund_summary}")
     return jsonify({"data" : fund_summary})
 
-@app.route("/instrument_quote")
-def get_instrument_quote():
-    logger.info("Fetching instrument quote for NFO 52168")
-    quotes = broker.fetch_instrument_quote("NFO" , "52168")
-    return jsonify(quotes)
+# @app.route("/instrument_quote")
+# def get_instrument_quote():
+#     logger.info("Fetching instrument quote for NFO 52168")
+#     quotes = broker.fetch_instrument_quote("NFO" , "52168")
+#     return jsonify(quotes)
+
+@app.route("/get_expiries")
+def getExpiries():
+    logger.info("Fetching expiries")
+    expiries = broker.fetch_expiries("NIFTY")
+    return jsonify(expiries)
 
 
 @app.route("/sell", methods=["POST"])
@@ -244,6 +530,22 @@ def sell():
     return jsonify({"error": "Failed to place sell order"}), 400
 
 
+@app.route("/manual-refresh-positions", methods=["POST"])
+def manual_refresh_positions():
+    logger.info("Received manual refresh positions request")
+
+    try:
+        # Call the adapter method you showed
+        broker.manual_refresh_positions()
+
+        return jsonify({"message": "Positions refreshed successfully"}), 200
+
+    except Exception as e:
+        logger.exception("Error occurred during manual position refresh")
+        return jsonify({"error": str(e)}), 500
+
+
+
 @app.route("/instruments/json")
 def instruments_json():
     logger.info("Fetching instruments from JSON")
@@ -258,7 +560,7 @@ def instruments_json():
 def trading_view():
     logger.info("Received TradingView webhook")
     data = request.json
-    res = trading_view_handle_func(data)
+    res = trading_view_handle_func(data, trader)
     return jsonify(res)
 
 @app.route("/kite_callback")
@@ -268,8 +570,13 @@ def kite_login_callback():
 
 
 def run_flask_app():
-    logger.info("Starting Flask app...")
-    app.run(debug=True, use_reloader=False)
+    logger.info("FLASK THREAD: Starting Flask app...")
+
+    app.run(
+        debug=True,
+        use_reloader=False,
+        threaded=True
+    )
 
 @app.route("/alert")
 def alert_page():
@@ -288,27 +595,62 @@ def widget_one():
 
 @app.route("/buy_dashboard")
 def dashboard():
-    logger.info("Rendering buy dashboard page")
-    return render_template("buy_dashboard.html")
+    logger.info("BUY DASHBOARD: Request received")
+    page = render_template("buy_dashboard.html")
+    logger.info("BUY DASHBOARD: Template rendered")
+    return page
 
 @app.route("/settings")
 def settings():
     logger.info("Rendering settings page")
     return render_template("settings.html")
 
+@app.route("/Utilities")
+def Utilities():
+    logger.info("Rendering Utilities page")
+    return render_template("Utilities.html")
+
+
+@app.route("/convert_contract_note", methods=["POST"])
+def convert_contract_note():
+    pdf_file = request.files.get("pdf")
+    if not pdf_file:
+        return {"error": "No PDF uploaded"}, 400
+
+    # Save PDF temporarily
+    tmp_pdf = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
+    pdf_file.save(tmp_pdf.name)
+
+    try:
+        csv_path = broker.convert_mstock_contract_note(tmp_pdf.name)
+    except Exception as e:
+        os.unlink(tmp_pdf.name)
+        return {"error": str(e)}, 500
+
+    os.unlink(tmp_pdf.name)
+
+    return send_file(
+        csv_path,
+        as_attachment=True,
+        download_name="paired_trades.csv",
+        mimetype="text/csv"
+    )
+
 
 async def start_async_connections():
     logger.info("Starting async connections...")
     logger.debug(f"Broker type: {type(broker)}")
     if isinstance(broker, MStockAdapter):   
-        trader.setup_weekly_option_contract_subscriptions()
-        if is_market_open():
-            flask_thread = threading.Thread(target=run_flask_app, daemon=True)
-            flask_thread.start()
-            await broker.start_socket_connection(shutdown_event, trader_instance=trader)
-            trader.refresh_subscriptions()
-        else:
-            run_flask_app()
+        logger.info("DEBUG: About to start M.Stock WebSocket connection...")
+        #trader.setup_woc_subscriptions()
+        #if is_market_open():
+        # flask_thread = threading.Thread(target=run_flask_app, daemon=True)
+        # flask_thread.start()
+        logger.info("DEBUG: Calling broker.start_socket_connection()...")
+        await broker.start_socket_connection(shutdown_event, trader_instance=trader)
+        trader.refresh_subscriptions()
+        # else:
+        #     run_flask_app()
     else:
         logger.info("M.Stock not selected, skipping async socket start.")
 
@@ -317,14 +659,19 @@ def start_socket():
     try:
         logger.info("Starting broker WebSocket connection...")
         broker.start_socket_connection(shutdown_event, trader_instance=trader)
-        trader.setup_weekly_option_contract_subscriptions()
+        #trader.setup_woc_subscriptions()
         trader.refresh_subscriptions()
     except Exception as e:
         logger.error(f"Socket error: {e}")
 
 
-if __name__ == "__main__":
+if 1==1: #__name__ == "__main__":
+#if __name__ == "__main__":
     try:
+
+        backup_old_logs()    
+
+        #app.run(host='0.0.0.0', port=5000, debug=True)
         logger.info("Initializing broker and trader...")
         trader = Trader_Singleton() 
         # uncomment for development
@@ -335,10 +682,18 @@ if __name__ == "__main__":
         broker.prod_start()
         #logger.info("Starting in production mode...")
         #broker.fetch_all_instruments()
-        broker.download_instrument_list(EXCHANGE)
+        broker.download_instrument_list(EXCHANGE,UNDERLYING)
         trader.set_broker(broker)
-        trader.on_start()
+        
         trader.start_frontend_socket_server(app)
+        
+        if CURRENT_BROKER == "MSTOCK":
+            logger.info("FLASK: Launching Flask thread...")
+            flask_thread = threading.Thread(target=run_flask_app, daemon=True)
+            flask_thread.start()
+            logger.info("FLASK: Flask thread launched.")
+
+        trader.on_start()
         
 
         if CURRENT_BROKER == "KITE":
@@ -357,3 +712,7 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         shutdown_event.set()
         logger.info("Shutting down server...")
+
+
+
+    

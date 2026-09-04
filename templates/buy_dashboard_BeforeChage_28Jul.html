@@ -8,16 +8,10 @@
     /* This is modified to stack the widgets vertically */
     .main-content {
         display: flex;
-        flex-direction: column;
-        align-items: center;
-
-        padding-top: 5px;      /* <-- Reduce space above Sell Positions */
-        padding-right: 1rem;
-        padding-bottom: 1rem;
-        padding-left: 1rem;
-
-        gap: 10px;             /* <-- Reduce space between Sell & Buy */
-
+        flex-direction: column; /* Stack widgets vertically */
+        align-items: center;     /* Center them horizontally */
+        padding: 2rem 1rem;      /* Add some padding */
+        gap: 2rem;               /* Space between the widgets */
         box-sizing: border-box;
     }
 
@@ -28,7 +22,7 @@
         border: 1px solid #444; transition: box-shadow 0.4s ease, border-color 0.4s ease;
     }
     #buy-widget-container {
-        width: 1150px; max-width: 95%; border-color: #2e7d32;
+        width: 900px; max-width: 95%; border-color: #2e7d32;
         box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6), 0 0 20px rgba(76, 175, 80, 0.25);
     }
     #buy-widget-container.put-view {
@@ -42,7 +36,7 @@
     .summary-item { text-align: center; }
     .summary-label { display: block; font-size: 0.8rem; color: #aaa; text-transform: uppercase; letter-spacing: 0.5px; }
     .summary-value { display: block; font-size: 1.4rem; font-weight: 600; color: #ffffff; margin-top: 0.25rem; }
-    /* .header-info-container {
+    .header-info-container {
         display: flex;
         justify-content: space-between; /* Pushes info left, toggles right */
         align-items: center;
@@ -50,7 +44,7 @@
         padding: 0.5rem 0;
         margin-bottom: 1.5rem;
         border-bottom: 1px solid #444; /* Add a separator */
-    } */
+    }
     .header-details {
         display: flex;
         flex-wrap: wrap; /* Allow details to wrap */
@@ -70,45 +64,18 @@
     }
     .header-toggles {
         display: flex;
+        border: 1px solid #444;
         border-radius: 7px;
         overflow: hidden;
     }
-    .toggle-button { background-color: transparent; color: #ccc; border: 1px solid #666; padding: 0.6rem 1.2rem; cursor: pointer; font-size: 0.9rem; font-weight: 500; transition: background-color 0.3s; }
-    .toggle-button + .toggle-button { border-left: none; }
+    .toggle-button { background-color: transparent; color: #ccc; border: none; padding: 0.6rem 1.2rem; cursor: pointer; font-size: 0.9rem; font-weight: 500; transition: background-color 0.3s; }
+    .toggle-button:first-child { border-right: 1px solid #444; }
     .toggle-button.active-toggle { background-color: #2e7d32; color: white; }
     #buy-widget-container.put-view .toggle-button.active-toggle { background-color: #c62828; }
-    .announcement-toggle-label {
-        display: inline-flex;
-        align-items: center;
-        gap: 6px;
-        color: #ccc;
-        font-size: 0.85rem;
-        margin-right: 10px;
-        padding: 6px 8px;
-        border: 1px solid #666;
-        border-radius: 7px;
-        background-color: transparent;
-        user-select: none;
-    }
-    .announcement-toggle-label input[type="checkbox"] {
-        width: 14px;
-        height: 14px;
-        accent-color: #2e7d32;
-        cursor: pointer;
-    }
     .buy-button { background-color: #28a745; color: white; border: none; padding: 0.6rem 1rem; border-radius: 5px; cursor: pointer; font-size: 0.9rem; font-weight: 500; transition: background-color 0.2s; }
     .buy-button:disabled {background-color: #ccc; color: #666;cursor: not-allowed;opacity: 0.7;}    
     .buy-button:hover { background-color: #218838; }
-    .buy-button.put-buy-button { background-color: #dc3545; }
-    .buy-button.put-buy-button:hover { background-color: #c82333; }
-    .expiry-label {
-        color: white;
-        min-width: auto;
-        white-space: nowrap;
-        flex: 0 0 auto;
-        margin-right: 18px;
-        font-size: 0.8rem;
-    }
+    .expiry-label {color: white;min-width: 100px;}
 
     .toggle-container {
     width :100%;
@@ -117,21 +84,15 @@
     justify-content: space-between; /* 👈 pushes label left, buttons right */
     padding: 8px 12px;
     }   
-    .toggle-container > div:first-child {
-    flex: 1 1 auto;
-    min-width: 0;
-    display: flex;
-    align-items: center;
-    gap: 0;
-    overflow: visible;
+    .toggle-container > div {
+    flex: 0 0 60%;      /* default for left side */
     }
 
     .toggle-container > div:last-child {
-        flex: 0 0 auto;
+        flex: 0 0 40%;      /* right side buttons */
         display: flex;
         justify-content: flex-end;
-        gap: 8px;
-        white-space: nowrap;
+        gap: 10px;
     }
 
 .expiry-label {
@@ -141,24 +102,7 @@
 
 .toggle-buttons {
     display: flex;
-    align-items: center;
-    gap: 8px;                 /* separation between labels */
-}
-
-.toggle-buttons .expiry-label {
-    background-color: hsl(0, 1%, 26%);
-    padding: 5px 10px;
-    border-radius: 4px;
-    border: 1px solid #c8c8c8;
-    display: inline-flex;
-    align-items: center;
-    white-space: nowrap;
-}
-
-/*
-.toggle-buttons {
-    display: flex;
-    gap: 10px; 
+    gap: 10px; /* spacing between buttons */
     color: black;
 }
 
@@ -169,7 +113,7 @@
     cursor: pointer;
     background-color: #eee;
     color: black;
-} */
+}
 
 .active-toggle {
     background-color: #007bff;
@@ -302,7 +246,7 @@
         .option-table th, .option-table td { padding: 0.5rem; font-size: 0.7rem; }
     }
     @media (max-width: 900px) {
-        .main-content { padding-top: 5px; }
+        .main-content { padding-top: 5rem; }
         .widget-container { padding: 1rem; }
         .widget-container h2 { font-size: 1.5rem; }
         .option-table th, .option-table td { padding: 0.5rem; font-size: 0.75rem; }
@@ -325,24 +269,6 @@
         background-color: transparent;
     }
 
-    .buy-options-header {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    position: relative;
-    margin-bottom: 0.5rem;
-    }
-
-    .buy-options-header h2 {
-        margin: 0;
-    }
-
-    .buy-options-header .toggle-buttons {
-        position: absolute;
-        right: 0;
-        display: flex;
-        gap: 8px;
-    }
 
 
 
@@ -354,6 +280,34 @@
 <main class="main-content">
     {% include 'sell_widget_partial.html' %}    
     <div class="widget-container" id="buy-widget-container">
+        <h2 id="optionsTitle">Buy Options</h2>
+        <p>Status: <strong id="buyConnectionStatus" style="color: #ffc107;">Connecting...</strong></p> 
+        <div class="summary-container">
+            <div class="summary-item">
+                <span class="summary-label">Cash Balance</span>
+                <span class="summary-value" id="cashBalanceValue">Loading...</span>
+            </div>
+            <div class="summary-item">
+                <span class="summary-label">Utilized Funds</span>
+                <span class="summary-value" id="utilizedValue">Loading...</span>
+            </div>
+        </div>
+        <div class="toggle-container" style="width:100px; display:flex;">
+            <div class="toggle-buttons" width ="60px" >
+                <label id="broker" class="expiry-label"><span id="brokerValue">--</span></label>
+                <label id="exchange" class="expiry-label"><span id="exchangeValue">--</span></label>
+                <label id="underlying" class="expiry-label" style="margin-right: 20px;"><span id="underlyingValue">--</span></label>
+                <label id="ltp" class="expiry-label">    <span id="ltpValue">--</span></label>
+                <label id="nmf_chgo" class="expiry-label">    <span id="nmf_chgo_value">--</span></label>
+                <label id="expiryLabel" class="expiry-label"><span id="expiryValue">--</span></label>
+            </div>
+            <div class="toggle-buttons" width ="40px" >
+                <button class="toggle-button" id="refreshBtn" title="Refresh Options">&#x21bb;</button>
+                <button class="toggle-button active-toggle" id="callBtn">Calls</button>
+                <button class="toggle-button" id="putBtn">Puts</button>
+            </div>
+        </div>
+
         <table class="option-table">
             <thead>
                 <tr>
@@ -372,82 +326,7 @@
             <tbody id="optionsTableBody">
                 <tr><td colspan="7" class="no-options">Waiting for data from server...</td></tr>
             </tbody>
-        </table>        
-        <!--<h2 id="optionsTitle">Buy Options</h2>-->
-<!--        <div class="buy-options-header">
-            <div class="toggle-buttons">
-                <button class="toggle-button" id="refreshBtn" title="Refresh Options">&#x21bb;</button>
-                <button class="toggle-button active-toggle" id="callBtn">Calls</button>
-                <button class="toggle-button" id="putBtn">Puts</button>
-            </div>
-        </div>
-        <p>Status: <strong id="buyConnectionStatus" style="color: #ffc107;">Connecting...</strong></p> 
-        <div class="summary-container">
-            <div class="summary-item">
-                <span class="summary-label">Cash Balance</span>
-                <span class="summary-value" id="cashBalanceValue">Loading...</span>
-            </div>
-            <div class="summary-item">
-                <span class="summary-label">Utilized Funds</span>
-                <span class="summary-value" id="utilizedValue">Loading...</span>
-            </div>
-        </div>
--->        
-        <div class="toggle-container">
-
-        <!-- Left: Broker / Exchange / Future / Prices / Expiry -->
-        <div class="toggle-buttons">
-
-            <label id="broker" class="expiry-label">
-                <span id="brokerValue">--</span>
-            </label>
-<!--
-            <label id="exchange" class="expiry-label">
-                <span id="exchangeValue">--</span>
-            </label>
--->
-
-            <label id="underlying" class="expiry-label" style="margin-right: 20px;">
-                <span id="underlyingValue">--</span>
-            </label>
-
-            <label id="ltp" class="expiry-label">
-                <span id="ltpValue">--</span>
-            </label>
-
-            <label id="nmf_chgo" class="expiry-label">
-                <span id="nmf_chgo_value">--</span>
-            </label>
-
-            <label id="expiryLabel" class="expiry-label">
-                <span id="expiryValue">--</span>
-            </label>
-
-        </div>
-
-    <!-- Right: Refresh / Calls / Puts -->
-    <div class="toggle-buttons">
-        <label class="announcement-toggle-label" title="Enable or disable voice announcement" aria-label="Voice announcement toggle">
-            <input type="checkbox" id="announcementToggle" checked>
-            <span aria-hidden="true">&#128266;</span>
-        </label>
-
-        <button class="toggle-button" id="refreshBtn" title="Refresh Options">
-            &#x21bb;
-        </button>
-
-        <button class="toggle-button active-toggle" id="callBtn">
-            Calls
-        </button>
-
-        <button class="toggle-button" id="putBtn">
-            Puts
-        </button>
-    </div>
-
-</div>
-
-      
+        </table>
     </div>
 
     <!-- === Trade Setups Table Container (below Sell Positions) === -->
@@ -532,7 +411,6 @@
 {% block scripts %}
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-    console.log('BUY DASHBOARD JS: DOMContentLoaded', new Date().toISOString());
     // --- SOCKET CONNECTION ---
     const socket = io('http://localhost:5001');
 
@@ -543,17 +421,16 @@ document.addEventListener('DOMContentLoaded', function() {
     const optionsTitle = document.getElementById('optionsTitle');
     const callBtn = document.getElementById('callBtn');
     const putBtn = document.getElementById('putBtn');
+    const refreshBtn = document.getElementById('refreshBtn');
     const cashBalanceEl = document.getElementById('cashBalanceValue');
     const utilizedEl = document.getElementById('utilizedValue');
     const brokerValueEl = document.getElementById('brokerValue');
-    //const exchangeValueEl = document.getElementById('exchangeValue');
+    const exchangeValueEl = document.getElementById('exchangeValue');
     const underlyingValueEl = document.getElementById('underlyingValue');
     const ltpValueEl = document.getElementById('ltpValue');
     const chgOValueEl = document.getElementById('nmf_chgo_value');
     const expiryValueEl = document.getElementById('expiryValue');
-    const announcementToggleEl = document.getElementById('announcementToggle');
     const positionsTableBody = document.getElementById('positionsTableBody');
-    console.log('positionsTableBody =', positionsTableBody);
     const sellConnectionStatus = document.getElementById('sellConnectionStatus');
 
 
@@ -615,19 +492,7 @@ document.addEventListener('DOMContentLoaded', function() {
         socket.emit('request_weekly_options');
         socket.emit('request_open_positions');
         socket.emit('request_pending_orders');
-        socket.emit('voice_announcement_toggle', {
-            enabled: announcementToggleEl ? announcementToggleEl.checked : true
-        });
     });
-
-    if (announcementToggleEl) {
-        announcementToggleEl.checked = true;
-        announcementToggleEl.addEventListener('change', () => {
-            socket.emit('voice_announcement_toggle', {
-                enabled: announcementToggleEl.checked
-            });
-        });
-    }
 
     socket.on('disconnect', () => {
         buyConnectionStatus.textContent = 'Disconnected';
@@ -640,22 +505,16 @@ document.addEventListener('DOMContentLoaded', function() {
 
     socket.on('setup_data', (data) => {
         if (data.broker) brokerValueEl.textContent = data.broker;
-        //if (data.exchange) exchangeValueEl.textContent = data.exchange;
+        if (data.exchange) exchangeValueEl.textContent = data.exchange;
         if (data.underlying) underlyingValueEl.textContent = data.underlying;
-        if (data.positions_data) {
-            openPositions = data.positions_data;
-        }
         if (data.order_strategy_mapping) {
             orderStrategyMapping = data.order_strategy_mapping;
             console.log("Received strategy mapping:", orderStrategyMapping);
         }
         // Repopulate tables if needed to apply initial strategies
         if (Object.keys(allContracts).length > 0) populateOptionsTable(allContracts, callBtn.classList.contains('active-toggle') ? 'CE' : 'PE');
-        //if (Object.keys(openPositions).length > 0 && positionsTableBody) populatePositionsTable(openPositions);
-        if (positionsTableBody) 
-        {
-            populatePositionsTable(openPositions);
-}       });
+        if (Object.keys(openPositions).length > 0 && positionsTableBody) populatePositionsTable(openPositions);
+    });
 
     //badd
     socket.on('near-month-ltp-updated', (payload) => {
@@ -800,22 +659,10 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 
     socket.on('update_open_positions', (positions) => {
-        console.log(
-        'UPDATE_OPEN_POSITIONS RECEIVED:',
-        new Date().toISOString(),
-        positions
-    );
         openPositions = positions;
         if (positionsTableBody) {
             populatePositionsTable(openPositions);
-
-            console.log(
-                'POSITION GRID RENDERED:',
-                new Date().toISOString()
-            );
-
         }
-
     });
 
    socket.on('price-updated-order', (tick) => {
@@ -854,8 +701,7 @@ document.addEventListener('DOMContentLoaded', function() {
         if (lotsCell && tick.lots !== undefined) {
              lotsCell.textContent = tick.lots;
              const overrideInput = document.getElementById(`override-lots-${token}`);
-             //if (overrideInput && !overrideInput.value) {
-              if (overrideInput ) { //This allows override input also to be updated when qty is recalculated based on new price
+             if (overrideInput && !overrideInput.value) {
                 overrideInput.placeholder = tick.lots;
              }
          }
@@ -932,20 +778,7 @@ document.addEventListener('DOMContentLoaded', function() {
             optionsTableBody.innerHTML = `<tr><td colspan="7" class="no-options">No ${optionType === 'CE' ? 'call' : 'put'} options found.</td></tr>`;
             return;
         }
-
-        // Keep a stable broker-agnostic level order (same visual order for KITE and MSTOCK).
-        const levelOrder = { OTM2: 0, OTM1: 1, ATM: 2, ITM1: 3, ITM2: 4 };
-        filteredContracts.sort(([, a], [, b]) => {
-            const aOrder = levelOrder[a.level] ?? 999;
-            const bOrder = levelOrder[b.level] ?? 999;
-
-            if (aOrder !== bOrder) {
-                return aOrder - bOrder;
-            }
-
-            // Fallback for unknown level labels.
-            return (a.ltp || 0) - (b.ltp || 0);
-        });
+        filteredContracts.sort(([, a], [, b]) => a.ltp - b.ltp);
 
         if (filteredContracts.length > 0) {
             const firstContract = filteredContracts[0][1];
@@ -1042,7 +875,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
             row.innerHTML = `
                 <td class="center">
-                    <button class="buy-button ${optionType === 'PE' ? 'put-buy-button' : ''}" data-token="${token}" data-tradingsymbol="${contract.name}" data-lots="${contract.lots || 0}">Buy</button>
+                    <button class="buy-button" data-token="${token}" data-tradingsymbol="${contract.name}" data-lots="${contract.lots || 0}">Buy</button>
                 </td>            
                 <td>${contract.level || ''}</td>
                 <td>${contract.call_or_put || ''}</td>
@@ -1137,7 +970,7 @@ document.addEventListener('DOMContentLoaded', function() {
         positionsTableBody.innerHTML = '';
         
         if (!positions || Object.keys(positions).length === 0) {
-            positionsTableBody.innerHTML = `<tr><td colspan="13" class="no-options">No open positions found.</td></tr>`;
+            positionsTableBody.innerHTML = `<tr><td colspan="12" class="no-options">No open positions found.</td></tr>`;
             return;
         }
         for (const token in positions) {
@@ -1325,6 +1158,19 @@ document.addEventListener('DOMContentLoaded', function() {
         //alert("enable_disable_callput_buttons function called")
         populateOptionsTable(allContracts, 'PE');
         enable_disable_callput_buttons(tvRecommendation)        
+    });
+
+    refreshBtn.addEventListener('click', () => {
+        console.log('Refresh button clicked. Emitting refresh-options-table event.');
+        socket.emit('refresh-options-table');
+
+        // Optional: Disable button to prevent spamming
+        refreshBtn.disabled = true;
+        refreshBtn.textContent = '...';
+        setTimeout(() => {
+            refreshBtn.disabled = false;
+            refreshBtn.innerHTML = '&#x21bb;'; // Put the icon back
+        }, 1000);
     });
 
     // --- SELL GRID REFRESH BUTTON HANDLER ---

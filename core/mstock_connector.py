@@ -90,10 +90,10 @@ class MStockSingleton:
             headers,
         )
         response = json.loads(conn.getresponse().read().decode("utf-8"))
-        logger.debug("Session token response: {response}", response=response)
+        #logger.debug("Session token response: {response}", response=response)
         
         access_token = response["data"]["jwtToken"]
-        logger.debug(f"Access token: {access_token}")
+        #logger.debug(f"Access token: {access_token}")
         
 
         data_to_update_json = {
@@ -119,12 +119,17 @@ class MStockSingleton:
                     login_message = f"LOGIN:{self._access_token}"
                     await ws.send(login_message)
 
-                    await asyncio.sleep(1)
+                    #await asyncio.sleep(1)
+                    
                     await self._subscribe_to_instruments(trader_instance.get_relevant_instruments_to_track())
 
+                    try:
+                        logger.info("Bootstrapping M.Stock weekly option contracts in background thread...")
+                        await asyncio.to_thread(trader_instance.setup_woc_subscriptions)
+                    except Exception as e:
+                        logger.exception(f"M.Stock options bootstrap failed after socket connect: {e}")
                     async for message in ws:
                         await self._handle_message(message)
-
             except websockets.exceptions.ConnectionClosed as e:
                 logger.warning(f"Connection closed: {e}. Reconnecting in 5s...")
                 await asyncio.sleep(5)
@@ -132,22 +137,206 @@ class MStockSingleton:
                 logger.error(f"WebSocket error: {e}. Retrying in 5s...")
                 await asyncio.sleep(5)
 
+    # async def _subscribe_to_instruments(self, instruments):
+    #     logger.info(f"Subscribing to instruments: {instruments}")
+    #     if not self._socket:
+    #         return
+    #     if instruments:
+    #         subscription_message = {
+    #             "correlationID": "Optional Field",
+    #             "action": 1,
+    #             "params": {
+    #                 "mode": 3,
+    #                 "tokenList": [{"exchangeType": 2, "tokens": instruments }],
+    #             },
+    #         }
+    #         await self._socket.send(json.dumps(subscription_message))
+    #         logger.info(f"Subscription sent for instruments: {instruments}")
+    #MSTOCK_SENSEX
+    # async def _subscribe_to_instruments(self, instruments):
+    #     logger.info(f"Subscribing to instruments: {instruments}")
+
+    #     if not self._socket:
+    #         logger.warning("M.Stock socket is not connected.")
+    #         return
+
+    #     if not instruments:
+    #         logger.info("No instruments to subscribe.")
+    #         return
+
+    #     # instruments should be grouped by exchange type.
+    #     # Expected format:
+    #     # {
+    #     #     2: ["NIFTY_TOKEN1", "NIFTY_TOKEN2"],
+    #     #     3: ["SENSEX_TOKEN1", "SENSEX_TOKEN2"]
+    #     # }
+
+    #     token_list = []
+
+    #     for exchange_type, tokens in instruments.items():
+    #         if not tokens:
+    #             continue
+
+    #         token_list.append({
+    #             "exchangeType": int(exchange_type),
+    #             "tokens": [str(token) for token in tokens]
+    #         })
+
+    #     if not token_list:
+    #         logger.info("No valid instruments to subscribe.")
+    #         return
+
+    #     # subscription_message = {
+    #     #     "correlationID": "Optional Field",
+    #     #     "action": 1,
+    #     #     "params": {
+    #     #         "mode": 3,
+    #     #         "tokenList": token_list
+    #     #     }
+    #     # }
+        
+    #     #MSTOCK_SENSEX
+    #     exchange = fetch_from_json("constants.json", "EXCHANGE")
+
+    #     exchange_type = 3 if exchange == "BFO" else 2
+
+    #     subscription_message = {
+    #         "correlationID": "Optional Field",
+    #         "action": 1,
+    #         "params": {
+    #             "mode": 3,
+    #             "tokenList": [{"exchangeType": exchange_type, "tokens": instruments}],
+    #         },
+    #     }
+
+
+
+    #     await self._socket.send(json.dumps(subscription_message))
+
+    #     logger.info(
+    #         f"M.Stock subscription sent: {subscription_message}"
+    #     )
+
+
+    # async def _subscribe_to_instruments(self, instruments):
+    #     logger.info(f"Subscribing to instruments: {instruments}")
+
+    #     if not self._socket:
+    #         logger.warning("M.Stock socket is not connected.")
+    #         return
+
+    #     if not instruments:
+    #         logger.info("No instruments to subscribe.")
+    #         return
+
+    #     # instruments should be grouped by exchange type.
+    #     #
+    #     # Expected format:
+    #     # {
+    #     #     2: ["NIFTY_TOKEN1", "NIFTY_TOKEN2"],
+    #     #     3: ["SENSEX_TOKEN1", "SENSEX_TOKEN2"]
+    #     #     }
+
+    #     token_list = []
+
+    #     for exchange_type, tokens in instruments.items():
+    #         if not tokens:
+    #             continue
+
+    #         token_list.append({
+    #             "exchangeType": int(exchange_type),
+    #             "tokens": [str(token) for token in tokens]
+    #         })
+
+    #     if not token_list:
+    #         logger.info("No valid instruments to subscribe.")
+    #         return
+
+    #     subscription_message = {
+    #         "correlationID": "Optional Field",
+    #         "action": 1,
+    #         "params": {
+    #             "mode": 3,
+    #             "tokenList": token_list
+    #         }
+    #     }
+
+    #     await self._socket.send(json.dumps(subscription_message))
+
+    #     logger.info(
+    #         f"M.Stock subscription sent: {subscription_message}"
+    #     )            
+
     async def _subscribe_to_instruments(self, instruments):
         logger.info(f"Subscribing to instruments: {instruments}")
+
         if not self._socket:
+            logger.warning("M.Stock socket is not connected.")
             return
-        if instruments:
-            subscription_message = {
-                "correlationID": "Optional Field",
-                "action": 1,
-                "params": {
-                    "mode": 3,
-                    "tokenList": [{"exchangeType": 2, "tokens": instruments }],
-                },
+
+        if not instruments:
+            logger.info("No instruments to subscribe.")
+            return
+
+        token_list = []
+
+        # Support both:
+        # 1. Simple list format:
+        #    ['TOKEN1', 'TOKEN2']
+        #
+        # 2. Exchange-grouped format:
+        #    {
+        #        2: ['NIFTY_TOKEN1', 'NIFTY_TOKEN2'],
+        #        4: ['SENSEX_TOKEN1', 'SENSEX_TOKEN2']
+        #    }
+
+        if isinstance(instruments, list):
+
+            exchange = fetch_from_json("constants.json", "EXCHANGE")
+
+            if exchange == "BFO":
+                exchange_type = 4
+            elif exchange == "BSE":
+                exchange_type = 3
+            elif exchange == "NFO":
+                exchange_type = 2
+            else:
+                exchange_type = 2
+
+            token_list.append({
+                "exchangeType": exchange_type,
+                "tokens": [str(token) for token in instruments]
+            })
+
+        else:
+
+            for exchange_type, tokens in instruments.items():
+                if not tokens:
+                    continue
+
+                token_list.append({
+                    "exchangeType": int(exchange_type),
+                    "tokens": [str(token) for token in tokens]
+                })
+
+        if not token_list:
+            logger.info("No valid instruments to subscribe.")
+            return
+
+        subscription_message = {
+            "correlationID": "Optional Field",
+            "action": 1,
+            "params": {
+                "mode": 3,
+                "tokenList": token_list
             }
-            await self._socket.send(json.dumps(subscription_message))
-            logger.info(f"Subscription sent for instruments: {instruments}")
-            
+        }
+
+        await self._socket.send(json.dumps(subscription_message))
+
+        logger.info(
+        f"M.Stock subscription sent: {subscription_message}"
+    )    
 
     async def _unsubscribe_from_all(self , instruments):
         logger.info("Unsubscribing from all instruments")
@@ -165,15 +354,46 @@ class MStockSingleton:
             await self._socket.send(json.dumps(subscription_message))
             logger.info("Unsubscribed from all the instruments")
 
-    async def _handle_message(self, message):
-        #logger.debug(f"Received message: {message}")
-        try:
-            market_update = parse_quote_message(message)
-            #logger.debug(f"Market update received: {market_update}")
-            self._trader.set_latest_price(market_update["token"] , None , market_update["ltp"])
+    # async def _handle_message(self, message):
+    #     #logger.debug(f"Received message: {message}")
+    #     try:
+    #         market_update = parse_quote_message(message)
+    #         #logger.debug(f"Market update received: {market_update}")
+    #         self._trader.set_latest_price(market_update["token"] , None , market_update["ltp"])
 
-        except:
-            logger.debug("Error parsing market data")
+    #     except:
+    #         logger.debug("Error parsing market data")
+
+    async def _handle_message(self, message):
+        try:
+            # M.Stock can send packets other than the 379-byte quote packet.
+            # Only pass the quote packet format to parse_quote_message().
+            if not isinstance(message, (bytes, bytearray)):
+                logger.debug(
+                    f"Ignoring non-binary M.Stock WebSocket message: {type(message)}"
+                )
+                return
+
+            if len(message) != 379:
+                logger.debug(
+                    f"Ignoring unsupported M.Stock WebSocket packet: {len(message)} bytes"
+                )
+                return
+
+            market_update = parse_quote_message(message)
+
+            if not market_update:
+                return
+
+            self._trader.set_latest_price(
+                market_update["token"],
+                None,
+                market_update["ltp"]
+            )
+
+        except Exception as e:
+            logger.exception(f"Error handling M.Stock market data: {e}")
+
 
     def set_access_token(self, access_token):
         logger.info("Setting access token for M.Stock...")

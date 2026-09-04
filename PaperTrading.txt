@@ -1,0 +1,7 @@
+Time                	Type    	Instrument              	Token       	Product   	Qty.      	Avg. price  	Status      	    Duration	    PnL Rate	       PnL %	             PnL
+8/14/2026 11:49:24  	BUY     	NIFTY2681824400CE       	11547138    	MIS       	200/200   	       67.15	COMPLETE    	            	            	            	                
+8/14/2026 11:49:50  	SELL    	NIFTY2681824400CE       	11547138    	MIS       	200/200   	       66.85	COMPLETE    	       00:26	       -0.30	       -0.45	          -3,900
+8/14/2026 11:52:50  	BUY     	NIFTY2681824400CE       	11547138    	MIS       	200/200   	       70.15	COMPLETE    	            	            	            	                
+8/14/2026 11:53:03  	SELL    	NIFTY2681824400CE       	11547138    	MIS       	200/200   	       70.20	COMPLETE    	       03:39	        1.55	        2.26	          20,150
+8/14/2026 11:55:29  	BUY     	NIFTY2681824400CE       	11547138    	MIS       	200/200   	       68.95	COMPLETE    	            	            	            	                
+8/14/2026 11:55:42  	SELL    	NIFTY2681824400CE       	11547138    	MIS       	200/200   	       69.00	COMPLETE    	       00:13	        0.25	        0.36	           3,250

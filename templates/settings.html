@@ -207,7 +207,7 @@
             <div class="form-group form-group-inline">
                <div class="form-group1" style="flex: 1;">
                     <label for="MARGIN_USAGE_PCT" >Margin usage (%)</label>
-                    <input type="number" id="MARGIN_USAGE_PCT" name="MARGIN_USAGE_PCT" placeholder="Enter Margin Usage Percentage">
+                    <input type="float" id="MARGIN_USAGE_PCT" name="MARGIN_USAGE_PCT" placeholder="Enter Margin Usage Percentage">
                     <label for="DEFAULT_LOT_SIZE">Default Lot Size</label>
                     <input type="number" id="DEFAULT_LOT_SIZE" name="DEFAULT_LOT_SIZE" placeholder="Enter default lot size">
                 </div>
@@ -215,26 +215,40 @@
 
             <!-- OPTIONS CHECKBOXES -->
             <div class="form-group">
-                <label>Sell Trigger:</label>
-                <div class="checkbox-group">
-                    <label><input type="checkbox" name="SELL_TRIGGER_PCT"> PCT</label>
-                    <label><input type="checkbox" name="SELL_TRIGGER_PTS"> PTS</label>
-                    <label><input type="checkbox" name="SELL_TRIGGER_EMA"> EMA</label>
+                <label>Sell Trigger (Comparison Function):</label>
+                <div class="radio-group">
+                    <label><input type="radio" name="COMPARISON_FUNCTION" value="PNT"> PNT</label>
+                    <label><input type="radio" name="COMPARISON_FUNCTION" value="PCT"> PCT</label>
+                    <label><input type="radio" name="COMPARISON_FUNCTION" value="EMA"> EMA</label>
                 </div>
             </div>
 
-            <!-- FACTOR SETTINGS -->
+           <!-- STRATEGY PROFIT FACTORS -->
             <div class="form-group">
-                <label>Order Type Factors</label>
+                <label>Strategy Profit Factors</label>
                 <div class="grouped-inputs">
-                    <label for="INTRA_FACTOR">Intra</label>
-                    <input type="number" id="PTS_PROFIT_INTRA_FACTOR" name="PTS_INTRA_FACTOR" placeholder="Enter Intra Factor" step="1" />
 
-                    <label for="SCALPING_FACTOR">Scalping</label>
-                    <input type="number" id="PTS_PROFIT_SCALPING_FACTOR" name="PTS_SCALPING_FACTOR" placeholder="Enter Scalping Factor" step="1" />
+                    <label for="PTS_PROFIT_INTRA_FACTOR">Intra</label>
+                    <input type="number"
+                        id="PTS_PROFIT_INTRA_FACTOR"
+                        name="PTS_PROFIT_INTRA_FACTOR"
+                        placeholder="Enter Intra Factor"
+                        step="1" />
 
-                    <label for="ULTRA_SCALPING_FACTOR">Ultra Scalping</label>
-                    <input type="number" id="PTS_PROFIT_ULTRA_SCALPING_FACTOR" name="PTS_ULTRA_SCALPING_FACTOR" placeholder="Enter Ultra Scalping Factor" step="1" />
+                    <label for="PTS_PROFIT_SCALPING_FACTOR">Scalping</label>
+                    <input type="number"
+                        id="PTS_PROFIT_SCALPING_FACTOR"
+                        name="PTS_PROFIT_SCALPING_FACTOR"
+                        placeholder="Enter Scalping Factor"
+                        step="1" />
+
+                    <label for="PTS_PROFIT_ULTRA_SCALPING_FACTOR">Ultra Scalping</label>
+                    <input type="number"
+                        id="PTS_PROFIT_ULTRA_SCALPING_FACTOR"
+                        name="PTS_PROFIT_ULTRA_SCALPING_FACTOR"
+                        placeholder="Enter Ultra Scalping Factor"
+                        step="1" />
+
                 </div>
             </div>
 
@@ -326,18 +340,30 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (res.ok) {
             const data = await res.json();
             Object.entries(data).forEach(([key, value]) => {
-                const el = document.querySelector(`[name="${key}"]`);
-                if (!el) return;
+            const el = document.querySelector(`[name="${key}"]`);
+            if (!el) return;
 
-                if (el.type === 'radio') {
-                    const radio = document.querySelector(`[name="${key}"][value="${value}"]`);
-                    if (radio) radio.checked = true;
-                } else if (el.type === 'checkbox') {
-                    el.checked = !!value;
-                } else {
-                    el.value = value;
-                }
-            });
+            // ✅ Handle COMPARISON_FUNCTION array
+            if (key === "COMPARISON_FUNCTION" && Array.isArray(value)) {
+                const selected = value[0]; // only one allowed
+                const radio = document.querySelector(
+                    `[name="COMPARISON_FUNCTION"][value="${selected}"]`
+                );
+                if (radio) radio.checked = true;
+                return;
+            }
+
+            if (el.type === 'radio') {
+                const radio = document.querySelector(`[name="${key}"][value="${value}"]`);
+                if (radio) radio.checked = true;
+            } 
+            else if (el.type === 'checkbox') {
+                el.checked = !!value;
+            } 
+            else {
+                el.value = value;
+            }
+        });
         }
     } catch (err) {
         console.error('Error loading settings:', err);
@@ -353,10 +379,20 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         const formData = new FormData(e.target);
         const data = {};
+        
         for (const [key, value] of formData.entries()) {
             const input = e.target.querySelector(`[name="${key}"]`);
-            if (input.type === 'checkbox') data[key] = input.checked;
-            else data[key] = value;
+
+            // ✅ Force COMPARISON_FUNCTION into array
+            if (key === "COMPARISON_FUNCTION") {
+                data[key] = [value];
+            }
+            else if (input.type === 'checkbox') {
+                data[key] = input.checked;
+            } 
+            else {
+                data[key] = value;
+            }
         }
 
         try {

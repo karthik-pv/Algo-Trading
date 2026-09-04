@@ -59,6 +59,13 @@
 </head>
 <body>
 
+    <div class="header">
+        <button class="menu-button" id="menuToggle">
+            <span></span>
+            <span></span>
+            <span></span>
+        </button>
+    </div>
     <nav class="sidebar" id="mainSidebar">
         <ul>
             <li><a href="/home">Home</a></li>
@@ -74,9 +81,7 @@
     {% block content %}{% endblock %}
     <script>
         document.addEventListener('DOMContentLoaded', function() {
-            if (menuToggle) {
-                menuToggle.addEventListener('click', toggleMenu);
-            }
+            const menuToggle = document.getElementById('menuToggle');
             const mainSidebar = document.getElementById('mainSidebar');
             const overlay = document.getElementById('overlay');
 

@@ -57,9 +57,7 @@ class Trader_Singleton:
     _broker_string = fetch_from_json("constants.json" , "BROKER")
     _exchange = fetch_from_json("constants.json" , "EXCHANGE")
     _underlying = fetch_from_json("constants.json" , "UNDERLYING")
-    #_near_month_future_symbol = fetch_from_json("constants.json" , "NEAR_MONTH_FUTURE_TOKEN")
-    # MSTOCK_SENSEX
-    _near_month_future_symbol = None
+    _near_month_future_symbol = fetch_from_json("constants.json" , "NEAR_MONTH_FUTURE_TOKEN")
     _buy_sell_together = bool(fetch_from_json("constants.json" , "BUY_SELL_TOGETHER"))
 
     _CASH_BALANCE_PAPER_TRADING = float(fetch_from_json("settings.json" , "CASH_BALANCE_PAPER_TRADING"))
@@ -105,7 +103,7 @@ class Trader_Singleton:
         except:
             return 0        
 
-    def wait_for_prices(self, tokens, timeout=2.0):
+    def wait_for_prices(self, tokens, timeout=8.0):
         """
         Wait briefly for websocket ticks to arrive before falling back to REST.
         Returns dictionary {token: price}
@@ -293,547 +291,130 @@ class Trader_Singleton:
             self._fund_summary[key] = float(value)
         logger.debug(f"Fund Summary updated to {self._fund_summary}")
 
-#     def refresh_open_pos_buy_price(self):
-#         logger.info("Refreshing open positions and buy prices...")
-#         # self._broker.unsubscribe_from_all(self.get_relevant_instruments_to_track())
+    def refresh_open_pos_buy_price(self):
+        logger.info("Refreshing open positions and buy prices...")
+        # self._broker.unsubscribe_from_all(self.get_relevant_instruments_to_track())
         
-#         #How could we avoid this call here..as this results in multiple fund summary calls
-#         logger.info("Fetching latest fund summary from broker...")
-#         try:
-#             fund_summary = self._broker.fetch_fund_summary()
-
-#             if not fund_summary or not isinstance(fund_summary, dict):
-#                 raise ValueError("Fund summary returned None or invalid data")
-            
-#             for key, value in fund_summary.items():
-#                 self._fund_summary[key] = float(value)
-
-#             logger.debug(f"Fund Summary fetched is {self._fund_summary}")
-#         except Exception as e:
-#             logger.error(f"Fund Summary fetch failed. Using fallback cash balance. Error: {e}", exc_info=True)
-#             # ✅ Fallback values
-#             self._fund_summary = {}
-#             self._fund_summary["cash_balance"] = 10000.0
-
-#             logger.warning("Fallback cash balance of 10000 assigned.")
-
-#         positions_from_broker = self._broker.fetch_all_positions()
-
-#         if isinstance(positions_from_broker, dict):
-#             positions_from_broker = positions_from_broker.get("net", [])
-
-#         if not positions_from_broker:
-#             logger.warning("positions_from_broker is None or empty — skipping avg price calculation")
-#             self._position_data.clear()
-#             try:
-#                 if not self.frontend_data_socket:
-#                     raise ConnectionRefusedError
-#                 self.frontend_data_socket.emit('update_open_positions', self._position_data)
-#                 self.frontend_data_socket.emit('update_weekly_options', self._five_weekly_option_contracts)
-#                 self.frontend_data_socket.emit('status_message', {"success": True, "message": "Refreshed position ..."})
-#             except Exception:
-#                 logger.error("Frontend socket yet to be instantiated")
-#             logger.info(f"Updated positions: {len(self._position_data)}")
-#             return
-#         #  MSTOCK_SENSEX
-
-#         # =========================================================
-#         # FAST POSITION GRID UPDATE
-#         # M.Stock SENSEX only.
-#         # Show the position immediately after the broker confirms
-#         # the position, without waiting for the orders REST call.
-#         # The existing accurate order-based calculation below will
-#         # reconcile the average price immediately afterwards.
-#         # =========================================================
-#         if self._broker_string == "MSTOCK" and self._underlying == "SENSEX":
-#             logger.info("M.Stock SENSEX: Performing fast position grid update before orders fetch...")
-
-#             for position in positions_from_broker:
-#                 token = str(position["instrument_token"])
-
-#                 avg_price = float(position.get("average_price", 0) or 0)
-#                 net_qty = int(position.get("quantity", 0) or 0)
-#                 lotsize = int(position.get("lotsize", 1) or 1)
-
-#                 pts_pl = self.calculate_point_difference(avg_price, avg_price)
-#                 pct_pl = self.calculate_pctg_difference(avg_price, avg_price)
-
-#                 self._position_data[token] = {
-#                     "tradingsymbol": position["tradingsymbol"],
-#                     "average_price": avg_price,
-#                     "net_quantity": net_qty,
-#                     "latest_price": avg_price,
-#                     "instrument_token": position["instrument_token"],
-#                     "exchange": position["exchange"],
-#                     "lotsize": lotsize,
-#                     "lots": net_qty,
-#                     "pts_pl": pts_pl,
-#                     "pct_pl": pct_pl,
-#                     "total_pl": pts_pl * net_qty,
-#                     "order_strategy": self._order_strategy_mapping.get(
-#                         position["instrument_token"],
-#                         "ULTRA_SCALPING"
-#                     )
-#                 }
-
-#             try:
-#                 self.frontend_data_socket.emit(
-#                     'update_open_positions',
-#                     self._position_data
-#                 )
-#                 logger.info(
-#                     f"M.Stock SENSEX fast position grid update sent: "
-#                     f"{len(self._position_data)} position(s)"
-#                 )
-#             except Exception:
-#                 logger.error("Frontend socket yet to be instantiated")
-
-#         # Existing accurate order-based reconciliation        
-#         orders_from_broker = self._broker.fetch_all_orders()
-
-#         if not orders_from_broker:
-#             logger.info("Broker returned None for orders. Using empty list.")
-#             orders_from_broker = []
-#         logger.debug(f"positions_from_broker is {positions_from_broker}")
-#         positions = calculate_accurate_average_buy_price_and_update_positions(positions_from_broker , orders_from_broker)
-#         logger.debug(f"positions after calculating average buy price is  {positions}")
-
-#         if not positions_from_broker:
-#             logger.info("Broker returned None for positions. Using empty list.")
-#             positions_from_broker = []
-
-#         new_position_tokens = {str(pos["instrument_token"]) for pos in positions}
-        
-#         tokens_to_remove = [
-#             token for token in self._position_data 
-#             if token not in new_position_tokens
-#         ]
-#         for token in tokens_to_remove:
-#             del self._position_data[token]
-            
-#         for position in positions: # Assuming this is the accurately calculated 'positions' list
-#             token = str(position["instrument_token"])
-
-#             logger.debug(f"POS CHECK {position}")
-            
-#             if token not in self._position_data:
-#                 self._position_data[token] = {}
-
-#             # --- MODIFIED BLOCK ---
-#             avg_price = position["average_price"]
-#             net_qty = int(position["quantity"])
-#             lotsize = int(position["lotsize"])
-
-#             # Calculate initial P/L values (they will be 0)
-#             pts_pl = self.calculate_point_difference(avg_price, avg_price)
-#             pct_pl = self.calculate_pctg_difference(avg_price, avg_price)
-#             total_pl = pts_pl * net_qty
-
-#             self._position_data[token].update({
-#                 "tradingsymbol": position["tradingsymbol"],
-#                 "average_price": avg_price,
-#                 "net_quantity": net_qty, 
-#                 "latest_price": avg_price, # Initial latest_price is the buy price
-#                 "instrument_token": position["instrument_token"],
-#                 "exchange" : position["exchange"],
-#                 "lotsize" : lotsize,
-#                 # "lots": int(net_qty / lotsize), MSTOCK COUPLED CODE 
-#                 "lots" : net_qty,
-#                 # ADDED: Initial P/L fields
-#                 "pts_pl": pts_pl,
-#                 "pct_pl": pct_pl,
-#                 "total_pl": total_pl,
-#                 "order_strategy" : self._order_strategy_mapping.get(position["instrument_token"], "ULTRA_SCALPING")
-#             })
-#             # --- END MODIFIED BLOCK ---
-
-            
-#         # self._broker.subscribe_to_all(self.get_relevant_instruments_to_track())
-#         try:
-#             if not self.frontend_data_socket:
-#                 raise ConnectionRefusedError
-#             self.frontend_data_socket.emit(
-#                     'update_open_positions',
-#                     self._position_data
-#                 )
-#             #PUTTA, why are we emitting socket even though there was no change done to _five_weekly_option_contracts?
-#             #How should we recalculate the lot size post the buy transaction with the the latest fund summary data?
-#             #How was it (recalculated lot size for five_weekly_options post the buy/sell transactions) working early? 
-#             #Can we compare this version of the file with the your latest git version
-#             self.frontend_data_socket.emit(
-#                     'update_weekly_options',
-#                     self._five_weekly_option_contracts
-#                 )
-#             self.frontend_data_socket.emit('status_message',{"success": True, "message": "Refreshed position ..."}
-# )
-#         except Exception as e:
-#             logger.error("Frontend socket yet to be instantiated")
-#         logger.info(f"Updated positions: {len(self._position_data)}")
-#         logger.debug(self._position_data)
-
-    def _refresh_fund_summary_after_position_update(self):
-        """
-        Fetch the latest fund summary after the position grid has
-        already been refreshed.
-
-        Fund summary is secondary to position/P&L visibility.
-        """
-        logger.info(
-            "Fetching latest fund summary after position update..."
-        )
-
+        #How could we avoid this call here..as this results in multiple fund summary calls
+        logger.info("Fetching latest fund summary from broker...")
         try:
             fund_summary = self._broker.fetch_fund_summary()
 
             if not fund_summary or not isinstance(fund_summary, dict):
-                raise ValueError(
-                    "Fund summary returned None or invalid data"
-                )
-
+                raise ValueError("Fund summary returned None or invalid data")
+            
             for key, value in fund_summary.items():
                 self._fund_summary[key] = float(value)
 
-            logger.debug(
-                f"Fund Summary fetched is {self._fund_summary}"
-            )
-
-            # Recalculate weekly-option buying capacity using the
-            # newly updated fund summary.
-            if self.frontend_data_socket:
-                self.frontend_data_socket.emit(
-                    'update_weekly_options',
-                    self._five_weekly_option_contracts
-                )
-
+            logger.debug(f"Fund Summary fetched is {self._fund_summary}")
         except Exception as e:
-            logger.error(
-                f"Fund Summary fetch failed. "
-                f"Using fallback cash balance. Error: {e}",
-                exc_info=True
-            )
-
+            logger.error(f"Fund Summary fetch failed. Using fallback cash balance. Error: {e}", exc_info=True)
+            # ✅ Fallback values
             self._fund_summary = {}
             self._fund_summary["cash_balance"] = 10000.0
 
-            logger.warning(
-                "Fallback cash balance of 10000 assigned."
-            )
+            logger.warning("Fallback cash balance of 10000 assigned.")
 
-    def fast_update_position_after_buy(
-        self,
-        trading_symbol,
-        instrument_token,
-        quantity,
-        lotsize,
-        executed_buy_price,
-        exchange
-    ):
-        """
-        Immediately create/update the position grid after a successful
-        M.Stock SENSEX BUY, without waiting for fetch_all_positions().
-        """
-
-        try:
-            if self._broker_string != "MSTOCK" or self._underlying != "SENSEX":
-                return
-
-            token = str(instrument_token)
-
-            # Use the latest websocket LTP already held in memory.
-            latest_ltp = self.get_latest_price(token)
-
-            # Fall back to executed price only if a live tick has not
-            # arrived yet. This guarantees a valid initial grid row.
-            if not latest_ltp:
-                latest_ltp = float(executed_buy_price)
-
-            executed_buy_price = float(executed_buy_price)
-            quantity = int(quantity)
-            lotsize = int(lotsize)
-
-            # ---------------------------------------------------------
-            # If this position already exists, add this BUY to it.
-            # This also handles iceberg/multiple BUY legs.
-            # ---------------------------------------------------------
-            if token in self._position_data:
-                existing = self._position_data[token]
-
-                old_qty = int(existing.get("net_quantity", 0) or 0)
-                old_avg = float(existing.get("average_price", 0) or 0)
-
-                new_qty = old_qty + quantity
-
-                if new_qty > 0:
-                    weighted_avg = (
-                        (old_avg * old_qty)
-                        + (executed_buy_price * quantity)
-                    ) / new_qty
-                else:
-                    weighted_avg = executed_buy_price
-
-                net_qty = new_qty
-                avg_price = weighted_avg
-
-            else:
-                net_qty = quantity
-                avg_price = executed_buy_price
-
-            # ---------------------------------------------------------
-            # Calculate P&L using the CURRENT live LTP.
-            # ---------------------------------------------------------
-            pts_pl = self.calculate_point_difference(
-                avg_price,
-                latest_ltp
-            )
-
-            pct_pl = self.calculate_pctg_difference(
-                avg_price,
-                latest_ltp
-            )
-
-            total_pl = pts_pl * net_qty * lotsize
-
-            self._position_data[token] = {
-                "tradingsymbol": trading_symbol,
-                "average_price": avg_price,
-                "net_quantity": net_qty,
-                "latest_price": latest_ltp,
-                "instrument_token": instrument_token,
-                "exchange": exchange,
-                "lotsize": lotsize,
-                "lots": net_qty,
-                "pts_pl": pts_pl,
-                "pct_pl": pct_pl,
-                "total_pl": total_pl,
-                "order_strategy": self._order_strategy_mapping.get(
-                    instrument_token,
-                    "ULTRA_SCALPING"
-                )
-            }
-
-            # ---------------------------------------------------------
-            # Immediately send position + P&L to the grid.
-            # ---------------------------------------------------------
-            if self.frontend_data_socket:
-                self.frontend_data_socket.emit(
-                    'update_open_positions',
-                    self._position_data
-                )
-
-            logger.info(
-                f"M.Stock SENSEX FAST BUY GRID: "
-                f"{trading_symbol} | "
-                f"Qty={net_qty} | "
-                f"Buy={avg_price:.2f} | "
-                f"LTP={latest_ltp:.2f} | "
-                f"PTS={pts_pl:.2f} | "
-                f"PCT={pct_pl:.2f}% | "
-                f"Total P&L={total_pl:.2f}"
-            )
-
-        except Exception as e:
-            logger.error(
-                f"Fast BUY position grid update failed: {e}",
-                exc_info=True
-            )
-
-
-    def refresh_open_pos_buy_price(self):
-        logger.info("Refreshing open positions and buy prices...")
-        logger.info(
-            f"REFRESH_OPEN_POS_BUY_PRICE START | "
-            f"time={time.time():.3f}"
-        )
-
-        # =========================================================
-        # 1. FETCH POSITIONS FIRST
-        # =========================================================
         positions_from_broker = self._broker.fetch_all_positions()
 
         if isinstance(positions_from_broker, dict):
             positions_from_broker = positions_from_broker.get("net", [])
 
         if not positions_from_broker:
-            logger.warning(
-                "positions_from_broker is None or empty — skipping avg price calculation"
-            )
-
+            logger.warning("positions_from_broker is None or empty — skipping avg price calculation")
             self._position_data.clear()
-
             try:
                 if not self.frontend_data_socket:
                     raise ConnectionRefusedError
-
-                self.frontend_data_socket.emit(
-                    'update_open_positions',
-                    self._position_data
-                )
-
-                self.frontend_data_socket.emit(
-                    'update_weekly_options',
-                    self._five_weekly_option_contracts
-                )
-
-                self.frontend_data_socket.emit(
-                    'status_message',
-                    {"success": True, "message": "Refreshed position ..."}
-                )
-
+                self.frontend_data_socket.emit('update_open_positions', self._position_data)
+                self.frontend_data_socket.emit('update_weekly_options', self._five_weekly_option_contracts)
+                self.frontend_data_socket.emit('status_message', {"success": True, "message": "Refreshed position ..."})
             except Exception:
                 logger.error("Frontend socket yet to be instantiated")
-
             logger.info(f"Updated positions: {len(self._position_data)}")
-
-            # Fund summary is refreshed after the position grid.
-            self._refresh_fund_summary_after_position_update()
-
             return
 
-        # =========================================================
-        # 2. FETCH ORDERS
-        #
-        # IMPORTANT:
-        # Do NOT send an intermediate position-grid update here.
-        #
-        # For M.Stock SENSEX, fast_update_position_after_buy()
-        # already puts the BUY into the grid immediately.
-        #
-        # The broker position API can temporarily return a stale
-        # average price immediately after a BUY. Sending that value
-        # here would overwrite the correct fast BUY value.
-        # =========================================================
         orders_from_broker = self._broker.fetch_all_orders()
-
         if not orders_from_broker:
-            logger.info(
-                "Broker returned None for orders. Using empty list."
-            )
+            logger.info("Broker returned None for orders. Using empty list.")
             orders_from_broker = []
-
-        logger.debug(
-            f"positions_from_broker is {positions_from_broker}"
-        )
-
-        # =========================================================
-        # 3. ACCURATE ORDER-BASED RECONCILIATION
-        # =========================================================
-        positions = calculate_accurate_average_buy_price_and_update_positions(
-            positions_from_broker,
-            orders_from_broker
-        )
-
-        logger.debug(
-            f"positions after calculating average buy price is {positions}"
-        )
+        logger.debug(f"positions_from_broker is {positions_from_broker}")
+        positions = calculate_accurate_average_buy_price_and_update_positions(positions_from_broker , orders_from_broker)
+        logger.debug(f"positions after calculating average buy price is  {positions}")
 
         if not positions_from_broker:
-            logger.info(
-                "Broker returned None for positions. Using empty list."
-            )
+            logger.info("Broker returned None for positions. Using empty list.")
             positions_from_broker = []
 
-        # =========================================================
-        # 4. REMOVE POSITIONS THAT NO LONGER EXIST
-        # =========================================================
-        new_position_tokens = {
-            str(pos["instrument_token"]) for pos in positions
-        }
-
+        new_position_tokens = {str(pos["instrument_token"]) for pos in positions}
+        
         tokens_to_remove = [
-            token
-            for token in self._position_data
+            token for token in self._position_data 
             if token not in new_position_tokens
         ]
-
         for token in tokens_to_remove:
             del self._position_data[token]
-
-        # =========================================================
-        # 5. UPDATE POSITION DATA WITH ACCURATE BUY PRICE
-        # =========================================================
-        for position in positions:
+            
+        for position in positions: # Assuming this is the accurately calculated 'positions' list
             token = str(position["instrument_token"])
 
             logger.debug(f"POS CHECK {position}")
-
+            
             if token not in self._position_data:
                 self._position_data[token] = {}
 
+            # --- MODIFIED BLOCK ---
             avg_price = position["average_price"]
             net_qty = int(position["quantity"])
             lotsize = int(position["lotsize"])
 
-            # Calculate initial P/L values.
-            # Live LTP updates will recalculate these afterwards.
-            pts_pl = self.calculate_point_difference(
-                avg_price,
-                avg_price
-            )
-
-            pct_pl = self.calculate_pctg_difference(
-                avg_price,
-                avg_price
-            )
-
+            # Calculate initial P/L values (they will be 0)
+            pts_pl = self.calculate_point_difference(avg_price, avg_price)
+            pct_pl = self.calculate_pctg_difference(avg_price, avg_price)
             total_pl = pts_pl * net_qty
 
             self._position_data[token].update({
                 "tradingsymbol": position["tradingsymbol"],
                 "average_price": avg_price,
-                "net_quantity": net_qty,
-                "latest_price": avg_price,
+                "net_quantity": net_qty, 
+                "latest_price": avg_price, # Initial latest_price is the buy price
                 "instrument_token": position["instrument_token"],
-                "exchange": position["exchange"],
-                "lotsize": lotsize,
-                "lots": net_qty,
+                "exchange" : position["exchange"],
+                "lotsize" : lotsize,
+                # "lots": int(net_qty / lotsize), MSTOCK COUPLED CODE 
+                "lots" : net_qty,
+                # ADDED: Initial P/L fields
                 "pts_pl": pts_pl,
                 "pct_pl": pct_pl,
                 "total_pl": total_pl,
-                "order_strategy": self._order_strategy_mapping.get(
-                    position["instrument_token"],
-                    "ULTRA_SCALPING"
-                )
+                "order_strategy" : self._order_strategy_mapping.get(position["instrument_token"], "ULTRA_SCALPING")
             })
+            # --- END MODIFIED BLOCK ---
 
-        # =========================================================
-        # 6. FINAL POSITION GRID UPDATE
-        # =========================================================
+            
+        # self._broker.subscribe_to_all(self.get_relevant_instruments_to_track())
         try:
             if not self.frontend_data_socket:
                 raise ConnectionRefusedError
-
             self.frontend_data_socket.emit(
-                'update_open_positions',
-                self._position_data
-            )
-
+                    'update_open_positions',
+                    self._position_data
+                )
+            #PUTTA, why are we emitting socket even though there was no change done to _five_weekly_option_contracts?
+            #How should we recalculate the lot size post the buy transaction with the the latest fund summary data?
+            #How was it (recalculated lot size for five_weekly_options post the buy/sell transactions) working early? 
+            #Can we compare this version of the file with the your latest git version
             self.frontend_data_socket.emit(
-                'update_weekly_options',
-                self._five_weekly_option_contracts
-            )
-
-            self.frontend_data_socket.emit(
-                'status_message',
-                {
-                    "success": True,
-                    "message": "Refreshed position ..."
-                }
-            )
-
-        except Exception:
+                    'update_weekly_options',
+                    self._five_weekly_option_contracts
+                )
+            self.frontend_data_socket.emit('status_message',{"success": True, "message": "Refreshed position ..."}
+)
+        except Exception as e:
             logger.error("Frontend socket yet to be instantiated")
-
-        logger.info(
-            f"Updated positions: {len(self._position_data)}"
-        )
-
+        logger.info(f"Updated positions: {len(self._position_data)}")
         logger.debug(self._position_data)
-
-        # =========================================================
-        # 7. FUND SUMMARY LAST
-        # =========================================================
-        self._refresh_fund_summary_after_position_update()
-
+        
 
         
 
@@ -1321,7 +902,6 @@ class Trader_Singleton:
         try:
 
             near_month_symbol = fetch_from_json("constants.json", "NEAR_MONTH_FUTURE_TOKEN")
-            self._near_month_future_symbol = near_month_symbol
 
             near_month_data = self._broker.get_instrument_details(near_month_symbol)
 
@@ -1330,12 +910,11 @@ class Trader_Singleton:
 
             self._broker.subscribe_to_all([near_month_token])
             price = self.get_latest_price(str(near_month_token))
-
             if not price:
-                if self._underlying == "SENSEX":
-                    price = self._SENSEX_FALLBACK_LTP
-                else:
-                    price = self._NIFTY_FALLBACK_LTP
+                [price, open] = self._broker.get_quote(near_month_data["tradingsymbol"])
+            if not price:
+                logger.info("Near Month Future REST quote failed. Using fallback price " + self._NIFTY_FALLBACK_LTP)
+                price = self._NIFTY_FALLBACK_LTP
 
 
 
@@ -1440,24 +1019,13 @@ class Trader_Singleton:
                 if q:
                     price, open_price = q
 
-            # if not price:
-
-            #     logger.warning("Future REST quote failed. Using fallback")
-
-            #     price = self._NIFTY_FALLBACK_LTP
-
-            #     open_price = price
-
-            # MSTOCK_SENSEX
             if not price:
+
                 logger.warning("Future REST quote failed. Using fallback")
 
-                if self._underlying == "SENSEX":
-                    price = self._SENSEX_FALLBACK_LTP
-                else:
-                    price = self._NIFTY_FALLBACK_LTP
+                price = self._NIFTY_FALLBACK_LTP
 
-                open_price = price            
+                open_price = price
 
 
             self.ltp_near_month_future = price
@@ -2331,26 +1899,6 @@ class Trader_Singleton:
                     "order_strategy_mapping" : self._order_strategy_mapping
                 }
             )
-
-                        # Send the last known near-month future price to a newly connected frontend
-            if self._near_month_future_ltp and self.open_near_month_future:
-                chgO = round(
-                    (self._near_month_future_ltp - self.open_near_month_future)
-                    * 100
-                    / self.open_near_month_future,
-                    2
-                )
-
-                self.frontend_data_socket.emit(
-                    'near-month-ltp-updated',
-                    {
-                        'ltp': self._near_month_future_ltp,
-                        'chgO': chgO
-                    }
-                )
-
-
-
               # ⭐ ADD THIS
             if self._five_weekly_option_contracts:
                 logger.info("Sending weekly options to newly connected frontend")

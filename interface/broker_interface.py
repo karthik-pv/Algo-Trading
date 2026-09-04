@@ -28,6 +28,10 @@ class BrokerInterface(ABC):
         pass
 
     @abstractmethod
+    def fetch_expiries(self):
+        pass
+
+    @abstractmethod
     def get_ltp(self):
         pass
 

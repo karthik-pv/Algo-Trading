@@ -5,6 +5,10 @@ import logging
 import kiteconnect
 from dotenv import load_dotenv
 from loguru import logger
+import webbrowser
+from http.server import BaseHTTPRequestHandler, HTTPServer
+import urllib.parse
+
 
 from utils import get_access_token_from_json , write_to_json , fetch_from_json
 
@@ -43,7 +47,28 @@ class KiteSingleton:
     def create_session(self):
         logger.info("Please visit the following URL to authorize the application:")
         logger.debug(self._kite.login_url())
-        request_token = input("Enter request token here - ")
+        login_url = self._kite.login_url()        
+        #request_token = input("Enter request token here - ")
+
+        # 1. Automatically open the browser
+        webbrowser.open_new(login_url)
+        
+        # 2. Start a temporary local HTTP server to listen for the redirect
+        port = 8080  # Ensure this matches your Redirect URL port in Kite Developer Console
+        logger.info(f"Waiting for redirect with request token on port {port}...")
+        
+        server_address = ('127.0.0.1', port)
+        httpd = HTTPServer(server_address, RequestTokenHandler)
+        httpd.request_token = None
+        
+        # Wait until a request is handled and the token is captured
+        while httpd.request_token is None:
+            httpd.handle_request()
+            
+        request_token = httpd.request_token
+        logger.info("Successfully captured request token automatically!")
+
+
         if not KITE_SECRET_KEY:
             raise ValueError("KITE_SECRET_KEY not found in environment variables")
         data = self._kite.generate_session(
@@ -92,3 +117,24 @@ class KiteSingleton:
             access_token = fetch_from_json("access_token.json" , "kite_access_token")
             self.set_access_token(access_token)
         logger.debug("Kite session created for production.")
+
+
+class RequestTokenHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        # Parse the query parameters from the path
+        query_components = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+        if "request_token" in query_components:
+            # Store the token in the server object to access it later
+            self.server.request_token = query_components["request_token"][0]
+            
+            # Send a success response to the browser
+            self.send_response(200)
+            self.send_header("Content-type", "text/html")
+            self.end_headers()
+            self.wfile.write(b"<html><body><h1>Login successful! You can close this window and return to the app.</h1></body></html>")
+        else:
+            # Handle failure
+            self.send_response(400)
+            self.send_header("Content-type", "text/html")
+            self.end_headers()
+            self.wfile.write(b"<html><body><h1>Error: No request token found.</h1></body></html>")
