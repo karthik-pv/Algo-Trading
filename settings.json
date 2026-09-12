@@ -1,5 +1,5 @@
 {
-    "MODE": "EXECUTION",
+    "MODE": "LIVE",
     "MARGIN_USAGE_PCT": 1,
     "DEFAULT_LOT_SIZE": "1",
     "COMPARISON_FUNCTION": [

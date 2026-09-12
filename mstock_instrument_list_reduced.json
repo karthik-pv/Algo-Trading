@@ -1,9 +1,163 @@
 [
   {
-    "token": "42513",
+    "token": "46729",
     "symbol": "NIFTY",
-    "name": "NIFTY2690821200CE",
-    "expiry": "08Sep2026",
+    "name": "NIFTY2691520500CE",
+    "expiry": "15Sep2026",
+    "strike": "20500",
+    "lotsize": "65",
+    "instrumenttype": "OPTIDX",
+    "exch_seg": "NFO",
+    "tick_size": "0.05"
+  },
+  {
+    "token": "46730",
+    "symbol": "NIFTY",
+    "name": "NIFTY2691520500PE",
+    "expiry": "15Sep2026",
+    "strike": "20500",
+    "lotsize": "65",
+    "instrumenttype": "OPTIDX",
+    "exch_seg": "NFO",
+    "tick_size": "0.05"
+  },
+  {
+    "token": "46735",
+    "symbol": "NIFTY",
+    "name": "NIFTY2691520600CE",
+    "expiry": "15Sep2026",
+    "strike": "20600",
+    "lotsize": "65",
+    "instrumenttype": "OPTIDX",
+    "exch_seg": "NFO",
+    "tick_size": "0.05"
+  },
+  {
+    "token": "46736",
+    "symbol": "NIFTY",
+    "name": "NIFTY2691520600PE",
+    "expiry": "15Sep2026",
+    "strike": "20600",
+    "lotsize": "65",
+    "instrumenttype": "OPTIDX",
+    "exch_seg": "NFO",
+    "tick_size": "0.05"
+  },
+  {
+    "token": "46741",
+    "symbol": "NIFTY",
+    "name": "NIFTY2691520700CE",
+    "expiry": "15Sep2026",
+    "strike": "20700",
+    "lotsize": "65",
+    "instrumenttype": "OPTIDX",
+    "exch_seg": "NFO",
+    "tick_size": "0.05"
+  },
+  {
+    "token": "46742",
+    "symbol": "NIFTY",
+    "name": "NIFTY2691520700PE",
+    "expiry": "15Sep2026",
+    "strike": "20700",
+    "lotsize": "65",
+    "instrumenttype": "OPTIDX",
+    "exch_seg": "NFO",
+    "tick_size": "0.05"
+  },
+  {
+    "token": "46745",
+    "symbol": "NIFTY",
+    "name": "NIFTY2691520800CE",
+    "expiry": "15Sep2026",
+    "strike": "20800",
+    "lotsize": "65",
+    "instrumenttype": "OPTIDX",
+    "exch_seg": "NFO",
+    "tick_size": "0.05"
+  },
+  {
+    "token": "46748",
+    "symbol": "NIFTY",
+    "name": "NIFTY2691520800PE",
+    "expiry": "15Sep2026",
+    "strike": "20800",
+    "lotsize": "65",
+    "instrumenttype": "OPTIDX",
+    "exch_seg": "NFO",
+    "tick_size": "0.05"
+  },
+  {
+    "token": "46756",
+    "symbol": "NIFTY",
+    "name": "NIFTY2691520900CE",
+    "expiry": "15Sep2026",
+    "strike": "20900",
+    "lotsize": "65",
+    "instrumenttype": "OPTIDX",
+    "exch_seg": "NFO",
+    "tick_size": "0.05"
+  },
+  {
+    "token": "46759",
+    "symbol": "NIFTY",
+    "name": "NIFTY2691520900PE",
+    "expiry": "15Sep2026",
+    "strike": "20900",
+    "lotsize": "65",
+    "instrumenttype": "OPTIDX",
+    "exch_seg": "NFO",
+    "tick_size": "0.05"
+  },
+  {
+    "token": "46764",
+    "symbol": "NIFTY",
+    "name": "NIFTY2691521000CE",
+    "expiry": "15Sep2026",
+    "strike": "21000",
+    "lotsize": "65",
+    "instrumenttype": "OPTIDX",
+    "exch_seg": "NFO",
+    "tick_size": "0.05"
+  },
+  {
+    "token": "46765",
+    "symbol": "NIFTY",
+    "name": "NIFTY2691521000PE",
+    "expiry": "15Sep2026",
+    "strike": "21000",
+    "lotsize": "65",
+    "instrumenttype": "OPTIDX",
+    "exch_seg": "NFO",
+    "tick_size": "0.05"
+  },
+  {
+    "token": "46777",
+    "symbol": "NIFTY",
+    "name": "NIFTY2691521100CE",
+    "expiry": "15Sep2026",
+    "strike": "21100",
+    "lotsize": "65",
+    "instrumenttype": "OPTIDX",
+    "exch_seg": "NFO",
+    "tick_size": "0.05"
+  },
+  {
+    "token": "46781",
+    "symbol": "NIFTY",
+    "name": "NIFTY2691521100PE",
+    "expiry": "15Sep2026",
+    "strike": "21100",
+    "lotsize": "65",
+    "instrumenttype": "OPTIDX",
+    "exch_seg": "NFO",
+    "tick_size": "0.05"
+  },
+  {
+    "token": "46798",
+    "symbol": "NIFTY",
+    "name": "NIFTY2691521200CE",
+    "expiry": "15Sep2026",
     "strike": "21200",
     "lotsize": "65",
     "instrumenttype": "OPTIDX",
@@ -11,10 +165,10 @@
     "tick_size": "0.05"
   },
   {
-    "token": "42514",
+    "token": "46799",
     "symbol": "NIFTY",
-    "name": "NIFTY2690821200PE",
-    "expiry": "08Sep2026",
+    "name": "NIFTY2691521200PE",
+    "expiry": "15Sep2026",
     "strike": "21200",
     "lotsize": "65",
     "instrumenttype": "OPTIDX",
@@ -22,10 +176,10 @@
     "tick_size": "0.05"
   },
   {
-    "token": "42517",
+    "token": "46827",
     "symbol": "NIFTY",
-    "name": "NIFTY2690821300CE",
-    "expiry": "08Sep2026",
+    "name": "NIFTY2691521300CE",
+    "expiry": "15Sep2026",
     "strike": "21300",
     "lotsize": "65",
     "instrumenttype": "OPTIDX",
@@ -33,10 +187,10 @@
     "tick_size": "0.05"
   },
   {
-    "token": "42518",
+    "token": "46830",
     "symbol": "NIFTY",
-    "name": "NIFTY2690821300PE",
-    "expiry": "08Sep2026",
+    "name": "NIFTY2691521300PE",
+    "expiry": "15Sep2026",
     "strike": "21300",
     "lotsize": "65",
     "instrumenttype": "OPTIDX",
@@ -44,10 +198,10 @@
     "tick_size": "0.05"
   },
   {
-    "token": "42522",
+    "token": "46852",
     "symbol": "NIFTY",
-    "name": "NIFTY2690821400CE",
-    "expiry": "08Sep2026",
+    "name": "NIFTY2691521400CE",
+    "expiry": "15Sep2026",
     "strike": "21400",
     "lotsize": "65",
     "instrumenttype": "OPTIDX",
@@ -55,10 +209,10 @@
     "tick_size": "0.05"
   },
   {
-    "token": "42525",
+    "token": "46854",
     "symbol": "NIFTY",
-    "name": "NIFTY2690821400PE",
-    "expiry": "08Sep2026",
+    "name": "NIFTY2691521400PE",
+    "expiry": "15Sep2026",
     "strike": "21400",
     "lotsize": "65",
     "instrumenttype": "OPTIDX",
@@ -66,10 +220,10 @@
     "tick_size": "0.05"
   },
   {
-    "token": "42528",
+    "token": "46884",
     "symbol": "NIFTY",
-    "name": "NIFTY2690821500CE",
-    "expiry": "08Sep2026",
+    "name": "NIFTY2691521500CE",
+    "expiry": "15Sep2026",
     "strike": "21500",
     "lotsize": "65",
     "instrumenttype": "OPTIDX",
@@ -77,10 +231,10 @@
     "tick_size": "0.05"
   },
   {
-    "token": "42529",
+    "token": "46885",
     "symbol": "NIFTY",
-    "name": "NIFTY2690821500PE",
-    "expiry": "08Sep2026",
+    "name": "NIFTY2691521500PE",
+    "expiry": "15Sep2026",
     "strike": "21500",
     "lotsize": "65",
     "instrumenttype": "OPTIDX",
@@ -88,10 +242,10 @@
     "tick_size": "0.05"
   },
   {
-    "token": "42532",
+    "token": "47093",
     "symbol": "NIFTY",
-    "name": "NIFTY2690821600CE",
-    "expiry": "08Sep2026",
+    "name": "NIFTY2691521600CE",
+    "expiry": "15Sep2026",
     "strike": "21600",
     "lotsize": "65",
     "instrumenttype": "OPTIDX",
@@ -99,10 +253,10 @@
     "tick_size": "0.05"
   },
   {
-    "token": "42533",
+    "token": "47096",
     "symbol": "NIFTY",
-    "name": "NIFTY2690821600PE",
-    "expiry": "08Sep2026",
+    "name": "NIFTY2691521600PE",
+    "expiry": "15Sep2026",
     "strike": "21600",
     "lotsize": "65",
     "instrumenttype": "OPTIDX",
@@ -110,10 +264,10 @@
     "tick_size": "0.05"
   },
   {
-    "token": "42537",
+    "token": "47134",
     "symbol": "NIFTY",
-    "name": "NIFTY2690821700CE",
-    "expiry": "08Sep2026",
+    "name": "NIFTY2691521700CE",
+    "expiry": "15Sep2026",
     "strike": "21700",
     "lotsize": "65",
     "instrumenttype": "OPTIDX",
@@ -121,10 +275,10 @@
     "tick_size": "0.05"
   },
   {
-    "token": "42538",
+    "token": "47135",
     "symbol": "NIFTY",
-    "name": "NIFTY2690821700PE",
-    "expiry": "08Sep2026",
+    "name": "NIFTY2691521700PE",
+    "expiry": "15Sep2026",
     "strike": "21700",
     "lotsize": "65",
     "instrumenttype": "OPTIDX",
@@ -132,10 +286,10 @@
     "tick_size": "0.05"
   },
   {
-    "token": "42542",
+    "token": "47147",
     "symbol": "NIFTY",
-    "name": "NIFTY2690821800CE",
-    "expiry": "08Sep2026",
+    "name": "NIFTY2691521800CE",
+    "expiry": "15Sep2026",
     "strike": "21800",
     "lotsize": "65",
     "instrumenttype": "OPTIDX",
@@ -143,10 +297,10 @@
     "tick_size": "0.05"
   },
   {
-    "token": "42543",
+    "token": "47148",
     "symbol": "NIFTY",
-    "name": "NIFTY2690821800PE",
-    "expiry": "08Sep2026",
+    "name": "NIFTY2691521800PE",
+    "expiry": "15Sep2026",
     "strike": "21800",
     "lotsize": "65",
     "instrumenttype": "OPTIDX",
@@ -154,10 +308,10 @@
     "tick_size": "0.05"
   },
   {
-    "token": "42546",
+    "token": "47163",
     "symbol": "NIFTY",
-    "name": "NIFTY2690821900CE",
-    "expiry": "08Sep2026",
+    "name": "NIFTY2691521900CE",
+    "expiry": "15Sep2026",
     "strike": "21900",
     "lotsize": "65",
     "instrumenttype": "OPTIDX",
@@ -165,10 +319,10 @@
     "tick_size": "0.05"
   },
   {
-    "token": "42547",
+    "token": "47165",
     "symbol": "NIFTY",
-    "name": "NIFTY2690821900PE",
-    "expiry": "08Sep2026",
+    "name": "NIFTY2691521900PE",
+    "expiry": "15Sep2026",
     "strike": "21900",
     "lotsize": "65",
     "instrumenttype": "OPTIDX",
@@ -176,10 +330,10 @@
     "tick_size": "0.05"
   },
   {
-    "token": "42550",
+    "token": "47215",
     "symbol": "NIFTY",
-    "name": "NIFTY2690822000CE",
-    "expiry": "08Sep2026",
+    "name": "NIFTY2691522000CE",
+    "expiry": "15Sep2026",
     "strike": "22000",
     "lotsize": "65",
     "instrumenttype": "OPTIDX",
@@ -187,10 +341,10 @@
     "tick_size": "0.05"
   },
   {
-    "token": "42551",
+    "token": "47216",
     "symbol": "NIFTY",
-    "name": "NIFTY2690822000PE",
-    "expiry": "08Sep2026",
+    "name": "NIFTY2691522000PE",
+    "expiry": "15Sep2026",
     "strike": "22000",
     "lotsize": "65",
     "instrumenttype": "OPTIDX",
@@ -198,10 +352,10 @@
     "tick_size": "0.05"
   },
   {
-    "token": "42554",
+    "token": "47224",
     "symbol": "NIFTY",
-    "name": "NIFTY2690822100CE",
-    "expiry": "08Sep2026",
+    "name": "NIFTY2691522100CE",
+    "expiry": "15Sep2026",
     "strike": "22100",
     "lotsize": "65",
     "instrumenttype": "OPTIDX",
@@ -209,10 +363,10 @@
     "tick_size": "0.05"
   },
   {
-    "token": "42555",
+    "token": "47225",
     "symbol": "NIFTY",
-    "name": "NIFTY2690822100PE",
-    "expiry": "08Sep2026",
+    "name": "NIFTY2691522100PE",
+    "expiry": "15Sep2026",
     "strike": "22100",
     "lotsize": "65",
     "instrumenttype": "OPTIDX",
@@ -220,10 +374,10 @@
     "tick_size": "0.05"
   },
   {
-    "token": "42558",
+    "token": "47230",
     "symbol": "NIFTY",
-    "name": "NIFTY2690822200CE",
-    "expiry": "08Sep2026",
+    "name": "NIFTY2691522200CE",
+    "expiry": "15Sep2026",
     "strike": "22200",
     "lotsize": "65",
     "instrumenttype": "OPTIDX",
@@ -231,10 +385,10 @@
     "tick_size": "0.05"
   },
   {
-    "token": "42559",
+    "token": "47237",
     "symbol": "NIFTY",
-    "name": "NIFTY2690822200PE",
-    "expiry": "08Sep2026",
+    "name": "NIFTY2691522200PE",
+    "expiry": "15Sep2026",
     "strike": "22200",
     "lotsize": "65",
     "instrumenttype": "OPTIDX",
@@ -242,10 +396,10 @@
     "tick_size": "0.05"
   },
   {
-    "token": "42562",
+    "token": "47244",
     "symbol": "NIFTY",
-    "name": "NIFTY2690822300CE",
-    "expiry": "08Sep2026",
+    "name": "NIFTY2691522300CE",
+    "expiry": "15Sep2026",
     "strike": "22300",
     "lotsize": "65",
     "instrumenttype": "OPTIDX",
@@ -253,10 +407,10 @@
     "tick_size": "0.05"
   },
   {
-    "token": "42564",
+    "token": "47250",
     "symbol": "NIFTY",
-    "name": "NIFTY2690822300PE",
-    "expiry": "08Sep2026",
+    "name": "NIFTY2691522300PE",
+    "expiry": "15Sep2026",
     "strike": "22300",
     "lotsize": "65",
     "instrumenttype": "OPTIDX",
@@ -264,10 +418,10 @@
     "tick_size": "0.05"
   },
   {
-    "token": "42567",
+    "token": "47253",
     "symbol": "NIFTY",
-    "name": "NIFTY2690822400CE",
-    "expiry": "08Sep2026",
+    "name": "NIFTY2691522400CE",
+    "expiry": "15Sep2026",
     "strike": "22400",
     "lotsize": "65",
     "instrumenttype": "OPTIDX",
@@ -275,10 +429,10 @@
     "tick_size": "0.05"
   },
   {
-    "token": "42568",
+    "token": "47254",
     "symbol": "NIFTY",
-    "name": "NIFTY2690822400PE",
-    "expiry": "08Sep2026",
+    "name": "NIFTY2691522400PE",
+    "expiry": "15Sep2026",
     "strike": "22400",
     "lotsize": "65",
     "instrumenttype": "OPTIDX",
@@ -286,10 +440,10 @@
     "tick_size": "0.05"
   },
   {
-    "token": "42571",
+    "token": "47257",
     "symbol": "NIFTY",
-    "name": "NIFTY2690822500CE",
-    "expiry": "08Sep2026",
+    "name": "NIFTY2691522500CE",
+    "expiry": "15Sep2026",
     "strike": "22500",
     "lotsize": "65",
     "instrumenttype": "OPTIDX",
@@ -297,10 +451,10 @@
     "tick_size": "0.05"
   },
   {
-    "token": "42572",
+    "token": "47258",
     "symbol": "NIFTY",
-    "name": "NIFTY2690822500PE",
-    "expiry": "08Sep2026",
+    "name": "NIFTY2691522500PE",
+    "expiry": "15Sep2026",
     "strike": "22500",
     "lotsize": "65",
     "instrumenttype": "OPTIDX",
@@ -308,10 +462,10 @@
     "tick_size": "0.05"
   },
   {
-    "token": "42575",
+    "token": "47261",
     "symbol": "NIFTY",
-    "name": "NIFTY2690822600CE",
-    "expiry": "08Sep2026",
+    "name": "NIFTY2691522600CE",
+    "expiry": "15Sep2026",
     "strike": "22600",
     "lotsize": "65",
     "instrumenttype": "OPTIDX",
@@ -319,10 +473,10 @@
     "tick_size": "0.05"
   },
   {
-    "token": "42576",
+    "token": "47262",
     "symbol": "NIFTY",
-    "name": "NIFTY2690822600PE",
-    "expiry": "08Sep2026",
+    "name": "NIFTY2691522600PE",
+    "expiry": "15Sep2026",
     "strike": "22600",
     "lotsize": "65",
     "instrumenttype": "OPTIDX",
@@ -330,10 +484,10 @@
     "tick_size": "0.05"
   },
   {
-    "token": "42579",
+    "token": "47265",
     "symbol": "NIFTY",
-    "name": "NIFTY2690822700CE",
-    "expiry": "08Sep2026",
+    "name": "NIFTY2691522700CE",
+    "expiry": "15Sep2026",
     "strike": "22700",
     "lotsize": "65",
     "instrumenttype": "OPTIDX",
@@ -341,10 +495,10 @@
     "tick_size": "0.05"
   },
   {
-    "token": "42580",
+    "token": "47266",
     "symbol": "NIFTY",
-    "name": "NIFTY2690822700PE",
-    "expiry": "08Sep2026",
+    "name": "NIFTY2691522700PE",
+    "expiry": "15Sep2026",
     "strike": "22700",
     "lotsize": "65",
     "instrumenttype": "OPTIDX",
@@ -352,10 +506,10 @@
     "tick_size": "0.05"
   },
   {
-    "token": "42583",
+    "token": "47269",
     "symbol": "NIFTY",
-    "name": "NIFTY2690822800CE",
-    "expiry": "08Sep2026",
+    "name": "NIFTY2691522800CE",
+    "expiry": "15Sep2026",
     "strike": "22800",
     "lotsize": "65",
     "instrumenttype": "OPTIDX",
@@ -363,10 +517,10 @@
     "tick_size": "0.05"
   },
   {
-    "token": "42584",
+    "token": "47270",
     "symbol": "NIFTY",
-    "name": "NIFTY2690822800PE",
-    "expiry": "08Sep2026",
+    "name": "NIFTY2691522800PE",
+    "expiry": "15Sep2026",
     "strike": "22800",
     "lotsize": "65",
     "instrumenttype": "OPTIDX",
@@ -374,10 +528,10 @@
     "tick_size": "0.05"
   },
   {
-    "token": "42587",
+    "token": "47273",
     "symbol": "NIFTY",
-    "name": "NIFTY2690822900CE",
-    "expiry": "08Sep2026",
+    "name": "NIFTY2691522900CE",
+    "expiry": "15Sep2026",
     "strike": "22900",
     "lotsize": "65",
     "instrumenttype": "OPTIDX",
@@ -385,10 +539,10 @@
     "tick_size": "0.05"
   },
   {
-    "token": "42588",
+    "token": "47274",
     "symbol": "NIFTY",
-    "name": "NIFTY2690822900PE",
-    "expiry": "08Sep2026",
+    "name": "NIFTY2691522900PE",
+    "expiry": "15Sep2026",
     "strike": "22900",
     "lotsize": "65",
     "instrumenttype": "OPTIDX",
@@ -396,10 +550,10 @@
     "tick_size": "0.05"
   },
   {
-    "token": "42591",
+    "token": "47277",
     "symbol": "NIFTY",
-    "name": "NIFTY2690823000CE",
-    "expiry": "08Sep2026",
+    "name": "NIFTY2691523000CE",
+    "expiry": "15Sep2026",
     "strike": "23000",
     "lotsize": "65",
     "instrumenttype": "OPTIDX",
@@ -407,10 +561,10 @@
     "tick_size": "0.05"
   },
   {
-    "token": "42592",
+    "token": "47278",
     "symbol": "NIFTY",
-    "name": "NIFTY2690823000PE",
-    "expiry": "08Sep2026",
+    "name": "NIFTY2691523000PE",
+    "expiry": "15Sep2026",
     "strike": "23000",
     "lotsize": "65",
     "instrumenttype": "OPTIDX",
@@ -418,10 +572,10 @@
     "tick_size": "0.05"
   },
   {
-    "token": "42595",
+    "token": "47281",
     "symbol": "NIFTY",
-    "name": "NIFTY2690823100CE",
-    "expiry": "08Sep2026",
+    "name": "NIFTY2691523100CE",
+    "expiry": "15Sep2026",
     "strike": "23100",
     "lotsize": "65",
     "instrumenttype": "OPTIDX",
@@ -429,10 +583,10 @@
     "tick_size": "0.05"
   },
   {
-    "token": "42596",
+    "token": "47282",
     "symbol": "NIFTY",
-    "name": "NIFTY2690823100PE",
-    "expiry": "08Sep2026",
+    "name": "NIFTY2691523100PE",
+    "expiry": "15Sep2026",
     "strike": "23100",
     "lotsize": "65",
     "instrumenttype": "OPTIDX",
@@ -440,10 +594,10 @@
     "tick_size": "0.05"
   },
   {
-    "token": "42599",
+    "token": "47285",
     "symbol": "NIFTY",
-    "name": "NIFTY2690823200CE",
-    "expiry": "08Sep2026",
+    "name": "NIFTY2691523200CE",
+    "expiry": "15Sep2026",
     "strike": "23200",
     "lotsize": "65",
     "instrumenttype": "OPTIDX",
@@ -451,10 +605,10 @@
     "tick_size": "0.05"
   },
   {
-    "token": "42600",
+    "token": "47286",
     "symbol": "NIFTY",
-    "name": "NIFTY2690823200PE",
-    "expiry": "08Sep2026",
+    "name": "NIFTY2691523200PE",
+    "expiry": "15Sep2026",
     "strike": "23200",
     "lotsize": "65",
     "instrumenttype": "OPTIDX",
@@ -462,10 +616,10 @@
     "tick_size": "0.05"
   },
   {
-    "token": "42603",
+    "token": "47289",
     "symbol": "NIFTY",
-    "name": "NIFTY2690823300CE",
-    "expiry": "08Sep2026",
+    "name": "NIFTY2691523300CE",
+    "expiry": "15Sep2026",
     "strike": "23300",
     "lotsize": "65",
     "instrumenttype": "OPTIDX",
@@ -473,10 +627,10 @@
     "tick_size": "0.05"
   },
   {
-    "token": "42604",
+    "token": "47290",
     "symbol": "NIFTY",
-    "name": "NIFTY2690823300PE",
-    "expiry": "08Sep2026",
+    "name": "NIFTY2691523300PE",
+    "expiry": "15Sep2026",
     "strike": "23300",
     "lotsize": "65",
     "instrumenttype": "OPTIDX",
@@ -484,10 +638,10 @@
     "tick_size": "0.05"
   },
   {
-    "token": "42608",
+    "token": "47293",
     "symbol": "NIFTY",
-    "name": "NIFTY2690823400CE",
-    "expiry": "08Sep2026",
+    "name": "NIFTY2691523400CE",
+    "expiry": "15Sep2026",
     "strike": "23400",
     "lotsize": "65",
     "instrumenttype": "OPTIDX",
@@ -495,10 +649,10 @@
     "tick_size": "0.05"
   },
   {
-    "token": "42609",
+    "token": "47294",
     "symbol": "NIFTY",
-    "name": "NIFTY2690823400PE",
-    "expiry": "08Sep2026",
+    "name": "NIFTY2691523400PE",
+    "expiry": "15Sep2026",
     "strike": "23400",
     "lotsize": "65",
     "instrumenttype": "OPTIDX",
@@ -506,10 +660,10 @@
     "tick_size": "0.05"
   },
   {
-    "token": "42612",
+    "token": "47297",
     "symbol": "NIFTY",
-    "name": "NIFTY2690823500CE",
-    "expiry": "08Sep2026",
+    "name": "NIFTY2691523500CE",
+    "expiry": "15Sep2026",
     "strike": "23500",
     "lotsize": "65",
     "instrumenttype": "OPTIDX",
@@ -517,10 +671,10 @@
     "tick_size": "0.05"
   },
   {
-    "token": "42614",
+    "token": "47298",
     "symbol": "NIFTY",
-    "name": "NIFTY2690823500PE",
-    "expiry": "08Sep2026",
+    "name": "NIFTY2691523500PE",
+    "expiry": "15Sep2026",
     "strike": "23500",
     "lotsize": "65",
     "instrumenttype": "OPTIDX",
@@ -528,10 +682,10 @@
     "tick_size": "0.05"
   },
   {
-    "token": "42623",
+    "token": "47301",
     "symbol": "NIFTY",
-    "name": "NIFTY2690823600CE",
-    "expiry": "08Sep2026",
+    "name": "NIFTY2691523600CE",
+    "expiry": "15Sep2026",
     "strike": "23600",
     "lotsize": "65",
     "instrumenttype": "OPTIDX",
@@ -539,10 +693,10 @@
     "tick_size": "0.05"
   },
   {
-    "token": "42624",
+    "token": "47302",
     "symbol": "NIFTY",
-    "name": "NIFTY2690823600PE",
-    "expiry": "08Sep2026",
+    "name": "NIFTY2691523600PE",
+    "expiry": "15Sep2026",
     "strike": "23600",
     "lotsize": "65",
     "instrumenttype": "OPTIDX",
@@ -550,10 +704,10 @@
     "tick_size": "0.05"
   },
   {
-    "token": "42627",
+    "token": "47305",
     "symbol": "NIFTY",
-    "name": "NIFTY2690823700CE",
-    "expiry": "08Sep2026",
+    "name": "NIFTY2691523700CE",
+    "expiry": "15Sep2026",
     "strike": "23700",
     "lotsize": "65",
     "instrumenttype": "OPTIDX",
@@ -561,10 +715,10 @@
     "tick_size": "0.05"
   },
   {
-    "token": "42628",
+    "token": "47306",
     "symbol": "NIFTY",
-    "name": "NIFTY2690823700PE",
-    "expiry": "08Sep2026",
+    "name": "NIFTY2691523700PE",
+    "expiry": "15Sep2026",
     "strike": "23700",
     "lotsize": "65",
     "instrumenttype": "OPTIDX",
@@ -572,10 +726,10 @@
     "tick_size": "0.05"
   },
   {
-    "token": "42631",
+    "token": "47309",
     "symbol": "NIFTY",
-    "name": "NIFTY2690823800CE",
-    "expiry": "08Sep2026",
+    "name": "NIFTY2691523800CE",
+    "expiry": "15Sep2026",
     "strike": "23800",
     "lotsize": "65",
     "instrumenttype": "OPTIDX",
@@ -583,10 +737,10 @@
     "tick_size": "0.05"
   },
   {
-    "token": "42632",
+    "token": "47310",
     "symbol": "NIFTY",
-    "name": "NIFTY2690823800PE",
-    "expiry": "08Sep2026",
+    "name": "NIFTY2691523800PE",
+    "expiry": "15Sep2026",
     "strike": "23800",
     "lotsize": "65",
     "instrumenttype": "OPTIDX",
@@ -594,10 +748,10 @@
     "tick_size": "0.05"
   },
   {
-    "token": "42635",
+    "token": "47315",
     "symbol": "NIFTY",
-    "name": "NIFTY2690823900CE",
-    "expiry": "08Sep2026",
+    "name": "NIFTY2691523900CE",
+    "expiry": "15Sep2026",
     "strike": "23900",
     "lotsize": "65",
     "instrumenttype": "OPTIDX",
@@ -605,10 +759,10 @@
     "tick_size": "0.05"
   },
   {
-    "token": "42636",
+    "token": "47316",
     "symbol": "NIFTY",
-    "name": "NIFTY2690823900PE",
-    "expiry": "08Sep2026",
+    "name": "NIFTY2691523900PE",
+    "expiry": "15Sep2026",
     "strike": "23900",
     "lotsize": "65",
     "instrumenttype": "OPTIDX",
@@ -616,10 +770,10 @@
     "tick_size": "0.05"
   },
   {
-    "token": "42639",
+    "token": "47319",
     "symbol": "NIFTY",
-    "name": "NIFTY2690824000CE",
-    "expiry": "08Sep2026",
+    "name": "NIFTY2691524000CE",
+    "expiry": "15Sep2026",
     "strike": "24000",
     "lotsize": "65",
     "instrumenttype": "OPTIDX",
@@ -627,10 +781,10 @@
     "tick_size": "0.05"
   },
   {
-    "token": "42640",
+    "token": "47320",
     "symbol": "NIFTY",
-    "name": "NIFTY2690824000PE",
-    "expiry": "08Sep2026",
+    "name": "NIFTY2691524000PE",
+    "expiry": "15Sep2026",
     "strike": "24000",
     "lotsize": "65",
     "instrumenttype": "OPTIDX",
@@ -638,10 +792,10 @@
     "tick_size": "0.05"
   },
   {
-    "token": "42643",
+    "token": "47323",
     "symbol": "NIFTY",
-    "name": "NIFTY2690824100CE",
-    "expiry": "08Sep2026",
+    "name": "NIFTY2691524100CE",
+    "expiry": "15Sep2026",
     "strike": "24100",
     "lotsize": "65",
     "instrumenttype": "OPTIDX",
@@ -649,10 +803,10 @@
     "tick_size": "0.05"
   },
   {
-    "token": "42644",
+    "token": "47324",
     "symbol": "NIFTY",
-    "name": "NIFTY2690824100PE",
-    "expiry": "08Sep2026",
+    "name": "NIFTY2691524100PE",
+    "expiry": "15Sep2026",
     "strike": "24100",
     "lotsize": "65",
     "instrumenttype": "OPTIDX",
@@ -660,10 +814,10 @@
     "tick_size": "0.05"
   },
   {
-    "token": "42647",
+    "token": "47327",
     "symbol": "NIFTY",
-    "name": "NIFTY2690824200CE",
-    "expiry": "08Sep2026",
+    "name": "NIFTY2691524200CE",
+    "expiry": "15Sep2026",
     "strike": "24200",
     "lotsize": "65",
     "instrumenttype": "OPTIDX",
@@ -671,10 +825,10 @@
     "tick_size": "0.05"
   },
   {
-    "token": "42648",
+    "token": "47328",
     "symbol": "NIFTY",
-    "name": "NIFTY2690824200PE",
-    "expiry": "08Sep2026",
+    "name": "NIFTY2691524200PE",
+    "expiry": "15Sep2026",
     "strike": "24200",
     "lotsize": "65",
     "instrumenttype": "OPTIDX",
@@ -682,10 +836,10 @@
     "tick_size": "0.05"
   },
   {
-    "token": "42651",
+    "token": "47331",
     "symbol": "NIFTY",
-    "name": "NIFTY2690824300CE",
-    "expiry": "08Sep2026",
+    "name": "NIFTY2691524300CE",
+    "expiry": "15Sep2026",
     "strike": "24300",
     "lotsize": "65",
     "instrumenttype": "OPTIDX",
@@ -693,10 +847,10 @@
     "tick_size": "0.05"
   },
   {
-    "token": "42652",
+    "token": "47332",
     "symbol": "NIFTY",
-    "name": "NIFTY2690824300PE",
-    "expiry": "08Sep2026",
+    "name": "NIFTY2691524300PE",
+    "expiry": "15Sep2026",
     "strike": "24300",
     "lotsize": "65",
     "instrumenttype": "OPTIDX",
@@ -704,10 +858,10 @@
     "tick_size": "0.05"
   },
   {
-    "token": "42657",
+    "token": "47335",
     "symbol": "NIFTY",
-    "name": "NIFTY2690824400CE",
-    "expiry": "08Sep2026",
+    "name": "NIFTY2691524400CE",
+    "expiry": "15Sep2026",
     "strike": "24400",
     "lotsize": "65",
     "instrumenttype": "OPTIDX",
@@ -715,10 +869,10 @@
     "tick_size": "0.05"
   },
   {
-    "token": "42658",
+    "token": "47336",
     "symbol": "NIFTY",
-    "name": "NIFTY2690824400PE",
-    "expiry": "08Sep2026",
+    "name": "NIFTY2691524400PE",
+    "expiry": "15Sep2026",
     "strike": "24400",
     "lotsize": "65",
     "instrumenttype": "OPTIDX",
@@ -726,10 +880,10 @@
     "tick_size": "0.05"
   },
   {
-    "token": "42661",
+    "token": "47339",
     "symbol": "NIFTY",
-    "name": "NIFTY2690824500CE",
-    "expiry": "08Sep2026",
+    "name": "NIFTY2691524500CE",
+    "expiry": "15Sep2026",
     "strike": "24500",
     "lotsize": "65",
     "instrumenttype": "OPTIDX",
@@ -737,10 +891,10 @@
     "tick_size": "0.05"
   },
   {
-    "token": "42662",
+    "token": "47340",
     "symbol": "NIFTY",
-    "name": "NIFTY2690824500PE",
-    "expiry": "08Sep2026",
+    "name": "NIFTY2691524500PE",
+    "expiry": "15Sep2026",
     "strike": "24500",
     "lotsize": "65",
     "instrumenttype": "OPTIDX",
@@ -748,10 +902,10 @@
     "tick_size": "0.05"
   },
   {
-    "token": "42665",
+    "token": "47345",
     "symbol": "NIFTY",
-    "name": "NIFTY2690824600CE",
-    "expiry": "08Sep2026",
+    "name": "NIFTY2691524600CE",
+    "expiry": "15Sep2026",
     "strike": "24600",
     "lotsize": "65",
     "instrumenttype": "OPTIDX",
@@ -759,10 +913,10 @@
     "tick_size": "0.05"
   },
   {
-    "token": "42666",
+    "token": "47346",
     "symbol": "NIFTY",
-    "name": "NIFTY2690824600PE",
-    "expiry": "08Sep2026",
+    "name": "NIFTY2691524600PE",
+    "expiry": "15Sep2026",
     "strike": "24600",
     "lotsize": "65",
     "instrumenttype": "OPTIDX",
@@ -770,10 +924,10 @@
     "tick_size": "0.05"
   },
   {
-    "token": "42669",
+    "token": "47349",
     "symbol": "NIFTY",
-    "name": "NIFTY2690824700CE",
-    "expiry": "08Sep2026",
+    "name": "NIFTY2691524700CE",
+    "expiry": "15Sep2026",
     "strike": "24700",
     "lotsize": "65",
     "instrumenttype": "OPTIDX",
@@ -781,10 +935,10 @@
     "tick_size": "0.05"
   },
   {
-    "token": "42670",
+    "token": "47350",
     "symbol": "NIFTY",
-    "name": "NIFTY2690824700PE",
-    "expiry": "08Sep2026",
+    "name": "NIFTY2691524700PE",
+    "expiry": "15Sep2026",
     "strike": "24700",
     "lotsize": "65",
     "instrumenttype": "OPTIDX",
@@ -792,10 +946,10 @@
     "tick_size": "0.05"
   },
   {
-    "token": "42673",
+    "token": "47353",
     "symbol": "NIFTY",
-    "name": "NIFTY2690824800CE",
-    "expiry": "08Sep2026",
+    "name": "NIFTY2691524800CE",
+    "expiry": "15Sep2026",
     "strike": "24800",
     "lotsize": "65",
     "instrumenttype": "OPTIDX",
@@ -803,10 +957,10 @@
     "tick_size": "0.05"
   },
   {
-    "token": "42674",
+    "token": "47355",
     "symbol": "NIFTY",
-    "name": "NIFTY2690824800PE",
-    "expiry": "08Sep2026",
+    "name": "NIFTY2691524800PE",
+    "expiry": "15Sep2026",
     "strike": "24800",
     "lotsize": "65",
     "instrumenttype": "OPTIDX",
@@ -814,10 +968,10 @@
     "tick_size": "0.05"
   },
   {
-    "token": "42677",
+    "token": "47359",
     "symbol": "NIFTY",
-    "name": "NIFTY2690824900CE",
-    "expiry": "08Sep2026",
+    "name": "NIFTY2691524900CE",
+    "expiry": "15Sep2026",
     "strike": "24900",
     "lotsize": "65",
     "instrumenttype": "OPTIDX",
@@ -825,10 +979,10 @@
     "tick_size": "0.05"
   },
   {
-    "token": "42680",
+    "token": "47360",
     "symbol": "NIFTY",
-    "name": "NIFTY2690824900PE",
-    "expiry": "08Sep2026",
+    "name": "NIFTY2691524900PE",
+    "expiry": "15Sep2026",
     "strike": "24900",
     "lotsize": "65",
     "instrumenttype": "OPTIDX",
@@ -836,10 +990,10 @@
     "tick_size": "0.05"
   },
   {
-    "token": "42683",
+    "token": "47363",
     "symbol": "NIFTY",
-    "name": "NIFTY2690825000CE",
-    "expiry": "08Sep2026",
+    "name": "NIFTY2691525000CE",
+    "expiry": "15Sep2026",
     "strike": "25000",
     "lotsize": "65",
     "instrumenttype": "OPTIDX",
@@ -847,10 +1001,10 @@
     "tick_size": "0.05"
   },
   {
-    "token": "42684",
+    "token": "47364",
     "symbol": "NIFTY",
-    "name": "NIFTY2690825000PE",
-    "expiry": "08Sep2026",
+    "name": "NIFTY2691525000PE",
+    "expiry": "15Sep2026",
     "strike": "25000",
     "lotsize": "65",
     "instrumenttype": "OPTIDX",
@@ -858,10 +1012,10 @@
     "tick_size": "0.05"
   },
   {
-    "token": "42691",
+    "token": "47367",
     "symbol": "NIFTY",
-    "name": "NIFTY2690825100CE",
-    "expiry": "08Sep2026",
+    "name": "NIFTY2691525100CE",
+    "expiry": "15Sep2026",
     "strike": "25100",
     "lotsize": "65",
     "instrumenttype": "OPTIDX",
@@ -869,10 +1023,10 @@
     "tick_size": "0.05"
   },
   {
-    "token": "42692",
+    "token": "47368",
     "symbol": "NIFTY",
-    "name": "NIFTY2690825100PE",
-    "expiry": "08Sep2026",
+    "name": "NIFTY2691525100PE",
+    "expiry": "15Sep2026",
     "strike": "25100",
     "lotsize": "65",
     "instrumenttype": "OPTIDX",
@@ -880,10 +1034,10 @@
     "tick_size": "0.05"
   },
   {
-    "token": "42697",
+    "token": "47371",
     "symbol": "NIFTY",
-    "name": "NIFTY2690825200CE",
-    "expiry": "08Sep2026",
+    "name": "NIFTY2691525200CE",
+    "expiry": "15Sep2026",
     "strike": "25200",
     "lotsize": "65",
     "instrumenttype": "OPTIDX",
@@ -891,10 +1045,10 @@
     "tick_size": "0.05"
   },
   {
-    "token": "42698",
+    "token": "47372",
     "symbol": "NIFTY",
-    "name": "NIFTY2690825200PE",
-    "expiry": "08Sep2026",
+    "name": "NIFTY2691525200PE",
+    "expiry": "15Sep2026",
     "strike": "25200",
     "lotsize": "65",
     "instrumenttype": "OPTIDX",
@@ -902,10 +1056,10 @@
     "tick_size": "0.05"
   },
   {
-    "token": "42701",
+    "token": "47379",
     "symbol": "NIFTY",
-    "name": "NIFTY2690825300CE",
-    "expiry": "08Sep2026",
+    "name": "NIFTY2691525300CE",
+    "expiry": "15Sep2026",
     "strike": "25300",
     "lotsize": "65",
     "instrumenttype": "OPTIDX",
@@ -913,10 +1067,10 @@
     "tick_size": "0.05"
   },
   {
-    "token": "42702",
+    "token": "47380",
     "symbol": "NIFTY",
-    "name": "NIFTY2690825300PE",
-    "expiry": "08Sep2026",
+    "name": "NIFTY2691525300PE",
+    "expiry": "15Sep2026",
     "strike": "25300",
     "lotsize": "65",
     "instrumenttype": "OPTIDX",
@@ -924,10 +1078,10 @@
     "tick_size": "0.05"
   },
   {
-    "token": "42707",
+    "token": "47385",
     "symbol": "NIFTY",
-    "name": "NIFTY2690825400CE",
-    "expiry": "08Sep2026",
+    "name": "NIFTY2691525400CE",
+    "expiry": "15Sep2026",
     "strike": "25400",
     "lotsize": "65",
     "instrumenttype": "OPTIDX",
@@ -935,10 +1089,10 @@
     "tick_size": "0.05"
   },
   {
-    "token": "42708",
+    "token": "47386",
     "symbol": "NIFTY",
-    "name": "NIFTY2690825400PE",
-    "expiry": "08Sep2026",
+    "name": "NIFTY2691525400PE",
+    "expiry": "15Sep2026",
     "strike": "25400",
     "lotsize": "65",
     "instrumenttype": "OPTIDX",
@@ -946,10 +1100,10 @@
     "tick_size": "0.05"
   },
   {
-    "token": "42711",
+    "token": "47389",
     "symbol": "NIFTY",
-    "name": "NIFTY2690825500CE",
-    "expiry": "08Sep2026",
+    "name": "NIFTY2691525500CE",
+    "expiry": "15Sep2026",
     "strike": "25500",
     "lotsize": "65",
     "instrumenttype": "OPTIDX",
@@ -957,10 +1111,10 @@
     "tick_size": "0.05"
   },
   {
-    "token": "42712",
+    "token": "47392",
     "symbol": "NIFTY",
-    "name": "NIFTY2690825500PE",
-    "expiry": "08Sep2026",
+    "name": "NIFTY2691525500PE",
+    "expiry": "15Sep2026",
     "strike": "25500",
     "lotsize": "65",
     "instrumenttype": "OPTIDX",
@@ -968,10 +1122,10 @@
     "tick_size": "0.05"
   },
   {
-    "token": "42723",
+    "token": "47395",
     "symbol": "NIFTY",
-    "name": "NIFTY2690825600CE",
-    "expiry": "08Sep2026",
+    "name": "NIFTY2691525600CE",
+    "expiry": "15Sep2026",
     "strike": "25600",
     "lotsize": "65",
     "instrumenttype": "OPTIDX",
@@ -979,10 +1133,10 @@
     "tick_size": "0.05"
   },
   {
-    "token": "42724",
+    "token": "47396",
     "symbol": "NIFTY",
-    "name": "NIFTY2690825600PE",
-    "expiry": "08Sep2026",
+    "name": "NIFTY2691525600PE",
+    "expiry": "15Sep2026",
     "strike": "25600",
     "lotsize": "65",
     "instrumenttype": "OPTIDX",
@@ -990,10 +1144,10 @@
     "tick_size": "0.05"
   },
   {
-    "token": "42727",
+    "token": "47405",
     "symbol": "NIFTY",
-    "name": "NIFTY2690825700CE",
-    "expiry": "08Sep2026",
+    "name": "NIFTY2691525700CE",
+    "expiry": "15Sep2026",
     "strike": "25700",
     "lotsize": "65",
     "instrumenttype": "OPTIDX",
@@ -1001,10 +1155,10 @@
     "tick_size": "0.05"
   },
   {
-    "token": "42728",
+    "token": "47406",
     "symbol": "NIFTY",
-    "name": "NIFTY2690825700PE",
-    "expiry": "08Sep2026",
+    "name": "NIFTY2691525700PE",
+    "expiry": "15Sep2026",
     "strike": "25700",
     "lotsize": "65",
     "instrumenttype": "OPTIDX",
@@ -1012,10 +1166,10 @@
     "tick_size": "0.05"
   },
   {
-    "token": "42733",
+    "token": "47413",
     "symbol": "NIFTY",
-    "name": "NIFTY2690825800CE",
-    "expiry": "08Sep2026",
+    "name": "NIFTY2691525800CE",
+    "expiry": "15Sep2026",
     "strike": "25800",
     "lotsize": "65",
     "instrumenttype": "OPTIDX",
@@ -1023,10 +1177,10 @@
     "tick_size": "0.05"
   },
   {
-    "token": "42734",
+    "token": "47414",
     "symbol": "NIFTY",
-    "name": "NIFTY2690825800PE",
-    "expiry": "08Sep2026",
+    "name": "NIFTY2691525800PE",
+    "expiry": "15Sep2026",
     "strike": "25800",
     "lotsize": "65",
     "instrumenttype": "OPTIDX",
@@ -1034,10 +1188,10 @@
     "tick_size": "0.05"
   },
   {
-    "token": "42741",
+    "token": "47421",
     "symbol": "NIFTY",
-    "name": "NIFTY2690825900CE",
-    "expiry": "08Sep2026",
+    "name": "NIFTY2691525900CE",
+    "expiry": "15Sep2026",
     "strike": "25900",
     "lotsize": "65",
     "instrumenttype": "OPTIDX",
@@ -1045,10 +1199,10 @@
     "tick_size": "0.05"
   },
   {
-    "token": "42742",
+    "token": "47422",
     "symbol": "NIFTY",
-    "name": "NIFTY2690825900PE",
-    "expiry": "08Sep2026",
+    "name": "NIFTY2691525900PE",
+    "expiry": "15Sep2026",
     "strike": "25900",
     "lotsize": "65",
     "instrumenttype": "OPTIDX",
@@ -1056,10 +1210,10 @@
     "tick_size": "0.05"
   },
   {
-    "token": "42745",
+    "token": "47429",
     "symbol": "NIFTY",
-    "name": "NIFTY2690826000CE",
-    "expiry": "08Sep2026",
+    "name": "NIFTY2691526000CE",
+    "expiry": "15Sep2026",
     "strike": "26000",
     "lotsize": "65",
     "instrumenttype": "OPTIDX",
@@ -1067,10 +1221,10 @@
     "tick_size": "0.05"
   },
   {
-    "token": "42746",
+    "token": "47432",
     "symbol": "NIFTY",
-    "name": "NIFTY2690826000PE",
-    "expiry": "08Sep2026",
+    "name": "NIFTY2691526000PE",
+    "expiry": "15Sep2026",
     "strike": "26000",
     "lotsize": "65",
     "instrumenttype": "OPTIDX",
@@ -1078,10 +1232,10 @@
     "tick_size": "0.05"
   },
   {
-    "token": "42753",
+    "token": "47437",
     "symbol": "NIFTY",
-    "name": "NIFTY2690826100CE",
-    "expiry": "08Sep2026",
+    "name": "NIFTY2691526100CE",
+    "expiry": "15Sep2026",
     "strike": "26100",
     "lotsize": "65",
     "instrumenttype": "OPTIDX",
@@ -1089,10 +1243,10 @@
     "tick_size": "0.05"
   },
   {
-    "token": "42754",
+    "token": "47438",
     "symbol": "NIFTY",
-    "name": "NIFTY2690826100PE",
-    "expiry": "08Sep2026",
+    "name": "NIFTY2691526100PE",
+    "expiry": "15Sep2026",
     "strike": "26100",
     "lotsize": "65",
     "instrumenttype": "OPTIDX",
@@ -1100,10 +1254,10 @@
     "tick_size": "0.05"
   },
   {
-    "token": "42761",
+    "token": "47441",
     "symbol": "NIFTY",
-    "name": "NIFTY2690826200CE",
-    "expiry": "08Sep2026",
+    "name": "NIFTY2691526200CE",
+    "expiry": "15Sep2026",
     "strike": "26200",
     "lotsize": "65",
     "instrumenttype": "OPTIDX",
@@ -1111,10 +1265,10 @@
     "tick_size": "0.05"
   },
   {
-    "token": "42762",
+    "token": "47442",
     "symbol": "NIFTY",
-    "name": "NIFTY2690826200PE",
-    "expiry": "08Sep2026",
+    "name": "NIFTY2691526200PE",
+    "expiry": "15Sep2026",
     "strike": "26200",
     "lotsize": "65",
     "instrumenttype": "OPTIDX",
@@ -1122,10 +1276,10 @@
     "tick_size": "0.05"
   },
   {
-    "token": "42765",
+    "token": "47445",
     "symbol": "NIFTY",
-    "name": "NIFTY2690826300CE",
-    "expiry": "08Sep2026",
+    "name": "NIFTY2691526300CE",
+    "expiry": "15Sep2026",
     "strike": "26300",
     "lotsize": "65",
     "instrumenttype": "OPTIDX",
@@ -1133,10 +1287,10 @@
     "tick_size": "0.05"
   },
   {
-    "token": "42766",
+    "token": "47446",
     "symbol": "NIFTY",
-    "name": "NIFTY2690826300PE",
-    "expiry": "08Sep2026",
+    "name": "NIFTY2691526300PE",
+    "expiry": "15Sep2026",
     "strike": "26300",
     "lotsize": "65",
     "instrumenttype": "OPTIDX",
@@ -1144,10 +1298,10 @@
     "tick_size": "0.05"
   },
   {
-    "token": "42769",
+    "token": "47451",
     "symbol": "NIFTY",
-    "name": "NIFTY2690826400CE",
-    "expiry": "08Sep2026",
+    "name": "NIFTY2691526400CE",
+    "expiry": "15Sep2026",
     "strike": "26400",
     "lotsize": "65",
     "instrumenttype": "OPTIDX",
@@ -1155,165 +1309,11 @@
     "tick_size": "0.05"
   },
   {
-    "token": "42770",
+    "token": "47452",
     "symbol": "NIFTY",
-    "name": "NIFTY2690826400PE",
-    "expiry": "08Sep2026",
+    "name": "NIFTY2691526400PE",
+    "expiry": "15Sep2026",
     "strike": "26400",
-    "lotsize": "65",
-    "instrumenttype": "OPTIDX",
-    "exch_seg": "NFO",
-    "tick_size": "0.05"
-  },
-  {
-    "token": "42773",
-    "symbol": "NIFTY",
-    "name": "NIFTY2690826500CE",
-    "expiry": "08Sep2026",
-    "strike": "26500",
-    "lotsize": "65",
-    "instrumenttype": "OPTIDX",
-    "exch_seg": "NFO",
-    "tick_size": "0.05"
-  },
-  {
-    "token": "42774",
-    "symbol": "NIFTY",
-    "name": "NIFTY2690826500PE",
-    "expiry": "08Sep2026",
-    "strike": "26500",
-    "lotsize": "65",
-    "instrumenttype": "OPTIDX",
-    "exch_seg": "NFO",
-    "tick_size": "0.05"
-  },
-  {
-    "token": "42777",
-    "symbol": "NIFTY",
-    "name": "NIFTY2690826600CE",
-    "expiry": "08Sep2026",
-    "strike": "26600",
-    "lotsize": "65",
-    "instrumenttype": "OPTIDX",
-    "exch_seg": "NFO",
-    "tick_size": "0.05"
-  },
-  {
-    "token": "42778",
-    "symbol": "NIFTY",
-    "name": "NIFTY2690826600PE",
-    "expiry": "08Sep2026",
-    "strike": "26600",
-    "lotsize": "65",
-    "instrumenttype": "OPTIDX",
-    "exch_seg": "NFO",
-    "tick_size": "0.05"
-  },
-  {
-    "token": "42781",
-    "symbol": "NIFTY",
-    "name": "NIFTY2690826700CE",
-    "expiry": "08Sep2026",
-    "strike": "26700",
-    "lotsize": "65",
-    "instrumenttype": "OPTIDX",
-    "exch_seg": "NFO",
-    "tick_size": "0.05"
-  },
-  {
-    "token": "42782",
-    "symbol": "NIFTY",
-    "name": "NIFTY2690826700PE",
-    "expiry": "08Sep2026",
-    "strike": "26700",
-    "lotsize": "65",
-    "instrumenttype": "OPTIDX",
-    "exch_seg": "NFO",
-    "tick_size": "0.05"
-  },
-  {
-    "token": "42787",
-    "symbol": "NIFTY",
-    "name": "NIFTY2690826800CE",
-    "expiry": "08Sep2026",
-    "strike": "26800",
-    "lotsize": "65",
-    "instrumenttype": "OPTIDX",
-    "exch_seg": "NFO",
-    "tick_size": "0.05"
-  },
-  {
-    "token": "42788",
-    "symbol": "NIFTY",
-    "name": "NIFTY2690826800PE",
-    "expiry": "08Sep2026",
-    "strike": "26800",
-    "lotsize": "65",
-    "instrumenttype": "OPTIDX",
-    "exch_seg": "NFO",
-    "tick_size": "0.05"
-  },
-  {
-    "token": "42793",
-    "symbol": "NIFTY",
-    "name": "NIFTY2690826900CE",
-    "expiry": "08Sep2026",
-    "strike": "26900",
-    "lotsize": "65",
-    "instrumenttype": "OPTIDX",
-    "exch_seg": "NFO",
-    "tick_size": "0.05"
-  },
-  {
-    "token": "42794",
-    "symbol": "NIFTY",
-    "name": "NIFTY2690826900PE",
-    "expiry": "08Sep2026",
-    "strike": "26900",
-    "lotsize": "65",
-    "instrumenttype": "OPTIDX",
-    "exch_seg": "NFO",
-    "tick_size": "0.05"
-  },
-  {
-    "token": "42799",
-    "symbol": "NIFTY",
-    "name": "NIFTY2690827000CE",
-    "expiry": "08Sep2026",
-    "strike": "27000",
-    "lotsize": "65",
-    "instrumenttype": "OPTIDX",
-    "exch_seg": "NFO",
-    "tick_size": "0.05"
-  },
-  {
-    "token": "42800",
-    "symbol": "NIFTY",
-    "name": "NIFTY2690827000PE",
-    "expiry": "08Sep2026",
-    "strike": "27000",
-    "lotsize": "65",
-    "instrumenttype": "OPTIDX",
-    "exch_seg": "NFO",
-    "tick_size": "0.05"
-  },
-  {
-    "token": "42803",
-    "symbol": "NIFTY",
-    "name": "NIFTY2690827100CE",
-    "expiry": "08Sep2026",
-    "strike": "27100",
-    "lotsize": "65",
-    "instrumenttype": "OPTIDX",
-    "exch_seg": "NFO",
-    "tick_size": "0.05"
-  },
-  {
-    "token": "42804",
-    "symbol": "NIFTY",
-    "name": "NIFTY2690827100PE",
-    "expiry": "08Sep2026",
-    "strike": "27100",
     "lotsize": "65",
     "instrumenttype": "OPTIDX",
     "exch_seg": "NFO",

@@ -1,4 +1,5 @@
 import asyncio
+import csv
 import http.client
 import json
 import logging
@@ -8,6 +9,8 @@ import time
 import requests
 import os
 import tempfile
+import ssl
+import shutil
 
 
 import pandas as pd
@@ -24,8 +27,14 @@ from utils import get_trading_symbols_from_json , find_matching_object , fetch_f
 from core.mstock_connector import MStockSingleton
 from interface.broker_interface import BrokerInterface
 from core.trade_logic import Trader_Singleton
-from adapter.mstock_utils import position_attribute_mgmt , fund_summary_attribute_mgmt , order_attribute_mgmt , instr_det_attrib_mgmt
+from adapter.mstock_utils import (
+    position_attribute_mgmt, fund_summary_attribute_mgmt, order_attribute_mgmt,
+    instr_det_attrib_mgmt, normalize_contract_symbol, write_orders_workbook,
+)
 from loguru import logger
+
+
+_SSL_CONTEXT = ssl.create_default_context()
 
 
 class MStockAdapter(BrokerInterface):
@@ -72,7 +81,7 @@ class MStockAdapter(BrokerInterface):
         logger.info(f"Cancelling order: {order_id}")
 
         try:
-            conn = http.client.HTTPSConnection("api.mstock.trade")
+            conn = http.client.HTTPSConnection("api.mstock.trade", context=_SSL_CONTEXT)
 
             headers = {
                 "X-Mirae-Version": "1",
@@ -135,7 +144,7 @@ class MStockAdapter(BrokerInterface):
         logger.info("Fetching pending orders from M.Stock...")
 
         try:
-            conn = http.client.HTTPSConnection('api.mstock.trade')
+            conn = http.client.HTTPSConnection("api.mstock.trade", context=_SSL_CONTEXT)
             headers = {
                 "X-Mirae-Version": "1",
                 "X-PrivateKey": self.mstock_instance._api_key,
@@ -196,7 +205,7 @@ class MStockAdapter(BrokerInterface):
     def fetch_all_orders(self):
         logger.info("Fetching all orders from M.Stock...")
         try:
-            conn = http.client.HTTPSConnection('api.mstock.trade')
+            conn = http.client.HTTPSConnection("api.mstock.trade", context=_SSL_CONTEXT)
             headers = {
                 "X-Mirae-Version": "1",
                 "X-PrivateKey": self.mstock_instance._api_key,
@@ -228,7 +237,7 @@ class MStockAdapter(BrokerInterface):
     def fetch_order_executed_price(self,orderid):
         logger.info(f"Fetching executed price for order id {orderid} from M.Stock...")
         try:
-            conn = http.client.HTTPSConnection('api.mstock.trade')
+            conn = http.client.HTTPSConnection("api.mstock.trade", context=_SSL_CONTEXT)
             headers = {
                 "X-Mirae-Version": "1",
                 "X-PrivateKey": self.mstock_instance._api_key,
@@ -248,8 +257,15 @@ class MStockAdapter(BrokerInterface):
             
             logger.debug(f"Searching for order id {orderid} in fetched orders")
             
-            #order = next((o for o in orders if o["orderid"] == orderid and o.get("status")=="Traded"), None)
-            order = next((o for o in orders if o["orderid"] == orderid and o.get("status")=="O-Pending"), None)
+            order = next(
+                (
+                    o for o in orders
+                    if str(o.get("orderid")) == str(orderid)
+                    and str(o.get("orderstatus") or o.get("status") or "").lower()
+                    in {"traded", "complete", "o-pending", "pending"}
+                ),
+                None,
+            )
             
             if not order:
                 logger.warning(f"Order {orderid} not yet traded")
@@ -260,8 +276,12 @@ class MStockAdapter(BrokerInterface):
             # response = order_attribute_mgmt([order])
             # logger.info(f"Orders data post attributes management: {response}")
 
-            # ✅ Return only average_price
-            avg_price = float(order["averageprice"])
+            average_price = order.get("averageprice")
+            if average_price in (None, "", "0", 0, 0.0):
+                logger.warning(f"Order {orderid} has no executed average price yet")
+                return None
+
+            avg_price = float(average_price)
 
             logger.debug(f"Executed average price for order {orderid}: {avg_price}")
             return avg_price
@@ -271,7 +291,7 @@ class MStockAdapter(BrokerInterface):
     
     def fetch_all_instruments(self):
         logger.info("Fetching all instruments from M.Stock...")
-        conn = http.client.HTTPSConnection('api.mstock.trade')
+        conn = http.client.HTTPSConnection("api.mstock.trade", context=_SSL_CONTEXT)
         headers = {
                 "X-Mirae-Version": "1",
                 "X-PrivateKey": self.mstock_instance._api_key,
@@ -288,7 +308,7 @@ class MStockAdapter(BrokerInterface):
     def fetch_all_positions(self):
         logger.info("Fetching all positions from M.Stock...")
         try:
-            conn = http.client.HTTPSConnection("api.mstock.trade")
+            conn = http.client.HTTPSConnection("api.mstock.trade", context=_SSL_CONTEXT)
             headers = {
                 "X-Mirae-Version": "1",
                 "X-PrivateKey": self.mstock_instance._api_key,
@@ -428,7 +448,7 @@ class MStockAdapter(BrokerInterface):
             # ---------------------------------------------------------
             # M.Stock batch quote request
             # ---------------------------------------------------------
-            conn = http.client.HTTPSConnection("api.mstock.trade")
+            conn = http.client.HTTPSConnection("api.mstock.trade", context=_SSL_CONTEXT)
 
             headers = {
                 "X-Mirae-Version": "1",
@@ -562,7 +582,7 @@ class MStockAdapter(BrokerInterface):
     def fetch_fund_summary(self):
         logger.info("Fetching fund summary from M.Stock...")
         try:
-            conn = http.client.HTTPSConnection('api.mstock.trade')
+            conn = http.client.HTTPSConnection("api.mstock.trade", context=_SSL_CONTEXT)
             headers = {
                     "X-Mirae-Version": "1",
                     "X-PrivateKey": self.mstock_instance._api_key,
@@ -613,7 +633,7 @@ class MStockAdapter(BrokerInterface):
     def fetch_instrument_quote(self , exchange , instrument_token):
         logger.info(f"Fetching instrument quote for {exchange} {instrument_token} from M.Stock...")
         try:
-            conn = http.client.HTTPSConnection('api.mstock.trade')
+            conn = http.client.HTTPSConnection("api.mstock.trade", context=_SSL_CONTEXT)
             headers = {
                     "X-Mirae-Version": "1",
                     "X-PrivateKey": self.mstock_instance._api_key,
@@ -646,7 +666,7 @@ class MStockAdapter(BrokerInterface):
     def fetch_expiries(self , underlying):
         logger.info(f"fetch_expiries {underlying} from M.Stock...")
         try:
-            conn = http.client.HTTPSConnection('api.mstock.trade')
+            conn = http.client.HTTPSConnection("api.mstock.trade", context=_SSL_CONTEXT)
             headers = {
                     "X-Mirae-Version": "1",
                     "X-PrivateKey": self.mstock_instance._api_key,
@@ -677,7 +697,7 @@ class MStockAdapter(BrokerInterface):
     def sell_units(self, trading_symbol, instrument_token , quantity , exchange , ltp):
         try:
             logger.info(f"Selling units: {quantity} of {trading_symbol} ({instrument_token}) via M.Stock...")
-            conn = http.client.HTTPSConnection('api.mstock.trade')
+            conn = http.client.HTTPSConnection("api.mstock.trade", context=_SSL_CONTEXT)
             headers = {
                     "X-Mirae-Version": "1",
                     "X-PrivateKey": self.mstock_instance._api_key,
@@ -779,7 +799,7 @@ class MStockAdapter(BrokerInterface):
     def sell_units_temp(self, trading_symbol, instrument_token , quantity , exchange , ltp,limit_market="MARKET",price=0):
         try:
             logger.info(f"Selling units: {quantity} of {trading_symbol} ({instrument_token} {limit_market} {price} ) via M.Stock...")
-            conn = http.client.HTTPSConnection('api.mstock.trade')
+            conn = http.client.HTTPSConnection("api.mstock.trade", context=_SSL_CONTEXT)
             headers = {
                     "X-Mirae-Version": "1",
                     "X-PrivateKey": self.mstock_instance._api_key,
@@ -932,7 +952,7 @@ class MStockAdapter(BrokerInterface):
                 }
                 logger.debug(f"Buy order payload: {json_data}")
 
-                conn = http.client.HTTPSConnection('api.mstock.trade',timeout=10)
+                conn = http.client.HTTPSConnection('api.mstock.trade', timeout=10, context=_SSL_CONTEXT)
                 headers = {
                         "X-Mirae-Version": "1",
                         "X-PrivateKey": self.mstock_instance._api_key,
@@ -988,18 +1008,14 @@ class MStockAdapter(BrokerInterface):
                         # FAST POSITION GRID UPDATE
                         # Do this immediately after successful BUY,
                         # before any SELL handling or REST position refresh.
-                        if (
-                            self._trader._broker_string == "MSTOCK"
-                            and self._trader._underlying == "SENSEX"
-                        ):
-                            self._trader.fast_update_position_after_buy(
-                                trading_symbol=trading_symbol,
-                                instrument_token=instrument_token,
-                                quantity=int(qty) // int(lotsize),
-                                lotsize=lotsize,
-                                executed_buy_price=ltp,
-                                exchange=exchange
-                            )                        
+                        self._trader.fast_update_position_after_buy(
+                            trading_symbol=trading_symbol,
+                            instrument_token=instrument_token,
+                            quantity=int(qty) // int(lotsize),
+                            lotsize=lotsize,
+                            executed_buy_price=ltp,
+                            exchange=exchange
+                        )                        
                         # Checking what time advantage we get by placing sell order immediately after buy order even before position / order refresh happens
 
                         # self._trader.frontend_data_socket.emit('buy_order_result',{"success": True, "tradingsymbol": trading_symbol , "Quantity": quantity})
@@ -1013,16 +1029,23 @@ class MStockAdapter(BrokerInterface):
                         # MODE CAN BE "ALERT", "EXECUTION"
                         # SELL_MODE CAN BE "U" OR "D" OR "T"
 
-                        if mode == "EXECUTION":
+                        if mode == "LIVE":
                             logger.debug(f"Mode is {mode} and Sell_Mode is {sell_mode}")
                             # if sell_mode == "U": # Undetermined Profit at LTP + target_profit
                             #     logger.info("System placing Sell Order at LTP + {target_profit} points immediately after buy order is placed")
                             #     self.sell_units_temp(trading_symbol, instrument_token , buy_quantity , exchange,ltp=ltp,limit_market="LIMIT",price=ltp+target_profit) 
                             if sell_mode == "D": # Determined Profit at Buy Price + target_profit
-                                logger.debug("System placing Sell Order at Buy Price + {target_profit} points immediately after buy order is placed")
+                                logger.debug(f"System placing Sell Order at Buy Price + {target_profit} points immediately after buy order is placed")
                                 logger.debug(f"Fetching Buy Price for the order id {parsed_response.get('data').get('orderid')}")
                                 buy_price = self.fetch_order_executed_price(parsed_response.get('data').get("orderid"))
                                 logger.info(f"Buy Price fetched for the order id {parsed_response.get('data').get('orderid')} is {buy_price}")
+                                if buy_price is None:
+                                    buy_price = float(ltp)
+                                    logger.warning(
+                                        f"Executed price unavailable for order "
+                                        f"{parsed_response.get('data').get('orderid')}; "
+                                        f"using buy LTP {buy_price} for the immediate sell"
+                                    )
                                 self.sell_units_temp(trading_symbol, instrument_token , buy_quantity , exchange,ltp=ltp,limit_market="LIMIT",price=buy_price+target_profit) 
                             elif sell_mode == "T": # Trigger Based..So Sell Order is not explicity raised..
                                 logger.debug("Waiting for Trigger to raise the Sell order")
@@ -1044,7 +1067,7 @@ class MStockAdapter(BrokerInterface):
         try:
             logger.info(f"Buying/Selling units: {quantity} of {trading_symbol} ({instrument_token}) via M.Stock...Current LTP: {ltp}...Mode is {mode}. Sell Mode is {sell_mode}, target_profit is {target_profit}")
             
-            if mode == "EXECUTION":
+            if mode == "LIVE":
                 buy_quantity = quantity
 
                 # --- Fast path: check in-memory cache first ---
@@ -1105,7 +1128,7 @@ class MStockAdapter(BrokerInterface):
                     }
                     logger.debug(f"Buy order payload: {json_data}")
 
-                    conn = http.client.HTTPSConnection('api.mstock.trade',timeout=10)
+                    conn = http.client.HTTPSConnection('api.mstock.trade', timeout=10, context=_SSL_CONTEXT)
                     headers = {
                             "X-Mirae-Version": "1",
                             "X-PrivateKey": self.mstock_instance._api_key,
@@ -1149,7 +1172,7 @@ class MStockAdapter(BrokerInterface):
                             logger.debug("Selling immediately after buying as per settings...")
                             logger.debug(f"LTP: {ltp} ; Target Profit : {target_profit} ; So Selling Price is {ltp+target_profit}")
 
-                            if mode != "EXECUTION":
+                            if mode != "LIVE":
                                 logger.debug(f"Mode is {mode} and Sell_Mode is {sell_mode}")
                                 logger.debug("Since Mode is not EXECUTION, placing Sell Order immediately after buy order is not done")
                                 return
@@ -1198,6 +1221,30 @@ class MStockAdapter(BrokerInterface):
         logger.info("Manually refreshing open positions and buy prices in M.StockAdapter...")
         self._trader.refresh_open_pos_buy_price()
 
+    @staticmethod
+    def _select_contract_note_time(order_time, trade_time, price):
+        """Select OrderTime, falling back to TradeTime or price-based seconds."""
+        time_pattern = re.compile(r"^(\d{1,2}):(\d{2})(?::(\d{2}))?$")
+        parsed_times = []
+        for value in (order_time, trade_time):
+            match = time_pattern.match(str(value).strip())
+            if match:
+                hour, minute, second = match.groups()
+                parsed_times.append((int(hour), int(minute), int(second or 0)))
+            else:
+                parsed_times.append(None)
+
+        selected = parsed_times[0] if parsed_times[0] and parsed_times[0][2] else None
+        selected = selected or (parsed_times[1] if parsed_times[1] and parsed_times[1][2] else None)
+        selected = selected or parsed_times[0] or parsed_times[1]
+        if not selected:
+            raise ValueError(f"Invalid contract-note times: {order_time}, {trade_time}")
+
+        hour, minute, second = selected
+        if second == 0:
+            second = max(0, min(59, int(round(float(price)))))
+        return f"{hour:02d}:{minute:02d}:{second:02d}"
+
     def extract_trades(self,tables):
         """
         Extract BUY/SELL trades from Camelot tables
@@ -1216,13 +1263,37 @@ class MStockAdapter(BrokerInterface):
                     continue
 
                 try:
+                    values = [str(value).strip() for value in row.tolist()]
+                    side_index = next(
+                        index for index, value in enumerate(values)
+                        if value.upper() in {"BUY", "SELL"}
+                    )
+                    if side_index >= 6:
+                        order_id = values[0]
+                        order_time = values[1]
+                        trade_time = values[2]
+                        symbol = values[side_index - 1]
+                        quantity = int(float(values[side_index + 1]))
+                        price = float(values[side_index + 3])
+                    else:
+                        order_id = values[0]
+                        order_time = values[3]
+                        trade_time = ""
+                        symbol = values[4]
+                        quantity = int(float(values[6]))
+                        price = float(values[7])
+
+                    selected_time = self._select_contract_note_time(
+                        order_time, trade_time, price
+                    )
+
                     trades.append({
-                        "order_id": row[0],
-                        "trade_time": row[3],
-                        "symbol": row[4],
-                        "side": row[5].strip(),
-                        "qty": int(row[6]),
-                        "price": float(row[7])
+                        "order_id": order_id,
+                        "trade_time": selected_time,
+                        "symbol": symbol,
+                        "side": values[side_index].upper(),
+                        "qty": quantity,
+                        "price": price
                     })
                 except Exception:
                     continue
@@ -1230,24 +1301,71 @@ class MStockAdapter(BrokerInterface):
         return trades
 
     def ocr_pdf(self,input_pdf: str) -> str:
-        from pdf2image import convert_from_path
         import pytesseract
+        from pytesseract import TesseractNotFoundError
         from PIL import Image
         import tempfile
         from reportlab.pdfgen import canvas
 
-        images = convert_from_path(input_pdf, dpi=300)
+        try:
+            import pymupdf
+        except ImportError as error:
+            raise RuntimeError(
+                "Contract-note OCR requires PyMuPDF. Install dependencies from requirements.txt."
+            ) from error
 
-        tmp_pdf = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
-        c = canvas.Canvas(tmp_pdf.name)
+        tesseract_cmd = (
+            os.environ.get("TESSERACT_CMD")
+            or shutil.which("tesseract")
+            or next(
+                (
+                    path
+                    for path in (
+                        r"C:\Program Files\Tesseract-OCR\tesseract.exe",
+                        r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe",
+                    )
+                    if os.path.isfile(path)
+                ),
+                None,
+            )
+        )
+        if tesseract_cmd:
+            pytesseract.pytesseract.tesseract_cmd = tesseract_cmd
+
+        images = []
+        document = pymupdf.open(input_pdf)
+        try:
+            scale = 300 / 72
+            matrix = pymupdf.Matrix(scale, scale)
+            for page in document:
+                pixmap = page.get_pixmap(matrix=matrix, alpha=False)
+                images.append(
+                    Image.frombytes(
+                        "RGB",
+                        [pixmap.width, pixmap.height],
+                        pixmap.samples,
+                    )
+                )
+        finally:
+            document.close()
+
+        tmp_fd, tmp_pdf_path = tempfile.mkstemp(suffix=".pdf")
+        os.close(tmp_fd)
+        c = canvas.Canvas(tmp_pdf_path)
 
         for img in images:
-            text = pytesseract.image_to_string(img)
+            try:
+                text = pytesseract.image_to_string(img)
+            except TesseractNotFoundError as error:
+                raise RuntimeError(
+                    "Contract-note OCR requires Tesseract OCR. Install Tesseract and either "
+                    "add it to PATH or set TESSERACT_CMD to tesseract.exe."
+                ) from error
             c.drawString(20, 800, text[:1000])  # minimal text injection
             c.showPage()
 
         c.save()
-        return tmp_pdf.name        
+        return tmp_pdf_path
 
     def convert_mstock_contract_note(self,pdf_path: str) -> str:
         """
@@ -1256,26 +1374,37 @@ class MStockAdapter(BrokerInterface):
         """
 
         # ---------- Pass 1: Normal Camelot ----------
-        tables = camelot.read_pdf(
-            pdf_path,
-            pages="all",
-            flavor="stream",
-            strip_text="\n"
-        )
-
-        raw_trades = self.extract_trades(tables)
+        try:
+            tables = camelot.read_pdf(
+                pdf_path,
+                pages="3",
+                flavor="stream",
+                strip_text="\n"
+            )
+            raw_trades = self.extract_trades(tables)
+        except Exception as error:
+            logger.warning(
+                f"Camelot could not parse the contract note; using OCR fallback: {error}"
+            )
+            raw_trades = []
 
         # ---------- Pass 2: OCR fallback ----------
         if not raw_trades:
             ocr_pdf_path = self.ocr_pdf(pdf_path)
             try:
-                tables = camelot.read_pdf(
-                    ocr_pdf_path,
-                    pages="all",
-                    flavor="stream",
-                    strip_text="\n"
-                )
-                raw_trades = self.extract_trades(tables)
+                try:
+                    tables = camelot.read_pdf(
+                        ocr_pdf_path,
+                        pages="all",
+                        flavor="stream",
+                        strip_text="\n"
+                    )
+                    raw_trades = self.extract_trades(tables)
+                except Exception as error:
+                    logger.warning(
+                        f"Camelot could not parse the OCR output: {error}"
+                    )
+                    raw_trades = []
             finally:
                 try:
                     os.unlink(ocr_pdf_path)
@@ -1285,81 +1414,190 @@ class MStockAdapter(BrokerInterface):
         if not raw_trades:
             raise ValueError("No BUY/SELL trades found (even after OCR)")
 
-        # ---------- FIFO BUY–SELL pairing ----------
-        open_buys = defaultdict(deque)
-        output_rows = []
-        seq = 1
+        trade_date = datetime.datetime.now().date()
+        try:
+            import pymupdf
 
-        for t in raw_trades:
-            symbol = t["symbol"]
+            document = pymupdf.open(pdf_path)
+            text = "\n".join(page.get_text() for page in document[:2])
+            document.close()
+            date_match = re.search(
+                r"TRADE DATE\s+([A-Z][a-z]{2}\s+\d{1,2}\s+\d{4})",
+                text,
+                re.IGNORECASE,
+            )
+            if date_match:
+                trade_date = datetime.datetime.strptime(
+                    date_match.group(1), "%b %d %Y"
+                ).date()
+        except (ImportError, ValueError):
+            pass
 
-            if t["side"] == "BUY":
-                open_buys[symbol].append(t)
+        trade_records = []
+        for trade in raw_trades:
+            if not re.match(r"^\d{2}:\d{2}:\d{2}$", trade["trade_time"]):
                 continue
 
-            if t["side"] != "SELL":
-                continue
+            instrument = normalize_contract_symbol(trade["symbol"])
 
-            if not open_buys[symbol]:
-                continue
-
-            buy = open_buys[symbol].popleft()
-
-            pl_rate = round(t["price"] - buy["price"], 2)
-            pl_amt = round(pl_rate * buy["qty"], 2)
-
-            now = datetime.now()
-            seq_id = f"{now.strftime('%y%m%d')}_{seq}"
-
-            gmt = now.strftime("%Y,%m,%d,%H,%M,%S")
-            t_buy = f"t{seq_id}_b"
-            t_sell = f"t{seq_id}_s"
-
-            output_rows.append({
-                "timestamp": now.strftime("%m/%d/%Y %H:%M"),
-                "tradingsymbol": symbol.replace(" ", "-"),
-                "transaction_type": "SELL",
-                "quantity": buy["qty"],
-                "average_price": t["price"],
-                "order_status": "Traded",
-                "order_id": t["order_id"],
-                "SeqNo": seq_id,
-                "PL_RATE": pl_rate,
-                "PL_AMOUNT": pl_amt,
-                "P&L Time": t["trade_time"],
-                "timestamp_gmt": now.strftime("%m/%d/%Y %H:%M"),
-                "suffix": symbol.split()[-1],
-
-                # -------- PineScript --------
-                "Order_Time_Line": f"{t_buy}=timestamp('GMT',{gmt})",
-                "Long_Short_Line": "",
-                "Order_Line": (
-                    f"line.new({t_buy},low,{t_sell},high,"
-                    f"xloc.bar_time,extend.none,color.green,width=2)"
+            trade_records.append({
+                "datetime": datetime.datetime.strptime(
+                    f"{trade_date.isoformat()} {trade['trade_time']}",
+                    "%Y-%m-%d %H:%M:%S",
                 ),
-                "PL_Line": (
-                    f"line.new({t_buy},close,{t_sell},close,"
-                    f"xloc.bar_time,extend.none,color.red,width=2)"
-                ),
-                "PL_Callout": (
-                    f"label.new({t_sell},high,'PL',"
-                    f"style=label.style_label_down)"
-                ),
-                "PL_Amt": (
-                    f"label.new({t_sell},low,'{pl_amt}',"
-                    f"style=label.style_label_up)"
-                )
+                "type": trade["side"].upper(),
+                "instrument": instrument,
+                "quantity": float(trade["qty"]),
+                "price": float(trade["price"]),
+                "order_id": trade["order_id"],
             })
 
-            seq += 1
+        if not trade_records:
+            raise ValueError("No timed BUY/SELL trades found in contract note")
 
-        # ---------- Export CSV ----------
-        df_out = pd.DataFrame(output_rows)
+        trade_records.sort(key=lambda trade: trade["datetime"])
 
-        tmp_csv = tempfile.NamedTemporaryFile(delete=False, suffix=".csv")
-        df_out.to_csv(tmp_csv.name, index=False)
+        # Match the VBA clubbing step before FIFO pairing. Identical orders
+        # at the same timestamp become one quantity-weighted order.
+        clubbed_records = []
+        for trade in trade_records:
+            if clubbed_records:
+                previous = clubbed_records[-1]
+                same_order = (
+                    previous["datetime"] == trade["datetime"]
+                    and previous["type"] == trade["type"]
+                    and previous["instrument"] == trade["instrument"]
+                )
+                if same_order:
+                    total_quantity = previous["quantity"] + trade["quantity"]
+                    previous["price"] = (
+                        (previous["price"] * previous["quantity"])
+                        + (trade["price"] * trade["quantity"])
+                    ) / total_quantity
+                    previous["quantity"] = total_quantity
+                    continue
+            clubbed_records.append(trade.copy())
 
-        return tmp_csv.name
+        trade_records = clubbed_records
+        open_buys = defaultdict(deque)
+        cumulative_pnl = 0.0
+        output_rows = []
+        timeline_script = []
+        order_zone_script = []
+        pnl_zone_script = []
+        order_label_script = []
+        pnl_label_script = []
+        sequence = 1
+
+        for trade in trade_records:
+            duration = ""
+            pnl_rate = ""
+            pnl = ""
+            pnl_pct = ""
+            pnl_rt = ""
+
+            sequence_id = f"{trade['datetime']:%y%m%d}_{sequence}"
+            time_var = f"t{sequence_id}"
+            timeline_script.append(
+                f"{time_var}=timestamp('Asia/Kolkata',{trade['datetime']:%Y,%m,%d,%H,%M,%S})"
+            )
+
+            if trade["type"] == "BUY":
+                open_buys[trade["instrument"]].append({
+                    "quantity": trade["quantity"],
+                    "price": trade["price"],
+                    "datetime": trade["datetime"],
+                    "time_var": time_var,
+                    "option_type": "CE" if trade["instrument"].endswith("CE") else "PE",
+                })
+            elif trade["type"] == "SELL":
+                remaining = trade["quantity"]
+                matched_quantity = 0
+                total_buy_cost = 0.0
+                first_buy_time = None
+                matched_buys = []
+
+                while remaining > 0 and open_buys[trade["instrument"]]:
+                    buy = open_buys[trade["instrument"]][0]
+                    matched = min(remaining, buy["quantity"])
+                    first_buy_time = first_buy_time or buy["datetime"]
+                    matched_quantity += matched
+                    total_buy_cost += matched * buy["price"]
+                    matched_buys.append((buy, matched))
+                    buy["quantity"] -= matched
+                    remaining -= matched
+                    if buy["quantity"] <= 0.0001:
+                        open_buys[trade["instrument"]].popleft()
+
+                if matched_quantity:
+                    average_buy = total_buy_cost / matched_quantity
+                    pnl_rate_value = trade["price"] - average_buy
+                    pnl_value = pnl_rate_value * matched_quantity
+                    cumulative_pnl += pnl_value
+                    elapsed_seconds = int(
+                        (trade["datetime"] - first_buy_time).total_seconds()
+                    )
+                    duration = f"{elapsed_seconds // 60:02d}:{elapsed_seconds % 60:02d}"
+                    pnl_rate = round(pnl_rate_value, 2)
+                    pnl = round(pnl_value)
+                    purchase_value = average_buy * matched_quantity
+                    pnl_pct = round((pnl_value / purchase_value) * 100, 2) if purchase_value else 0
+                    pnl_rt = round(cumulative_pnl)
+
+                    sell_time_var = time_var
+                    for match_number, (buy, matched) in enumerate(matched_buys, start=1):
+                        pine_id = f"{sequence_id}_{match_number}"
+                        top_color = "color.new(color.green,0)" if buy["option_type"] == "CE" else "color.new(color.red,0)"
+                        bottom_color = "color.new(color.green,0)" if pnl_value >= 0 else "color.new(color.red,0)"
+                        mid_time = f"({buy['time_var']}+{sell_time_var})/2"
+                        mid_y = "(high+low)/2"
+                        order_zone_script.append(
+                            f"if barstate.islast\n    var bz_{pine_id} = box.new({buy['time_var']},high,{sell_time_var},{mid_y},xloc=xloc.bar_time,bgcolor={top_color},border_width=0)"
+                        )
+                        pnl_zone_script.append(
+                            f"if barstate.islast\n    var pbz_{pine_id} = box.new({buy['time_var']},{mid_y},{sell_time_var},low,xloc=xloc.bar_time,bgcolor={bottom_color},border_width=0)"
+                        )
+                        order_label_script.append(
+                            f"if barstate.islast\n    var l_{pine_id} = label.new({mid_time},(high+{mid_y})/2,text='{matched:g}  {duration}  {pnl_rate:.1f}',xloc=xloc.bar_time,style=label.style_label_center,color=color.new(color.black,15),textcolor=color.white,size=size.normal,textalign=text.align_center,text_font_family=font.family_monospace)"
+                        )
+                        pnl_label_script.append(
+                            f"if barstate.islast\n    var pl_{pine_id} = label.new({mid_time},(low+{mid_y})/2,text='{purchase_value / 100000:.1f}L  {pnl:.0f}  {pnl_pct:.2f}%',xloc=xloc.bar_time,style=label.style_label_center,color=color.new(color.black,15),textcolor=color.white,size=size.normal,textalign=text.align_center,text_font_family=font.family_monospace)"
+                        )
+
+            output_rows.append({
+                "ORDERDATE": trade["datetime"].strftime("%m/%d/%Y"),
+                "ORDERTIME": trade["datetime"].strftime("%H:%M:%S"),
+                "TRAN": trade["type"],
+                "CONT": trade["instrument"],
+                "Product": "MIS",
+                "Qty.": f"{trade['quantity']:g}/{trade['quantity']:g}",
+                "RATE": round(trade["price"], 1),
+                "STATUS": "COMPLETE",
+                "Duration": duration,
+                "PurValue": f"{(average_buy * matched_quantity) / 100000:.1f}L" if trade["type"] == "SELL" and matched_quantity else "",
+                "PnL_Rate": pnl_rate,
+                "PnL": pnl,
+                "PnL%": pnl_pct,
+                "PnL_RT": pnl_rt,
+            })
+            sequence += 1
+
+        pine_script = "\n".join(
+            [
+                "// === TIMELINE ===",
+                *timeline_script,
+                "// === ORDER ZONES ===",
+                *order_zone_script,
+                "// === P&L ZONES ===",
+                *pnl_zone_script,
+                "// === ORDER LABELS ===",
+                *order_label_script,
+                "// === P&L LABELS ===",
+                *pnl_label_script,
+            ]
+        )
+
+        return write_orders_workbook(output_rows, pine_script)
 
 
 
@@ -1520,15 +1758,22 @@ class MStockAdapter(BrokerInterface):
             except RuntimeError:
                 pass
 
-            logger.info(
-                "No running loop detected; running M.Stock subscribe synchronously."
-            )
+            logger.info("No running loop detected; scheduling M.Stock subscription on WebSocket loop.")
 
-            asyncio.run(
+            socket_loop = getattr(self.mstock_instance, "_socket_loop", None)
+
+            if socket_loop is None or socket_loop.is_closed():
+                logger.error(
+                    "M.Stock WebSocket loop is not available; subscription not scheduled."
+                )
+                return
+
+            asyncio.run_coroutine_threadsafe(
                 self.mstock_instance._subscribe_to_instruments(
                     exchange_tokens
-                )
-            )
+                ),
+                socket_loop
+        )
 
         except Exception as e:
             logger.error(f"M.Stock subscribe failed: {e}")
@@ -1583,7 +1828,7 @@ class MStockAdapter(BrokerInterface):
             return
         try:
             logger.info(f"Downloading instrument list for exchange: {exchange} from M.Stock...")
-            conn = http.client.HTTPSConnection('api.mstock.trade')
+            conn = http.client.HTTPSConnection("api.mstock.trade", context=_SSL_CONTEXT)
             headers = {
                 "X-Mirae-Version": "1",
                 "X-PrivateKey": self.mstock_instance._api_key,

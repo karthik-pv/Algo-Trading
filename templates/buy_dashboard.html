@@ -12,9 +12,9 @@
         align-items: center;
 
         padding-top: 5px;      /* <-- Reduce space above Sell Positions */
-        padding-right: 1rem;
+        padding-right: 0.25rem;
         padding-bottom: 1rem;
-        padding-left: 1rem;
+        padding-left: 0.25rem;
 
         gap: 10px;             /* <-- Reduce space between Sell & Buy */
 
@@ -23,12 +23,12 @@
 
     /* --- STYLES FROM BUY WIDGET --- */
     .widget-container {
-        position: relative; background-color: #2c2c2c; padding: 2rem;
+        position: relative; background-color: #2c2c2c; padding: 10px;
         border-radius: 12px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
         border: 1px solid #444; transition: box-shadow 0.4s ease, border-color 0.4s ease;
     }
     #buy-widget-container {
-        width: 1150px; max-width: 95%; border-color: #2e7d32;
+        width: 100%; max-width: none; border-color: #2e7d32;
         box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6), 0 0 20px rgba(76, 175, 80, 0.25);
     }
     #buy-widget-container.put-view {
@@ -276,7 +276,7 @@
 
     
     /* --- STYLES FROM SELL WIDGET --- */
-    #sell-widget-container { width: 1150px; max-width: 95%; }
+    #sell-widget-container { width: 100%; max-width: none; }
     #sell-widget-container h2 { text-align: center; color: #ffffff; margin-bottom: 1.5rem; }
     .profit { color: #66bb6a; font-weight: 500; }
     .loss { color: #ef5350; font-weight: 500; }
@@ -285,9 +285,9 @@
     
     /* --- COMMON & SHARED STYLES --- */
     .option-table { width: 100%; border-collapse: collapse; }
-    .option-table th, .option-table td { border: 1px solid #444; padding: 1rem; text-align: center; vertical-align: middle; }
+    .option-table th, .option-table td { border: 1px solid #444; padding: 6px 8px; text-align: center; vertical-align: middle; }
     .option-table th { background-color: #383838; font-weight: 600; color: #ccc; }
-    .no-options { text-align: center; color: #888; margin-top: 2rem; padding: 1rem; border: 1px dashed #555; border-radius: 8px; background-color: #333; }
+    .no-options { text-align: center; color: #888; margin: 0; padding: 6px; border: 1px dashed #555; border-radius: 8px; background-color: #333; }
     .flash { animation: price-flash 0.7s ease-out; }
     @keyframes price-flash { from { background-color: rgba(76, 175, 80, 0.5); } to { background-color: transparent; } }
     .lots-override-input {
@@ -298,12 +298,12 @@
 
     /* --- MEDIA QUERIES --- */
     @media (max-width: 1200px) {
-        .widget-container { padding: 1.5rem; }
+        .widget-container { padding: 10px; }
         .option-table th, .option-table td { padding: 0.5rem; font-size: 0.7rem; }
     }
     @media (max-width: 900px) {
         .main-content { padding-top: 5px; }
-        .widget-container { padding: 1rem; }
+        .widget-container { padding: 8px; }
         .widget-container h2 { font-size: 1.5rem; }
         .option-table th, .option-table td { padding: 0.5rem; font-size: 0.75rem; }
         .buy-button, .sell-button { padding: 0.5rem; font-size: 0.7rem; }
@@ -344,7 +344,91 @@
         gap: 8px;
     }
 
+    #orderStatusLabel {
+        min-height: 1.25rem;
+        margin: 0.15rem 0 0.25rem;
+        padding: 0.25rem 0.5rem;
+        color: #bdbdbd;
+        font-size: 0.8rem;
+        text-align: center;
+        white-space: normal;
+    }
 
+    #orderStatusLabel.success {
+        color: #66bb6a;
+    }
+
+    #orderStatusLabel.error {
+        color: #ef5350;
+    }
+
+    /* Temporary BUY price shown before broker/order reconciliation */
+    .temporary-buy-price {
+        background-color: #ffd54f !important;
+        color: #000 !important;
+        font-weight: 700;
+    }
+
+/* =========================================================
+   TRADE / ORDERS TABS
+   ========================================================= */
+
+.dashboard-tabs {
+    width: 95%;
+    max-width: 1150px;
+    display: flex;
+    align-items: flex-end;
+    margin-top: 5px;
+    border-bottom: 1px solid #555;
+}
+
+.dashboard-tab {
+    background: #2c2c2c;
+    color: #aaa;
+    border: 1px solid #444;
+    border-bottom: none;
+    padding: 7px 28px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+    border-radius: 6px 6px 0 0;
+    margin-right: 3px;
+}
+
+.dashboard-tab:hover {
+    color: #fff;
+    background: #383838;
+}
+
+.dashboard-tab.active {
+    color: #fff;
+    background: #2e7d32;
+    border-color: #2e7d32;
+}
+
+.dashboard-tab-content {
+    width: 100%;
+}
+
+.dashboard-tab-panel {
+    display: none;
+    width: 100%;
+}
+
+.dashboard-tab-panel.active {
+    display: block;
+}
+
+/* Orders content should fit the dashboard rather than
+   behaving like a separate full page */
+#ordersTabPanel .main-content {
+    padding: 10px 0;
+}
+
+#ordersTabPanel .widget-container {
+    width: 500px;
+    max-width: 95%;
+}    
 
 
 </style>
@@ -447,6 +531,7 @@
 
 </div>
 
+    <div id="orderStatusLabel" role="status" aria-live="polite"></div>
       
     </div>
 
@@ -486,46 +571,6 @@
 
 
 </main>
-<!-- Toast container -->
-<div id="toast-container"></div>
-
-<style>
-  #toast-container {
-    position: fixed;
-    bottom: 25px;
-    right: 25px;
-    z-index: 9999;
-  }
-
-  .toast {
-    background-color: #333;
-    color: black;
-    padding: 32px 28px;          /* ⬆️ bigger padding */
-    border-radius: 10px;         /* smoother corners */
-    margin-top: 10px;
-    box-shadow: 0 6px 12px rgba(0,0,0,0.35);
-    opacity: 0;
-    transform: translateY(25px);
-    transition: all 0.4s ease;
-    font-family: system-ui, sans-serif;
-    font-size: 1.1rem;           /* ⬆️ larger text */
-    font-weight: 500;
-    letter-spacing: 0.3px;
-  }
-
-  .toast.show {
-    opacity: 1;
-    transform: translateY(0);
-  }
-
-  .toast.success {
-    background-color: #99f3bfe6; /* success */
-  }
-
-  .toast.error {
-    background-color: #f8a198e6;  /* error */
-  }
-</style>
 {% endblock %}
 
 
@@ -561,7 +606,8 @@ document.addEventListener('DOMContentLoaded', function() {
     let allContracts = {};
     let openPositions = {};
     let orderStrategyMapping = {}; // To store strategies from setup_data
-
+    // Tokens whose BUY Price is temporarily displayed using LTP
+    let temporaryBuyPriceTokens = new Set();
 
     const pendingOrdersBody = document.getElementById('pendingOrdersBody');
 
@@ -606,8 +652,18 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // --- SOCKET EVENT HANDLERS ---
     socket.on('connect', () => {
-        buyConnectionStatus.textContent = 'Connected';
-        buyConnectionStatus.style.color = '#28a745';
+
+        console.log(
+            'MSTOCK BROWSER SOCKET CONNECTED | sid=',
+            socket.id,
+            '| connected=',
+            socket.connected
+        );
+        
+        if (buyConnectionStatus) {
+            buyConnectionStatus.textContent = 'Connected';
+            buyConnectionStatus.style.color = '#28a745';
+        }
         if (sellConnectionStatus) {
             sellConnectionStatus.textContent = 'Connected';
             sellConnectionStatus.style.color = '#28a745';
@@ -630,8 +686,10 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     socket.on('disconnect', () => {
-        buyConnectionStatus.textContent = 'Disconnected';
-        buyConnectionStatus.style.color = '#dc3545';
+        if (buyConnectionStatus) {
+            buyConnectionStatus.textContent = 'Disconnected';
+            buyConnectionStatus.style.color = '#dc3545';
+        }
         if (sellConnectionStatus) {
             sellConnectionStatus.textContent = 'Disconnected';
             sellConnectionStatus.style.color = '#dc3545';
@@ -805,6 +863,7 @@ document.addEventListener('DOMContentLoaded', function() {
         new Date().toISOString(),
         positions
     );
+
         openPositions = positions;
         if (positionsTableBody) {
             populatePositionsTable(openPositions);
@@ -818,18 +877,52 @@ document.addEventListener('DOMContentLoaded', function() {
 
     });
 
+    socket.on('temporary_buy_price', (data) => {
+        const token = String(data.token);
+
+        temporaryBuyPriceTokens.add(token);
+
+        const buyPriceCell = document.getElementById(`buy-price-${token}`);
+
+        if (buyPriceCell) {
+            buyPriceCell.classList.add('temporary-buy-price');
+        }
+    });
+
+    socket.on('authoritative_buy_price', (data) => {
+        const token = String(data.token);
+
+        temporaryBuyPriceTokens.delete(token);
+
+        const buyPriceCell = document.getElementById(`buy-price-${token}`);
+
+        if (buyPriceCell) {
+            buyPriceCell.classList.remove('temporary-buy-price');
+        }
+    });
+
+
    socket.on('price-updated-order', (tick) => {
-        const token = tick.token;
+        console.log('MSTOCK BROWSER RECEIVED price-updated-order:', new Date().toISOString(), tick);
+
+        console.log(
+        'MSTOCK BROWSER RECEIVED price-updated-order:',
+        new Date().toISOString(),
+        tick
+        );
+        const token = String(tick.token);
+        const ltp = Number(tick.ltp);
+        if (!Number.isFinite(ltp)) return;
 
         if (allContracts[token]) {
             const open = allContracts[token].open;
 
-        console.log("OPEN =", open, "LTP =", tick.ltp);
+        console.log("OPEN =", open, "LTP =", ltp);
 
-        allContracts[token].ltp = tick.ltp;
+        allContracts[token].ltp = ltp;
         
         
-        allContracts[token].chgO = (((tick.ltp - open) / open) * 100).toFixed(2);
+        allContracts[token].chgO = open ? (((ltp - open) / open) * 100).toFixed(2) : '0.00';
 
         const chgOCell = document.getElementById(`chgO-${token}`);
         
@@ -844,9 +937,10 @@ document.addEventListener('DOMContentLoaded', function() {
             allContracts[token].lots = tick.lots;
         }
     }
+        console.log('MSTOCK BEFORE PRICE CELL LOOKUP:', token);
         const priceCell = document.getElementById(`price-${token}`);
         if (priceCell) {
-            priceCell.textContent = `${tick.ltp.toFixed(2)}`;
+            priceCell.textContent = ltp.toFixed(2);
             priceCell.classList.add('flash');
             setTimeout(() => priceCell.classList.remove('flash'), 700);
         }
@@ -862,10 +956,12 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 
     socket.on('price-updated-position', (tick) => {
-        const token = tick.token;
+        const token = String(tick.token);
+        const ltp = Number(tick.ltp);
+        if (!Number.isFinite(ltp)) return;
          // Update Sell Widget Data & UI
          if (openPositions[token]) { // Update internal data first
-            openPositions[token].latest_price = tick.ltp;
+            openPositions[token].latest_price = ltp;
             if (tick.pts_pl !== undefined) { // Only update if P/L data exists
                 openPositions[token].pts_pl = tick.pts_pl;
                 openPositions[token].pct_pl = tick.pct_pl;
@@ -874,7 +970,7 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         const marketPriceCell = document.getElementById(`market-price-${token}`);
         if (marketPriceCell) { // Check if the row exists in the sell table
-            marketPriceCell.textContent = `${tick.ltp.toFixed(2)}`; // Always update LTP
+            marketPriceCell.textContent = ltp.toFixed(2); // Always update LTP
             marketPriceCell.classList.add('flash');
             setTimeout(() => marketPriceCell.classList.remove('flash'), 700);
 
@@ -933,6 +1029,7 @@ document.addEventListener('DOMContentLoaded', function() {
             return;
         }
 
+        /*
         // Keep a stable broker-agnostic level order (same visual order for KITE and MSTOCK).
         const levelOrder = { OTM2: 0, OTM1: 1, ATM: 2, ITM1: 3, ITM2: 4 };
         filteredContracts.sort(([, a], [, b]) => {
@@ -945,8 +1042,61 @@ document.addEventListener('DOMContentLoaded', function() {
 
             // Fallback for unknown level labels.
             return (a.ltp || 0) - (b.ltp || 0);
-        });
+        });*/
 
+        /*        // Dynamic level ordering:
+    // OTM highest -> OTM lowest -> ATM -> ITM lowest -> ITM highest
+
+    function getLevelSortOrder(level) {
+        if (level === 'ATM') {
+            return 0;
+        }
+
+        const match = level.match(/^(OTM|ITM)(\d+)$/);
+
+        if (!match) {
+            return 999999;
+        }
+
+        const type = match[1];
+        const number = parseInt(match[2], 10);
+
+        if (type === 'OTM') {
+            return -number;
+        }
+
+        return number;
+    }
+
+filteredContracts.sort(([, a], [, b]) => {
+    return getLevelSortOrder(a.level) - getLevelSortOrder(b.level);
+});*/
+
+    function getLevelSortOrder(level) {
+        if (level === 'ATM') {
+            return 0;
+        }
+
+        const match = level.match(/^(OTM|ITM)(\d+)$/);
+
+        if (!match) {
+            return 999999;
+        }
+
+        const type = match[1];
+        const number = parseInt(match[2], 10);
+
+        if (type === 'OTM') {
+            return -number;
+        }
+
+        return number;
+    }
+
+    filteredContracts.sort(([, a], [, b]) => {
+        return getLevelSortOrder(a.level) -
+            getLevelSortOrder(b.level);
+    });
         if (filteredContracts.length > 0) {
             const firstContract = filteredContracts[0][1];
             if (firstContract && firstContract.expiry) {
@@ -1023,7 +1173,7 @@ document.addEventListener('DOMContentLoaded', function() {
             // --- Sell Mode Auto Selection Based on Level ---
             let sellUChecked = '';
             let sellDChecked = '';    
-            let sellTChecked = '';                
+            let sellTChecked = 'checked';
 
             // sellUChecked = 'checked';
             if (contract.level === 'ATM') 
@@ -1078,7 +1228,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 const overrideInput = document.getElementById(`override-lots-${token}`);
                 const lotsToBuy = (overrideInput && overrideInput.value > 0) ? overrideInput.value : this.dataset.lots;
                 const strategyType =  document.querySelector(`input[name="type-${token}"]:checked`)?.value;
-                const sellMode = document.querySelector(`input[name="sellmode-${token}"]:checked`)?.value || 'D';
+                const sellMode = document.querySelector(`input[name="sellmode-${token}"]:checked`)?.value || 'T';
                 const orderDetails = { token: token, tradingsymbol: this.dataset.tradingsymbol, lots: lotsToBuy,strategy:strategyType,SELL_MODE: sellMode };
                 socket.emit('place_buy_order', orderDetails);
                 // alert(`Buy order for ${lotsToBuy} lots of ${this.dataset.tradingsymbol} sent!`);
@@ -1087,47 +1237,58 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
-    function showToast(message, type = 'success', duration = 3000) {
-        const container = document.getElementById('toast-container');
-        const toast = document.createElement('div');
-        toast.className = `toast ${type}`;
-        toast.textContent = message;
-        container.appendChild(toast);
+    let inlineStatusTimer = null;
 
-        // Animate in
-        setTimeout(() => toast.classList.add('show'), 50);
+    function showInlineStatus(message, type = 'success', duration = 3500) {
+        const statusLabel = document.getElementById('orderStatusLabel');
+        if (!statusLabel) return;
 
-        // Auto-remove
-        setTimeout(() => {
-            toast.classList.remove('show');
-            setTimeout(() => toast.remove(), 400);
+        if (inlineStatusTimer) {
+            clearTimeout(inlineStatusTimer);
+        }
+
+        statusLabel.className = type;
+        statusLabel.textContent = message;
+
+        inlineStatusTimer = setTimeout(() => {
+            statusLabel.textContent = '';
+            statusLabel.className = '';
+            inlineStatusTimer = null;
         }, duration);
+    }
+
+    function showTransactionSuccess(message) {
+        showInlineStatus(message, 'success', 5000);
     }
 
     socket.on('status_message', function (result) {
         const success = result.success === true;    // Ensure boolean
         const message = result.message || "Unknown response";
+
+        if (success && /refresh(ed|ing) position/i.test(message)) {
+            return;
+        }
         
         if (success) {
-            showToast(`✅ ${message}`, 'success');
+            showInlineStatus(message, 'success');
         } else {
-            showToast(`❌ ${message}`, 'error');
+            showInlineStatus(message, 'error');
         }
     });
 
     socket.on('buy_order_result', function (result) {
         if (result.success) {
-            showToast(`✅ Buy order successful for ${result.tradingsymbol} (${result.lots} lots)`, 'success');
+            showTransactionSuccess(`Buy order successful for ${result.tradingsymbol} (${result.lots} lots)`);
         } else {
-            showToast(`❌ Buy order failed for ${result.tradingsymbol}: ${result.error}`, 'error');
+            showInlineStatus(`Buy order failed for ${result.tradingsymbol}: ${result.error}`, 'error');
         }
     });
 
     socket.on('sell_order_result', function (result) {
     if (result.success) {
-        showToast(`✅ Sell order successful for ${result.tradingsymbol} (${result.lots} lots)`, 'success');
+        showTransactionSuccess(`Sell order successful for ${result.tradingsymbol} (${result.lots} lots)`);
     } else {
-        showToast(`❌ Sell order failed for ${result.tradingsymbol}: ${result.error}`, 'error');
+        showInlineStatus(`Sell order failed for ${result.tradingsymbol}: ${result.error}`, 'error');
     }
     });
 
@@ -1143,6 +1304,7 @@ document.addEventListener('DOMContentLoaded', function() {
         for (const token in positions) {
         
             const pos = positions[token];
+            const contract = allContracts[String(token)] || {};
             
             const plClass = (pos.pts_pl || 0) >= 0 ? 'profit' : 'loss';
             const row = document.createElement('tr');
@@ -1163,17 +1325,20 @@ document.addEventListener('DOMContentLoaded', function() {
             //     }
             // }
 
-            let strikePrice = "";
-            let optionType = "";
+            let strikePrice = contract.strike || contract.strike_price || "";
+            let optionType = contract.call_or_put || "";
 
             if (pos.tradingsymbol) {
-                const match = pos.tradingsymbol.match(/(\d+)(CE|PE)$/i);
+                const match = pos.tradingsymbol.match(/(?:-|\s)(\d+(?:\.\d+)?)[-\s](CE|PE)$/i)
+                    || pos.tradingsymbol.match(/(\d+)(CE|PE)$/i);
 
                 if (match) {
-                    strikePrice = match[1].slice(-5); // last 5 digits = strike
-                    optionType = match[2];            // CE or PE
+                    strikePrice = match[1].replace(/\.00$/, '');
+                    optionType = match[2].toUpperCase();
                 }
             }
+
+            const level = pos.level || contract.level || '';
 
             
 
@@ -1186,10 +1351,12 @@ document.addEventListener('DOMContentLoaded', function() {
                 <td id="total-pl-${token}" class="${plClass}">${(pos.total_pl || 0).toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
                 <td id="pct-${token}" class="${plClass}">${(pos.pct_pl || 0).toFixed(2)}</td>
                 <td id="pts-${token}" class="${plClass}">${(pos.pts_pl || 0).toFixed(2)}</td>
-                <td>${pos.level || ''}</td>
+                <td>${level}</td>
                 <td>${optionType || ''}</td>
                 <td>${strikePrice || ''}</td>
-                <td>${(pos.average_price || 0).toFixed(2)}</td>
+                <td id="buy-price-${token}" class="${temporaryBuyPriceTokens.has(token) ? 'temporary-buy-price' : ''}">
+                    ${(pos.average_price || 0).toFixed(2)}
+                </td>
                 <td id="market-price-${token}">${(pos.latest_price || pos.average_price).toFixed(2)}</td>
                 <td>${pos.lots || 0}</td>
                 <td><input type="number" class="lots-override-input" id="override-lots-sell-${token}" placeholder="${pos.lots || 0}"></td>
@@ -1357,11 +1524,10 @@ document.addEventListener('DOMContentLoaded', function() {
                 if (!resp.ok) {
                     const txt = await resp.text().catch(() => null);
                     console.error('Manual refresh HTTP error:', resp.status, txt);
-                    showToast('❌ Failed to refresh positions', 'error');
+                    showInlineStatus('Failed to refresh positions', 'error');
                 } else {
                     const data = await resp.json().catch(() => null);
                     console.log('Manual refresh HTTP response:', data);
-                    showToast('✅ Positions refreshed', 'success');
 
                     // ask backend to push updated positions and pending orders via socket
                     socket.emit('request_open_positions');
@@ -1369,7 +1535,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 }
             } catch (error) {
                 console.error('Error calling /manual-refresh-positions:', error);
-                showToast('❌ Error refreshing positions', 'error');
+                showInlineStatus('Error refreshing positions', 'error');
             } finally {
                 // restore button state
                 setTimeout(() => {

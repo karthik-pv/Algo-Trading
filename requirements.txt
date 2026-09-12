@@ -50,8 +50,11 @@ Werkzeug==3.1.3
 wsproto==1.2.0
 zope.interface==7.2
 pandas
+XlsxWriter
+openpyxl
 camelot-py[cv]  
 pytesseract
 pdf2image
 Pillow
 reportlab
+PyMuPDF

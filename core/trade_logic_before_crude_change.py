@@ -4,7 +4,6 @@ import logging
 import queue
 import datetime
 import os
-from flask import Flask,request
 from typing import Optional , Dict , Any
 from flask_socketio import SocketIO
 from interface.broker_interface import BrokerInterface
@@ -14,8 +13,6 @@ import json
 import time
 import pythoncom
 import win32com.client
-
-
 
 from core.trade_utils import get_expiry_date , get_instrument_tokens_from_symbol , get_instrument_details_from_json , calculate_accurate_average_buy_price_and_update_positions
 from core.shared_state import latest_tradingview_data
@@ -69,10 +66,6 @@ class Trader_Singleton:
 
     _NIFTY_FALLBACK_LTP = float(fetch_from_json("constants.json" , "NIFTY_FALLBACK_LTP"))
     _SENSEX_FALLBACK_LTP = float(fetch_from_json("constants.json" , "SENSEX_FALLBACK_LTP"))
-
-    _WOC_CALL_FACTOR = int(fetch_from_json("constants.json" , "WOC_CALL_FACTOR"))
-    _WOC_PUT_FACTOR = int(fetch_from_json("constants.json" , "WOC_PUT_FACTOR"))
-
 
     _near_month_future_ltp = 0.0
     open_near_month_future = 0.0
@@ -168,7 +161,7 @@ class Trader_Singleton:
 
         computed_lots = int(((cash_balance * margin_pct) / price) / safe_lot_size)
 
-        if self._mode == "PAPER":
+        if self._mode == "ALERT": 
             computed_lots = int(((self._CASH_BALANCE_PAPER_TRADING * margin_pct) / price) / safe_lot_size)
 
         return computed_lots
@@ -527,76 +520,66 @@ class Trader_Singleton:
             )
 
     def fast_update_position_after_buy(
-    self,
-    trading_symbol,
-    instrument_token,
-    quantity,
-    lotsize,
-    executed_buy_price,
-    exchange
+        self,
+        trading_symbol,
+        instrument_token,
+        quantity,
+        lotsize,
+        executed_buy_price,
+        exchange
     ):
         """
-        Immediately create/update the position grid after a successful BUY.
-
-        This is a TEMPORARY display update only.
-        The authoritative BUY price will still be calculated later by
-        refresh_open_pos_buy_price() using the broker positions + orders.
-
-        The temporary BUY price shown in the grid is the current live LTP.
+        Immediately create/update the position grid after a successful
+        M.Stock SENSEX BUY, without waiting for fetch_all_positions().
         """
 
         try:
+            if self._broker_string != "MSTOCK" or self._underlying != "SENSEX":
+                return
+
             token = str(instrument_token)
 
-            # ---------------------------------------------------------
-            # 1. Get the latest LTP already available in memory.
-            # ---------------------------------------------------------
+            # Use the latest websocket LTP already held in memory.
             latest_ltp = self.get_latest_price(token)
 
-            # If websocket LTP is not available, use executed BUY price
-            # so that the grid can still be populated immediately.
+            # Fall back to executed price only if a live tick has not
+            # arrived yet. This guarantees a valid initial grid row.
             if not latest_ltp:
                 latest_ltp = float(executed_buy_price)
 
-            latest_ltp = float(latest_ltp)
+            executed_buy_price = float(executed_buy_price)
             quantity = int(quantity)
             lotsize = int(lotsize)
 
             # ---------------------------------------------------------
-            # 2. If the position already exists, add this BUY to it.
+            # If this position already exists, add this BUY to it.
+            # This also handles iceberg/multiple BUY legs.
             # ---------------------------------------------------------
             if token in self._position_data:
-
                 existing = self._position_data[token]
 
-                old_qty = int(
-                    existing.get("net_quantity", 0) or 0
-                )
-
-                old_avg = float(
-                    existing.get("average_price", 0) or 0
-                )
+                old_qty = int(existing.get("net_quantity", 0) or 0)
+                old_avg = float(existing.get("average_price", 0) or 0)
 
                 new_qty = old_qty + quantity
 
                 if new_qty > 0:
                     weighted_avg = (
                         (old_avg * old_qty)
-                        + (latest_ltp * quantity)
+                        + (executed_buy_price * quantity)
                     ) / new_qty
                 else:
-                    weighted_avg = latest_ltp
+                    weighted_avg = executed_buy_price
 
                 net_qty = new_qty
                 avg_price = weighted_avg
 
             else:
-
                 net_qty = quantity
-                avg_price = latest_ltp
+                avg_price = executed_buy_price
 
             # ---------------------------------------------------------
-            # 3. Calculate temporary P/L using current LTP.
+            # Calculate P&L using the CURRENT live LTP.
             # ---------------------------------------------------------
             pts_pl = self.calculate_point_difference(
                 avg_price,
@@ -610,16 +593,7 @@ class Trader_Singleton:
 
             total_pl = pts_pl * net_qty * lotsize
 
-            # ---------------------------------------------------------
-            # 4. Update the existing position structure.
-            #
-            # IMPORTANT:
-            # No buy_price_status / status column is added.
-            # ---------------------------------------------------------
-            if token not in self._position_data:
-                self._position_data[token] = {}
-
-            self._position_data[token].update({
+            self._position_data[token] = {
                 "tradingsymbol": trading_symbol,
                 "average_price": avg_price,
                 "net_quantity": net_qty,
@@ -635,177 +609,10 @@ class Trader_Singleton:
                     instrument_token,
                     "ULTRA_SCALPING"
                 )
-            })
+            }
 
             # ---------------------------------------------------------
-            # 5. Immediately send the position to the grid.
-            # ---------------------------------------------------------
-            if self.frontend_data_socket:
-                self.frontend_data_socket.emit(
-                    'update_open_positions',
-                    self._position_data
-                )
-
-                self.frontend_data_socket.emit(
-                    'temporary_buy_price',
-                    {
-                        'token': str(instrument_token)
-                    }
-                )
-
-            logger.info(
-                f"TEMP BUY GRID UPDATE: "
-                f"{trading_symbol} | "
-                f"Qty={net_qty} | "
-                f"Temporary Buy={avg_price:.2f} | "
-                f"LTP={latest_ltp:.2f}"
-            )
-
-        except Exception as e:
-            logger.error(
-                f"Temporary BUY position grid update failed: {e}",
-                exc_info=True
-            )
-
-
-
-
-
-    def temporary_update_position_after_buy(
-        self,
-        trading_symbol,
-        instrument_token,
-        quantity,
-        exchange,
-        ltp,
-        lotsize=1
-    ):
-        """
-        Immediately show a newly executed BUY in the position grid.
-
-        IMPORTANT:
-        - This is only a temporary/provisional grid update.
-        - The existing refresh_open_pos_buy_price() remains
-          responsible for the authoritative BUY price.
-        - This method is intentionally broker/underlying neutral.
-        - It does NOT call the broker.
-        - It does NOT change the existing refresh workflow.
-        """
-
-        try:
-            token = str(instrument_token)
-            quantity = int(quantity)
-            lotsize = int(lotsize or 1)
-            temporary_buy_price = float(ltp)
-
-            if quantity <= 0:
-                logger.warning(
-                    f"TEMP BUY GRID skipped: invalid quantity={quantity} "
-                    f"for {trading_symbol}"
-                )
-                return
-
-            if temporary_buy_price <= 0:
-                logger.warning(
-                    f"TEMP BUY GRID skipped: invalid LTP={ltp} "
-                    f"for {trading_symbol}"
-                )
-                return
-
-            # ---------------------------------------------------------
-            # If this instrument already exists, preserve the existing
-            # position and add the newly bought quantity.
-            # ---------------------------------------------------------
-            existing = self._position_data.get(token)
-
-            if existing:
-                old_qty = int(existing.get("net_quantity", 0) or 0)
-
-                # The existing BUY price may itself be temporary or
-                # already authoritative. For the immediate display,
-                # calculate a provisional weighted average.
-                old_avg = float(
-                    existing.get("average_price", 0) or 0
-                )
-
-                new_qty = old_qty + quantity
-
-                if new_qty > 0 and old_avg > 0:
-                    temporary_avg_price = (
-                        (old_avg * old_qty)
-                        + (temporary_buy_price * quantity)
-                    ) / new_qty
-                else:
-                    temporary_avg_price = temporary_buy_price
-
-                net_qty = new_qty
-
-            else:
-                # Brand-new position.
-                temporary_avg_price = temporary_buy_price
-                net_qty = quantity
-
-            # ---------------------------------------------------------
-            # Temporary P&L is calculated against the current LTP.
-            # Since BUY price is initially the same LTP, P&L starts at 0.
-            # ---------------------------------------------------------
-            pts_pl = self.calculate_point_difference(
-                temporary_avg_price,
-                temporary_buy_price
-            )
-
-            pct_pl = self.calculate_pctg_difference(
-                temporary_avg_price,
-                temporary_buy_price
-            )
-
-            total_pl = pts_pl * net_qty
-
-            # ---------------------------------------------------------
-            # Store the provisional position.
-            #
-            # buy_price_status is the important new field.
-            # Frontend will later use this to show the BUY Price cell
-            # in yellow.
-            # ---------------------------------------------------------
-            if existing:
-                existing.update({
-                    "tradingsymbol": trading_symbol,
-                    "average_price": temporary_avg_price,
-                    "net_quantity": net_qty,
-                    "latest_price": temporary_buy_price,
-                    "instrument_token": instrument_token,
-                    "exchange": exchange,
-                    "lotsize": lotsize,
-                    "lots": net_qty,
-                    "pts_pl": pts_pl,
-                    "pct_pl": pct_pl,
-                    "total_pl": total_pl,
-                    "buy_price_status": "TEMPORARY",
-                })
-
-            else:
-                self._position_data[token] = {
-                    "tradingsymbol": trading_symbol,
-                    "average_price": temporary_avg_price,
-                    "net_quantity": net_qty,
-                    "latest_price": temporary_buy_price,
-                    "instrument_token": instrument_token,
-                    "exchange": exchange,
-                    "lotsize": lotsize,
-                    "lots": net_qty,
-                    "pts_pl": pts_pl,
-                    "pct_pl": pct_pl,
-                    "total_pl": total_pl,
-                    "order_strategy": self._order_strategy_mapping.get(
-                        instrument_token,
-                        "ULTRA_SCALPING"
-                    ),
-                    "buy_price_status": "TEMPORARY",
-                }
-
-            # ---------------------------------------------------------
-            # Immediately send the provisional position to the grid.
+            # Immediately send position + P&L to the grid.
             # ---------------------------------------------------------
             if self.frontend_data_socket:
                 self.frontend_data_socket.emit(
@@ -814,21 +621,21 @@ class Trader_Singleton:
                 )
 
             logger.info(
-                f"TEMP BUY GRID: "
+                f"M.Stock SENSEX FAST BUY GRID: "
                 f"{trading_symbol} | "
                 f"Qty={net_qty} | "
-                f"Temporary Buy={temporary_avg_price:.2f} | "
-                f"LTP={temporary_buy_price:.2f}"
+                f"Buy={avg_price:.2f} | "
+                f"LTP={latest_ltp:.2f} | "
+                f"PTS={pts_pl:.2f} | "
+                f"PCT={pct_pl:.2f}% | "
+                f"Total P&L={total_pl:.2f}"
             )
 
         except Exception as e:
-            # Never allow the temporary UI update to break the BUY flow.
             logger.error(
-                f"Temporary BUY position grid update failed: {e}",
+                f"Fast BUY position grid update failed: {e}",
                 exc_info=True
             )
-
-
 
 
     def refresh_open_pos_buy_price(self):
@@ -1000,17 +807,6 @@ class Trader_Singleton:
                 self._position_data
             )
 
-            # The grid has now been rendered with the authoritative
-            # BUY price. Tell the frontend to remove the temporary
-            # yellow BUY-price indication.
-            for token in self._position_data:
-                self.frontend_data_socket.emit(
-                    'authoritative_buy_price',
-                    {
-                        'token': str(token)
-                    }
-                )
-
             self.frontend_data_socket.emit(
                 'update_weekly_options',
                 self._five_weekly_option_contracts
@@ -1143,7 +939,7 @@ class Trader_Singleton:
                 # 2. If sell is True and LTP < Buy Price (Stop Loss Scenario). In this case, Sell Mode can be anything. We dont expect TRIGGER_SELL to be set here.
                 
                 
-                if self._mode in ("LIVE", "SIMULATION"):
+                if self._mode == "EXECUTION":
                     if sell:
                         logger.info(f"Placing SELL order for {tradingsymbol} {instrument_token} : {qty} lots at LTP {ltp}")
                         broker.sell_units(tradingsymbol,instrument_token,qty,exchange,ltp)
@@ -1152,7 +948,7 @@ class Trader_Singleton:
                             logger.debug(f"No SELL action taken for {tradingsymbol} at LTP {ltp}")
                 else:
                     if should_log_eval:
-                        logger.debug(f"PAPER: Sell conditions met for {tradingsymbol} at LTP {ltp} - Decision To Sell: {sell}")
+                        logger.debug(f"ALERT: Sell conditions met for {tradingsymbol} at LTP {ltp} - Decision To Sell: {sell}")
 
                     filename = "PaperTrading.txt"
 
@@ -1211,9 +1007,9 @@ class Trader_Singleton:
                 # 1. If sell is True and Sell Mode is TRIGGER_SELL and LTP > Buy Price (Book Profit Scenario)
                 # 2. If sell is True and LTP < Buy Price (Stop Loss Scenario). In this case, Sell Mode can be anything. We dont expect TRIGGER_SELL to be set here.
                 
-                if self._mode in ("LIVE", "SIMULATION"):
+                if self._mode == "EXECUTION":
                     if should_log_eval:
-                        logger.debug("In LIVE/SIMULATION Mode")
+                        logger.debug("In EXECUTION Mode")
                     if ((sell and (ltp > buy_price)) or (sell and ltp < buy_price)):
                         logger.info(f"Placing SELL order for {tradingsymbol} {instrument_token} : {qty} lots at LTP {ltp}")
                         broker.sell_units(tradingsymbol,instrument_token,qty,exchange,ltp)
@@ -1223,8 +1019,8 @@ class Trader_Singleton:
 
                 else:
                     if should_log_eval:
-                        logger.debug("In PAPER Mode")
-                        logger.debug(f"PAPER: Sell conditions met for {tradingsymbol} at LTP {ltp} - Decision To Sell: {sell}")
+                        logger.debug("In ALERT Mode")
+                        logger.debug(f"ALERT: Sell conditions met for {tradingsymbol} at LTP {ltp} - Decision To Sell: {sell}")
 
                     write_paper_trade(transaction_type="SELL",tradingsymbol=tradingsymbol,token=instrument_token,qty=qty["lots"],ltp=ltp,product="MIS")
 
@@ -1463,59 +1259,6 @@ class Trader_Singleton:
 
     # ---------------------- GENERATE OTMS/ITMS ------------------------------    
         
-    # def get_5_woc(
-    #     self,
-    #     nifty_price: float,
-    #     call_or_put: str,
-    #     strike_interval: int = 100,
-    #     underlying: str = "NIFTY"
-    # ) -> Dict[str, any]:
-    #     logger.info(f"Generating 5 weekly option contracts for {underlying} at price {nifty_price} ({call_or_put})")
-    #     if strike_interval <= 0:
-    #         raise ValueError("strike_interval must be positive integer")
-        
-    #     atm_strike = int((nifty_price // strike_interval) * strike_interval)
-    #     remainder = nifty_price%100
-    #     if remainder >= 50:
-    #         atm_strike+=100
-        
-
-    #     expiry = get_expiry_date(underlying)
-
-    #     logger.info(f"Calculated ATM Strike: {atm_strike}, Expiry Date: {expiry}")
-
-    #     if call_or_put.upper() == "CE":
-    #         strikes = {
-    #             "ITM2": atm_strike - 2 * strike_interval,
-    #             "ITM1": atm_strike - 1 * strike_interval,
-    #             "ATM":  atm_strike,
-    #             "OTM1": atm_strike + 1 * strike_interval,
-    #             "OTM2": atm_strike + 2 * strike_interval,
-    #         }
-    #     elif call_or_put.upper() == "PE":
-    #         strikes = {
-    #             "ITM2": atm_strike + 2 * strike_interval,
-    #             "ITM1": atm_strike + 1 * strike_interval,
-    #             "ATM":  atm_strike,
-    #             "OTM1": atm_strike - 1 * strike_interval,
-    #             "OTM2": atm_strike - 2 * strike_interval,
-    #         }
-    #     else:
-    #         raise ValueError("call_or_put must be 'CE' or 'PE'")
-        
-    #     logger.debug(f"Initial strikes calculated: {strikes}")
-
-    #     for k, v in strikes.items():
-    #         if v is None or v < 0:
-    #             strikes[k] = None
-
-    #     symbols = {
-    #         k: (self._broker.format_option_symbol(underlying, expiry, v, call_or_put) if v is not None else None)
-    #         for k, v in strikes.items()
-    #     }
-
-    #     return {"expiry": expiry, "strikes": strikes, "symbols": symbols}
-
     def get_5_woc(
         self,
         nifty_price: float,
@@ -1523,173 +1266,52 @@ class Trader_Singleton:
         strike_interval: int = 100,
         underlying: str = "NIFTY"
     ) -> Dict[str, any]:
-        logger.info(
-            f"Generating 5 weekly option contracts for "
-            f"{underlying} at price {nifty_price} ({call_or_put})"
-        )
-
+        logger.info(f"Generating 5 weekly option contracts for {underlying} at price {nifty_price} ({call_or_put})")
         if strike_interval <= 0:
             raise ValueError("strike_interval must be positive integer")
-
-        # ---------------------------------------------------------
-        # Calculate BASE ATM strike
-        #
-        # IMPORTANT:
-        # This is the existing ATM calculation based on the
-        # Nifty Future LTP. DO NOT CHANGE THIS LOGIC.
-        # ---------------------------------------------------------
+        
         atm_strike = int((nifty_price // strike_interval) * strike_interval)
-
-        remainder = nifty_price % 100
-
+        remainder = nifty_price%100
         if remainder >= 50:
-            atm_strike += 100
+            atm_strike+=100
+        
 
         expiry = get_expiry_date(underlying)
 
-        logger.info(
-            f"Calculated ATM Strike: {atm_strike}, "
-            f"Expiry Date: {expiry}"
-        )
+        logger.info(f"Calculated ATM Strike: {atm_strike}, Expiry Date: {expiry}")
 
-        # ---------------------------------------------------------
-        # Determine which WOC factor to use
-        # ---------------------------------------------------------
         if call_or_put.upper() == "CE":
-            factor_key = "WOC_CALL_FACTOR"
+            strikes = {
+                "ITM2": atm_strike - 2 * strike_interval,
+                "ITM1": atm_strike - 1 * strike_interval,
+                "ATM":  atm_strike,
+                "OTM1": atm_strike + 1 * strike_interval,
+                "OTM2": atm_strike + 2 * strike_interval,
+            }
         elif call_or_put.upper() == "PE":
-            factor_key = "WOC_PUT_FACTOR"
+            strikes = {
+                "ITM2": atm_strike + 2 * strike_interval,
+                "ITM1": atm_strike + 1 * strike_interval,
+                "ATM":  atm_strike,
+                "OTM1": atm_strike - 1 * strike_interval,
+                "OTM2": atm_strike - 2 * strike_interval,
+            }
         else:
             raise ValueError("call_or_put must be 'CE' or 'PE'")
+        
+        logger.debug(f"Initial strikes calculated: {strikes}")
 
-        try:
-            factor = int(
-                fetch_from_json("constants.json", factor_key) or 0
-            )
-        except (TypeError, ValueError, KeyError):
-            factor = 0
-
-        logger.info(
-            f"{factor_key} = {factor}"
-        )
-
-        # ---------------------------------------------------------
-        # FACTOR ONLY DECIDES WHICH 5 STRIKES ARE DISPLAYED.
-        #
-        # The BASE ATM remains atm_strike and is calculated above
-        # from the Nifty Future LTP using the existing logic.
-        #
-        # Factor 0:
-        #   offsets -2,-1,0,+1,+2
-        #
-        # Factor 1:
-        #   offsets -1,0,+1,+2,+3
-        #
-        # Factor 2:
-        #   offsets  0,+1,+2,+3,+4
-        #
-        # Factor 3:
-        #   offsets +1,+2,+3,+4,+5
-        #
-        # General:
-        #   start_offset = factor - 2
-        # ---------------------------------------------------------
-        start_offset = factor - 2
-
-        display_offsets = list(
-            range(start_offset, start_offset + 5)
-        )
-
-        # ---------------------------------------------------------
-        # Generate the 5 displayed strikes.
-        #
-        # LEVEL NUMBERING IS ALWAYS BASED ON THE BASE ATM.
-        #
-        # Factor does NOT affect level numbering.
-        #
-        # CE:
-        #   -2 -> ITM2
-        #   -1 -> ITM1
-        #    0 -> ATM
-        #   +1 -> OTM1
-        #   +2 -> OTM2
-        #   +3 -> OTM3
-        #   ...
-        #
-        # PE:
-        #   -2 -> OTM2
-        #   -1 -> OTM1
-        #    0 -> ATM
-        #   +1 -> ITM1
-        #   +2 -> ITM2
-        #   +3 -> ITM3
-        #   ...
-        # ---------------------------------------------------------
-        strikes = {}
-
-        for offset in display_offsets:
-
-            strike = atm_strike + (
-                offset * strike_interval
-            )
-
-            if offset == 0:
-                level = "ATM"
-
-            elif call_or_put.upper() == "CE":
-                if offset < 0:
-                    level = f"ITM{abs(offset)}"
-                else:
-                    level = f"OTM{offset}"
-
-            else:  # PE
-                if offset < 0:
-                    level = f"OTM{abs(offset)}"
-                else:
-                    level = f"ITM{offset}"
-
-            strikes[level] = strike
-
-        logger.debug(
-            f"Base ATM: {atm_strike}, "
-            f"Factor: {factor}, "
-            f"Display offsets: {display_offsets}, "
-            f"Initial strikes calculated: {strikes}"
-        )
-
-        # ---------------------------------------------------------
-        # Validate strikes
-        # ---------------------------------------------------------
         for k, v in strikes.items():
             if v is None or v < 0:
                 strikes[k] = None
 
-        # ---------------------------------------------------------
-        # Generate broker symbols
-        # ---------------------------------------------------------
         symbols = {
-            k: (
-                self._broker.format_option_symbol(
-                    underlying,
-                    expiry,
-                    v,
-                    call_or_put
-                )
-                if v is not None
-                else None
-            )
+            k: (self._broker.format_option_symbol(underlying, expiry, v, call_or_put) if v is not None else None)
             for k, v in strikes.items()
         }
 
-        logger.debug(
-            f"Generated weekly option symbols: {symbols}"
-        )
+        return {"expiry": expiry, "strikes": strikes, "symbols": symbols}
 
-        return {
-            "expiry": expiry,
-            "strikes": strikes,
-            "symbols": symbols
-        }
 
 
     def setup_woc_subscriptions(self):
@@ -1699,103 +1321,36 @@ class Trader_Singleton:
         try:
 
             near_month_symbol = fetch_from_json("constants.json", "NEAR_MONTH_FUTURE_TOKEN")
-            logger.info(f"NEAR_MONTH_FUTURE_TOKEN = {near_month_symbol}")
             self._near_month_future_symbol = near_month_symbol
 
             near_month_data = self._broker.get_instrument_details(near_month_symbol)
 
             near_month_token = str(near_month_data["instrument_token"])
 
-            # # ------------------------------------------------
-            # # Step 1: Subscribe to near-month future first
-            # # ------------------------------------------------
-            # self._broker.subscribe_to_all([near_month_token])
-
-            # # First try websocket price
-            # price = self.get_latest_price(str(near_month_token))
-            # open_price = price
-
 
             self._broker.subscribe_to_all([near_month_token])
+            price = self.get_latest_price(str(near_month_token))
 
-            # Give WebSocket a short chance to deliver the first tick
-            future_prices = self.wait_for_prices(
-                [near_month_token],
-                timeout=0.5
-            )
-
-            price = future_prices.get(near_month_token)
-            open_price = price
-
-            
-
-            # ------------------------------------------------
-            # Step 1.5: If websocket price is unavailable,
-            # fetch the actual future price through REST
-            # ------------------------------------------------
             if not price:
-                logger.info(
-                    f"Near-month future price not available from websocket "
-                    f"for {near_month_data['tradingsymbol']}. Fetching REST quote."
-                )
-
-                batch_quotes = self._broker.get_quotes_batch(
-                    [near_month_data["tradingsymbol"]]
-                )
-
-                q = batch_quotes.get(near_month_data["tradingsymbol"])
-
-                if q:
-                    price, open_price = q
-
-            # ------------------------------------------------
-            # Step 1.6: Only NIFTY/SENSEX are allowed to use
-            # their existing fallback values.
-            #
-            # CRUDEOILM must NEVER use NIFTY fallback.
-            # ------------------------------------------------
-            if not price:
-
                 if self._underlying == "SENSEX":
-                    logger.warning(
-                        "Near-month SENSEX future price unavailable. "
-                        "Using SENSEX fallback."
-                    )
                     price = self._SENSEX_FALLBACK_LTP
-                    open_price = price
-
-                elif self._underlying == "NIFTY":
-                    logger.warning(
-                        "Near-month NIFTY future price unavailable. "
-                        "Using NIFTY fallback."
-                    )
-                    price = self._NIFTY_FALLBACK_LTP
-                    open_price = price
-
                 else:
-                    logger.error(
-                        f"Unable to determine near-month future price for "
-                        f"{self._underlying}. Skipping weekly option setup."
-                    )
-                    return
+                    price = self._NIFTY_FALLBACK_LTP
 
-            logger.info(
-                f"Using near-month future price {price} for "
-                f"{self._underlying} option generation"
-            )
 
-            # ------------------------------------------------
-            # Step 2: Generate contracts using the ACTUAL
-            # near-month future price
-            # ------------------------------------------------
+
+            # ------------------------------------
+            # Step 1: Generate all contracts first
+            # ------------------------------------
+            #float(self._NIFTY_FALLBACK_LTP),
             contracts_ce = self.get_5_woc(
-                price,
+                price,   
                 "CE",
                 underlying=self._underlying
             )["symbols"]
 
             contracts_pe = self.get_5_woc(
-                price,
+                price,   
                 "PE",
                 underlying=self._underlying
             )["symbols"]
@@ -1803,38 +1358,6 @@ class Trader_Singleton:
             all_contracts = {}
 
             tokens_to_subscribe = [near_month_token]
-
-
-            # self._broker.subscribe_to_all([near_month_token])
-            # price = self.get_latest_price(str(near_month_token))
-
-            # if not price:
-            #     if self._underlying == "SENSEX":
-            #         price = self._SENSEX_FALLBACK_LTP
-            #     else:
-            #         price = self._NIFTY_FALLBACK_LTP
-
-
-
-            # # ------------------------------------
-            # # Step 1: Generate all contracts first
-            # # ------------------------------------
-            # #float(self._NIFTY_FALLBACK_LTP),
-            # contracts_ce = self.get_5_woc(
-            #     price,   
-            #     "CE",
-            #     underlying=self._underlying
-            # )["symbols"]
-
-            # contracts_pe = self.get_5_woc(
-            #     price,   
-            #     "PE",
-            #     underlying=self._underlying
-            # )["symbols"]
-
-            # all_contracts = {}
-
-            # tokens_to_subscribe = [near_month_token]
 
 
             for key, value in contracts_ce.items():
@@ -1904,37 +1427,37 @@ class Trader_Singleton:
                 batch_quotes = {}
 
 
-            # # ------------------------------------
-            # # Step 4: Handle Near Month Future
-            # # ------------------------------------
+            # ------------------------------------
+            # Step 4: Handle Near Month Future
+            # ------------------------------------
 
-            # price = prices.get(near_month_token)
+            price = prices.get(near_month_token)
+
+            if not price:
+
+                q = batch_quotes.get(near_month_data["tradingsymbol"])
+
+                if q:
+                    price, open_price = q
 
             # if not price:
 
-            #     q = batch_quotes.get(near_month_data["tradingsymbol"])
-
-            #     if q:
-            #         price, open_price = q
-
-            # # if not price:
-
-            # #     logger.warning("Future REST quote failed. Using fallback")
-
-            # #     price = self._NIFTY_FALLBACK_LTP
-
-            # #     open_price = price
-
-            # # MSTOCK_SENSEX
-            # if not price:
             #     logger.warning("Future REST quote failed. Using fallback")
 
-            #     if self._underlying == "SENSEX":
-            #         price = self._SENSEX_FALLBACK_LTP
-            #     else:
-            #         price = self._NIFTY_FALLBACK_LTP
+            #     price = self._NIFTY_FALLBACK_LTP
 
-            #     open_price = price            
+            #     open_price = price
+
+            # MSTOCK_SENSEX
+            if not price:
+                logger.warning("Future REST quote failed. Using fallback")
+
+                if self._underlying == "SENSEX":
+                    price = self._SENSEX_FALLBACK_LTP
+                else:
+                    price = self._NIFTY_FALLBACK_LTP
+
+                open_price = price            
 
 
             self.ltp_near_month_future = price
@@ -2260,61 +1783,24 @@ class Trader_Singleton:
             
     # ---------------------- TICK HANDLER ----------------------
 
-    def emit_price_updated_order(self, payload):
-        try:
-            logger.info(
-                f"MSTOCK SOCKET BACKGROUND EMIT | "
-                f"token={payload.get('token')} | "
-                f"ltp={payload.get('ltp')}"
-            )
-
-            logger.info(f"MSTOCK SOCKET CLIENTS | count={len(self.frontend_data_socket.server.eio.sockets)}")
-
-            self.frontend_data_socket.emit(
-                'price-updated-order',
-                payload,
-                namespace='/'
-            )
-            
-
-            logger.info(
-                f"MSTOCK SOCKET BACKGROUND EMIT DONE | "
-                f"token={payload.get('token')}"
-            )
-
-        except Exception as e:
-            logger.exception(
-                f"MSTOCK SOCKET BACKGROUND EMIT ERROR | "
-                f"token={payload.get('token')} | "
-                f"error={e}"
-            )
-
-
     def set_latest_price(self, instrument_token, tradingsymbol, price):
         try:
+            #logger.debug(f"Received tick for {tradingsymbol} (Token: {instrument_token}) with Latest price {price}")
+            #token = instrument_token
             token = str(instrument_token)
 
-            # logger.info(
-            #     f"MSTOCK set_latest_price | "
-            #     f"token={token} | price={price} | "
-            #     f"in_weekly={token in self._five_weekly_option_contracts} | "
-            #     f"in_position={token in self._position_data} | "
-            #     f"in_near_month={token in self._near_month_data}"
-            # )
-
-            # Store latest price for strategy use
+            # ⭐ ADD THIS LINE (store price for strategy use)
             self._latest_prices[token] = price
+
 
             if token in self._position_data:
                 self.position_data_update(
-                    token,
-                    "latest_price",
-                    price,
+                    token, 
+                    "latest_price", 
+                    price, 
                     is_token=True
                 )
-
                 position_info = self._position_data[token]
-
                 payload = {
                     'token': token,
                     'name': tradingsymbol,
@@ -2323,160 +1809,44 @@ class Trader_Singleton:
                     'pct_pl': position_info.get('pct_pl'),
                     'total_pl': position_info.get('total_pl')
                 }
-
-                # logger.info(
-                #     f"MSTOCK EMIT price-updated-position | "
-                #     f"token={token} | ltp={price}"
-                # )
-
-                self.frontend_data_socket.emit(
-                    'price-updated-position',
-                    payload
-                )
-
+                self.frontend_data_socket.emit('price-updated-position', payload)
+            
+            
             if token in self._five_weekly_option_contracts:
-                self.update_weekly_options(
-                    token,
-                    "ltp",
-                    price
-                )
-
+                self.update_weekly_options(token , "ltp" , price)
                 payload = {
-                    'token': token,
-                    'name': tradingsymbol,
+                    'token': token,             
+                    'name': tradingsymbol,      
                     'ltp': price,
-                    'lots': self._five_weekly_option_contracts[token]["lots"]
+                    'lots' : self._five_weekly_option_contracts[token]["lots"]
                 }
-
-                # logger.info(
-                #     f"MSTOCK EMIT price-updated-order | "
-                #     f"token={token} | ltp={price}"
-                # )
-
-                # logger.info(
-                #     f"MSTOCK SOCKET CLIENT CHECK | "
-                #     f"server_exists={self.frontend_data_socket.server is not None}"
-                # )
-
-                self.frontend_data_socket.emit(
-                    'price-updated-order',
-                    payload
-                )
-                # self.frontend_data_socket.start_background_task(
-                #     self.emit_price_updated_order,
-                #     payload
-                # )                
-
-                # logger.info(
-                #     f"MSTOCK EMIT price-updated-order-debug | "
-                #     f"token={token} | ltp={price}"
-                # )
-
-                self.frontend_data_socket.emit(
-                    'price-updated-order-debug',
-                    payload
-                )
-
+                # logger.debug("UPDATING ORDER PRICES")
+                self.frontend_data_socket.emit('price-updated-order', payload)
+            
             if token in self._near_month_data:
                 self._near_month_data[token] = price
 
-                chgO = round(
-                    (price - self.open_near_month_future)
-                    * 100
-                    / self.open_near_month_future,
-                    2
-                )
-
-                payload = {
-                    "ltp": price,
-                    "chgO": chgO
-                }
+                chgO = round((price - self.open_near_month_future )*100 / self.open_near_month_future,2) 
+                payload = {"ltp" : price, "chgO": chgO}
 
                 self._near_month_future_ltp = price
+                self.frontend_data_socket.emit('near-month-ltp-updated', payload)
 
-                # logger.info(
-                #     f"MSTOCK EMIT near-month-ltp-updated | "
-                #     f"token={token} | ltp={price}"
-                # )
 
-                self.frontend_data_socket.emit(
-                    'near-month-ltp-updated',
-                    payload
-                )
 
+
+            # # When Near Month Future's LTP gets updated, let us also update the TradingViewData in the front end for reference
+            # data = latest_tradingview_data
+            # if not data:
+            #     logger.warning("No TradingView data available for validation.")
+            #     return
+            # payload = {"TradingView_Data" : data}
+            # #self.frontend_data_socket.emit('TradingView_Data', payload)
+
+
+            
         except Exception as e:
-            logger.error(
-                f"Error setting latest price {e}",
-                exc_info=True
-            )
-
-
-
-
-    # def set_latest_price(self, instrument_token, tradingsymbol, price):
-    #     try:
-    #         #logger.debug(f"Received tick for {tradingsymbol} (Token: {instrument_token}) with Latest price {price}")
-    #         #token = instrument_token
-    #         token = str(instrument_token)
-
-    #         # ⭐ ADD THIS LINE (store price for strategy use)
-    #         self._latest_prices[token] = price
-
-
-    #         if token in self._position_data:
-    #             self.position_data_update(
-    #                 token, 
-    #                 "latest_price", 
-    #                 price, 
-    #                 is_token=True
-    #             )
-    #             position_info = self._position_data[token]
-    #             payload = {
-    #                 'token': token,
-    #                 'name': tradingsymbol,
-    #                 'ltp': price,
-    #                 'pts_pl': position_info.get('pts_pl'),
-    #                 'pct_pl': position_info.get('pct_pl'),
-    #                 'total_pl': position_info.get('total_pl')
-    #             }
-    #             self.frontend_data_socket.emit('price-updated-position', payload)
-            
-            
-    #         if token in self._five_weekly_option_contracts:
-    #             self.update_weekly_options(token , "ltp" , price)
-    #             payload = {
-    #                 'token': token,             
-    #                 'name': tradingsymbol,      
-    #                 'ltp': price,
-    #                 'lots' : self._five_weekly_option_contracts[token]["lots"]
-    #             }
-    #             # logger.debug("UPDATING ORDER PRICES")
-    #             self.frontend_data_socket.emit('price-updated-order', payload)
-            
-    #         if token in self._near_month_data:
-    #             self._near_month_data[token] = price
-
-    #             chgO = round((price - self.open_near_month_future )*100 / self.open_near_month_future,2) 
-    #             payload = {"ltp" : price, "chgO": chgO}
-
-    #             self._near_month_future_ltp = price
-    #             self.frontend_data_socket.emit('near-month-ltp-updated', payload)
-
-
-
-
-    #         # # When Near Month Future's LTP gets updated, let us also update the TradingViewData in the front end for reference
-    #         # data = latest_tradingview_data
-    #         # if not data:
-    #         #     logger.warning("No TradingView data available for validation.")
-    #         #     return
-    #         # payload = {"TradingView_Data" : data}
-    #         # #self.frontend_data_socket.emit('TradingView_Data', payload)
-
-
-            
-    #     except Exception as e:
-    #         logger.error(f"Error setting latest price {e}")
+            logger.error(f"Error setting latest price {e}")
 
 
     def get_latest_price(self, token):
@@ -2943,7 +2313,6 @@ class Trader_Singleton:
 
         @self.frontend_data_socket.on('connect')
         def handle_connect():
-            logger.info(f"MSTOCK SOCKET CONNECTED | sid={request.sid}")
             logger.debug(self._near_month_data)
             payload = {
                     "broker" : self._broker_string , 
@@ -2995,7 +2364,6 @@ class Trader_Singleton:
         @self.frontend_data_socket.on('disconnect')
         def handle_disconnect():
             logger.info("Client disconnected.")
-            logger.info(f"MSTOCK SOCKET DISCONNECTED | sid={request.sid}")
 
         @self.frontend_data_socket.on('voice_announcement_toggle')
         def handle_voice_announcement_toggle(payload):
@@ -3009,7 +2377,7 @@ class Trader_Singleton:
         def refresh_table():
             logger.info("Refreshing frontend options table")
             self.refresh_open_pos_buy_price()
-            self.setup_woc_subscriptions()
+            #self.setup_woc_subscriptions()
 
 
         @self.frontend_data_socket.on('request_weekly_options')
@@ -3057,9 +2425,9 @@ class Trader_Singleton:
                 logger.debug(f"Current trading mode: {self._mode}")
 
                 # =========================================================
-                # PAPER MODE
+                # PAPER / ALERT MODE
                 # =========================================================
-                if self._mode not in ("LIVE", "SIMULATION"):
+                if self._mode != "EXECUTION":
 
                     buy_price = self._position_data[order_details["token"]]["average_price"]
                     lot_size = self._position_data[order_details["token"]]["lotsize"]
@@ -3095,7 +2463,7 @@ class Trader_Singleton:
                         }
                     )
                 # =========================================================
-                # LIVE / SIMULATION MODE
+                # REAL EXECUTION MODE
                 # =========================================================
                 else:                    
 
@@ -3312,14 +2680,14 @@ class Trader_Singleton:
                 elif order_details["strategy"].upper() == "ULTRASCALPING":
                     target_profit = PTS_PROFIT_ULTRA_SCALPING_FACTOR* PNT_BOOK_PROFIT
 
-                # Trading mode is PAPER, LIVE, or SIMULATION.
+                # Sell Mode could be ALERT or EXECUTION based on user preference
                 self._mode = fetch_from_json("settings.json" , "MODE")
-                sell_mode = order_details.get("SELL_MODE", "T")
+                sell_mode = order_details["SELL_MODE"]
                 logger.debug(f"Mode set is {self._mode} ; Strategy set is {order_details['strategy']}  Sell Mode is {sell_mode} ")
 
                 ltp = self._five_weekly_option_contracts[order_details["token"]]["ltp"]
 
-                if self._mode not in ("LIVE", "SIMULATION"):
+                if self._mode != "EXECUTION":
                     write_paper_trade(transaction_type="BUY",tradingsymbol=order_details["tradingsymbol"],token=order_details["token"],qty=order_details["lots"],ltp=ltp,product="MIS")
                     logger.info(
                             f"Paper BUY recorded: "

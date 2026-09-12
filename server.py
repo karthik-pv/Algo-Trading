@@ -15,11 +15,14 @@ from core.trade_logic import Trader_Singleton
 from interface.broker_interface import BrokerInterface
 from adapter.kite_adapter import KiteAdapter
 from adapter.mstock_adapter import MStockAdapter
+from adapter.simulator_adapter import SimulatorAdapter
 from core.trading_view_handler import trading_view_handle_func
 
 from utils import is_market_open , fetch_from_json,backup_old_logs
 
-from adapter.mstock_utils import save_orders_to_csv 
+from adapter.mstock_utils import save_orders_to_xlsx, build_orders_export,write_orders_workbook
+
+
 
 from loguru import logger
 
@@ -120,10 +123,33 @@ logger.info("Logger initialized successfully")
 app = Flask(__name__)
 CORS(app)
 
-BROKER_MAP = {"KITE": KiteAdapter, "MSTOCK": MStockAdapter}
+BROKER_MAP = {"KITE": KiteAdapter, "MSTOCK": MStockAdapter, "SIMULATOR": SimulatorAdapter}
 
 CURRENT_BROKER = fetch_from_json("constants.json" , "BROKER")
 UNDERLYING = fetch_from_json("constants.json" , "UNDERLYING")
+CURRENT_MODE = str(fetch_from_json("settings.json", "MODE") or "ALERT").upper()
+VALID_MODES = {"LIVE", "PAPER", "SIMULATION"}
+
+if CURRENT_MODE not in VALID_MODES:
+    raise RuntimeError(
+        f"Invalid MODE '{CURRENT_MODE}'. Allowed values are: "
+        f"{', '.join(sorted(VALID_MODES))}"
+    )
+
+SIMULATION_CONFIG = {}
+
+if CURRENT_MODE == "SIMULATION":
+    try:
+        with open("simulation.json", "r", encoding="utf-8") as simulation_file:
+            SIMULATION_CONFIG = json.load(simulation_file)
+    except (OSError, json.JSONDecodeError) as error:
+        raise RuntimeError("MODE is SIMULATION but simulation.json could not be loaded") from error
+
+if CURRENT_MODE == "SIMULATION" and SIMULATION_CONFIG.get("REQUIRE_MARKET_CLOSED", True) and is_market_open():
+    raise RuntimeError("Simulation mode is configured for non-market hours, but the market is open")
+
+if CURRENT_MODE == "SIMULATION":
+    CURRENT_BROKER = "SIMULATOR"
 
 logger.debug(f"Current Broker is {CURRENT_BROKER} and underlying is {UNDERLYING}")
 
@@ -147,7 +173,7 @@ CONSTANTS_FILE = "constants.json"
 
 # Default settings (used if file missing)
 DEFAULT_SETTINGS = {
-    "mode": "ALERT",
+    "mode": "PAPER",
     "pctMargin": 50,
     "volReduction": 10,
     "defaultLot": 1,
@@ -262,7 +288,7 @@ def import_executed_trades_kite_route():
     - receives trade_date
     - loads all orders via KiteAdapter.fetch_all_orders()
     - filters by date
-    - calls save_orders_to_csv()
+    - returns the shared formatted XLSX workbook
     """
     try:
         payload = request.get_json(silent=True)
@@ -283,7 +309,26 @@ def import_executed_trades_kite_route():
         if "timestamp" not in df.columns:
             return jsonify({"success": False, "error": "timestamp missing"}), 500
 
-        df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce")
+        df["timestamp"] = pd.to_datetime(
+            df["timestamp"],
+            errors="coerce",
+            dayfirst=True,
+            format="mixed"
+        )
+
+        if "order_status" not in df.columns:
+            return jsonify({
+                "success": False,
+                "error": "order_status missing"
+            }), 500
+
+        logger.info(
+            "Order import diagnostics: "
+            f"rows={len(df)}, "
+            f"unparsed_timestamps={int(df['timestamp'].isna().sum())}, "
+            f"dates={sorted(df['timestamp'].dropna().dt.date.astype(str).unique())}, "
+            f"statuses={sorted(df['order_status'].astype(str).str.strip().str.upper().unique())}"
+        )
 
         target_date = pd.to_datetime(trade_date).date()
 
@@ -291,7 +336,11 @@ def import_executed_trades_kite_route():
         df = df[df["timestamp"].dt.date == target_date]
 
         # 3️⃣ Keep executed trades
-        df = df[df["order_status"].astype(str).str.lower() == "complete"]
+        df = df[
+            df["order_status"].astype(str).str.strip().str.upper().isin(
+                {"COMPLETE", "TRADED"}
+            )
+        ]
 
         if df.empty:
             return jsonify({
@@ -301,14 +350,13 @@ def import_executed_trades_kite_route():
 
         filtered_orders = df.to_dict(orient="records")
 
-        filename = f"kite_executed_{trade_date}.csv"
-
-        save_orders_to_csv(filtered_orders, filename)
-
-        return jsonify({
-            "success": True,
-            "message": f"{len(filtered_orders)} trades saved to {filename}"
-        })
+        workbook_path = save_orders_to_xlsx(filtered_orders)
+        return send_file(
+            workbook_path,
+            as_attachment=True,
+            download_name=f"Kite_Orders_{trade_date.replace('-', '_')}.xlsx",
+            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
 
     except Exception as e:
         logger.exception("Error importing Kite trades")
@@ -325,6 +373,9 @@ def import_executed_trades_route():
     - calls adapter.save_orders_to_csv()
     """
     try:
+        if CURRENT_BROKER == "KITE":
+            return import_executed_trades_kite_route()
+
         payload = request.get_json(silent=True)
         logger.info(f"Import executed trades payload: {payload}")
         if not payload or "trade_date" not in payload:
@@ -352,115 +403,72 @@ def import_executed_trades_route():
         if "timestamp" not in df.columns:
             return jsonify({"success": False, "error": "timestamp missing"}), 500
 
-        df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce")
+        # M.Stock commonly returns day-first timestamps such as
+        # 04-09-2026 15:20:00, while the browser sends an ISO date.
+        df["timestamp"] = pd.to_datetime(
+            df["timestamp"],
+            errors="coerce",
+            dayfirst=True,
+            format="mixed"
+        )
+
+        if "order_status" not in df.columns:
+            return jsonify({
+                "success": False,
+                "error": "order_status missing"
+            }), 500
+
+        logger.info(
+            "M.Stock order import diagnostics: "
+            f"rows={len(df)}, "
+            f"unparsed_timestamps={int(df['timestamp'].isna().sum())}, "
+            f"dates={sorted(df['timestamp'].dropna().dt.date.astype(str).unique())}, "
+            f"statuses={sorted(df['order_status'].astype(str).str.strip().str.upper().unique())}"
+        )
+        df_all_dates = df["timestamp"].dropna().dt.date.astype(str)
+        df_all_statuses = df["order_status"].astype(str)
 
         # 2️⃣ Filter by selected date
         target_date = pd.to_datetime(trade_date).date()
         df = df[df["timestamp"].dt.date == target_date]
 
-        # 3️⃣ Keep only executed/traded orders
-        df = df[df["status"].astype(str).str.lower() == "COMPLETE"]
-        #df = df[df["order_status"].astype(str).str.lower() == "traded"]
+        # 3️⃣ Keep only executed/traded orders. M.Stock normalizes this field
+        # as order_status and can report either COMPLETE or TRADED.
+        df = df[
+            df["order_status"].astype(str).str.strip().str.upper().isin(
+                {"COMPLETE", "TRADED"}
+            )
+        ]
 
         if df.empty:
+            available_dates = sorted(df_all_dates.unique())
+            available_statuses = sorted(
+                df_all_statuses.str.strip().str.upper().unique()
+            )
             return jsonify({
                 "success": False,
-                "error": f"No executed trades on {trade_date}"
+                "error": (
+                    f"No executed trades on {trade_date}. "
+                    f"M.Stock returned dates={available_dates}, "
+                    f"statuses={available_statuses}."
+                )
             })
 
         filtered_orders = df.to_dict(orient="records")
 
         logger.info(f"Filtered executed orders count: {filtered_orders}")
 
-        # 3️⃣ Save to CSV using adapter's routine
-        filename = f"mstock_executed_{trade_date}.csv"
-        save_orders_to_csv(filtered_orders, filename)
-
-        return jsonify({
-            "success": True,
-            "message": f"{len(filtered_orders)} trades saved to {filename}"
-        })
-
-    except Exception as e:
-        logger.error(f"Error importing executed trades: {e}")
-        # import traceback
-        # traceback.print_exc()
-        # return jsonify({"success": False, "error": str(e)}), 500
-
-
-@app.route("/import_executed_trades_kite", methods=["POST"])
-def import_executed_trades_kite():
-    """
-    Flask endpoint for Kite Connect:
-    - receives trade_date
-    - loads all orders via kite.orders()
-    - filters executed trades by date
-    - saves to CSV
-    """
-    try:
-        payload = request.get_json(silent=True)
-
-        if not payload or "trade_date" not in payload:
-            return jsonify({
-                "success": False,
-                "error": "Missing trade_date"
-            }), 400
-
-        trade_date = payload["trade_date"]
-
-        # 1️⃣ Fetch all orders from Kite
-        all_orders = kite.orders()
-
-        if not all_orders:
-            return jsonify({
-                "success": False,
-                "error": "No orders found"
-            }), 404
-
-        df = pd.DataFrame(all_orders)
-
-        if "order_timestamp" not in df.columns:
-            return jsonify({
-                "success": False,
-                "error": "order_timestamp missing"
-            }), 500
-
-        # Convert timestamp
-        df["order_timestamp"] = pd.to_datetime(
-            df["order_timestamp"], errors="coerce"
+        workbook_path = save_orders_to_xlsx(filtered_orders)
+        return send_file(
+            workbook_path,
+            as_attachment=True,
+            download_name=f"MStock_Orders_{trade_date.replace('-', '_')}.xlsx",
+            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         )
 
-        # 2️⃣ Filter by date
-        target_date = pd.to_datetime(trade_date).date()
-
-        df = df[df["order_timestamp"].dt.date == target_date]
-
-        # 3️⃣ Keep only executed trades
-        df = df[df["status"].str.upper() == "COMPLETE"]
-
-        if df.empty:
-            return jsonify({
-                "success": False,
-                "error": f"No executed trades on {trade_date}"
-            })
-
-        filtered_orders = df.to_dict(orient="records")
-
-        # 4️⃣ Save CSV
-        filename = f"kite_executed_{trade_date}.csv"
-        save_orders_to_csv(filtered_orders, filename)
-
-        return jsonify({
-            "success": True,
-            "message": f"{len(filtered_orders)} trades saved to {filename}"
-        })
-
     except Exception as e:
         logger.error(f"Error importing executed trades: {e}")
-        return jsonify({
-            "success": False,
-            "error": str(e)
-        }), 500
+        return jsonify({"success": False, "error": str(e)}), 500
 
 
 @app.route("/instruments")
@@ -606,6 +614,8 @@ def settings():
     return render_template("settings.html")
 
 @app.route("/Utilities")
+@app.route("/utilities")
+@app.route("/utilities.html")
 def Utilities():
     logger.info("Rendering Utilities page")
     return render_template("Utilities.html")
@@ -617,24 +627,192 @@ def convert_contract_note():
     if not pdf_file:
         return {"error": "No PDF uploaded"}, 400
 
-    # Save PDF temporarily
-    tmp_pdf = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
-    pdf_file.save(tmp_pdf.name)
+    # Create a closed temporary path so Camelot can open it on Windows.
+    tmp_fd, tmp_pdf_path = tempfile.mkstemp(suffix=".pdf")
+    os.close(tmp_fd)
 
     try:
-        csv_path = broker.convert_mstock_contract_note(tmp_pdf.name)
+        pdf_file.save(tmp_pdf_path)
+        # Contract-note conversion is an mStock utility even in simulation mode,
+        # where the active trading broker is SimulatorAdapter.
+        converter = broker if hasattr(broker, "convert_mstock_contract_note") else MStockAdapter()
+        csv_path = converter.convert_mstock_contract_note(tmp_pdf_path)
     except Exception as e:
-        os.unlink(tmp_pdf.name)
+        logger.exception("Contract-note conversion failed")
         return {"error": str(e)}, 500
-
-    os.unlink(tmp_pdf.name)
+    finally:
+        try:
+            os.unlink(tmp_pdf_path)
+        except FileNotFoundError:
+            pass
 
     return send_file(
         csv_path,
         as_attachment=True,
-        download_name="paired_trades.csv",
-        mimetype="text/csv"
+        download_name=(
+            f"MStock_Orders_{pd.to_datetime(
+                pd.read_excel(csv_path, usecols=["ORDERDATE"], nrows=1)["ORDERDATE"].iloc[0]
+            ).strftime('%m_%d_%Y')}.xlsx"
+        ),
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
+
+@app.route("/get_executed_trades", methods=["POST"])
+def get_executed_trades():
+    """
+    Fetch executed orders for the selected trade date and return
+    the same formatted rows used by the Excel Orders sheet.
+
+    This endpoint is for the HTML grid.
+    The existing /import_executed_trades endpoint remains unchanged
+    and continues to generate the Excel workbook.
+    """
+    try:
+        payload = request.get_json(silent=True) or {}
+        trade_date = payload.get("trade_date")
+
+        if not trade_date:
+            return jsonify({
+                "success": False,
+                "error": "Trade date is required"
+            }), 400
+
+        logger.info(
+            f"get_executed_trades: fetching orders for trade date {trade_date}"
+        )
+
+        # Fetch all orders through the currently selected broker.
+        orders = broker.fetch_all_orders()
+
+        if not orders:
+            return jsonify({
+                "success": True,
+                "rows": []
+            })
+
+        df = pd.DataFrame(orders)
+
+        # Make sure the normalized status column exists.
+        if "order_status" in df.columns and "status" not in df.columns:
+            df["status"] = df["order_status"]
+
+        # Make sure timestamp exists.
+        if "timestamp" not in df.columns:
+            return jsonify({
+                "success": False,
+                "error": "Order data does not contain timestamp"
+            }), 500
+
+        # Parse timestamps exactly as the existing import route does.
+        df["timestamp"] = pd.to_datetime(
+            df["timestamp"],
+            errors="coerce",
+            dayfirst=True,
+            format="mixed"
+        )
+
+        # Convert requested date to date object.
+        selected_date = pd.to_datetime(
+            trade_date,
+            errors="coerce"
+        ).date()
+
+        if pd.isna(selected_date):
+            return jsonify({
+                "success": False,
+                "error": f"Invalid trade date: {trade_date}"
+            }), 400
+
+        # Keep only orders from the selected date.
+        df = df[
+            df["timestamp"].notna()
+            & (df["timestamp"].dt.date == selected_date)
+        ].copy()
+
+        # Keep only executed/traded orders.
+        if "order_status" in df.columns:
+            df = df[
+                df["order_status"]
+                .astype(str)
+                .str.upper()
+                .isin(["COMPLETE", "TRADED"])
+            ].copy()
+        elif "status" in df.columns:
+            df = df[
+                df["status"]
+                .astype(str)
+                .str.upper()
+                .isin(["COMPLETE", "TRADED"])
+            ].copy()
+
+        if df.empty:
+            logger.info(
+                f"get_executed_trades: no executed trades for {trade_date}"
+            )
+
+            return jsonify({
+                "success": True,
+                "rows": []
+            })
+
+        filtered_orders = df.to_dict(orient="records")
+
+        # IMPORTANT:
+        # Use the exact same formatter that creates the Excel Orders rows.
+        rows, _pine_script = build_orders_export(filtered_orders)
+
+        logger.info(
+            f"get_executed_trades: returning {len(rows)} formatted rows"
+        )
+
+        return jsonify({
+            "success": True,
+            "rows": rows,
+            "pine_script": _pine_script
+        })
+
+    except Exception as e:
+        logger.exception("Error getting executed trades")
+
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+@app.route("/export_executed_trades", methods=["POST"])
+def export_executed_trades():
+    try:
+        data = request.get_json() or {}
+
+        rows = data.get("rows", [])
+        pine_script = data.get("pine_script", "")
+
+        if not rows:
+            return jsonify({
+                "success": False,
+                "error": "No executed trades to export"
+            }), 400
+
+        output_path = write_orders_workbook(
+            rows,
+            pine_script
+        )
+
+        return send_file(
+            output_path,
+            as_attachment=True,
+            download_name="Executed_Trades.xlsx",
+            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+
+    except Exception as e:
+        logger.exception("export_executed_trades failed")
+
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
 
 
 async def start_async_connections():
@@ -706,6 +884,10 @@ if 1==1: #__name__ == "__main__":
             if is_market_open():
                 trader.start_trading_watcher_thread()
             asyncio.run(start_async_connections())
+        elif CURRENT_BROKER == "SIMULATOR":
+            socket_thread = threading.Thread(target=start_socket, daemon=True)
+            socket_thread.start()
+            app.run(debug=True, use_reloader=False)
 
         
 

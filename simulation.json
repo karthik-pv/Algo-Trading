@@ -1,0 +1,27 @@
+{
+    "REQUIRE_MARKET_CLOSED": true,
+    "TICK_INTERVAL_SECONDS": 1,
+    "RANDOM_SEED": 42,
+    "INITIAL_CASH": 100000,
+    "SLIPPAGE_POINTS": 0,
+    "LOT_SIZE": 1,
+    "NIFTY": {
+        "INITIAL_PRICE": 25000,
+        "MIN_PRICE": 24800,
+        "MAX_PRICE": 25200,
+        "VOLATILITY_POINTS": 12
+    },
+    "SENSEX": {
+        "INITIAL_PRICE": 82000,
+        "MIN_PRICE": 81500,
+        "MAX_PRICE": 82500,
+        "VOLATILITY_POINTS": 30
+    },
+    "OPTION_DEFAULT": {
+        "INITIAL_PRICE": 100,
+        "MIN_PRICE": 50,
+        "MAX_PRICE": 250,
+        "VOLATILITY_POINTS": 4
+    },
+    "INSTRUMENTS": {}
+}

@@ -41,6 +41,7 @@ class MStockSingleton:
         self._api_key = MSTOCK_API_KEY
         if not self._api_key:
             raise ValueError("MSTOCK_API_KEY not found in environment variables")
+        self._socket_loop = None
 
     def create_session(self):
         logger.info("Creating M.Stock session...")
@@ -104,7 +105,7 @@ class MStockSingleton:
         self.set_access_token(access_token)
 
     async def start_socket_connection(self, shutdown_event, trader_instance):
-        logger.info("Starting M.Stock WebSocket connection...")
+        # logger.info("Starting M.Stock WebSocket connection...")
         """Starts the WebSocket connection and handles automatic reconnection."""
         self._trader = trader_instance
         url = f"wss://ws.mstock.trade?API_KEY={self._api_key}&ACCESS_TOKEN={self._access_token}"
@@ -114,12 +115,13 @@ class MStockSingleton:
                 logger.info("Attempting to connect to M.Stock WebSocket...")
                 async with websockets.connect(url) as ws:
                     self._socket = ws
+                    self._socket_loop = asyncio.get_running_loop()
                     logger.info("Connection successful. Logging in...")
 
                     login_message = f"LOGIN:{self._access_token}"
                     await ws.send(login_message)
 
-                    #await asyncio.sleep(1)
+                    await asyncio.sleep(1)
                     
                     await self._subscribe_to_instruments(trader_instance.get_relevant_instruments_to_track())
 
@@ -128,8 +130,12 @@ class MStockSingleton:
                         await asyncio.to_thread(trader_instance.setup_woc_subscriptions)
                     except Exception as e:
                         logger.exception(f"M.Stock options bootstrap failed after socket connect: {e}")
+                    # logger.info("MSTOCK WS RECEIVE LOOP STARTED")
+                    # logger.info("MSTOCK WS WAITING FOR NEXT MESSAGE")
                     async for message in ws:
+                        # logger.info("MSTOCK WS MESSAGE RECEIVED1")
                         await self._handle_message(message)
+                        # logger.info("MSTOCK WS MESSAGE RECEIVED2")
             except websockets.exceptions.ConnectionClosed as e:
                 logger.warning(f"Connection closed: {e}. Reconnecting in 5s...")
                 await asyncio.sleep(5)
@@ -366,33 +372,60 @@ class MStockSingleton:
 
     async def _handle_message(self, message):
         try:
+            # logger.debug(
+            #     f"MSTOCK WS RX | type={type(message).__name__} | "
+            #     f"length={len(message) if isinstance(message, (bytes, bytearray)) else 'N/A'}"
+            # )
+
             # M.Stock can send packets other than the 379-byte quote packet.
-            # Only pass the quote packet format to parse_quote_message().
             if not isinstance(message, (bytes, bytearray)):
-                logger.debug(
-                    f"Ignoring non-binary M.Stock WebSocket message: {type(message)}"
-                )
+                # logger.debug(
+                #     f"MSTOCK WS IGNORE | non-binary message | "
+                #     f"type={type(message).__name__}"
+                # )
                 return
 
             if len(message) != 379:
-                logger.debug(
-                    f"Ignoring unsupported M.Stock WebSocket packet: {len(message)} bytes"
-                )
+                # logger.debug(
+                #     f"MSTOCK WS IGNORE | unsupported packet length={len(message)}"
+                # )
                 return
+
+            # logger.debug("MSTOCK WS QUOTE PACKET | 379-byte packet received")
 
             market_update = parse_quote_message(message)
 
+            # logger.debug(
+            #     f"MSTOCK WS PARSED | market_update={market_update}"
+            # )
+
             if not market_update:
+                logger.warning(
+                    "MSTOCK WS PARSE EMPTY | parse_quote_message returned no data"
+                )
                 return
 
+            token = str(market_update["token"])
+            ltp = market_update["ltp"]
+
+            # logger.info(
+            #     f"MSTOCK TICK | token={token} | ltp={ltp}"
+            # )
+
             self._trader.set_latest_price(
-                market_update["token"],
+                token,
                 None,
-                market_update["ltp"]
+                ltp
             )
 
+            # logger.debug(
+            #     f"MSTOCK TICK FORWARDED | token={token} | ltp={ltp}"
+            # )
+
         except Exception as e:
-            logger.exception(f"Error handling M.Stock market data: {e}")
+            logger.exception(
+                f"MSTOCK WS HANDLER ERROR | {e}"
+            )
 
 
     def set_access_token(self, access_token):

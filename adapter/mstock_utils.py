@@ -4,6 +4,9 @@ from pprint import pprint
 from loguru import logger
 import pandas as pd
 from datetime import timedelta
+import os
+import tempfile
+import re
 
 
 def position_attribute_mgmt(positions):
@@ -55,6 +58,26 @@ def instr_det_attrib_mgmt(instrument_details):
     instrument_details["instrument_token"] = instrument_details["token"]
     instrument_details["lot_size"] = instrument_details["lotsize"]
     return instrument_details
+
+
+def normalize_contract_symbol(symbol):
+    """Extract the broker instrument name from a contract-note/order symbol."""
+    text = str(symbol or "").upper()
+
+    compact_match = re.search(r"((?:NIFTY|SENSEX)\d+(?:CE|PE))", text)
+    if compact_match:
+        return compact_match.group(1)
+
+    formatted_match = re.search(
+        r"\b(NIFTY|SENSEX)\s+(\d{2})([A-Z]{3})(\d{2})\s+(\d+(?:\.00)?)\s+(CE|PE)\b",
+        text,
+    )
+    if formatted_match:
+        underlying, day, month_name, year, strike, call_or_put = formatted_match.groups()
+        month = pd.to_datetime(month_name, format="%b").strftime("%m")
+        return f"{underlying}{year}{month}{day}{strike.removesuffix('.00')}{call_or_put}"
+
+    return re.sub(r"[^A-Z0-9]", "", text)
 
 
 def parse_market_depth(market_depth_data):
@@ -161,6 +184,198 @@ def make_timestamp_expr(self,ts):
     return f"timestamp('GMT',{ts.year},{ts.month},{ts.day},{ts.hour},{ts.minute},{ts.second})"
 
 
+EXPORT_COLUMNS = [
+    "ORDERDATE", "ORDERTIME", "TRAN", "CONT", "Product",
+    "Qty.", "RATE", "STATUS", "Duration", "PurValue",
+    "PnL_Rate", "PnL", "PnL%", "PnL_RT",
+]
+
+
+def write_orders_workbook(output_rows, pine_script, filename=None):
+    """Write the standard formatted trade workbook used by every importer."""
+    output_path = filename or tempfile.mktemp(suffix=".xlsx")
+    orders_df = pd.DataFrame(output_rows, columns=EXPORT_COLUMNS)
+
+    with pd.ExcelWriter(output_path, engine="xlsxwriter") as writer:
+        orders_df.to_excel(writer, index=False, sheet_name="Orders")
+        workbook = writer.book
+        worksheet = writer.sheets["Orders"]
+        header_format = workbook.add_format({
+            "bold": True, "bg_color": "#D9EAD3", "border": 1,
+            "align": "center", "valign": "vcenter",
+        })
+        for column_index, column_name in enumerate(EXPORT_COLUMNS):
+            worksheet.write(0, column_index, column_name, header_format)
+
+        pnl_formats = {
+            "dark_green": workbook.add_format({"bg_color": "#00B050", "font_color": "#FFFFFF"}),
+            "light_green": workbook.add_format({"bg_color": "#92D050"}),
+            "pale_green": workbook.add_format({"bg_color": "#C6EFCE"}),
+            "dark_red": workbook.add_format({"bg_color": "#FF0000", "font_color": "#FFFFFF"}),
+            "light_red": workbook.add_format({"bg_color": "#FF6666"}),
+            "pale_red": workbook.add_format({"bg_color": "#FFC7CE"}),
+        }
+        pnl_column = EXPORT_COLUMNS.index("PnL%")
+        for row_index, row in orders_df.iterrows():
+            value = row["PnL%"]
+            if value == "" or pd.isna(value):
+                continue
+            if value > 10:
+                cell_format = pnl_formats["dark_green"]
+            elif value > 5:
+                cell_format = pnl_formats["light_green"]
+            elif value > 0:
+                cell_format = pnl_formats["pale_green"]
+            elif value < -10:
+                cell_format = pnl_formats["dark_red"]
+            elif value < -5:
+                cell_format = pnl_formats["light_red"]
+            elif value < 0:
+                cell_format = pnl_formats["pale_red"]
+            else:
+                continue
+            worksheet.write(row_index + 1, pnl_column, value, cell_format)
+
+        pine_start = len(output_rows) + 2
+        pine_end = pine_start + 12
+        pine_label_format = workbook.add_format({
+            "bold": True, "bg_color": "#D9EAD3", "border": 1,
+            "align": "center", "valign": "vcenter",
+        })
+        pine_script_format = workbook.add_format({
+            "text_wrap": True, "valign": "top", "border": 1,
+            "font_name": "Consolas", "font_size": 9,
+        })
+        worksheet.merge_range(pine_start, 0, pine_end, 0, "PINE", pine_label_format)
+        worksheet.merge_range(pine_start, 1, pine_end, 13, pine_script, pine_script_format)
+        worksheet.set_column(0, 0, 14)
+        worksheet.set_column(1, 13, 16)
+        worksheet.set_column(13, 13, 18)
+        rate_format = workbook.add_format({"num_format": "0.0"})
+        rate_column = EXPORT_COLUMNS.index("RATE")
+        worksheet.set_column(rate_column, rate_column, 12, rate_format)
+        worksheet.set_row(pine_start, 30)
+
+    return output_path
+
+
+def build_orders_export(order_list):
+    """Normalize broker orders, calculate FIFO P&L, and build PineScript data."""
+    df = pd.DataFrame(order_list)
+    if "status" not in df.columns and "order_status" in df.columns:
+        df["status"] = df["order_status"]
+    if "timestamp" not in df.columns and "order_timestamp" in df.columns:
+        df["timestamp"] = df["order_timestamp"]
+    if "transaction_type" not in df.columns and "transactiontype" in df.columns:
+        df["transaction_type"] = df["transactiontype"]
+    if "average_price" not in df.columns and "averageprice" in df.columns:
+        df["average_price"] = df["averageprice"]
+
+    required = ["timestamp", "tradingsymbol", "transaction_type", "quantity", "average_price"]
+    missing = [column for column in required if column not in df.columns]
+    if missing:
+        raise ValueError(f"Missing order columns: {', '.join(missing)}")
+
+    df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce", dayfirst=True, format="mixed")
+    df["quantity"] = pd.to_numeric(df["quantity"], errors="coerce")
+    df["average_price"] = pd.to_numeric(df["average_price"], errors="coerce")
+    df["transaction_type"] = df["transaction_type"].astype(str).str.upper()
+    df = df.dropna(subset=["timestamp", "quantity", "average_price"]).sort_values("timestamp")
+
+    records = []
+    for item in df.to_dict(orient="records"):
+        if records and all(records[-1][key] == item[key] for key in ("timestamp", "transaction_type", "tradingsymbol")):
+            previous = records[-1]
+            total_quantity = previous["quantity"] + item["quantity"]
+            previous["average_price"] = (
+                previous["average_price"] * previous["quantity"]
+                + item["average_price"] * item["quantity"]
+            ) / total_quantity
+            previous["quantity"] = total_quantity
+        else:
+            records.append(item.copy())
+
+    rows = []
+    open_buys = {}
+    cumulative_pnl = 0.0
+    timeline = []
+    zones = []
+    pnl_zones = []
+    labels = []
+    pnl_labels = []
+    for sequence, item in enumerate(records, start=1):
+        timestamp = item["timestamp"].to_pydatetime()
+        symbol = normalize_contract_symbol(item["tradingsymbol"])
+        side = item["transaction_type"]
+        quantity = float(item["quantity"])
+        price = float(item["average_price"])
+        time_var = f"t{timestamp:%y%m%d}_{sequence}"
+        timeline.append(f"{time_var}=timestamp('Asia/Kolkata',{timestamp:%Y,%m,%d,%H,%M,%S})")
+        duration = ""
+        purchase_value = ""
+        pnl_rate = ""
+        pnl = ""
+        pnl_pct = ""
+        pnl_rt = ""
+
+        if side == "BUY":
+            open_buys.setdefault(symbol, []).append({"quantity": quantity, "price": price, "time": timestamp, "var": time_var})
+        elif side == "SELL":
+            remaining = quantity
+            matched = []
+            while remaining > 0 and open_buys.get(symbol):
+                buy = open_buys[symbol][0]
+                taken = min(remaining, buy["quantity"])
+                matched.append((buy, taken))
+                buy["quantity"] -= taken
+                remaining -= taken
+                if buy["quantity"] <= 0.0001:
+                    open_buys[symbol].pop(0)
+            matched_quantity = sum(taken for _, taken in matched)
+            if matched_quantity:
+                average_buy = sum(buy["price"] * taken for buy, taken in matched) / matched_quantity
+                purchase_amount = average_buy * matched_quantity
+                pnl_rate_value = price - average_buy
+                pnl_value = pnl_rate_value * matched_quantity
+                cumulative_pnl += pnl_value
+                elapsed = max(0, int((timestamp - matched[0][0]["time"]).total_seconds()))
+                duration = f"{elapsed // 60:02d}:{elapsed % 60:02d}"
+                purchase_value = f"{purchase_amount / 100000:.1f}L"
+                pnl_rate = round(pnl_rate_value, 2)
+                pnl = round(pnl_value)
+                pnl_pct = round((pnl_value / purchase_amount) * 100, 2) if purchase_amount else 0
+                pnl_rt = round(cumulative_pnl)
+                for match_number, (buy, _) in enumerate(matched, start=1):
+                    pine_id = f"{timestamp:%y%m%d}_{sequence}_{match_number}"
+                    color = "color.new(color.green,0)" if symbol.endswith("CE") else "color.new(color.red,0)"
+                    pnl_color = "color.new(color.green,0)" if pnl_value >= 0 else "color.new(color.red,0)"
+                    zones.append(f"if barstate.islast\n    var bz_{pine_id}=box.new({buy['var']},high,{time_var},(high+low)/2,xloc=xloc.bar_time,bgcolor={color},border_width=0)")
+                    pnl_zones.append(f"if barstate.islast\n    var pbz_{pine_id}=box.new({buy['var']},(high+low)/2,{time_var},low,xloc=xloc.bar_time,bgcolor={pnl_color},border_width=0)")
+                    labels.append(f"if barstate.islast\n    var l_{pine_id}=label.new(({buy['var']}+{time_var})/2,(high+low)/2,text='{pnl:.0f}  {pnl_pct:.2f}%',xloc=xloc.bar_time,style=label.style_label_center,color=color.white,textcolor=color.black,size=size.normal)")
+                    pnl_labels.append(f"if barstate.islast\n    var pl_{pine_id}=label.new(({buy['var']}+{time_var})/2,low,text='{purchase_value}  {pnl:.0f}  {pnl_pct:.2f}%',xloc=xloc.bar_time,style=label.style_label_center,color=color.white,textcolor=color.black,size=size.normal)")
+
+        rows.append({
+            "ORDERDATE": timestamp.strftime("%m/%d/%Y"), "ORDERTIME": timestamp.strftime("%H:%M:%S"),
+            "TRAN": side, "CONT": symbol, "Product": "MIS", "Qty.": f"{quantity:g}/{quantity:g}",
+            "RATE": round(price, 1), "STATUS": str(item.get("status", "COMPLETE")), "Duration": duration,
+            "PurValue": purchase_value, "PnL_Rate": pnl_rate, "PnL": pnl, "PnL%": pnl_pct, "PnL_RT": pnl_rt,
+        })
+
+    pine_script = "\n".join([
+        "// === TIMELINE ===", *timeline,
+        "// === ORDER ZONES ===", *zones,
+        "// === P&L ZONES ===", *pnl_zones,
+        "// === ORDER LABELS ===", *labels,
+        "// === P&L LABELS ===", *pnl_labels,
+    ])
+    return rows, pine_script
+
+
+def save_orders_to_xlsx(order_list, filename=None):
+    rows, pine_script = build_orders_export(order_list)
+    return write_orders_workbook(rows, pine_script, filename)
+
+
 def save_orders_to_csv(order_list, filename="mstock_orders.csv"):
     """
     Converts order_list -> DataFrame, filters traded orders,
@@ -174,6 +389,9 @@ def save_orders_to_csv(order_list, filename="mstock_orders.csv"):
         # logger.debug(f"DataFrame content (few top records):\n{df.head().to_string()}")
         #logger.debug(df.to_json(orient="records", indent=2))
         
+        if "status" not in df.columns and "order_status" in df.columns:
+            df["status"] = df["order_status"]
+
         cols = [
             "timestamp", "tradingsymbol", "transaction_type",
             "quantity", "average_price", "status", "order_id"
@@ -181,8 +399,16 @@ def save_orders_to_csv(order_list, filename="mstock_orders.csv"):
         df = df[[c for c in cols if c in df.columns]].copy()
 
         # Normalize timestamp
-        df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce")
+        df["timestamp"] = pd.to_datetime(
+            df["timestamp"],
+            errors="coerce",
+            dayfirst=True,
+            format="mixed"
+        )
         df = df.sort_values("timestamp").reset_index(drop=True)
+
+        df["Date"] = df["timestamp"].dt.strftime("%Y-%m-%d")
+        df["Time"] = df["timestamp"].dt.strftime("%H:%M:%S")
 
         #df["SeqNo"] = df.index + 1
         df["SeqNo"] = df["timestamp"].dt.strftime("%y%m%d") + "_" + (df.index + 1).astype(str)
@@ -196,6 +422,7 @@ def save_orders_to_csv(order_list, filename="mstock_orders.csv"):
         df["PL_AMOUNT"] = None
 
         open_pos = {}
+        df["Elapsed Time"] = ""
 
         for i, r in df.iterrows():
             sym = r["tradingsymbol"]
@@ -207,19 +434,21 @@ def save_orders_to_csv(order_list, filename="mstock_orders.csv"):
                 open_pos[sym] = []
 
             if side == "BUY":
-                open_pos[sym].append([qty, price])
+                open_pos[sym].append([qty, price, r["timestamp"]])
 
             elif side == "SELL":
                 sell_qty = qty
                 cost = 0
                 used_qty = 0
+                matched_buy_times = []
 
                 while sell_qty > 0 and open_pos[sym]:
-                    b_qty, b_price = open_pos[sym][0]
+                    b_qty, b_price, buy_timestamp = open_pos[sym][0]
                     take = min(b_qty, sell_qty)
 
                     cost += take * b_price
                     used_qty += take
+                    matched_buy_times.append(buy_timestamp)
 
                     b_qty -= take
                     sell_qty -= take
@@ -235,27 +464,36 @@ def save_orders_to_csv(order_list, filename="mstock_orders.csv"):
                     df.at[i, "PL_RATE"] = round(pl_rate, 1)
                     df.at[i, "PL_AMOUNT"] = round(pl_rate * used_qty)
 
+                if matched_buy_times and pd.notnull(r["timestamp"]):
+                    elapsed_seconds = max(
+                        0,
+                        int((r["timestamp"] - matched_buy_times[0]).total_seconds())
+                    )
+                    hours, remainder = divmod(elapsed_seconds, 3600)
+                    minutes, seconds = divmod(remainder, 60)
+                    elapsed = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+                    df.at[i, "Elapsed Time"] = elapsed
 
-                df["P&L Time"] = df["timestamp"].diff()
-                df["P&L Time"] = df["P&L Time"].where(df["transaction_type"] == "SELL")
-                df["P&L Time"] = df["P&L Time"].apply(
-                    lambda x: f"{int(x.total_seconds()//60):02d}:{int(x.total_seconds()%60):02d}" if pd.notnull(x) else ""
-                )
+        df["P&L Time"] = df["Elapsed Time"]
 
-                # GMT timestamp
-                df["timestamp_gmt"] = df["timestamp"] - timedelta(minutes=330)
-                df["suffix"] = df["tradingsymbol"].str[-2:].str.upper()
+        # GMT timestamp
+        df["timestamp_gmt"] = df["timestamp"] - timedelta(minutes=330)
+        df["suffix"] = (
+            df["tradingsymbol"]
+            .astype(str)
+            .str.extract(r"(CE|PE)$", expand=False)
+            .fillna("")
+            .str.upper()
+        )
 
-                df["suffix"] = (df["tradingsymbol"].astype(str).str.split("-").str[-2].str.upper())
+        def make_t_line(r):
+            ts = r["timestamp_gmt"]
+            if pd.isnull(ts):
+                return f"t{r['SeqNo']}=timestamp('GMT',1970,1,1,0,0,0)"
+            return (f"t{r['SeqNo']}=timestamp('GMT',{ts.year},{ts.month},{ts.day},"
+                    f"{ts.hour},{ts.minute},{ts.second})")
 
-                def make_t_line(r):
-                    ts = r["timestamp_gmt"]
-                    if pd.isnull(ts):
-                        return f"t{r['SeqNo']}=timestamp('GMT',1970,1,1,0,0,0)"
-                    return (f"t{r['SeqNo']}=timestamp('GMT',{ts.year},{ts.month},{ts.day},"
-                            f"{ts.hour},{ts.minute},{ts.second})")
-
-                df["Order_Time_Line"] = df.apply(make_t_line, axis=1)
+        df["Order_Time_Line"] = df.apply(make_t_line, axis=1)
 
 
         # Long_Short_Line: only for SELL rows, color CE->green, PE->red else gray

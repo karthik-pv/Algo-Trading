@@ -373,30 +373,9 @@ class KiteAdapter(BrokerInterface):
                         iceberg_legs=iceberg_legs,
                         iceberg_quantity= self._ORDER_FREEZE_LIMIT
                     )
-                    logger.info("Kite buy order placed successfully")
-
-                    # =========================================================
-                    # FAST POSITION GRID UPDATE
-                    # =========================================================
-                    # BUY has been successfully accepted by Kite.
-                    # Immediately show the current LTP as the temporary BUY price.
-                    # The authoritative BUY price will be calculated later by
-                    # refresh_open_pos_buy_price().
-                    self._trader.fast_update_position_after_buy(
-                        trading_symbol=trading_symbol,
-                        instrument_token=instrument_token,
-                        quantity=int(quantity) // int(lotsize),
-                        lotsize=lotsize,
-                        executed_buy_price=ltp,
-                        exchange=exchange
-                    )
-
-                    self._trader.frontend_data_socket.emit(
-                        'status_message',
-                        {"success": True, "message": "Order placed successfully"}
-                    )
-
-                    return order_id
+            logger.info("Kite buy order placed successfully")
+            self._trader.frontend_data_socket.emit('status_message',{"success": True, "message": "Order placed successfully"})
+            return order_id
         except Exception as e:
             logger.error(f"Error in kite buy order {e}")
             self._trader.frontend_data_socket.emit('status_message', {"success": False, "message": "Error placing order..."})
@@ -821,99 +800,13 @@ class KiteAdapter(BrokerInterface):
                     self._trader._NIFTY_FALLBACK_LTP,
                 ]
             
-    # def get_quotes_batch(self, symbols):
-
-    #     try:
-
-    #         instruments = [f"NFO:{s}" for s in symbols]
-
-    #         logger.info(f"Fetching batch quotes for {len(instruments)} instruments")
-
-    #         data = self.kite.quote(instruments)
-
-    #         result = {}
-
-    #         for sym in symbols:
-
-    #             key = f"NFO:{sym}"
-
-    #             if key in data:
-
-    #                 q = data[key]
-
-    #                 result[sym] = [
-    #                     q["last_price"],
-    #                     q["ohlc"]["open"]
-    #                 ]
-
-    #         return result
-
-    #     except Exception as e:
-
-    #         logger.error(f"Batch quote failed: {e}")
-    #         return {}            
-
-    # def get_quotes_batch(self, symbols):
-    #     try:
-    #         instruments = []
-
-    #         # Determine exchange from the actual instrument
-    #         for sym in symbols:
-
-    #             if sym.upper().startswith(("CRUDEOIL", "CRUDEOILM")):
-    #                 exchange = "MCX"
-    #             else:
-    #                 exchange = "NFO"
-
-    #             instruments.append(f"{exchange}:{sym}")
-
-    #         logger.info(
-    #             f"Fetching batch quotes for {len(instruments)} instruments: "
-    #             f"{instruments}"
-    #         )
-
-    #         data = self.kite.quote(instruments)
-
-    #         result = {}
-
-    #         for sym in symbols:
-
-    #             if sym.upper().startswith(("CRUDEOIL", "CRUDEOILM")):
-    #                 exchange = "MCX"
-    #             else:
-    #                 exchange = "NFO"
-
-    #             key = f"{exchange}:{sym}"
-
-    #             if key in data:
-    #                 q = data[key]
-
-    #                 result[sym] = [
-    #                     q["last_price"],
-    #                     q["ohlc"]["open"]
-    #                 ]
-    #         return result
-    #     except Exception as e:
-    #         logger.error(f"Batch quote failed: {e}")
-    #         return {}    
-
     def get_quotes_batch(self, symbols):
+
         try:
-            instruments = []
 
-            for sym in symbols:
+            instruments = [f"NFO:{s}" for s in symbols]
 
-                if sym.upper().startswith(("CRUDEOIL", "CRUDEOILM")):
-                    exchange = "MCX"
-                else:
-                    exchange = "NFO"
-
-                instruments.append(f"{exchange}:{sym}")
-
-            logger.info(
-                f"Fetching batch quotes for {len(instruments)} instruments: "
-                f"{instruments}"
-            )
+            logger.info(f"Fetching batch quotes for {len(instruments)} instruments")
 
             data = self.kite.quote(instruments)
 
@@ -921,14 +814,10 @@ class KiteAdapter(BrokerInterface):
 
             for sym in symbols:
 
-                if sym.upper().startswith(("CRUDEOIL", "CRUDEOILM")):
-                    exchange = "MCX"
-                else:
-                    exchange = "NFO"
-
-                key = f"{exchange}:{sym}"
+                key = f"NFO:{sym}"
 
                 if key in data:
+
                     q = data[key]
 
                     result[sym] = [
@@ -939,9 +828,9 @@ class KiteAdapter(BrokerInterface):
             return result
 
         except Exception as e:
-            logger.error(f"Batch quote failed: {e}")
-            return {}
 
+            logger.error(f"Batch quote failed: {e}")
+            return {}            
         
     def fetch_all_pending_orders(self):
         logger.info("Fetching pending orders from Kite API...")

@@ -17,7 +17,7 @@
     border-radius: 12px;
     box-shadow: 0 8px 24px rgba(0,0,0,0.6);
     border: 1px solid #444;
-    width: 500px;
+    width: 1200px;
     max-width: 95%;
 }
 
@@ -93,6 +93,49 @@ select {
     font-size: 0.95rem;
     width: 180px;
 }
+
+
+
+/* =========================================================
+   EXECUTED TRADES GRID
+   ========================================================= */
+
+#executedTradesContainer { width:100%; margin-top:12px; display:none; overflow-x:auto; overflow-y:auto; max-height:340px; border:1px solid #777; background:#f7f7f7; box-sizing:border-box; }
+
+#executedTradesTable { width:100%; min-width:1050px; border-collapse:collapse; table-layout:fixed; font-family:Arial,sans-serif; font-size:10px; color:#222; background:#fff; }
+
+#executedTradesTable th, #executedTradesTable td { border:1px solid #999; padding:4px 3px; height:22px; text-align:center; vertical-align:middle; white-space:nowrap; overflow:hidden; text-overflow:clip; box-sizing:border-box; }
+
+#executedTradesTable th { background:#d9ead3; color:#111; font-weight:bold; font-size:9px; position:sticky; top:0; z-index:2; }
+#executedTradesTable tbody tr:nth-child(even) { background:#f7f7f7; }
+#executedTradesTable tbody tr:nth-child(odd) { background:#fff; }
+#executedTradesTable tbody tr:hover { background:#eef5ee; }
+#executedTradesTable th:nth-child(4), #executedTradesTable td:nth-child(4) { text-align:left; }
+#executedTradesTable tr.trade-buy td, #executedTradesTable tr.trade-sell td { font-weight:500; }
+#executedTradesTable tr.trade-buy td:nth-child(3) { background:#d9edf7; color:#1565a8; font-weight:700; }
+#executedTradesTable tr.trade-sell td:nth-child(3) { background:#f4cccc; color:#b00000; font-weight:700; }
+#executedTradesTable .pnl-dark-green { background:#00B050 !important; color:#fff; font-weight:700; }
+#executedTradesTable .pnl-light-green { background:#92D050 !important; color:#006100; font-weight:700; }
+#executedTradesTable .pnl-pale-green { background:#C6EFCE !important; color:#006100; }
+#executedTradesTable .pnl-dark-red { background:#FF0000 !important; color:#fff; font-weight:700; }
+#executedTradesTable .pnl-light-red { background:#FF6666 !important; color:#9C0006; font-weight:700; }
+#executedTradesTable .pnl-pale-red { background:#FFC7CE !important; color:#9C0006; }
+
+#executedTradesTable th:nth-child(1),#executedTradesTable td:nth-child(1){width:8%;}
+#executedTradesTable th:nth-child(2),#executedTradesTable td:nth-child(2){width:8%;}
+#executedTradesTable th:nth-child(3),#executedTradesTable td:nth-child(3){width:5%;}
+#executedTradesTable th:nth-child(4),#executedTradesTable td:nth-child(4){width:18%;}
+#executedTradesTable th:nth-child(5),#executedTradesTable td:nth-child(5){width:6%;}
+#executedTradesTable th:nth-child(6),#executedTradesTable td:nth-child(6){width:7%;}
+#executedTradesTable th:nth-child(7),#executedTradesTable td:nth-child(7){width:6%;}
+#executedTradesTable th:nth-child(8),#executedTradesTable td:nth-child(8){width:8%;}
+#executedTradesTable th:nth-child(9),#executedTradesTable td:nth-child(9){width:7%;}
+#executedTradesTable th:nth-child(10),#executedTradesTable td:nth-child(10){width:8%;}
+#executedTradesTable th:nth-child(11),#executedTradesTable td:nth-child(11){width:7%;}
+#executedTradesTable th:nth-child(12),#executedTradesTable td:nth-child(12){width:5%;}
+#executedTradesTable th:nth-child(13),#executedTradesTable td:nth-child(13){width:5%;}
+#executedTradesTable th:nth-child(14),#executedTradesTable td:nth-child(14){width:6%;}
+
 </style>
 {% endblock %}
 
@@ -106,17 +149,42 @@ select {
         </div>
         <div class="buttons">
             <button id="importBtn" class="btn">📥 Import Executed Trades</button>
+            <button id="exportExecutedTradesBtn" class="btn">📊 Export Executed Trades</button>
+        </div>
+
+        <div id="executedTradesContainer"> 
+            <table id="executedTradesTable"> 
+                <thead> 
+                    <tr> 
+                        <th>ORDERDATE</th> 
+                        <th>ORDERTIME</th> 
+                        <th>TRAN</th> 
+                        <th>CONT</th> 
+                        <th>Product</th> 
+                        <th>Qty.</th> 
+                        <th>RATE</th> 
+                        <th>STATUS</th> 
+                        <th>Duration</th> 
+                        <th>PurValue</th> 
+                        <th>PnL_Rate</th> 
+                        <th>PnL</th> 
+                        <th>PnL%</th> 
+                        <th>PnL_RT</th> 
+                    </tr> 
+                </thead> 
+                <tbody id="executedTradesBody"> </tbody> 
+            </table> 
         </div>
 
         <hr style="margin: 1.5rem 0; border-color:#444;">
 
-        <h2>Contract Note → CSV</h2>
+        <h2>Contract Note → Excel</h2>
         <div class="form-group">
             <label>Select PDF</label>
             <input type="file" id="pdfFile" accept="application/pdf">
         </div>
         <div class="buttons">
-            <button id="convertPdfBtn" class="btn">📄 Convert to CSV</button>
+            <button id="convertPdfBtn" class="btn">📄 Convert to Excel</button>
         </div>
 
         <hr style="margin: 1.5rem 0; border-color:#444;">
@@ -125,12 +193,12 @@ select {
         <div class="form-group">
             <label>SELL Mode</label>
             <select id="sellMode">
-                <option value="ALERT">ALERT</option>
+                <option value="PAPER">PAPER</option>
                 <option value="BUY_SELL">BUY_SELL</option>
                 <option value="BUY_PRICE_SELL">BUY_PRICE_SELL</option>
             </select>
         </div>
-        <div class="buttons"></div>
+        <div class="buttons">
             <button id="updateModeBtn" class="btn">🔄 Update Mode</button>
         </div>
     </div>
@@ -138,6 +206,8 @@ select {
 </main>
 
 <script>
+
+
     async function importExecutedTrades() {
         const status = document.getElementById("status");
         const dateValue = document.getElementById("tradeDate").value;
@@ -155,31 +225,206 @@ select {
         status.style.color = "#ffcc00";
 
         try {
-            const res = await fetch("/import_executed_trades_kite", {
-            //const res = await fetch("/import_executed_trades", {
+            const res = await fetch("/get_executed_trades", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ trade_date: dateValue })
+                body: JSON.stringify({
+                    trade_date: dateValue
+                })
             });
 
             const data = await res.json();
 
-            if (data.success) {
-                status.textContent = "✅ " + data.message;
-                status.style.color = "#66bb6a";
-            } else {
-                status.textContent = "❌ " + data.error;
-                status.style.color = "#ff5252";
+            if (!res.ok || !data.success) {
+                throw new Error(
+                    data.error || "Unable to fetch executed trades"
+                );
             }
 
+            window.executedTradeRows = data.rows || [];
+            window.executedTradePineScript = data.pine_script || "";
+            displayExecutedTrades(window.executedTradeRows);
+
+            if (window.executedTradeRows.length === 0) {
+                status.textContent =
+                    `⚠️ No executed trades found for ${dateValue}`;
+                status.style.color = "#ffcc00";
+                return;
+            }
+
+            status.textContent =
+                `✅ ${window.executedTradeRows.length} executed trade rows loaded`;
+            status.style.color = "#66bb6a";
+
         } catch (err) {
-            status.textContent = "❌ Network error";
+            console.error("Import executed trades error:", err);
+
+            window.executedTradeRows = [];
+
+            status.textContent =
+                "❌ " + (err.message || "Network error");
             status.style.color = "#ff5252";
         }
     }
 
-    document.getElementById("importBtn")
-            .addEventListener("click", importExecutedTrades);
+
+    async function exportExecutedTrades() {
+        const status = document.getElementById("status");
+
+        if (!window.executedTradeRows || window.executedTradeRows.length === 0) {
+            status.textContent = "⚠️ No executed trades to export";
+            status.style.color = "#ffcc00";
+            return;
+        }
+
+        try {
+            status.textContent = "⏳ Creating Excel file...";
+            status.style.color = "#ccc";
+
+            const response = await fetch("/export_executed_trades", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({
+                    rows: window.executedTradeRows,
+                    pine_script: window.executedTradePineScript || ""
+                })
+            });
+
+            if (!response.ok) {
+                let errorMessage = "Unable to export executed trades";
+
+                try {
+                    const data = await response.json();
+                    errorMessage = data.error || errorMessage;
+                } catch (_) {}
+
+                throw new Error(errorMessage);
+            }
+
+            const blob = await response.blob();
+
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement("a");
+
+            a.href = url;
+            a.download = "Executed_Trades.xlsx";
+
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+
+            window.URL.revokeObjectURL(url);
+
+            status.textContent = "✅ Executed trades exported to Excel";
+            status.style.color = "#66bb6a";
+
+        } catch (err) {
+            console.error("Export executed trades error:", err);
+
+            status.textContent =
+                "❌ " + (err.message || "Unable to export executed trades");
+
+            status.style.color = "#ff5252";
+        }
+    }
+
+
+
+
+    function displayExecutedTrades(rows) {
+        const container = document.getElementById("executedTradesContainer");
+        const tbody = document.getElementById("executedTradesBody");
+
+        if (!container || !tbody) {
+            console.error("Executed trades grid elements not found.");
+            return;
+        }
+
+        tbody.innerHTML = "";
+
+        if (!rows || rows.length === 0) {
+            container.style.display = "none";
+            return;
+        }
+
+        const columns = [
+            "ORDERDATE",
+            "ORDERTIME",
+            "TRAN",
+            "CONT",
+            "Product",
+            "Qty.",
+            "RATE",
+            "STATUS",
+            "Duration",
+            "PurValue",
+            "PnL_Rate",
+            "PnL",
+            "PnL%",
+            "PnL_RT"
+        ];
+
+        rows.forEach(row => {
+            const tr = document.createElement("tr");
+
+            columns.forEach(column => {
+                const td = document.createElement("td");
+                const value = row[column];
+
+                td.textContent =
+                    value === null || value === undefined ? "" : value;
+
+                // Apply the same PnL% colour bands used by Excel.
+                if (
+                    column === "PnL%" &&
+                    value !== "" &&
+                    value !== null &&
+                    value !== undefined
+                ) {
+                    const pnlPercent = Number(value);
+
+                    if (!Number.isNaN(pnlPercent)) {
+                        if (pnlPercent > 10) {
+                            td.classList.add("pnl-dark-green");
+                        } else if (pnlPercent > 5) {
+                            td.classList.add("pnl-light-green");
+                        } else if (pnlPercent > 0) {
+                            td.classList.add("pnl-pale-green");
+                        } else if (pnlPercent < -10) {
+                            td.classList.add("pnl-dark-red");
+                        } else if (pnlPercent < -5) {
+                            td.classList.add("pnl-light-red");
+                        } else if (pnlPercent < 0) {
+                            td.classList.add("pnl-pale-red");
+                        }
+                    }
+                }
+
+                tr.appendChild(td);
+            });
+
+            // Match the transaction type visually.
+            const transaction = String(row["TRAN"] || "").toUpperCase();
+
+            if (transaction === "BUY") {
+                tr.classList.add("trade-buy");
+            } else if (transaction === "SELL") {
+                tr.classList.add("trade-sell");
+            }
+
+            tbody.appendChild(tr);
+        });
+
+        container.style.display = "block";
+    }
+
+
+
+    document.getElementById("importBtn").addEventListener("click", importExecutedTrades);
+    document.getElementById("exportExecutedTradesBtn").addEventListener("click",exportExecutedTrades
+);
 </script>
 
 <script>
@@ -251,7 +496,12 @@ async function convertPdfToCsv() {
 
         const a = document.createElement("a");
         a.href = url;
-        a.download = "contract_trades.csv";
+        const contentDisposition = res.headers.get("Content-Disposition") || "";
+        const filenameMatch = contentDisposition.match(/filename="?([^";]+)"?/i);
+        const selectedDate = document.getElementById("tradeDate")?.value || "";
+        const filenameDate = selectedDate.replaceAll("-", "_");
+        a.download = filenameMatch?.[1]
+            || (filenameDate ? `MStock_Orders_${filenameDate}.xlsx` : "MStock_Orders.xlsx");
         document.body.appendChild(a);
         a.click();
         a.remove();
@@ -271,4 +521,4 @@ document.getElementById("convertPdfBtn")
 
 
 
-    {% endblock %}
+{% endblock %}
