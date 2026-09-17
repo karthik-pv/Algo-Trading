@@ -54,7 +54,9 @@ class KiteSingleton:
         webbrowser.open_new(login_url)
         
         # 2. Start a temporary local HTTP server to listen for the redirect
-        port = 8080  # Ensure this matches your Redirect URL port in Kite Developer Console
+        # Override via KITE_REDIRECT_PORT in .env; must match the Redirect
+        # URL port configured in the Kite Developer Console.
+        port = int(os.getenv("KITE_REDIRECT_PORT", "8080"))
         logger.info(f"Waiting for redirect with request token on port {port}...")
         
         server_address = ('127.0.0.1', port)
@@ -74,10 +76,10 @@ class KiteSingleton:
         data = self._kite.generate_session(
             request_token=request_token, api_secret=os.getenv("KITE_SECRET_KEY")
         )
-        logger.debug(f"Profile data received: {data}")
+        #logger.debug(f"Profile data received: {data}")  # contains access_token
         self.set_access_token(data["access_token"])
         write_to_json({"kite_access_token" : data["access_token"] , "kite_last_token_timestamp" : datetime.now().isoformat()} , "access_token.json")
-        logger.debug(f"Access token set: {data['access_token']}")
+        #logger.debug(f"Access token set: {data['access_token']}")  # do not log the token
 
 
     def get_kite_socket_connection(self):
@@ -93,7 +95,7 @@ class KiteSingleton:
     def set_access_token(self, access_token):
         self._kite.set_access_token(access_token)
         self._access_token = access_token
-        logger.debug(f"Access token set: {access_token}")
+        #logger.debug(f"Access token set: {access_token}")  # do not log the token
 
     def get_access_token(self):
         return get_access_token_from_json()

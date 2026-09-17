@@ -1,5 +1,13 @@
-9/7/2026 15:33:25   	BUY     	NIFTY2690823900CE       	42635       	MIS       	61/61     	       25.00	COMPLETE    	            	            	            	                
-9/7/2026 15:33:30   	BUY     	NIFTY2690823900CE       	42635       	MIS       	61/61     	       25.20	COMPLETE    	            	            	            	                
-9/7/2026 15:33:34   	BUY     	NIFTY2690823900CE       	42635       	MIS       	61/61     	       25.25	COMPLETE    	            	            	            	                
-9/7/2026 15:33:52   	BUY     	NIFTY2690824100CE       	42643       	MIS       	277/277   	        5.55	COMPLETE    	            	            	            	                
-9/7/2026 15:34:06   	BUY     	NIFTY2690823700PE       	42628       	MIS       	57/57     	       26.95	COMPLETE    	            	            	            	                
+Time                	Type    	Instrument              	Token       	Product   	Qty.      	Avg. price  	Status      	    Duration	    PnL Rate	       PnL %	             PnL
+9/16/2026 09:32:25  	BUY     	SENSEX2691774400PE      	868482      	MIS       	11/11     	      415.60	COMPLETE    	            	            	            	                
+9/16/2026 09:32:41  	SELL    	SENSEX2691774400PE      	868482      	MIS       	11/11     	      431.40	COMPLETE    	       00:16	       15.80	        3.80	           3,476
+9/16/2026 09:39:31  	BUY     	SENSEX2691774300PE      	862237      	MIS       	12/12     	      404.50	COMPLETE    	            	            	            	                
+9/16/2026 09:41:18  	SELL    	SENSEX2691774300PE      	862237      	MIS       	12/12     	      430.20	COMPLETE    	       01:47	       25.70	        6.35	           6,168
+9/16/2026 11:01:33  	BUY     	SENSEX2691775500CE      	865797      	MIS       	147/147   	       36.00	COMPLETE    	            	            	            	                
+9/16/2026 11:02:39  	SELL    	SENSEX2691775500CE      	865797      	MIS       	147/147   	       37.35	COMPLETE    	       01:06	        1.35	        3.75	           3,969
+9/16/2026 19:19:05  	BUY     	CRUDEOILM26SEP10300CE   	147640583   	MIS       	177/177   	       62.15	COMPLETE    	            	            	            	                
+9/16/2026 19:21:55  	SELL    	CRUDEOILM26SEP10300CE   	147640583   	MIS       	177/177   	       60.40	COMPLETE    	       02:50	       -1.75	       -2.82	          -3,098
+9/16/2026 19:22:36  	BUY     	CRUDEOILM26SEP9700PE    	147676935   	MIS       	126/126   	       84.95	COMPLETE    	            	            	            	                
+9/16/2026 19:24:01  	SELL    	CRUDEOILM26SEP9700PE    	147676935   	MIS       	126/126   	       91.20	COMPLETE    	       01:25	        6.25	        7.36	           7,875
+9/16/2026 19:32:37  	BUY     	CRUDEOILM26SEP10500CE   	147641607   	MIS       	348/348   	       33.00	COMPLETE    	            	            	            	                
+9/16/2026 19:33:00  	SELL    	CRUDEOILM26SEP10500CE   	147641607   	MIS       	348/348   	       34.80	COMPLETE    	       00:23	        1.80	        5.45	           6,264

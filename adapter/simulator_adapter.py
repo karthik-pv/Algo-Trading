@@ -1,14 +1,18 @@
 import hashlib
 import json
+import os
 import random
 import threading
 import time
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
+import holidays
 from loguru import logger
 
 from interface.broker_interface import BrokerInterface
-from utils import fetch_from_json
+from utils import fetch_from_json, load_json_with_retry, get_exchange_for_underlying
+
+india_holidays = holidays.India()
 
 
 class SimulatorAdapter(BrokerInterface):
@@ -37,9 +41,13 @@ class SimulatorAdapter(BrokerInterface):
     @staticmethod
     def _load_settings():
         try:
-            with open("simulation.json", "r", encoding="utf-8") as settings_file:
-                return json.load(settings_file)
-        except (OSError, json.JSONDecodeError):
+            simulation_json_path = os.path.join(
+                os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                "simulation.json",
+            )
+            return load_json_with_retry(simulation_json_path)
+        except (OSError, json.JSONDecodeError) as error:
+            logger.warning(f"Failed to load simulation.json, using simulator defaults: {error}")
             return {}
 
     @staticmethod
@@ -54,6 +62,54 @@ class SimulatorAdapter(BrokerInterface):
             "SENSEX": {"INITIAL_PRICE": 82000, "MIN_PRICE": 81500, "MAX_PRICE": 82500, "VOLATILITY_POINTS": 30},
         }
         return underlying, {**defaults.get(underlying, defaults["NIFTY"]), **self._settings.get(underlying, {})}
+
+    def _next_weekly_expiry(self):
+        """
+        Algorithmic stand-in for the instrument-file expiry: the next
+        weekly expiry day for the underlying (NIFTY=Tuesday,
+        SENSEX=Thursday; CRUDEOIL family approximated with the monthly
+        19th), skipping Indian holidays.
+        """
+        underlying = self._underlying
+        today = date.today()
+
+        if underlying in ("CRUDEOIL", "CRUDEOILM"):
+            candidate = date(today.year, today.month, 19)
+            if candidate < today:
+                month, year = (today.month + 1, today.year) if today.month < 12 else (1, today.year + 1)
+                candidate = date(year, month, 19)
+            while candidate in india_holidays:
+                candidate -= timedelta(days=1)
+            return candidate
+
+        target_weekday = 3 if underlying == "SENSEX" else 1  # Thursday / Tuesday
+        candidate = today + timedelta(days=(target_weekday - today.weekday()) % 7)
+        while candidate in india_holidays or candidate < today:
+            candidate += timedelta(days=7)
+        return candidate
+
+    def get_instrument_meta(self):
+        """
+        Synthetic instrument meta: no instrument file exists in
+        simulation, so every value is derived from the configured
+        underlying (algorithmic expiry, exchange via the shared map).
+        """
+        underlying = self._underlying
+        near_option_expiry = self._next_weekly_expiry()
+        near_future_month = near_option_expiry.replace(day=1)
+        near_month_future_token = (
+            f"{underlying}{near_future_month.year % 100:02d}"
+            f"{near_future_month.strftime('%b').upper()}FUT"
+        )
+        return {
+            "underlying": underlying,
+            "exchange": get_exchange_for_underlying(underlying) or "NFO",
+            "near_month_future_token": near_month_future_token,
+            "near_option_expiry": near_option_expiry.isoformat(),
+            "expire_together": False,
+            "strike_interval": 100 if underlying == "SENSEX" else 50,
+            "generated_on": date.today().isoformat(),
+        }
 
     def _ensure_instrument(self, tradingsymbol, instrument_token=None):
         symbol = str(tradingsymbol)
@@ -70,7 +126,7 @@ class SimulatorAdapter(BrokerInterface):
         self._instruments[token] = {
             "tradingsymbol": symbol,
             "instrument_token": token,
-            "exchange": fetch_from_json("constants.json", "EXCHANGE") or "NFO",
+            "exchange": get_exchange_for_underlying(underlying) or "NFO",
             "lot_size": int(self._settings.get("LOT_SIZE", 1)),
             "expiry": expiry,
             "last_price": default_price,
@@ -79,23 +135,32 @@ class SimulatorAdapter(BrokerInterface):
         self._prices[token] = default_price
         return self._instruments[token]
 
-    @staticmethod
-    def _configured_expiry():
+    def _configured_expiry(self):
+        meta = self.get_instrument_meta()
         try:
-            year = int(fetch_from_json("constants.json", "EXPIRY_YEAR"))
-            month = datetime.strptime(
-                str(fetch_from_json("constants.json", "EXPIRY_MONTH")),
-                "%b",
-            ).month
-            day_key = "SENSEX_EXPIRY_DATE" if str(fetch_from_json("constants.json", "UNDERLYING")).upper() == "SENSEX" else "NIFTY_EXPIRY_DATE"
-            day = int(fetch_from_json("constants.json", day_key))
-            return date(year, month, day).strftime("%d%b%Y").upper()
+            expiry = date.fromisoformat(str(meta["near_option_expiry"]))
+            return expiry.strftime("%d%b%Y").upper()
         except (TypeError, ValueError):
             return None
 
     def fetch_all_orders(self):
         with self._lock:
             return list(self._orders)
+
+    def fetch_all_pending_orders(self):
+        logger.debug("Simulation executes orders instantly; no pending orders exist")
+        return []
+
+    def cancel_order(self, order_id):
+        logger.debug(f"Simulation has no pending orders; nothing to cancel for {order_id}")
+        return False
+
+    def manual_refresh_positions(self):
+        logger.info("Refreshing open positions in simulator...")
+        self._trader.refresh_open_pos_buy_price()
+
+    def fetch_instruments_from_json(self):
+        return list(self._instruments.values())
 
     def fetch_all_instruments(self):
         return list(self._instruments.values())
@@ -122,7 +187,7 @@ class SimulatorAdapter(BrokerInterface):
     def get_quote(self, tradingsymbol):
         instrument = self._ensure_instrument(tradingsymbol)
         price = self._prices[instrument["instrument_token"]]
-        return [price, price]
+        return [price, price, price]
 
     def get_quotes_batch(self, symbols):
         return {symbol: self.get_quote(symbol) for symbol in symbols}
@@ -201,6 +266,14 @@ class SimulatorAdapter(BrokerInterface):
             "success": True,
             "message": f"Simulation {side} executed at {price:.2f}",
         })
+        if self._trader and getattr(self._trader, "frontend_data_socket", None):
+            try:
+                self._trader.frontend_data_socket.emit(
+                    f"{side.lower()}_order_result",
+                    {"success": True, "tradingsymbol": trading_symbol, "lots": quantity},
+                )
+            except Exception as error:
+                logger.debug(f"Could not emit {side.lower()} order result: {error}")
         return order["order_id"]
 
     def buy_units(

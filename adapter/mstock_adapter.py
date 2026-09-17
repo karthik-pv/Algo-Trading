@@ -6,7 +6,7 @@ import logging
 import datetime
 import calendar
 import time
-import requests
+import threading
 import os
 import tempfile
 import ssl
@@ -16,14 +16,22 @@ import shutil
 import pandas as pd
 from datetime import timedelta  
 
-import camelot
 import re
 from collections import defaultdict, deque
 
 
 
 
-from utils import get_trading_symbols_from_json , find_matching_object , fetch_from_json , write_to_json
+from utils import (
+    get_trading_symbols_from_json,
+    find_matching_object,
+    fetch_from_json,
+    write_to_json,
+    clear_json_cache,
+    read_instrument_meta,
+    get_exchange_for_underlying,
+    INSTRUMENTS_SECTION_PREFIX,
+)
 from core.mstock_connector import MStockSingleton
 from interface.broker_interface import BrokerInterface
 from core.trade_logic import Trader_Singleton
@@ -54,27 +62,96 @@ class MStockAdapter(BrokerInterface):
 
         self._MSTOCK_INSTRUMENT_FILE = "mstock_instrument_list_reduced.json"
 
-        self.constants = {
-            "EXCHANGE": "",
-            "NEAR_MONTH_FUTURE_TOKEN": "",
-            "EXPIRY_MONTH": "",
-            "EXPIRY_YEAR": "",
-            "NIFTY_EXPIRY_DATE": "",
-            "SENSEX_EXPIRY_DATE": "",
-            "NEAR_FUTURE_NEAR_OPTION_EXPIRE_TOGETHER": False
-        }
+        # Instrument-file-derived meta (replaces the old derived keys in
+        # constants.json). Populated at startup by download_instrument_list
+        # or read from the reduced instrument file's meta block.
+        self._instrument_meta = None
 
-    def update_constants(self, new_values: dict):
-        """Update dictionary with new values"""
-        self.constants.update(new_values)
+    def get_instrument_meta(self):
+        if self._instrument_meta is None:
+            # Reduced file may already carry meta from an earlier session
+            # (e.g. constants page actions before any download ran).
+            self._instrument_meta = read_instrument_meta(self._MSTOCK_INSTRUMENT_FILE) or None
+        if self._instrument_meta:
+            return self._instrument_meta
+        return super().get_instrument_meta()
 
-    def get_constant(self, key):
-        """Retrieve a specific value"""
-        return self.constants.get(key)
 
-    def show_constants(self):
-        """Print or return the full dictionary"""
-        logger.debug(f"Updated Constants are : {self.constants}")
+    def _mstock_request(
+        self,
+        method,
+        endpoint,
+        body=None,
+        timeout=10,
+        max_retries=3,
+        backoff_seconds=0.5,
+    ):
+        """
+        Authenticated REST call to api.mstock.trade with 502 handling.
+
+        M.Stock intermittently answers with a bare "502 Bad Gateway" HTML
+        page (typically right after session creation). Feeding such a body
+        straight into json.loads() made every caller fail with
+        "Expecting value: line 1 column 1 (char 0)". This helper:
+          - adds a socket timeout (the old code could hang forever)
+          - retries empty/non-JSON bodies and transport errors with a
+            short backoff (these are the transient gateway failures)
+          - returns the parsed JSON as soon as the body is valid JSON so
+            the existing status/message handling (including the
+            invalid-session detection) keeps working unchanged
+        Returns the parsed dict/list, or None after all attempts fail.
+        """
+        last_reason = "unknown error"
+
+        for attempt in range(1, max_retries + 1):
+            conn = None
+            try:
+                conn = http.client.HTTPSConnection(
+                    "api.mstock.trade", context=_SSL_CONTEXT, timeout=timeout
+                )
+                headers = {
+                    "X-Mirae-Version": "1",
+                    "X-PrivateKey": self.mstock_instance._api_key,
+                    "Authorization": f"Bearer {self.mstock_instance._access_token}",
+                }
+                payload = None
+                if body is not None:
+                    payload = json.dumps(body)
+                    headers["Content-Type"] = "application/json"
+
+                conn.request(method, endpoint, payload, headers)
+                response = conn.getresponse()
+                status = response.status
+                raw = response.read().decode("utf-8")
+
+                stripped = raw.lstrip()
+                if not stripped:
+                    last_reason = f"HTTP {status} with empty body"
+                elif stripped[0] not in "{[":
+                    # e.g. the bare "<html>502 Bad Gateway</html>" page
+                    last_reason = f"HTTP {status} with non-JSON body: {stripped[:120]!r}"
+                else:
+                    return json.loads(raw)
+
+            except (http.client.HTTPException, OSError, ValueError) as e:
+                last_reason = f"{type(e).__name__}: {e}"
+
+            finally:
+                if conn is not None:
+                    conn.close()
+
+            logger.warning(
+                f"M.Stock API {method} {endpoint} attempt {attempt}/{max_retries} "
+                f"failed: {last_reason}"
+            )
+            if attempt < max_retries:
+                time.sleep(backoff_seconds * attempt)
+
+        logger.error(
+            f"M.Stock API {method} {endpoint} failed after {max_retries} "
+            f"attempts: {last_reason}"
+        )
+        return None
 
 
     def cancel_order(self, order_id):
@@ -144,18 +221,13 @@ class MStockAdapter(BrokerInterface):
         logger.info("Fetching pending orders from M.Stock...")
 
         try:
-            conn = http.client.HTTPSConnection("api.mstock.trade", context=_SSL_CONTEXT)
-            headers = {
-                "X-Mirae-Version": "1",
-                "X-PrivateKey": self.mstock_instance._api_key,
-                "Authorization": f"Bearer {self.mstock_instance._access_token}",
-            }
+            response = self._mstock_request("GET", "/openapi/typeb/orders")
 
-            conn.request('GET', '/openapi/typeb/orders', headers=headers)
-            raw = conn.getresponse().read().decode("utf-8")
-            conn.close()
+            if response is None:
+                logger.error("Error fetching pending orders: no valid response from M.Stock \n\n CONSIDER LOGGING IN AGAIN \n\n")
+                return []
 
-            data = json.loads(raw).get("data", [])
+            data = response.get("data", [])
 
             logger.debug(f"Raw Pending orders data: {data}")
 
@@ -308,16 +380,15 @@ class MStockAdapter(BrokerInterface):
     def fetch_all_positions(self):
         logger.info("Fetching all positions from M.Stock...")
         try:
-            conn = http.client.HTTPSConnection("api.mstock.trade", context=_SSL_CONTEXT)
-            headers = {
-                "X-Mirae-Version": "1",
-                "X-PrivateKey": self.mstock_instance._api_key,
-                "Authorization": f"Bearer {self.mstock_instance._access_token}",
-            }
-            conn.request("GET", "/openapi/typeb/portfolio/positions", headers=headers)
-            response = json.loads(conn.getresponse().read().decode("utf-8"))
-            #logger.info(f"Raw positions response: {response}")
-            positions = position_attribute_mgmt(response["data"])
+            response = self._mstock_request("GET", "/openapi/typeb/portfolio/positions")
+
+            if response is None:
+                logger.error(
+                    f"Error fetching positions: no valid response from M.Stock \n\n CONSIDER LOGGING IN AGAIN \n\n"
+                )
+                return None
+
+            positions = position_attribute_mgmt(response.get("data"))
             #logger.info(f"Processed positions: {positions}")
             logger.debug(f"Total positions fetched: {len(positions)}")
             open_positions = [
@@ -340,30 +411,37 @@ class MStockAdapter(BrokerInterface):
             #hading during non marketing hours
             try:
                 
-                ltp = self.fetch_instrument_quote(data["exch_seg"] , data["token"])["data"]["fetched"][0]["ltp"]
+                quote = self.fetch_instrument_quote(data["exch_seg"] , data["token"])
+                if (
+                    not isinstance(quote, dict)
+                    or not quote.get("data")
+                    or not quote.get("data", {}).get("fetched")
+                ):
+                    raise ValueError(f"no quote data in response: {quote}")
+                ltp = quote["data"]["fetched"][0]["ltp"]
                 return ltp
             except Exception as e:
                 logger.error(f"Fetch Instrument Quote failed for {tradingsymbol}: {e}")
                 # Handle fallback for Nifty / Sensex
                 if "NIFTY" in tradingsymbol.upper():
-                    logger.warning("Returning fallback LTP = 25000 for NIFTY.")
-                    return 25900
+                    logger.warning(f"Returning fallback LTP {self._trader._NIFTY_FALLBACK_LTP} for NIFTY.")
+                    return self._trader._NIFTY_FALLBACK_LTP
                 elif "SENSEX" in tradingsymbol.upper():
-                    logger.warning("Returning fallback LTP = 84000 for SENSEX.")
-                    return 84000
+                    logger.warning(f"Returning fallback LTP {self._trader._SENSEX_FALLBACK_LTP} for SENSEX.")
+                    return self._trader._SENSEX_FALLBACK_LTP
                 else:
-                    logger.warning("Returning default fallback LTP = 25000.")
-                    return 25900
-            
+                    logger.warning("Returning default fallback LTP {self._trader._NIFTY_FALLBACK_LTP}.")
+                    return self._trader._NIFTY_FALLBACK_LTP
+
         except Exception as e:
             logger.error(f"Error getting LTP for {tradingsymbol}: {e}")
             # Same fallback logic for outer exception too
             if "NIFTY" in tradingsymbol.upper():
-                return 25900
+                return self._trader._NIFTY_FALLBACK_LTP
             elif "SENSEX" in tradingsymbol.upper():
-                return 84000
+                return self._trader._SENSEX_FALLBACK_LTP
             else:
-                return 25900
+                return self._trader._NIFTY_FALLBACK_LTP
     def get_quote(self , tradingsymbol):
         logger.info(f"Getting Quote for {tradingsymbol} from M.Stock...")
         try:
@@ -383,9 +461,11 @@ class MStockAdapter(BrokerInterface):
             ):
                 raise Exception
 
-            ltp = quote["data"]["fetched"][0]["ltp"]
-            open = quote["data"]["fetched"][0]["open"]  
-            return [ltp,open]
+            fetched_quote = quote["data"]["fetched"][0]
+            ltp = fetched_quote["ltp"]
+            open = fetched_quote["open"]
+            close = fetched_quote.get("close") or fetched_quote.get("prevClose")
+            return [ltp, open, close]
         except Exception as e:
             logger.error(f"Fetch Instrument Quote failed for {tradingsymbol}: {e}")
             # Handle fallback for Nifty / Sensex
@@ -448,15 +528,6 @@ class MStockAdapter(BrokerInterface):
             # ---------------------------------------------------------
             # M.Stock batch quote request
             # ---------------------------------------------------------
-            conn = http.client.HTTPSConnection("api.mstock.trade", context=_SSL_CONTEXT)
-
-            headers = {
-                "X-Mirae-Version": "1",
-                "X-PrivateKey": self.mstock_instance._api_key,
-                "Authorization": f"Bearer {self.mstock_instance._access_token}",
-                "Content-Type": "application/json"
-            }
-
             json_data = {
                 "mode": "OHLC",
                 "exchangeTokens": exchange_tokens
@@ -466,26 +537,21 @@ class MStockAdapter(BrokerInterface):
                 f"M.Stock batch quote request: {json_data}"
             )
 
-            conn.request(
+            response_data = self._mstock_request(
                 "POST",
                 "/openapi/typeb/instruments/quote",
-                json.dumps(json_data),
-                headers
+                body=json_data,
             )
 
-            response = conn.getresponse()
-            raw_response = response.read().decode("utf-8")
-            conn.close()
-
-            logger.debug(
-                f"M.Stock batch quote response: {raw_response}"
-            )
-
-            if not raw_response:
-                logger.error("Empty response from M.Stock batch quote API")
+            if response_data is None:
+                logger.error(
+                    "M.Stock batch quote failed: no valid response from M.Stock"
+                )
                 return {}
 
-            response_data = json.loads(raw_response)
+            logger.debug(
+                f"M.Stock batch quote response: {response_data}"
+            )
 
             if not response_data.get("status", False):
                 logger.error(
@@ -547,6 +613,7 @@ class MStockAdapter(BrokerInterface):
 
                 ltp = quote.get("ltp")
                 open_price = quote.get("open")
+                close_price = quote.get("close") or quote.get("prevClose")
 
                 if ltp is None:
                     logger.warning(
@@ -556,7 +623,8 @@ class MStockAdapter(BrokerInterface):
 
                 result[symbol] = [
                     ltp,
-                    open_price if open_price is not None else ltp
+                    open_price if open_price is not None else ltp,
+                    close_price
                 ]
 
             logger.info(
@@ -578,23 +646,92 @@ class MStockAdapter(BrokerInterface):
     def fetch_all_trades(self):
         logger.info("Fetching all trades from M.Stock...")
         return
+
+    def fetch_trades_for_date(self, trade_date):
+        """
+        Fetch executed fills for a specific (past) date from the M.Stock
+        Trade History endpoint. The daily order book only covers the
+        current session, but /openapi/typeb/trades accepts a from/to
+        date range, so past days remain retrievable.
+
+        Fills are clubbed per order (quantity-weighted average price,
+        earliest fill time) to match the order-book granularity, and
+        returned in the normalized shape consumed by
+        build_orders_export.
+        """
+        logger.info(f"Fetching trade history for {trade_date} from M.Stock...")
+        response = self._mstock_request(
+            "GET",
+            "/openapi/typeb/trades",
+            body={"fromdate": str(trade_date), "todate": str(trade_date)},
+        )
+
+        if isinstance(response, list):
+            response = response[0] if response else None
+
+        if not isinstance(response, dict) or not response.get("status"):
+            message = (
+                response.get("message", "Unknown error")
+                if isinstance(response, dict)
+                else "No valid response"
+            )
+            logger.error(f"M.Stock trade history error for {trade_date}: {message}")
+            return []
+
+        fills = response.get("data") or []
+        clubbed = {}
+
+        for fill in fills:
+            try:
+                order_id = str(fill.get("orderid") or "")
+                side = str(fill.get("transactiontype") or "").upper()
+                symbol = str(fill.get("tradingsymbol") or "")
+                fill_time = str(fill.get("filltime") or "").strip()
+                quantity = float(fill.get("fillsize") or 0)
+                price = float(fill.get("fillprice") or 0)
+            except (TypeError, ValueError):
+                continue
+
+            if not order_id or side not in ("BUY", "SELL") or quantity <= 0 or not fill_time:
+                continue
+
+            key = (order_id, side, symbol)
+            entry = clubbed.get(key)
+            if entry is None:
+                clubbed[key] = {
+                    "timestamp": f"{trade_date} {fill_time}",
+                    "tradingsymbol": symbol,
+                    "transaction_type": side,
+                    "quantity": quantity,
+                    "average_price": price,
+                    "order_id": order_id,
+                    "order_status": "COMPLETE",
+                }
+            else:
+                total_quantity = entry["quantity"] + quantity
+                entry["average_price"] = (
+                    (entry["average_price"] * entry["quantity"])
+                    + (price * quantity)
+                ) / total_quantity
+                entry["quantity"] = total_quantity
+                if fill_time < entry["timestamp"].split(" ", 1)[1]:
+                    entry["timestamp"] = f"{trade_date} {fill_time}"
+
+        orders = sorted(clubbed.values(), key=lambda item: item["timestamp"])
+        logger.info(
+            f"Trade history for {trade_date}: {len(fills)} fills "
+            f"-> {len(orders)} orders"
+        )
+        return orders
     
-    def fetch_fund_summary(self):
+    def _fetch_fund_summary_raw(self):
         logger.info("Fetching fund summary from M.Stock...")
         try:
-            conn = http.client.HTTPSConnection("api.mstock.trade", context=_SSL_CONTEXT)
-            headers = {
-                    "X-Mirae-Version": "1",
-                    "X-PrivateKey": self.mstock_instance._api_key,
-                    "Authorization": f"Bearer {self.mstock_instance._access_token}",
-                }
-            conn.request('GET', '/openapi/typeb/user/fundsummary', headers=headers)
-            raw_response = conn.getresponse().read().decode("utf-8")
+            response = self._mstock_request("GET", "/openapi/typeb/user/fundsummary")
 
-            if not raw_response:
-                raise ValueError("Empty response from server")
-            
-            response = json.loads(raw_response)
+            if response is None:
+                logger.error("Invalid JSON received from fund summary API (no valid response after retries)")
+                return None
 
             logger.debug("Fund summary response: {response}", response=response)
 
@@ -612,55 +749,87 @@ class MStockAdapter(BrokerInterface):
                 return None  # ✅ graceful exit
         
             # ✅ 2. HANDLE MISSING DATA
+            # M.Stock intermittently answers with status SUCCESS but an
+            # empty data payload (observed mainly pre-market); the very
+            # next call returns full data. One short retry absorbs this
+            # transient instead of failing the caller.
             if response.get("data") is None:
-                logger.error("Fund summary data is None")
-                return None
+                logger.warning("Fund summary data is None; retrying once...")
+                time.sleep(0.5)
+                response = self._mstock_request(
+                    "GET", "/openapi/typeb/user/fundsummary"
+                )
+                if response is None:
+                    logger.error(
+                        "Invalid JSON received from fund summary API retry"
+                    )
+                    return None
+                if not response.get("status"):
+                    logger.error(
+                        f"Fund summary API retry error: "
+                        f"{response.get('message', 'Unknown API error')}"
+                    )
+                    return None
+                if response.get("data") is None:
+                    logger.error("Fund summary data is still None after retry")
+                    return None
 
-            # ✅ 3. SAFE PROCESSING
-            fund_summary = fund_summary_attribute_mgmt(response)
-            self._trader.update_fund_summary(fund_summary)
+            return response
 
-            return fund_summary
-
-        except json.JSONDecodeError:
-            logger.error("Invalid JSON received from fund summary API")
-            return None
-        
         except Exception as e:
             logger.error(f"Error fetching fund summary: {e}")
-            return 
+            return None
+    
+    def fetch_fund_summary(self):
+        response = self._fetch_fund_summary_raw()
+        if response is None:
+            return None
+
+        # ✅ 3. SAFE PROCESSING
+        fund_summary = fund_summary_attribute_mgmt(response)
+        self._trader.update_fund_summary(fund_summary)
+
+        return fund_summary
+
+    def fetch_day_start_cash(self):
+        logger.info("Fetching start-of-day cash (LIMIT_SOD) from M.Stock...")
+        response = self._fetch_fund_summary_raw()
+        if response is None:
+            return None
+
+        try:
+            data_list = response.get("data") or []
+            sod_value = data_list[0].get("LIMIT_SOD") if data_list else None
+            if sod_value is None:
+                logger.warning("LIMIT_SOD not present in fund summary response")
+                return None
+            return float(sod_value)
+        except (TypeError, ValueError, IndexError, KeyError) as e:
+            logger.error(f"Could not read LIMIT_SOD from fund summary: {e}")
+            return None
     
     def fetch_instrument_quote(self , exchange , instrument_token):
         logger.info(f"Fetching instrument quote for {exchange} {instrument_token} from M.Stock...")
-        try:
-            conn = http.client.HTTPSConnection("api.mstock.trade", context=_SSL_CONTEXT)
-            headers = {
-                    "X-Mirae-Version": "1",
-                    "X-PrivateKey": self.mstock_instance._api_key,
-                    "Authorization": f"Bearer {self.mstock_instance._access_token}",
-                    "Content-Type": "application/json"
-                }
-            json_data = {
-                'mode': 'OHLC',
-                'exchangeTokens': {
-                exchange : [instrument_token]
-                },
-            }
-            conn.request(
-                'POST',
-                '/openapi/typeb/instruments/quote',
-                json.dumps(json_data),
-                headers
-            )
-            response = json.loads(conn.getresponse().read().decode("utf-8"))
-            logger.info(f"Instrument quote fetched for {exchange} {instrument_token} is : {response}")
-            if not response.get("status", True):
-                logger.error("Instrument quote failed: {}", response)
-            else:
-                logger.debug("Instrument quote response: {}", response)
-            return response
-        except Exception as e:
-            logger.error(f"Error fetching quotes {e}")
+        json_data = {
+            'mode': 'OHLC',
+            'exchangeTokens': {
+            exchange : [instrument_token]
+            },
+        }
+        response = self._mstock_request(
+            'POST',
+            '/openapi/typeb/instruments/quote',
+            body=json_data,
+        )
+        if response is None:
+            logger.error(f"Instrument quote fetch failed for {exchange} {instrument_token}: no valid response from M.Stock")
+            return None
+        logger.info(f"Instrument quote fetched for {exchange} {instrument_token} is : {response}")
+        if not response.get("status", True):
+            logger.error("Instrument quote failed: {}", response)
+        else:
+            logger.debug("Instrument quote response: {}", response)
+        return response
     
     #Fetch all available option expiries for a given underlying (e.g. 'NIFTY')
     def fetch_expiries(self , underlying):
@@ -694,6 +863,63 @@ class MStockAdapter(BrokerInterface):
             logger.error(f"Error fetch_expiries {e}")
 
 
+    def _schedule_post_sell_fund_refresh(self, max_wait_seconds=60, poll_interval=10):
+        """
+        M.Stock does not credit the sell proceeds back to AVAILABLE_BALANCE
+        immediately after a square-off. The single fund fetch performed inside
+        refresh_open_pos_buy_price() races the broker ledger and stores the
+        pre-credit (low) cash balance, because of which the lots recalculated
+        for the next buy stay at 0.
+
+        Poll the fund summary in the background until the balance improves
+        (or the retry window expires). Each re-fetch goes through the trader's
+        _refresh_fund_summary_after_position_update(), which recalculates the
+        weekly option lots and refreshes the frontend margin display.
+        """
+        try:
+            balance_at_sell = float(
+                self._trader._fund_summary.get("cash_balance", 0) or 0
+            )
+        except Exception:
+            balance_at_sell = 0.0
+
+        def _poll_fund_summary():
+            waited = 0
+            while waited < max_wait_seconds:
+                time.sleep(poll_interval)
+                waited += poll_interval
+                try:
+                    self._trader._refresh_fund_summary_after_position_update()
+
+                    current_balance = float(
+                        self._trader._fund_summary.get("cash_balance", 0) or 0
+                    )
+                    if current_balance > balance_at_sell:
+                        logger.info(
+                            f"Post-sell fund balance credited "
+                            f"({balance_at_sell} -> {current_balance})."
+                        )
+                        return
+                except Exception as e:
+                    logger.error(f"Post-sell fund summary refresh failed: {e}")
+                    return
+
+            logger.info(
+                "Post-sell fund refresh window expired. "
+                "Using the latest broker balance."
+            )
+
+        threading.Thread(
+            target=_poll_fund_summary,
+            name="post-sell-fund-refresh",
+            daemon=True
+        ).start()
+        logger.info(
+            f"Scheduled post-sell fund summary refresh "
+            f"(every {poll_interval}s for up to {max_wait_seconds}s). "
+            f"Balance at sell: {balance_at_sell}"
+        )
+
     def sell_units(self, trading_symbol, instrument_token , quantity , exchange , ltp):
         try:
             logger.info(f"Selling units: {quantity} of {trading_symbol} ({instrument_token}) via M.Stock...")
@@ -718,7 +944,7 @@ class MStockAdapter(BrokerInterface):
             else:
             # --- Fallback: slow file lookup ---
                 logger.info(f"Instrument {instrument_token} not found in cache, performing file lookup...")
-                data = find_matching_object(self._MSTOCK_INSTRUMENT_FILE, "token", str(instrument_token))
+                data = find_matching_object(self._MSTOCK_INSTRUMENT_FILE, "token", str(instrument_token), prefix=INSTRUMENTS_SECTION_PREFIX)
                 logger.info(f"Found instrument {instrument_token} in file "+ self._MSTOCK_INSTRUMENT_FILE)
 
             logger.debug(f"Instrument data for selling: {data}")
@@ -786,10 +1012,11 @@ class MStockAdapter(BrokerInterface):
                 logger.error(f"Error parsing SELL response: {parse_err}")
                 raise
 
-            self._trader.frontend_data_socket.emit('sell_order_result',{"success": True, "tradingsymbol": trading_symbol , "Quantity": quantity})
+            self._trader.frontend_data_socket.emit('sell_order_result',{"success": True, "tradingsymbol": trading_symbol , "lots": quantity})
             #self._trader.frontend_data_socket.emit('status_message', {"message": "Refreshing position now..."})
             logger.info("Refreshing open positions and buy prices after SELL...This would update the fund summar / cash balance as well")
             self._trader.refresh_open_pos_buy_price()
+            self._schedule_post_sell_fund_refresh()
 
             return True
             
@@ -820,7 +1047,7 @@ class MStockAdapter(BrokerInterface):
             else:
             # --- Fallback: slow file lookup ---
                 logger.info(f"Instrument {instrument_token} not found in cache, performing file lookup...")
-                data = find_matching_object(self._MSTOCK_INSTRUMENT_FILE, "token", str(instrument_token))
+                data = find_matching_object(self._MSTOCK_INSTRUMENT_FILE, "token", str(instrument_token), prefix=INSTRUMENTS_SECTION_PREFIX)
                 logger.info(f"Found instrument {instrument_token} in file "+ self._MSTOCK_INSTRUMENT_FILE)
 
             logger.debug(f"Instrument data for selling: {data}")
@@ -878,10 +1105,11 @@ class MStockAdapter(BrokerInterface):
                 logger.error(f"Error parsing SELL response: {parse_err}")
                 raise
 
-            self._trader.frontend_data_socket.emit('sell_order_result',{"success": True, "tradingsymbol": trading_symbol , "Quantity": quantity})
+            self._trader.frontend_data_socket.emit('sell_order_result',{"success": True, "tradingsymbol": trading_symbol , "lots": quantity})
             self._trader.frontend_data_socket.emit('status_message',{"success": True, "message": "Refreshing position now..."})
             logger.info("Refreshing open positions and buy prices after SELL...This would update the fund summar / cash balance as well")
             self._trader.refresh_open_pos_buy_price()
+            self._schedule_post_sell_fund_refresh()
 
             return True
             
@@ -903,9 +1131,9 @@ class MStockAdapter(BrokerInterface):
             # --- Fallback: slow file lookup ---
                 logger.info(f"Instrument {instrument_token or trading_symbol} not found in cache, performing file lookup...")               
                 if trading_symbol:
-                    data = find_matching_object(self._MSTOCK_INSTRUMENT_FILE , "name" , trading_symbol)
+                    data = find_matching_object(self._MSTOCK_INSTRUMENT_FILE , "name" , trading_symbol, prefix=INSTRUMENTS_SECTION_PREFIX)
                 elif instrument_token:
-                    data = find_matching_object(self._MSTOCK_INSTRUMENT_FILE , "token" , instrument_token)
+                    data = find_matching_object(self._MSTOCK_INSTRUMENT_FILE , "token" , instrument_token, prefix=INSTRUMENTS_SECTION_PREFIX)
             
             if not data:
                 raise Exception(f"Instrument not found in {self._MSTOCK_INSTRUMENT_FILE} for {trading_symbol or instrument_token}")
@@ -1004,7 +1232,7 @@ class MStockAdapter(BrokerInterface):
                         logger.error(f"M.Stock API error for {trading_symbol}: {api_error} | Raw: {raw_response}")
                         raise Exception(api_error)
                     else:
-                        self._trader.frontend_data_socket.emit('buy_order_result',{"success": True, "tradingsymbol": trading_symbol , "Quantity": quantity})
+                        self._trader.frontend_data_socket.emit('buy_order_result',{"success": True, "tradingsymbol": trading_symbol , "lots": buy_quantity})
                         # FAST POSITION GRID UPDATE
                         # Do this immediately after successful BUY,
                         # before any SELL handling or REST position refresh.
@@ -1079,9 +1307,9 @@ class MStockAdapter(BrokerInterface):
                 # --- Fallback: slow file lookup ---
                     logger.info(f"Instrument {instrument_token or trading_symbol} not found in cache, performing file lookup...")               
                     if trading_symbol:
-                        data = find_matching_object(self._MSTOCK_INSTRUMENT_FILE , "name" , trading_symbol)
+                        data = find_matching_object(self._MSTOCK_INSTRUMENT_FILE , "name" , trading_symbol, prefix=INSTRUMENTS_SECTION_PREFIX)
                     elif instrument_token:
-                        data = find_matching_object(self._MSTOCK_INSTRUMENT_FILE , "token" , instrument_token)
+                        data = find_matching_object(self._MSTOCK_INSTRUMENT_FILE , "token" , instrument_token, prefix=INSTRUMENTS_SECTION_PREFIX)
                 
                 if not data:
                     raise Exception(f"Instrument not found in {self._MSTOCK_INSTRUMENT_FILE} for {trading_symbol or instrument_token}")
@@ -1168,7 +1396,7 @@ class MStockAdapter(BrokerInterface):
                             logger.error(f"M.Stock API error for {trading_symbol}: {api_error} | Raw: {raw_response}")
                             raise Exception(api_error)
                         else:
-                            self._trader.frontend_data_socket.emit('buy_order_result',{"success": True, "tradingsymbol": trading_symbol , "Quantity": quantity})
+                            self._trader.frontend_data_socket.emit('buy_order_result',{"success": True, "tradingsymbol": trading_symbol , "lots": buy_quantity})
                             logger.debug("Selling immediately after buying as per settings...")
                             logger.debug(f"LTP: {ltp} ; Target Profit : {target_profit} ; So Selling Price is {ltp+target_profit}")
 
@@ -1207,7 +1435,7 @@ class MStockAdapter(BrokerInterface):
                         logger.debug(f"Sell order response raw: {raw_response}")
                         conn.close()
 
-                        self._trader.frontend_data_socket.emit('sell_order_result',{"success": True, "tradingsymbol": trading_symbol , "Quantity": quantity,"Sell Price": ltp+target_profit})
+                        self._trader.frontend_data_socket.emit('sell_order_result',{"success": True, "tradingsymbol": trading_symbol , "lots": buy_quantity,"Sell Price": ltp+target_profit})
                         self._trader.frontend_data_socket.emit('status_message', {"success": True,"message": "Refreshing position now..."})            
                         self._trader.refresh_open_pos_buy_price()                        
                                 
@@ -1222,8 +1450,14 @@ class MStockAdapter(BrokerInterface):
         self._trader.refresh_open_pos_buy_price()
 
     @staticmethod
-    def _select_contract_note_time(order_time, trade_time, price):
-        """Select OrderTime, falling back to TradeTime or price-based seconds."""
+    def _select_contract_note_time(order_time, trade_time):
+        """Select OrderTime, falling back to TradeTime.
+
+        Seconds are kept exactly as printed (00 when the note shows a
+        whole minute or omits seconds). They must never be fabricated
+        from the price: deriving seconds from price turned 09:37:00 on
+        a Rs.11.45 fill into 09:37:11 and corrupted durations/FIFO.
+        """
         time_pattern = re.compile(r"^(\d{1,2}):(\d{2})(?::(\d{2}))?$")
         parsed_times = []
         for value in (order_time, trade_time):
@@ -1241,8 +1475,6 @@ class MStockAdapter(BrokerInterface):
             raise ValueError(f"Invalid contract-note times: {order_time}, {trade_time}")
 
         hour, minute, second = selected
-        if second == 0:
-            second = max(0, min(59, int(round(float(price)))))
         return f"{hour:02d}:{minute:02d}:{second:02d}"
 
     def extract_trades(self,tables):
@@ -1284,7 +1516,7 @@ class MStockAdapter(BrokerInterface):
                         price = float(values[7])
 
                     selected_time = self._select_contract_note_time(
-                        order_time, trade_time, price
+                        order_time, trade_time
                     )
 
                     trades.append({
@@ -1367,13 +1599,14 @@ class MStockAdapter(BrokerInterface):
         c.save()
         return tmp_pdf_path
 
-    def convert_mstock_contract_note(self,pdf_path: str) -> str:
+    def convert_mstock_contract_note_data(self, pdf_path: str):
         """
-        Converts mStock contract note PDF into paired trades CSV
-        Returns path to generated CSV
+        Converts mStock contract note PDF into FIFO-paired trade rows.
+        Returns (output_rows, pine_script, trade_date).
         """
+        import camelot
 
-        # ---------- Pass 1: Normal Camelot ----------
+        # ---------- Pass 1a: Legacy page-3 parse ----------
         try:
             tables = camelot.read_pdf(
                 pdf_path,
@@ -1384,9 +1617,30 @@ class MStockAdapter(BrokerInterface):
             raw_trades = self.extract_trades(tables)
         except Exception as error:
             logger.warning(
-                f"Camelot could not parse the contract note; using OCR fallback: {error}"
+                f"Camelot could not parse page 3 of the contract note: {error}"
             )
             raw_trades = []
+
+        # ---------- Pass 1b: All-pages parse ----------
+        # The trade table is not always on page 3: short/daily contract
+        # notes carry it on page 1-2, and asking Camelot for a page the
+        # PDF does not have makes it raise an IndexError. Retry across
+        # every page (Camelot resolves "all" against the real page
+        # count) before falling back to OCR.
+        if not raw_trades:
+            try:
+                tables = camelot.read_pdf(
+                    pdf_path,
+                    pages="all",
+                    flavor="stream",
+                    strip_text="\n"
+                )
+                raw_trades = self.extract_trades(tables)
+            except Exception as error:
+                logger.warning(
+                    f"Camelot could not parse the contract note; using OCR fallback: {error}"
+                )
+                raw_trades = []
 
         # ---------- Pass 2: OCR fallback ----------
         if not raw_trades:
@@ -1412,7 +1666,11 @@ class MStockAdapter(BrokerInterface):
                     pass
 
         if not raw_trades:
-            raise ValueError("No BUY/SELL trades found (even after OCR)")
+            raise ValueError(
+                "No BUY/SELL trades found in the contract note "
+                "(tried page 3, all pages and OCR). The PDF may be "
+                "scanned, encrypted or use an unsupported layout."
+            )
 
         trade_date = datetime.datetime.now().date()
         try:
@@ -1597,13 +1855,21 @@ class MStockAdapter(BrokerInterface):
             ]
         )
 
+        return output_rows, pine_script, trade_date
+
+    def convert_mstock_contract_note(self, pdf_path: str) -> str:
+        """
+        Converts mStock contract note PDF into the standard Orders
+        workbook. Returns path to the generated xlsx (Utilities flow).
+        """
+        output_rows, pine_script, _trade_date = self.convert_mstock_contract_note_data(pdf_path)
         return write_orders_workbook(output_rows, pine_script)
 
 
 
     def get_instrument_details(self , tradingsymbol):
         logger.info(f"Getting instrument details for {tradingsymbol} from M.Stock...")
-        data = find_matching_object(self._MSTOCK_INSTRUMENT_FILE , "name" , tradingsymbol)
+        data = find_matching_object(self._MSTOCK_INSTRUMENT_FILE , "name" , tradingsymbol, prefix=INSTRUMENTS_SECTION_PREFIX)
         updated_data = instr_det_attrib_mgmt(data)
         return updated_data
     
@@ -1619,7 +1885,7 @@ class MStockAdapter(BrokerInterface):
             # Get the first letter of the month name, e.g., 'October' -> 'O'
             # if the weekly expiry doesnt coincide with monthly expiry of the near month future token ..then it would be first letter of the month followed by 2 digits of expiry date
             # if the weekly expiry coincides with monthly expiry of the near month future token ..then it would be first three letters of the month and no digits of expiry date
-            if self.get_constant("NEAR_FUTURE_NEAR_OPTION_EXPIRE_TOGETHER"): 
+            if self.get_instrument_meta().get("expire_together"):
                 month_char = calendar.month_name[expiry.month][:3].upper()
                 dd_str=""
             else:
@@ -1697,7 +1963,8 @@ class MStockAdapter(BrokerInterface):
                     data = find_matching_object(
                         self._MSTOCK_INSTRUMENT_FILE,
                         "token",
-                        token
+                        token,
+                        prefix=INSTRUMENTS_SECTION_PREFIX,
                     )
 
                     if not data:
@@ -1800,30 +2067,40 @@ class MStockAdapter(BrokerInterface):
         last_downloaded_date = datetime.datetime.fromisoformat(last_downloaded_date_string)
 
 
-        underlying_exists = False
-        reduced_file_path = "mstock_instrument_list_reduced.json"
-
-        if os.path.exists(reduced_file_path):
-            try:
-                with open(reduced_file_path, "r") as f:
-                    reduced_list = json.load(f)
-
-                for item in reduced_list:
-                    if "symbol" in item and item["symbol"] == underlying:
-                        underlying_exists = True
-                        break
-
-            except Exception as e:
-                logger.error(f"❌ Error reading reduced instrument file: {e}")
-                underlying_exists = False  # Force download
+        # The reduced file's meta block records which underlying it was
+        # built for (and when). A missing/legacy meta block means the
+        # file predates the meta design, so it is treated as stale.
+        reduced_meta = read_instrument_meta("mstock_instrument_list_reduced.json")
+        underlying_exists = reduced_meta.get("underlying") == underlying
 
         #UnderlyingExist = true check helps to check if the underlying exists int the reduced file ..if not then we need to download the latest instrument list again and then reduce it again
         #This scenario can happen when user changes the underlying from NIFTY to SENSEX or vice versa post download of instrument list and reduction for the day
         if last_downloaded_date.date() == datetime.datetime.now().date() and underlying_exists == True:
-            self.update_instrument_constants("mstock_instrument_list.json", underlying, "constants.json")
-            with open("constants.json") as f:
-                constants = json.load(f)
-                self.reduce_instrument_list(constants)
+            instruments = None
+            meta_fresh = False
+            try:
+                if (
+                    reduced_meta.get("near_month_future_token")
+                    and reduced_meta.get("generated_on") == datetime.datetime.now().date().isoformat()
+                ):
+                    meta_fresh = True
+            except Exception as e:
+                logger.debug(f"Instrument meta freshness check failed: {e}")
+                meta_fresh = False
+
+            if meta_fresh:
+                self._instrument_meta = reduced_meta
+                logger.info("✅ Instrument meta already computed today for this underlying; skipping recompute.")
+            else:
+                instruments, meta = self.compute_instrument_meta("mstock_instrument_list.json", underlying)
+                if meta:
+                    self._instrument_meta = meta
+
+            if not self._instrument_meta:
+                # No usable meta (e.g. the prod_start(None, None) pre-fetch);
+                # the master file is refreshed but nothing can be reduced.
+                return False
+            self.reduce_instrument_list(self._instrument_meta, instruments=instruments)
             logger.info("✅ Instrument list already downloaded today; skipping download.")
             return
         try:
@@ -1842,16 +2119,16 @@ class MStockAdapter(BrokerInterface):
             
             file_path = "mstock_instrument_list.json"
             with open(file_path, 'w') as f:
-                json.dump(response_json, f, indent=4)
-            
+                json.dump(response_json, f, separators=(",", ":"))
+
             logger.info(f"✅ Successfully downloaded and saved instrument list data to {file_path}.")
             write_to_json({"mstock_last_downloaded_instruments_timestamp" : datetime.datetime.now().isoformat()} , "access_token.json")
 
-            self.update_instrument_constants("mstock_instrument_list.json", underlying, "constants.json")
-            
-            with open("constants.json") as f:
-                constants = json.load(f)
-                self.reduce_instrument_list(constants)
+            instruments, meta = self.compute_instrument_meta("mstock_instrument_list.json", underlying)
+            if not meta:
+                return False
+            self._instrument_meta = meta
+            self.reduce_instrument_list(self._instrument_meta, instruments=instruments)
 
             return True
 
@@ -1862,44 +2139,262 @@ class MStockAdapter(BrokerInterface):
             logger.error(f"❌ Error downloading instrument list: {e}")
             return False
 
-    def reduce_instrument_list(self, constants: dict):
+    def _load_reduced_instruments(self):
         """
-        Reduce mstock_instrument_list.json based on constants.json:
+        Load the instruments array from the reduced file. Handles both
+        the current {"meta": ..., "instruments": [...]} shape and the
+        legacy plain-array shape.
+        """
+        try:
+            with open(self._MSTOCK_INSTRUMENT_FILE, "r") as f:
+                existing = json.load(f)
+        except Exception:
+            return None
+
+        if isinstance(existing, dict):
+            return existing.get("instruments") or []
+        return existing
+
+    def _reduced_list_covers_window(self, fut_token, underlying, target_expiry, ltp, margin=1000):
+        """
+        Return True when the existing reduced instrument file already
+        contains the near-month future plus CE and PE option strikes for
+        the target expiry covering ltp +/- margin, meaning a reload of
+        the 40MB+ master list is unnecessary.
+        """
+        existing = self._load_reduced_instruments()
+        if existing is None:
+            return False
+
+        fut_ok = False
+        has_ce = False
+        has_pe = False
+        strikes = []
+
+        for inst in existing:
+            name = inst.get("name") or inst.get("tradingsymbol") or inst.get("symbol")
+            if name == fut_token:
+                fut_ok = True
+                continue
+
+            if (
+                inst.get("symbol") == underlying
+                and str(inst.get("instrumenttype", "")).upper() == "OPTIDX"
+                and str(inst.get("expiry", "")).upper() == str(target_expiry).upper()
+            ):
+                try:
+                    strikes.append(int(float(inst.get("strike", 0))))
+                except (TypeError, ValueError):
+                    continue
+
+                upper_name = str(name or "").upper()
+                if upper_name.endswith("CE"):
+                    has_ce = True
+                elif upper_name.endswith("PE"):
+                    has_pe = True
+
+        if not (fut_ok and has_ce and has_pe and strikes):
+            return False
+
+        return min(strikes) <= ltp - margin and max(strikes) >= ltp + margin
+
+    def _reduced_list_has_target_expiry(self, fut_token, underlying, target_expiry):
+        """
+        Return True when the existing reduced instrument file contains the
+        near-month future plus at least one CE and one PE option row for
+        the target expiry — i.e. it is usable as-is even when the current
+        LTP is unknown (no live quote, no persisted price).
+        """
+        existing = self._load_reduced_instruments()
+        if existing is None:
+            return False
+
+        fut_ok = False
+        has_ce = False
+        has_pe = False
+
+        for inst in existing:
+            name = inst.get("name") or inst.get("tradingsymbol") or inst.get("symbol")
+            if name == fut_token:
+                fut_ok = True
+                continue
+
+            if (
+                inst.get("symbol") == underlying
+                and str(inst.get("instrumenttype", "")).upper() == "OPTIDX"
+                and str(inst.get("expiry", "")).upper() == str(target_expiry).upper()
+            ):
+                upper_name = str(name or "").upper()
+                if upper_name.endswith("CE"):
+                    has_ce = True
+                elif upper_name.endswith("PE"):
+                    has_pe = True
+
+        return fut_ok and has_ce and has_pe
+
+    def reduce_instrument_list(self, meta: dict, instruments=None):
+        """
+        Reduce mstock_instrument_list.json based on the instrument meta:
         - Keep only the near month future token
-        - Keep only NIFTY options expiring on the configured expiry (exact match)
-        - Keep only strikes within +/-1000 of FUT LTP and multiples of 100
+        - Keep only underlying options expiring on the near option expiry (exact match)
+        - Keep only strikes within +/-3000 of FUT LTP and multiples of the
+          derived strike interval
+
+        `instruments` may carry an already-loaded instrument list (e.g.
+        from compute_instrument_meta) so the 40MB+ master JSON is
+        parsed only once per startup; when omitted the file is loaded
+        from disk as before.
+
+        Fast path: when the master list is not already loaded and the
+        existing same-day reduced file still covers the current LTP
+        window, the master file is not loaded at all.
+
+        Output shape: {"meta": <meta>, "instruments": [...]} so the
+        derived values persist inside the instrument file itself.
         """
 
-        logger.info("Reducing instrument list based on constants...")
+        logger.info("Reducing instrument list based on instrument meta...")
 
         try:
-            with open("mstock_instrument_list.json", "r") as f:
-                data = json.load(f)
+            # Load meta
+            FUT_TOKEN   = meta["near_month_future_token"]
+            UNDERLYING  = meta["underlying"]
+            STRIKE_INTERVAL = int(meta.get("strike_interval") or 100)
 
-            filtered = []
+            # Near option expiry is stored as ISO (e.g. "2026-09-17");
+            # the instrument rows use "17Sep2026".
+            near_option_expiry = datetime.date.fromisoformat(str(meta["near_option_expiry"]))
+            TARGET_EXPIRY = near_option_expiry.strftime("%d%b%Y")
 
-            # Load constants
-            FUT_TOKEN   = constants["NEAR_MONTH_FUTURE_TOKEN"]
-            UNDERLYING  = constants["UNDERLYING"]
-            EXP_MONTH   = constants["EXPIRY_MONTH"]       # e.g., "NOV"
-            EXP_YEAR    = str(constants["EXPIRY_YEAR"])   # "2025"
-            if UNDERLYING == "NIFTY":
-                EXP_DAY     = str(constants["NIFTY_EXPIRY_DATE"])  # "18"
-            elif UNDERLYING == "SENSEX":
-                EXP_DAY     = str(constants["SENSEX_EXPIRY_DATE"])  # "18"
+            fut_details = None
+            if instruments is not None:
+                for inst in instruments:
+                    token = inst.get("name") or inst.get("tradingsymbol") or inst.get("symbol")
+                    if token == FUT_TOKEN:
+                        fut_details = inst
+                        break
+            else:
+                try:
+                    fut_details = find_matching_object(
+                        self._MSTOCK_INSTRUMENT_FILE, "name", FUT_TOKEN,
+                        prefix=INSTRUMENTS_SECTION_PREFIX,
+                    )
+                except Exception:
+                    fut_details = None
 
-            # Build final expiry string for exact match
-            TARGET_EXPIRY = f"{EXP_DAY}{EXP_MONTH.capitalize()}{EXP_YEAR}"
+            fut_ltp = None
+            fut_open = None
+            fut_close = None
+            if fut_details:
+                # The M.Stock quote gateway is intermittently flaky (502s /
+                # timeouts). One retry after a short pause recovers most
+                # transient failures before any fallback LTP is considered.
+                for attempt in (1, 2):
+                    try:
+                        quote = self.fetch_instrument_quote(
+                            fut_details.get("exch_seg", ""),
+                            str(fut_details.get("token", ""))
+                        )
+                        # ✅ HARD VALIDATION BEFORE ACCESSING
+                        if (
+                            not isinstance(quote, dict)
+                            or not quote.get("data")
+                            or not quote.get("data", {}).get("fetched")
+                        ):
+                            raise ValueError(f"no quote data in response: {quote}")
+                        fetched = quote["data"]["fetched"][0]
+                        fut_ltp = fetched["ltp"]
+                        fut_open = fetched.get("open")
+                        fut_close = fetched.get("close") or fetched.get("prevClose")
+                        break
+                    except Exception as e:
+                        logger.error(
+                            f"Fetch Instrument Quote failed for {FUT_TOKEN} "
+                            f"(attempt {attempt}/2): {e}"
+                        )
+                        if attempt == 1:
+                            time.sleep(2)
 
-            self._trader._NEAR_MONTH_FUTURE_LTP = self.get_ltp(FUT_TOKEN)
+            if fut_ltp is None:
+                # Data-driven fallback first: a real price persisted by an
+                # earlier session beats these months-old hardcoded levels.
+                try:
+                    persisted = self._trader.load_last_known_price(str(FUT_TOKEN))
+                except Exception:
+                    persisted = None
 
-            strike_lower = int(self._trader._NEAR_MONTH_FUTURE_LTP - 3000)
-            strike_upper = int(self._trader._NEAR_MONTH_FUTURE_LTP + 3000)
+                if persisted:
+                    logger.warning(
+                        f"Using persisted last-known price {persisted['ltp']} "
+                        f"for {FUT_TOKEN} (age {persisted['age_days']} day(s))."
+                    )
+                    fut_ltp = persisted["ltp"]
+                    if fut_open is None:
+                        fut_open = persisted.get("open")
+                    if fut_close is None:
+                        fut_close = persisted.get("prev_close")
+
+            used_fallback_ltp = fut_ltp is None
+            if used_fallback_ltp:
+                if "NIFTY" in str(FUT_TOKEN).upper():
+                    logger.warning(f"Returning fallback LTP = {self._trader._NIFTY_FALLBACK_LTP} for NIFTY.")
+                    fut_ltp = self._trader._NIFTY_FALLBACK_LTP
+                elif "SENSEX" in str(FUT_TOKEN).upper():
+                    logger.warning(f"Returning fallback LTP = {self._trader._SENSEX_FALLBACK_LTP} for SENSEX.")
+                    fut_ltp = self._trader._SENSEX_FALLBACK_LTP
+                else:
+                    logger.warning(f"Returning default fallback LTP = {self._trader._NIFTY_FALLBACK_LTP}.")
+                    fut_ltp = self._trader._NIFTY_FALLBACK_LTP
+
+            self._trader._NEAR_MONTH_FUTURE_LTP = fut_ltp
+            self._trader._near_month_future_quote_cache = {
+                "ltp": fut_ltp,
+                "open": fut_open,
+                "prev_close": fut_close,
+                "ts": time.time(),
+            }
+
+            strike_lower = int(fut_ltp - 3000)
+            strike_upper = int(fut_ltp + 3000)
 
             logger.info(
                 f"Filtering: FUT={FUT_TOKEN}, expiry={TARGET_EXPIRY}, "
                 f"strike range={strike_lower} to {strike_upper}"
             )
+
+            if instruments is None and self._reduced_list_covers_window(
+                FUT_TOKEN, UNDERLYING, TARGET_EXPIRY, fut_ltp
+            ):
+                logger.info(
+                    "✅ Existing reduced instrument list still covers the current "
+                    "LTP window; skipping master list reload."
+                )
+                return True
+
+            # The fallback LTP can be stale. Regenerating the
+            # reduced list around it would wipe out the last good list with
+            # a wrong strike window and break weekly-option lookups. When no
+            # real price was available, keep the existing list instead (as
+            # long as it already has the future plus CE and PE rows for the
+            # target expiry).
+            if used_fallback_ltp and self._reduced_list_has_target_expiry(
+                FUT_TOKEN, UNDERLYING, TARGET_EXPIRY
+            ):
+                logger.warning(
+                    "⚠️ No live or persisted LTP for the future; the fallback "
+                    "LTP may be stale, so the existing reduced instrument "
+                    "list is kept instead of regenerating it around a wrong "
+                    "strike window."
+                )
+                return True
+
+            if instruments is None:
+                with open("mstock_instrument_list.json", "r") as f:
+                    data = json.load(f)
+            else:
+                data = instruments
+
+            filtered = []
 
             for inst in data:
 
@@ -1933,16 +2428,18 @@ class MStockAdapter(BrokerInterface):
 
                     if (
                         strike_lower <= strike <= strike_upper
-                        and strike % 100 == 0
+                        and strike % STRIKE_INTERVAL == 0
                     ):
                         filtered.append(inst)
 
-            # Write reduced output
+            # Write reduced output with the derived meta persisted in the
+            # same file (replaces the old constants.json derived keys).
+            output = {"meta": meta, "instruments": filtered}
             with open("mstock_instrument_list_reduced.json", "w") as f:
-                json.dump(filtered, f, indent=2)
+                json.dump(output, f, indent=2)
 
             logger.info(
-                f"Done! {len(filtered)} records saved to mstock_instrument_list_reduced.json"
+                f"Done! {len(filtered)} records + meta saved to mstock_instrument_list_reduced.json"
             )
             return True
 
@@ -1951,28 +2448,19 @@ class MStockAdapter(BrokerInterface):
             return False
 
 
-    def update_constants_file(self,data, json_file="constants.json"):
-        #logger.info("Constants file going to be updated")
-        """Update or create constants.json with the given data."""
-        try:
-            # Load existing constants
-            with open(json_file, "r") as f:
-                constants = json.load(f)
-        except (FileNotFoundError, json.JSONDecodeError):
-            constants = {}
+    def compute_instrument_meta(self, json_instrument_file, underlying):
+        """
+        Derive the instrument meta (exchange, near-month future token,
+        near option expiry, expire-together flag, strike interval) from
+        the instrument master file. Nothing is written to constants.json
+        anymore; the meta is persisted in the reduced instrument file by
+        reduce_instrument_list and exposed via get_instrument_meta().
 
-        # Update keys
-        constants.update(data)
-
-        # Write back to file (pretty format)
-        with open(json_file, "w") as f:
-            json.dump(constants, f, indent=4)
-
-        logger.info("Constants file updated successfully.")
-
-
-    def update_instrument_constants(self, json_instrument_file, underlying, json_file="constants.json"):
-        logger.debug(f"Instrument constants to be updated for {json_instrument_file} and underlying {underlying}")
+        Returns (instruments, meta) where `instruments` is the loaded
+        master list (so the caller avoids re-parsing the 40MB+ file) and
+        `meta` is None when derivation failed.
+        """
+        logger.debug(f"Instrument meta to be computed for {json_instrument_file} and underlying {underlying}")
 
         # --- 1️⃣ Load instrument data from JSON ---
         try:
@@ -1980,7 +2468,13 @@ class MStockAdapter(BrokerInterface):
                 instruments = json.load(f)
         except Exception as e:
             logger.error(f"Failed to load {json_instrument_file}: {e}")
-            return
+            return None, None
+
+        if not underlying:
+            # prod_start() calls download_instrument_list(None, None) just
+            # to refresh the master file; no meta can be derived yet.
+            logger.debug("No underlying supplied; skipping instrument meta computation.")
+            return instruments, None
 
         # Convert list of dicts → DataFrame for easier filtering
         df = pd.DataFrame(instruments)
@@ -1993,90 +2487,83 @@ class MStockAdapter(BrokerInterface):
             (df["symbol"].str.upper() == underlying)
         ].copy()
 
+        exchange = ""
+        trading_symbol = ""
+        expiry_date_future = None
+
         if fut_df.empty:
             logger.warning(f"No futures found for {underlying}")
-            exchange = ""
-            trading_symbol = ""
-            expiry_month = ""
-            expiry_year = ""
-            expiry_date_future = None
         else:
             fut_df["expiry"] = pd.to_datetime(fut_df["expiry"], errors="coerce")
             nearest_future = fut_df.sort_values("expiry").iloc[0]
 
-            exchange = nearest_future.get("exch_seg", "")
-            trading_symbol = nearest_future.get("name", "")
-            expiry_date_future = nearest_future.get("expiry", "")
+            exchange = str(nearest_future.get("exch_seg", "") or "")
+            trading_symbol = str(nearest_future.get("name", "") or "")
+            expiry_date_future = nearest_future.get("expiry", None)
 
-            if pd.notna(expiry_date_future) and expiry_date_future != "":
-                expiry_month = pd.to_datetime(expiry_date_future).strftime("%b").upper()
-                expiry_year = pd.to_datetime(expiry_date_future).strftime("%Y")
-            else:
-                expiry_month = ""
-                expiry_year = ""
+        # --- 3️⃣ Find nearest weekly options of this underlying ---
+        today = pd.Timestamp.now().normalize()
 
-        # --- 3️⃣ Find nearest weekly options (if available) ---
         opt_df = df[
             (df["instrumenttype"].str.upper() == "OPTIDX") &
+            (df["symbol"].str.upper() == underlying) &
             (df["name"].str.upper().str.endswith(("CE", "PE")))
         ].copy()
 
-        expiry_nifty = ""
-        expiry_sensex = ""
-        expire_together = False
+        near_option_expiry = None
+        strike_interval = 100 if underlying == "SENSEX" else 50
 
         if not opt_df.empty:
             opt_df["expiry"] = pd.to_datetime(opt_df["expiry"], errors="coerce")
-            nifty_opts = opt_df[opt_df["symbol"].str.upper().str.contains("NIFTY")]
-            sensex_opts = opt_df[opt_df["symbol"].str.upper().str.contains("SENSEX")]
+            future_opts = opt_df[opt_df["expiry"] >= today]
+            if not future_opts.empty:
+                near_option_expiry_ts = future_opts.sort_values("expiry")["expiry"].dropna().iloc[0]
+                near_option_expiry = near_option_expiry_ts.date()
 
-            # expiry_nifty_date = nifty_opts.sort_values("expiry")["expiry"].dropna().iloc[0] if not nifty_opts.empty else None
-            # expiry_sensex_date = sensex_opts.sort_values("expiry")["expiry"].dropna().iloc[0] if not sensex_opts.empty else None
-            
-            today = pd.Timestamp.now().normalize()
+                # --- 4️⃣ Derive the strike grid step from real strikes ---
+                # Modal difference between consecutive strikes of the near
+                # expiry (SENSEX=100, NIFTY=50); robust against odd rows.
+                near_expiry_opts = future_opts[future_opts["expiry"] == near_option_expiry_ts]
+                try:
+                    strikes = sorted(
+                        {
+                            int(float(s))
+                            for s in near_expiry_opts["strike"].dropna()
+                            if str(s).strip() not in ("", "0")
+                        }
+                    )
+                    diffs = [b - a for a, b in zip(strikes, strikes[1:]) if b > a]
+                    if diffs:
+                        strike_interval = max(set(diffs), key=diffs.count)
+                except Exception as e:
+                    logger.warning(f"Strike interval derivation failed ({e}); using {strike_interval}")
 
-            future_nifty_opts = nifty_opts[nifty_opts["expiry"] >= today]
-            future_sensex_opts = sensex_opts[sensex_opts["expiry"] >= today]
+        # --- 5️⃣ Determine if future and option expire together ---
+        expire_together = False
+        if (
+            expiry_date_future is not None
+            and pd.notna(expiry_date_future)
+            and near_option_expiry is not None
+        ):
+            expire_together = near_option_expiry == expiry_date_future.date()
 
-            expiry_nifty_date = (
-                future_nifty_opts.sort_values("expiry")["expiry"].dropna().iloc[0]
-                if not future_nifty_opts.empty
-                else None
-            )
+        if not exchange:
+            exchange = get_exchange_for_underlying(underlying) or ""
 
-            expiry_sensex_date = (
-                future_sensex_opts.sort_values("expiry")["expiry"].dropna().iloc[0]
-                if not future_sensex_opts.empty
-                else None
-            )            
-
-            expiry_nifty = expiry_nifty_date.strftime("%d") if expiry_nifty_date is not None else ""
-            expiry_sensex = expiry_sensex_date.strftime("%d") if expiry_sensex_date is not None else ""
-
-            # --- 4️⃣ Determine if future and option expire together ---
-            if expiry_date_future is not None and pd.notna(expiry_date_future):
-                if underlying == "NIFTY" and expiry_nifty_date is not None:
-                    expire_together = expiry_nifty_date.date() == expiry_date_future.date()
-                elif underlying == "SENSEX" and expiry_sensex_date is not None:
-                    expire_together = expiry_sensex_date.date() == expiry_date_future.date()
-
-        # --- 5️⃣ Prepare constants update ---
-        update_data = {
-            "EXCHANGE": exchange,
-            "NEAR_MONTH_FUTURE_TOKEN": trading_symbol,
-            "EXPIRY_MONTH": expiry_month,
-            "EXPIRY_YEAR": expiry_year,
-            "NIFTY_EXPIRY_DATE": expiry_nifty,
-            "SENSEX_EXPIRY_DATE": expiry_sensex,
-            "NEAR_FUTURE_NEAR_OPTION_EXPIRE_TOGETHER": expire_together,
+        meta = {
+            "underlying": underlying,
+            "exchange": exchange,
+            "near_month_future_token": trading_symbol,
+            "near_option_expiry": near_option_expiry.isoformat() if near_option_expiry else None,
+            "expire_together": bool(expire_together),
+            "strike_interval": int(strike_interval),
+            "generated_on": datetime.datetime.now().date().isoformat(),
         }
 
-        # --- 6️⃣ Write and sync constants ---
-        self.update_constants_file(update_data, json_file)
-        self.update_constants(update_data)
+        logger.info(f"Computed instrument meta: {json.dumps(meta, indent=4)}")
 
-        logger.debug("Updated constants:\n" + json.dumps(self.constants, indent=4))
-        
+        return instruments, meta
+
     def check_mstock_endpoints():
         """
         Check availability for each of the given MStock API endpoints.
@@ -2096,6 +2583,7 @@ class MStockAdapter(BrokerInterface):
         base = "https://api.mstock.trade"
         timeout=5
         headers=None
+        import requests
         endpoints = {
             "Login": ("POST", f"{base}/openapi/typea/connect/login"),
             "Verify TOTP": ("POST", f"{base}/openapi/typea/session/verifytotp"),

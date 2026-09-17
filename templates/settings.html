@@ -202,6 +202,18 @@
                     <label><input type="radio" name="MODE" value="PAPER" checked> PAPER</label>
                     <label><input type="radio" name="MODE" value="LIVE"> LIVE</label>
                     <label><input type="radio" name="MODE" value="SIMULATION"> SIMULATION</label>
+                    <label><input type="radio" name="MODE" value="PLAYBACK"> PLAYBACK</label>
+                </div>
+            </div>
+
+            <!-- TRADINGVIEW ENTRY VALIDATION -->
+            <div class="form-group">
+                <label>TradingView Data Validation (CE/PE Buy Gating):</label>
+                <div class="checkbox-group">
+                    <label title="When ON: CE buys need 30M PVT &gt; 0 OR (5M PVT &gt; 0 AND 1m close &gt; VWAP); PE buys need 30M PVT &lt; 0 OR (5M PVT &lt; 0 AND 1m close &lt; VWAP). Otherwise CALL/PUT buttons are disabled and buys are rejected.">
+                        <input type="checkbox" name="TV_DATA_Validation_REQUIRED" id="TV_DATA_Validation_REQUIRED">
+                        Require TradingView validation before CE/PE buys
+                    </label>
                 </div>
             </div>
 
@@ -390,10 +402,17 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
             else if (input.type === 'checkbox') {
                 data[key] = input.checked;
-            } 
+            }
             else {
                 data[key] = value;
             }
+        }
+
+        // FormData omits unchecked checkboxes; add them explicitly so
+        // toggling OFF is persisted too (backend merges into settings.json).
+        const tvValidationToggle = document.getElementById('TV_DATA_Validation_REQUIRED');
+        if (tvValidationToggle) {
+            data['TV_DATA_Validation_REQUIRED'] = tvValidationToggle.checked;
         }
 
         try {

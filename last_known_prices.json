@@ -1,0 +1,72 @@
+{
+    "CRUDEOILM26SEP9550PE": {
+        "symbol": "CRUDEOILM26SEP9550PE",
+        "ltp": 50.35,
+        "open": null,
+        "prev_close": 42.25,
+        "ts": "2026-09-16T19:47:27.421881"
+    },
+    "CRUDEOILM26SEP9600PE": {
+        "symbol": "CRUDEOILM26SEP9600PE",
+        "ltp": 57.15,
+        "open": null,
+        "prev_close": 46.35,
+        "ts": "2026-09-16T19:47:27.670288"
+    },
+    "CRUDEOILM26SEP9650PE": {
+        "symbol": "CRUDEOILM26SEP9650PE",
+        "ltp": 68.0,
+        "open": null,
+        "prev_close": 50.55,
+        "ts": "2026-09-16T19:47:27.683163"
+    },
+    "CRUDEOILM26SEP9700PE": {
+        "symbol": "CRUDEOILM26SEP9700PE",
+        "ltp": 80.75,
+        "open": null,
+        "prev_close": 57.1,
+        "ts": "2026-09-16T19:47:27.719227"
+    },
+    "CRUDEOILM26SEP10300CE": {
+        "symbol": "CRUDEOILM26SEP10300CE",
+        "ltp": 51.75,
+        "open": null,
+        "prev_close": 191.85,
+        "ts": "2026-09-16T19:48:18.163348"
+    },
+    "CRUDEOILM26SEP10350CE": {
+        "symbol": "CRUDEOILM26SEP10350CE",
+        "ltp": 44.6,
+        "open": null,
+        "prev_close": 172.35,
+        "ts": "2026-09-16T19:47:25.682985"
+    },
+    "CRUDEOILM26SEP10400CE": {
+        "symbol": "CRUDEOILM26SEP10400CE",
+        "ltp": 38.1,
+        "open": null,
+        "prev_close": 154.15,
+        "ts": "2026-09-16T19:48:23.658673"
+    },
+    "CRUDEOILM26SEP10450CE": {
+        "symbol": "CRUDEOILM26SEP10450CE",
+        "ltp": 34.15,
+        "open": null,
+        "prev_close": 139.85,
+        "ts": "2026-09-16T19:47:28.106875"
+    },
+    "CRUDEOILM26SEP10500CE": {
+        "symbol": "CRUDEOILM26SEP10500CE",
+        "ltp": 29.5,
+        "open": null,
+        "prev_close": 122.65,
+        "ts": "2026-09-16T19:47:25.961069"
+    },
+    "CRUDEOILM26SEP9500PE": {
+        "symbol": "CRUDEOILM26SEP9500PE",
+        "ltp": 43.0,
+        "open": null,
+        "prev_close": 36.9,
+        "ts": "2026-09-16T19:47:28.370571"
+    }
+}

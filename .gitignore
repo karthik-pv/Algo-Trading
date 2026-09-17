@@ -10,6 +10,7 @@ mstock_instrument_list.json
 mstock_instrument_list_reduced.json
 mstock_orders.csv
 PaperTrading.txt
+day_cash.json
 constants.json
 logs
 z_JSON._Temp.txt

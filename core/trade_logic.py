@@ -17,11 +17,11 @@ import win32com.client
 
 
 
-from core.trade_utils import get_expiry_date , get_instrument_tokens_from_symbol , get_instrument_details_from_json , calculate_accurate_average_buy_price_and_update_positions
+from core.trade_utils import calculate_accurate_average_buy_price_and_update_positions
 from core.shared_state import latest_tradingview_data
 
 
-from utils import fetch_from_json , find_matching_object
+from utils import fetch_from_json , find_matching_object , is_market_open , write_to_json , compute_limit_margin , get_exchange_for_underlying
 import time
 
 PNT_STOP_LOSS = float(fetch_from_json("settings.json", "PTS_LOSS"))
@@ -58,24 +58,20 @@ class Trader_Singleton:
     _use_max_margin = True
     _mode = fetch_from_json("settings.json" , "MODE")
     _broker_string = fetch_from_json("constants.json" , "BROKER")
-    _exchange = fetch_from_json("constants.json" , "EXCHANGE")
+    _exchange = get_exchange_for_underlying(fetch_from_json("constants.json" , "UNDERLYING"))
     _underlying = fetch_from_json("constants.json" , "UNDERLYING")
-    #_near_month_future_symbol = fetch_from_json("constants.json" , "NEAR_MONTH_FUTURE_TOKEN")
-    # MSTOCK_SENSEX
-    _near_month_future_symbol = None
-    _buy_sell_together = bool(fetch_from_json("constants.json" , "BUY_SELL_TOGETHER"))
 
-    _CASH_BALANCE_PAPER_TRADING = float(fetch_from_json("settings.json" , "CASH_BALANCE_PAPER_TRADING"))
+    _CASH_BALANCE_PAPER_TRADING = float(fetch_from_json("settings.json" , "CASH_BALANCE_PAPER_TRADING") or 100000)
 
     _NIFTY_FALLBACK_LTP = float(fetch_from_json("constants.json" , "NIFTY_FALLBACK_LTP"))
     _SENSEX_FALLBACK_LTP = float(fetch_from_json("constants.json" , "SENSEX_FALLBACK_LTP"))
 
-    _WOC_CALL_FACTOR = int(fetch_from_json("constants.json" , "WOC_CALL_FACTOR"))
-    _WOC_PUT_FACTOR = int(fetch_from_json("constants.json" , "WOC_PUT_FACTOR"))
-
 
     _near_month_future_ltp = 0.0
+    ltp_near_month_future = 0.0
     open_near_month_future = 0.0
+    prev_close_near_month_future = 0.0
+    _near_month_future_quote_cache = {}
     _order_strategy_mapping = {}
 
     _cash_balance_margin_pct = fetch_from_json("settings.json" , "MARGIN_USAGE_PCT")
@@ -84,11 +80,66 @@ class Trader_Singleton:
     
     _tradingView_Data = {}
 
+    # ---------------------------------------------------------
+    # TradingView entry validation state (TV_DATA_Validation_REQUIRED)
+    # Defaults are fail-safe: until a valid TradingView webhook is
+    # processed, CE and PE buys are considered NOT allowed.
+    # ---------------------------------------------------------
+    _tv_validation_required = False
+    _tv_ce_buy_allowed = False
+    _tv_pe_buy_allowed = False
+    _tv_ce_reason = "No TradingView data received yet"
+    _tv_pe_reason = "No TradingView data received yet"
+
     _latest_prices = {}
+    _prev_close_prices = {}
+    # Per-token throttle timestamps for persisting last-known prices on
+    # live ticks (one write per token per minute).
+    _price_persist_ts = {}
     _position_pnl_log_freq = POSITION_PNL_LOG_FREQ
     _last_position_pnl_log_ts = 0.0
     _last_freq_log_ts = {}
     _voice_announcement_enabled = True
+
+    # ---------------------------------------------------------
+    # Paper trading store
+    # ---------------------------------------------------------
+    _paper_trade_lock = threading.Lock()
+    _PAPER_TRADE_FILENAME = "PaperTrading.txt"
+    _paper_realized_pnl = 0.0
+
+    # Serializes weekly-option table builds: websocket reconnects
+    # (on_connect re-fires) and manual refresh clicks can trigger
+    # overlapping setup runs that would corrupt the table state.
+    _woc_setup_lock = threading.Lock()
+
+    _sell_order_lock = threading.Lock()
+    _sell_in_flight = {}
+    _SELL_IN_FLIGHT_TIMEOUT_SECS = 10
+
+    # ---------------------------------------------------------
+    # Persisted last-known real prices. Written whenever a websocket
+    # tick or REST quote resolves the near-month future price, read
+    # as a data-driven fallback when every live source fails (fresher
+    # than the static NIFTY/SENSEX fallback constants).
+    # ---------------------------------------------------------
+    _LAST_KNOWN_PRICES_FILE = "last_known_prices.json"
+    _LAST_KNOWN_PRICE_MAX_AGE_DAYS = 7
+
+    # Standard PaperTrading.txt columns. Shared by write_paper_trade()
+    # (writer) and fetch_paper_trades() (reader) so the two can never
+    # drift apart again.
+    _PAPER_TRADE_HEADERS = [
+        "Time", "Type", "Instrument", "Token", "Product",
+        "Qty.", "Avg. price", "Status", "Duration",
+        "PnL Rate", "PnL %", "PnL"
+    ]
+
+    # Cash used when a live fund-summary fetch fails, so lot sizing does
+    # not silently run on an arbitrary in-code number.
+    _FALLBACK_CASH_BALANCE = float(
+        fetch_from_json("settings.json", "FALLBACK_CASH_BALANCE") or 10000
+    )
 
     def __new__(cls):
         if cls._instance is None:
@@ -107,7 +158,7 @@ class Trader_Singleton:
             return price
 
         try:
-            [price, _] = self._broker.get_quote(symbol)
+            price = self._broker.get_quote(symbol)[0]
             return price
         except:
             return 0        
@@ -116,13 +167,18 @@ class Trader_Singleton:
         """
         Wait briefly for websocket ticks to arrive before falling back to REST.
         Returns dictionary {token: price}
+
+        Polls every 50ms and exits as soon as every requested token has a
+        price, so a generous timeout costs nothing when ticks arrive fast
+        while still giving slow first ticks (typically 0.3-1.5s after
+        subscribe) a real chance before the REST fallback kicks in.
         """
 
         start = time.time()
         prices = {}
         remaining = set(str(token) for token in tokens)
 
-        while time.time() - start < timeout:
+        while remaining and time.time() - start < timeout:
             for token in list(remaining):
                 price = self.get_latest_price(token)
                 if price:
@@ -132,7 +188,7 @@ class Trader_Singleton:
             if not remaining:
                 break
 
-            time.sleep(0.5)
+            time.sleep(0.05)
 
         return prices
     
@@ -156,8 +212,24 @@ class Trader_Singleton:
         if price <= 0 or safe_lot_size <= 0:
             return 1
 
-        cash_balance = float(self._fund_summary.get("cash_balance", 0) or 0)
         margin_pct = float(self._cash_balance_margin_pct or 1)
+
+        # PAPER mode always sizes from the configured paper trading
+        # cash balance, independent of the live broker's funds. Realized
+        # PnL from closed paper trades is credited and cash already
+        # committed to open paper positions is subtracted so the paper
+        # account cannot over-allocate.
+        if self._mode == "PAPER":
+            available = self._get_paper_available_cash()
+            if available <= 0:
+                return 0
+            # Buy orders are priced with a market-protection buffer on
+            # top of LTP (LIMIT at LTP + buffer on Kite, slippage
+            # allowance for MARKET fills on M.Stock), so size
+            # affordability against the buffered price, not the LTP.
+            return int(((available * margin_pct) / (price + compute_limit_margin(price))) / safe_lot_size)
+
+        cash_balance = float(self._fund_summary.get("cash_balance", 0) or 0)
 
         if cash_balance <= 0:
             logger.warning(
@@ -166,12 +238,11 @@ class Trader_Singleton:
             )
             return 1
 
-        computed_lots = int(((cash_balance * margin_pct) / price) / safe_lot_size)
-
-        if self._mode == "PAPER":
-            computed_lots = int(((self._CASH_BALANCE_PAPER_TRADING * margin_pct) / price) / safe_lot_size)
-
-        return computed_lots
+        # Buy orders are priced with a market-protection buffer on top
+        # of LTP (LIMIT at LTP + buffer on Kite, slippage allowance for
+        # MARKET fills on M.Stock), so size affordability against the
+        # buffered price, not the LTP.
+        return int(((cash_balance * margin_pct) / (price + compute_limit_margin(price))) / safe_lot_size)
         # We dont want to return 1 lot if the computed_lots is 0. This is because we want to avoid placing orders when the cash balance is low and the computed lots is 0. Hence we will return 0 in such cases.
         #return max(1, computed_lots) 
 
@@ -205,7 +276,7 @@ class Trader_Singleton:
     def _should_log_position_pnl(self) -> bool:
         return self._should_log_with_frequency("position_pnl")
 
-    def weekly_options_initialize(self , token , data , call_or_put , price , level,open):
+    def weekly_options_initialize(self , token , data , call_or_put , price , level , prev_close):
         
         if price <= 0:
             logger.warning(f"Invalid price {price} for {data['tradingsymbol']}. Skipping.")
@@ -226,7 +297,7 @@ class Trader_Singleton:
         logger.info(f" Determining Lot size {int(data["lot_size"])}")
         self._five_weekly_option_contracts[token]["call_or_put"] = call_or_put
         self._five_weekly_option_contracts[token]["level"] = level
-        self._five_weekly_option_contracts[token]["open"] = open
+        self._five_weekly_option_contracts[token]["prev_close"] = prev_close
 
         payload = {
                     'token': token,
@@ -478,19 +549,26 @@ class Trader_Singleton:
 #         logger.info(f"Updated positions: {len(self._position_data)}")
 #         logger.debug(self._position_data)
 
-    def _refresh_fund_summary_after_position_update(self):
+    def _refresh_fund_summary_after_position_update(self, prefetched=None):
         """
         Fetch the latest fund summary after the position grid has
         already been refreshed.
 
         Fund summary is secondary to position/P&L visibility.
+
+        `prefetched` may carry a fund summary that was fetched
+        concurrently (e.g. by refresh_open_pos_buy_price); when it
+        is provided no extra REST call is made.
         """
         logger.info(
             "Fetching latest fund summary after position update..."
         )
 
         try:
-            fund_summary = self._broker.fetch_fund_summary()
+            if prefetched is not None:
+                fund_summary = prefetched
+            else:
+                fund_summary = self._broker.fetch_fund_summary()
 
             if not fund_summary or not isinstance(fund_summary, dict):
                 raise ValueError(
@@ -506,11 +584,30 @@ class Trader_Singleton:
 
             # Recalculate weekly-option buying capacity using the
             # newly updated fund summary.
+            for token, contract in self._five_weekly_option_contracts.items():
+                contract_ltp = (
+                    contract.get("ltp")
+                    or contract.get("price")
+                    or 0
+                )
+                contract_lot_size = (
+                    contract.get("lotsize")
+                    or contract.get("lot_size")
+                    or 1
+                )
+                if contract_ltp and contract_ltp > 0:
+                    contract["lots"] = self._calculate_option_lots(
+                        contract_ltp,
+                        contract_lot_size
+                    )
+
             if self.frontend_data_socket:
                 self.frontend_data_socket.emit(
                     'update_weekly_options',
                     self._five_weekly_option_contracts
                 )
+
+                self.frontend_data_socket.emit('refresh_fund_summary')
 
         except Exception as e:
             logger.error(
@@ -520,10 +617,14 @@ class Trader_Singleton:
             )
 
             self._fund_summary = {}
-            self._fund_summary["cash_balance"] = 10000.0
+            self._fund_summary["cash_balance"] = float(
+                self._FALLBACK_CASH_BALANCE
+            )
 
             logger.warning(
-                "Fallback cash balance of 10000 assigned."
+                f"Fund summary unavailable. Using configured fallback "
+                f"cash balance of {self._FALLBACK_CASH_BALANCE} for lot "
+                f"sizing. Verify broker connectivity."
             )
 
     def fast_update_position_after_buy(
@@ -839,9 +940,50 @@ class Trader_Singleton:
         )
 
         # =========================================================
+        # PAPER GUARD
+        #
+        # The paper position grid comes from the paper trade log, NOT
+        # from live broker REST calls; the broker path below would
+        # overwrite/clear it (e.g. via /manual-refresh-positions or any
+        # adapter call site that bypasses the mode checks in on_start()
+        # and refresh_table()). The mode is re-read fresh because this
+        # is a destructive operation and MODE can flip at runtime.
+        # =========================================================
+        if str(fetch_from_json("settings.json", "MODE") or "").upper() == "PAPER":
+            self.refresh_paper_positions()
+            return
+
+        # =========================================================
+        # 0. PREFETCH FUND SUMMARY CONCURRENTLY
+        #
+        # The fund summary REST call runs in parallel with the
+        # positions call so startup does not pay both latencies
+        # sequentially. The thread is joined right after the
+        # positions fetch; on failure the result stays None and
+        # _refresh_fund_summary_after_position_update fetches it
+        # directly as before.
+        # =========================================================
+        fund_prefetch = {"result": None}
+
+        def _prefetch_fund_summary():
+            try:
+                fund_prefetch["result"] = self._broker.fetch_fund_summary()
+            except Exception as e:
+                logger.error(f"Fund summary prefetch failed: {e}")
+
+        fund_prefetch_thread = threading.Thread(
+            target=_prefetch_fund_summary,
+            daemon=True
+        )
+        fund_prefetch_thread.start()
+
+        # =========================================================
         # 1. FETCH POSITIONS FIRST
         # =========================================================
         positions_from_broker = self._broker.fetch_all_positions()
+
+        fund_prefetch_thread.join(timeout=10)
+        fund_summary_prefetched = fund_prefetch["result"]
 
         if isinstance(positions_from_broker, dict):
             positions_from_broker = positions_from_broker.get("net", [])
@@ -878,7 +1020,9 @@ class Trader_Singleton:
             logger.info(f"Updated positions: {len(self._position_data)}")
 
             # Fund summary is refreshed after the position grid.
-            self._refresh_fund_summary_after_position_update()
+            self._refresh_fund_summary_after_position_update(
+                prefetched=fund_summary_prefetched
+            )
 
             return
 
@@ -1036,7 +1180,9 @@ class Trader_Singleton:
         # =========================================================
         # 7. FUND SUMMARY LAST
         # =========================================================
-        self._refresh_fund_summary_after_position_update()
+        self._refresh_fund_summary_after_position_update(
+            prefetched=fund_summary_prefetched
+        )
 
 
         
@@ -1143,7 +1289,7 @@ class Trader_Singleton:
                 # 2. If sell is True and LTP < Buy Price (Stop Loss Scenario). In this case, Sell Mode can be anything. We dont expect TRIGGER_SELL to be set here.
                 
                 
-                if self._mode in ("LIVE", "SIMULATION"):
+                if self._mode in ("LIVE", "SIMULATION", "PLAYBACK"):
                     if sell:
                         logger.info(f"Placing SELL order for {tradingsymbol} {instrument_token} : {qty} lots at LTP {ltp}")
                         broker.sell_units(tradingsymbol,instrument_token,qty,exchange,ltp)
@@ -1151,109 +1297,42 @@ class Trader_Singleton:
                         if should_log_eval:
                             logger.debug(f"No SELL action taken for {tradingsymbol} at LTP {ltp}")
                 else:
-                    if should_log_eval:
-                        logger.debug(f"PAPER: Sell conditions met for {tradingsymbol} at LTP {ltp} - Decision To Sell: {sell}")
+                    # PAPER mode: mirror the LIVE branch - only record the
+                    # SELL when the decision maker actually says sell, then
+                    # rebuild the paper position grid. A failure here must
+                    # not kill the watcher thread.
+                    if not sell:
+                        if should_log_eval:
+                            logger.debug(f"PAPER: No SELL action taken for {tradingsymbol} at LTP {ltp}")
+                    else:
+                        try:
+                            logger.info(f"PAPER: Recording paper SELL for {tradingsymbol} {instrument_token} : {qty} lots at LTP {ltp}")
 
-                    filename = "PaperTrading.txt"
-
-                    # Create header if file doesn't exist
-                    if not os.path.exists(filename):
-                        with open(filename, "w", encoding="utf-8") as f:
-                            f.write(
-                                "Time\tType\tInstrument\tToken\tProduct\tQty.\tAvg. price\tStatus\n"
+                            self.write_paper_trade(
+                                transaction_type="SELL",
+                                tradingsymbol=tradingsymbol,
+                                token=instrument_token,
+                                qty=qty,
+                                ltp=ltp,
+                                product="MIS",
+                                buy_price=buy_price,
+                                lot_size=data.get("lotsize", 1),
+                                buy_time=self.get_open_position_buy_time(
+                                    instrument_token,
+                                    tradingsymbol=tradingsymbol
+                                )
                             )
 
-                    timestamp = datetime.now().strftime("%-m/%-d/%Y %H:%M")
-                    # On Windows use:
-                    # timestamp = datetime.now().strftime("%#m/%#d/%Y %H:%M")
-
-                    with open(filename, "a", encoding="utf-8") as f:
-                        f.write(
-                            f"{timestamp}\t"
-                            f"SELL\t"
-                            f"{tradingsymbol}\t"
-                            f"{instrument_token}\t"
-                            f"MIS\t"
-                            f"{qty}/{qty}\t"
-                            f"{ltp}\t"
-                            f"COMPLETE\n"
-                        )                    
+                            # Recalculate paper positions so the sold
+                            # quantity disappears from the grid.
+                            self.refresh_paper_positions()
+                        except Exception as paper_sell_error:
+                            logger.error(
+                                f"PAPER auto-sell failed for {tradingsymbol}: {paper_sell_error}",
+                                exc_info=True
+                            )
 
                 self._stop_event.wait(timeout=2)
-    
-    def stop_loss_core(self, broker: BrokerInterface):
-        logger.info("Started trading watcher thread - For Just Stop Loss")
-        while not self._stop_event.is_set():
-            # logger.debug("Evaluating open positions for stop-loss/book-profit...")
-            # logger.debug(self._position_data)
-            #logger.debug(f"Total Open Positions to Evaluate: {len(self._position_data)}")
-
-            for token , data in list(self._position_data.items()):
-                should_log_eval = self._should_log_with_frequency(f"stop_loss_eval:{token}")
-                if should_log_eval:
-                    logger.debug(f"Evaluating position for token {token}")
-                    logger.debug(f"Iterating Position records: {data}")
-                
-                qty = data.get("lots")
-                buy_price = data.get("average_price")
-                ltp = data.get("latest_price")
-                exchange = self._exchange
-                tradingsymbol = data.get("tradingsymbol")
-                instrument_token = data.get("instrument_token")
-                order_strategy_type = data.get("order_strategy" , "DEFAULT")
-                if should_log_eval:
-                    logger.debug(f"Order Strategy Type set is {order_strategy_type}")
-                
-                sell = self.to_sell_or_not_to_sell(buy_price , ltp , order_strategy_type, should_log_eval)
-                if should_log_eval:
-                    logger.debug(f"Decision To Sell {tradingsymbol} - {sell}")
-                # Execute Sell Order if these conditions are met
-                # 1. If sell is True and Sell Mode is TRIGGER_SELL and LTP > Buy Price (Book Profit Scenario)
-                # 2. If sell is True and LTP < Buy Price (Stop Loss Scenario). In this case, Sell Mode can be anything. We dont expect TRIGGER_SELL to be set here.
-                
-                if self._mode in ("LIVE", "SIMULATION"):
-                    if should_log_eval:
-                        logger.debug("In LIVE/SIMULATION Mode")
-                    if ((sell and (ltp > buy_price)) or (sell and ltp < buy_price)):
-                        logger.info(f"Placing SELL order for {tradingsymbol} {instrument_token} : {qty} lots at LTP {ltp}")
-                        broker.sell_units(tradingsymbol,instrument_token,qty,exchange,ltp)
-                    else:
-                        if should_log_eval:
-                            logger.debug(f"No SELL action taken for {tradingsymbol} at LTP {ltp}")
-
-                else:
-                    if should_log_eval:
-                        logger.debug("In PAPER Mode")
-                        logger.debug(f"PAPER: Sell conditions met for {tradingsymbol} at LTP {ltp} - Decision To Sell: {sell}")
-
-                    write_paper_trade(transaction_type="SELL",tradingsymbol=tradingsymbol,token=instrument_token,qty=qty["lots"],ltp=ltp,product="MIS")
-
-                    filename = "PaperTrading.txt"
-
-                    # Create header if file doesn't exist
-                    if not os.path.exists(filename):
-                        with open(filename, "w", encoding="utf-8") as f:
-                            f.write(
-                                "Time\tType\tInstrument\tToken\tProduct\tQty.\tAvg. price\tStatus\n"
-                            )
-
-                    timestamp = datetime.datetime.now().strftime("%-m/%-d/%Y %H:%M")
-                    # On Windows use:
-                    # timestamp = datetime.now().strftime("%#m/%#d/%Y %H:%M")
-
-                    with open(filename, "a", encoding="utf-8") as f:
-                        f.write(
-                            f"{timestamp}\t"
-                            f"SELL\t"
-                            f"{tradingsymbol}\t"
-                            f"MIS\t"
-                            f"{qty}/{qty}\t"
-                            f"{ltp}\t"
-                            f"COMPLETE\n"
-                        )
-
-                self._stop_event.wait(timeout=5)
-
 
     # ---------------------- DECISION MAKER ----------------------------
 
@@ -1447,6 +1526,23 @@ class Trader_Singleton:
         # This will be the fall back Stop Loss based on PCT difference
         # Orders will be one of the above types : Intra , Scalping , Ultra Scalping...Even if 1m/15s/5s MACD Swing dont trigger the Stop Loss we rely on the STOP_LOSS_PCT parameter
         # logger.debug("Falling back to STOP_LOSS_PCT based Stop Loss Check")
+
+        # Book Profit check: sell when the position has gained at least
+        # PCT_BOOK_PROFIT (PCT_PROFIT in settings.json) percent over the
+        # buy price. A value of 0 disables profit booking.
+        if PCT_BOOK_PROFIT > 0 and current_price > buy_price:
+            profit_diff = self.calculate_pctg_difference(buy_price, current_price)
+            if log_enabled:
+                logger.debug(
+                    f"PCT_PROFIT based Book Profit Check. Buy Price is {buy_price} and "
+                    f"Current Price is {current_price}. Profit PCT Diff is {profit_diff} "
+                    f"and PCT_PROFIT is {PCT_BOOK_PROFIT}"
+                )
+            if profit_diff >= PCT_BOOK_PROFIT:
+                if log_enabled:
+                    logger.debug("Returning True for Booking Profit. PCT_PROFIT triggered.")
+                return True
+
         if log_enabled:
             logger.debug(f"STOP_LOSS_PCT based Stop Loss Check. Buy Price is {buy_price} and Current Price is {current_price} and STOP_LOSS_PCT is {STOP_LOSS_PCT}")
         if float(STOP_LOSS_PCT) > 0 and current_price < buy_price :
@@ -1521,7 +1617,8 @@ class Trader_Singleton:
         nifty_price: float,
         call_or_put: str,
         strike_interval: int = 100,
-        underlying: str = "NIFTY"
+        underlying: str = "NIFTY",
+        base_strike: int = None
     ) -> Dict[str, any]:
         logger.info(
             f"Generating 5 weekly option contracts for "
@@ -1537,15 +1634,32 @@ class Trader_Singleton:
         # IMPORTANT:
         # This is the existing ATM calculation based on the
         # Nifty Future LTP. DO NOT CHANGE THIS LOGIC.
+        #
+        # In PLAYBACK mode a base_strike parsed from the playback
+        # instrument overrides the ATM calculation so the displayed
+        # window is centered on the replayed option.
         # ---------------------------------------------------------
-        atm_strike = int((nifty_price // strike_interval) * strike_interval)
+        if base_strike is not None and base_strike > 0:
+            atm_strike = int((base_strike // strike_interval) * strike_interval)
+            logger.info(f"PLAYBACK: using base strike {base_strike} (grid {atm_strike}) for the option window")
+        else:
+            atm_strike = int((nifty_price // strike_interval) * strike_interval)
 
-        remainder = nifty_price % 100
+            remainder = nifty_price % strike_interval
 
-        if remainder >= 50:
-            atm_strike += 100
+            if remainder >= strike_interval // 2:
+                atm_strike += strike_interval
 
-        expiry = get_expiry_date(underlying)
+        # Near option expiry comes from the instrument-file-derived meta
+        # (replaces the old EXPIRY_YEAR/EXPIRY_MONTH/*_EXPIRY_DATE keys).
+        meta = self._broker.get_instrument_meta()
+        expiry_iso = meta.get("near_option_expiry")
+        if not expiry_iso:
+            raise ValueError(
+                f"No near option expiry in instrument meta for {underlying}; "
+                f"cannot build the weekly option table."
+            )
+        expiry = datetime.date.fromisoformat(str(expiry_iso))
 
         logger.info(
             f"Calculated ATM Strike: {atm_strike}, "
@@ -1692,17 +1806,114 @@ class Trader_Singleton:
         }
 
 
+    def save_last_known_price(self, symbol, ltp, open_price=None, prev_close=None):
+        """
+        Persist the latest real (non-fallback) price for a symbol so a
+        later session can fall back to it when every live source fails.
+        """
+        try:
+            entry = {
+                "symbol": str(symbol),
+                "ltp": float(ltp),
+                "open": (float(open_price) if open_price else None),
+                "prev_close": (float(prev_close) if prev_close else None),
+                "ts": datetime.datetime.now().isoformat(),
+            }
+            write_to_json({str(symbol): entry}, self._LAST_KNOWN_PRICES_FILE)
+        except Exception as e:
+            logger.debug(f"Could not persist last-known price for {symbol}: {e}")
+
+    def load_last_known_price(self, symbol):
+        """
+        Return the persisted last-known price entry for a symbol when it
+        is positive and fresh enough, else None.
+
+        The returned dict carries ltp/open/prev_close/ts plus the
+        computed age_days for logging.
+        """
+        try:
+            with open(self._LAST_KNOWN_PRICES_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+
+            entry = data.get(str(symbol))
+            if not entry:
+                return None
+
+            ltp = float(entry.get("ltp") or 0)
+            ts = datetime.datetime.fromisoformat(entry.get("ts"))
+            age_days = (datetime.datetime.now() - ts).total_seconds() / 86400.0
+
+            if ltp <= 0 or age_days < 0 or age_days > self._LAST_KNOWN_PRICE_MAX_AGE_DAYS:
+                return None
+
+            entry["ltp"] = ltp
+            entry["age_days"] = round(age_days, 2)
+            return entry
+
+        except FileNotFoundError:
+            return None
+        except Exception as e:
+            logger.debug(f"Could not load last-known price for {symbol}: {e}")
+            return None
+
     def setup_woc_subscriptions(self):
+        """
+        Public entry point for the weekly-option table build.
+
+        Re-entrancy guard: a second concurrent build (websocket
+        reconnect while a build is still running, or a refresh click
+        during startup build) would corrupt the option table state
+        mid-write, so concurrent requests are skipped instead.
+        """
+        if not self._woc_setup_lock.acquire(blocking=False):
+            logger.warning(
+                "Weekly option setup already in progress; skipping this request."
+            )
+            return
+
+        try:
+            self._setup_woc_subscriptions_impl()
+        finally:
+            self._woc_setup_lock.release()
+
+    def _setup_woc_subscriptions_impl(self):
 
         logger.info("Setting up weekly option contract subscriptions...")
 
         try:
 
-            near_month_symbol = fetch_from_json("constants.json", "NEAR_MONTH_FUTURE_TOKEN")
+            # Instrument-file-derived meta (persisted in the reduced
+            # instrument file / computed by the broker adapter). Read
+            # fresh on every setup run so a regenerated instrument list
+            # takes effect on the next refresh-options-table click.
+            instrument_meta = self._broker.get_instrument_meta()
+
+            # Strike grid step (points), derived from the real strike
+            # grid of the near expiry (SENSEX=100, NIFTY=50).
+            strike_interval = int(instrument_meta.get("strike_interval") or 100)
+            logger.info(f"Using strike interval {strike_interval}")
+
+            near_month_symbol = instrument_meta.get("near_month_future_token")
             logger.info(f"NEAR_MONTH_FUTURE_TOKEN = {near_month_symbol}")
-            self._near_month_future_symbol = near_month_symbol
+
+            if not near_month_symbol:
+                logger.error(
+                    "No near-month future token in instrument meta; cannot "
+                    "build the weekly option table. Regenerate the instrument "
+                    "list (restart or switch underlying) to refresh the meta."
+                )
+                return
 
             near_month_data = self._broker.get_instrument_details(near_month_symbol)
+
+            if not near_month_data:
+                logger.error(
+                    f"Near-month future {near_month_symbol} not found in the "
+                    f"reduced instrument list; cannot build the weekly option "
+                    f"table. Regenerate the instrument list (restart or switch "
+                    f"underlying) to refresh the instrument meta."
+                )
+                return
 
             near_month_token = str(near_month_data["instrument_token"])
 
@@ -1718,21 +1929,46 @@ class Trader_Singleton:
 
             self._broker.subscribe_to_all([near_month_token])
 
-            # Give WebSocket a short chance to deliver the first tick
+            # Give WebSocket up to 2s (with early exit) to deliver the
+            # first tick — Kite's first quote packet typically lands
+            # 0.3-1.5s after subscribe. During market hours only; when
+            # the market is closed no tick can arrive, so skip the wait
+            # entirely and go straight to REST
             future_prices = self.wait_for_prices(
                 [near_month_token],
-                timeout=0.5
+                timeout=2.0 if is_market_open() else 0.0
             )
 
             price = future_prices.get(near_month_token)
             open_price = price
+            price_source = "websocket" if price else None
 
             
 
             # ------------------------------------------------
             # Step 1.5: If websocket price is unavailable,
-            # fetch the actual future price through REST
+            # reuse the quote fetched moments ago during
+            # instrument-list reduction; only fall back to
+            # a fresh REST quote when that cache is stale.
             # ------------------------------------------------
+            if not price:
+                cached_quote = self._near_month_future_quote_cache or {}
+                cache_age = time.time() - cached_quote.get("ts", 0)
+
+                if (
+                    cached_quote.get("ltp")
+                    and cached_quote.get("open")
+                    and 0 <= cache_age < 300
+                ):
+                    price = cached_quote["ltp"]
+                    open_price = cached_quote["open"]
+                    logger.info(
+                        f"Using future quote cached during instrument-list "
+                        f"reduction (age {cache_age:.1f}s)."
+                    )
+
+            fut_prev_close_rest = None
+
             if not price:
                 logger.info(
                     f"Near-month future price not available from websocket "
@@ -1746,17 +1982,40 @@ class Trader_Singleton:
                 q = batch_quotes.get(near_month_data["tradingsymbol"])
 
                 if q:
-                    price, open_price = q
+                    price = q[0]
+                    open_price = q[1]
+                    price_source = "rest"
+                    if len(q) > 2 and q[2]:
+                        fut_prev_close_rest = q[2]
 
             # ------------------------------------------------
-            # Step 1.6: Only NIFTY/SENSEX are allowed to use
-            # their existing fallback values.
+            # Step 1.6: Fallbacks when no live, cached, or REST
+            # price is available.
             #
-            # CRUDEOILM must NEVER use NIFTY fallback.
+            # 1st: the persisted last-known real price for this exact
+            #      future symbol (saved by an earlier session, valid
+            #      for up to 7 days) - data-driven and much fresher
+            #      than a static constant.
+            # 2nd: static fallback levels - NIFTY/SENSEX only, kept
+            #      as the final safety net.
             # ------------------------------------------------
             if not price:
 
-                if self._underlying == "SENSEX":
+                persisted = self.load_last_known_price(near_month_symbol)
+
+                if persisted:
+                    logger.warning(
+                        f"Near-month future quote unavailable for "
+                        f"{self._underlying}; using persisted last-known "
+                        f"price {persisted['ltp']} for {near_month_symbol} "
+                        f"(age {persisted['age_days']} day(s), may be stale)."
+                    )
+                    price = persisted["ltp"]
+                    open_price = persisted.get("open") or price
+                    if not fut_prev_close_rest:
+                        fut_prev_close_rest = persisted.get("prev_close")
+
+                elif self._underlying == "SENSEX":
                     logger.warning(
                         "Near-month SENSEX future price unavailable. "
                         "Using SENSEX fallback."
@@ -1779,6 +2038,21 @@ class Trader_Singleton:
                     )
                     return
 
+            # ------------------------------------------------
+            # Persist the resolved price for future sessions. Only
+            # provably real sources are saved (websocket tick or REST
+            # quote); the in-memory reduction cache is deliberately
+            # skipped because the M.Stock reduction path can seed it
+            # with a fallback level.
+            # ------------------------------------------------
+            if price and price_source in ("websocket", "rest"):
+                self.save_last_known_price(
+                    near_month_symbol,
+                    price,
+                    open_price,
+                    fut_prev_close_rest
+                )
+
             logger.info(
                 f"Using near-month future price {price} for "
                 f"{self._underlying} option generation"
@@ -1786,18 +2060,66 @@ class Trader_Singleton:
 
             # ------------------------------------------------
             # Step 2: Generate contracts using the ACTUAL
-            # near-month future price
+            # near-month future price.
+            #
+            # In PLAYBACK mode, center the strike window on the
+            # playback instrument's own strike (parsed from its
+            # tradingsymbol) so the replayed option is guaranteed
+            # a row in the dashboard. The base for the playback
+            # side is shifted by (factor - 2) strikes so the
+            # playback strike is the first row of its window;
+            # the opposite side just uses the snapped strike.
             # ------------------------------------------------
+            playback_base_strike = None
+            playback_symbol = None
+            playback_ce_base = None
+            playback_pe_base = None
+            if self._mode == "PLAYBACK" and hasattr(self._broker, "get_playback_instrument_name"):
+                playback_symbol = str(self._broker.get_playback_instrument_name()).upper()
+                # Prefer the authoritative strike from the instrument list;
+                # fall back to parsing it from the tradingsymbol.
+                if hasattr(self._broker, "get_playback_strike"):
+                    playback_base_strike = self._broker.get_playback_strike()
+                if playback_base_strike is None:
+                    playback_match = re.search(r"(\d{4,6})(CE|PE)$", playback_symbol)
+                    if playback_match:
+                        playback_base_strike = int(playback_match.group(1))
+                if playback_base_strike:
+                    snapped_base = int((playback_base_strike // strike_interval) * strike_interval)
+                    if playback_symbol.endswith("CE"):
+                        try:
+                            call_factor = int(fetch_from_json("constants.json", "WOC_CALL_FACTOR") or 0)
+                        except (TypeError, ValueError):
+                            call_factor = 0
+                        playback_ce_base = playback_base_strike - (call_factor - 2) * strike_interval
+                        playback_pe_base = snapped_base
+                    else:
+                        try:
+                            put_factor = int(fetch_from_json("constants.json", "WOC_PUT_FACTOR") or 0)
+                        except (TypeError, ValueError):
+                            put_factor = 0
+                        playback_pe_base = playback_base_strike - (put_factor - 2) * strike_interval
+                        playback_ce_base = snapped_base
+                    logger.info(
+                        f"PLAYBACK: option windows centered on strike "
+                        f"{playback_base_strike} from {playback_symbol} "
+                        f"(CE base {playback_ce_base}, PE base {playback_pe_base})"
+                    )
+
             contracts_ce = self.get_5_woc(
                 price,
                 "CE",
-                underlying=self._underlying
+                strike_interval=strike_interval,
+                underlying=self._underlying,
+                base_strike=playback_ce_base
             )["symbols"]
 
             contracts_pe = self.get_5_woc(
                 price,
                 "PE",
-                underlying=self._underlying
+                strike_interval=strike_interval,
+                underlying=self._underlying,
+                base_strike=playback_pe_base
             )["symbols"]
 
             all_contracts = {}
@@ -1841,6 +2163,14 @@ class Trader_Singleton:
 
                 data = self._broker.get_instrument_details(value)
 
+                if not data:
+                    logger.error(
+                        f"Weekly CE option {key} {value} not found in the "
+                        f"reduced instrument list (strike outside the "
+                        f"generated window); skipping it."
+                    )
+                    continue
+
                 token = str(data["instrument_token"])
 
                 tokens_to_subscribe.append(token)
@@ -1852,11 +2182,53 @@ class Trader_Singleton:
 
                 data = self._broker.get_instrument_details(value)
 
+                if not data:
+                    logger.error(
+                        f"Weekly PE option {key} {value} not found in the "
+                        f"reduced instrument list (strike outside the "
+                        f"generated window); skipping it."
+                    )
+                    continue
+
                 token = str(data["instrument_token"])
 
                 tokens_to_subscribe.append(token)
 
                 all_contracts[token] = ("PE", key, data)
+
+
+            # ------------------------------------------------
+            # PLAYBACK safety net: guarantee the playback
+            # instrument has a row in the dashboard even when
+            # its strike/expiry naming did not match the
+            # generated window symbols.
+            # ------------------------------------------------
+            if (
+                playback_symbol
+                and playback_symbol.endswith(("CE", "PE"))
+                and not any(
+                    str(contract_data["tradingsymbol"]).upper() == playback_symbol
+                    for _cp, _level, contract_data in all_contracts.values()
+                )
+            ):
+                logger.info(
+                    f"PLAYBACK: injecting {playback_symbol} into the options table"
+                )
+                playback_data = self._broker.get_instrument_details(playback_symbol)
+                if playback_data:
+                    playback_token = str(playback_data["instrument_token"])
+                    if playback_token not in all_contracts:
+                        tokens_to_subscribe.append(playback_token)
+                        all_contracts[playback_token] = (
+                            "CE" if playback_symbol.endswith("CE") else "PE",
+                            "PLAYBACK",
+                            playback_data
+                        )
+                else:
+                    logger.error(
+                        f"Playback instrument {playback_symbol} not found in "
+                        f"the reduced instrument list; skipping injection."
+                    )
 
 
             logger.info(f"Subscribing to {len(tokens_to_subscribe)} instruments")
@@ -1870,9 +2242,18 @@ class Trader_Singleton:
 
             # ------------------------------------
             # Step 3: Wait once for websocket
+            # (up to 2s during market hours, with
+            # early exit once every token has a
+            # tick; no wait when the market is
+            # closed since no tick can arrive —
+            # REST seeds the prices and websocket
+            # overwrites them as ticks come in)
             # ------------------------------------
 
-            prices = self.wait_for_prices(tokens_to_subscribe)
+            prices = self.wait_for_prices(
+                tokens_to_subscribe,
+                timeout=2.0 if is_market_open() else 0.0
+            )
 
             # ------------------------------------
             # Step 3.5: Batch REST for missing prices
@@ -1898,6 +2279,26 @@ class Trader_Singleton:
                 logger.info(f"{len(missing_symbols)} prices missing from websocket. Fetching batch REST.")
 
                 batch_quotes = self._broker.get_quotes_batch(missing_symbols)
+
+                # One retry pass for symbols that came back empty: the
+                # M.Stock REST gateway is flaky right after startup and a
+                # single failure must not leave weekly options stranded on
+                # the fallback price of 100 (lots would then size to 0).
+                still_missing = [
+                    symbol for symbol in missing_symbols
+                    if not batch_quotes.get(symbol)
+                ]
+
+                if still_missing:
+                    logger.info(
+                        f"{len(still_missing)} quotes still missing after first batch. "
+                        f"Retrying once after a short pause."
+                    )
+                    time.sleep(2)
+
+                    batch_quotes.update(
+                        self._broker.get_quotes_batch(still_missing)
+                    )
 
             else:
 
@@ -1941,12 +2342,30 @@ class Trader_Singleton:
 
             self.open_near_month_future = open_price
 
-            chgO = (price - open_price) * 100 / open_price
+            # ------------------------------------------------
+            # Step 4.5: Resolve previous day close for chgO.
+            # chgO must be vs PREVIOUS DAY CLOSE (not today's
+            # open) so that gap up/down is reflected correctly.
+            # Priority: websocket tick close -> REST close ->
+            # reduction quote cache -> today's open -> LTP.
+            # ------------------------------------------------
+            prev_close = (
+                self._prev_close_prices.get(near_month_token)
+                or fut_prev_close_rest
+                or (self._near_month_future_quote_cache or {}).get("prev_close")
+                or open_price
+                or price
+            )
 
+            self.prev_close_near_month_future = prev_close
+
+            chgO = (price - prev_close) * 100 / prev_close if prev_close else 0.0
+
+            pts_chg = round(price - prev_close, 2) if prev_close else 0.0
 
             self.frontend_data_socket.emit(
                 "near-month-ltp-updated",
-                {"ltp": price, "chgO": chgO}
+                {"ltp": price, "chgO": round(chgO, 2), "ptsChg": pts_chg}
             )
 
             self._near_month_data[near_month_token] = price
@@ -1957,7 +2376,6 @@ class Trader_Singleton:
             # ------------------------------------
 
             
-
             for token, (cp, level, data) in all_contracts.items():
 
                 price = prices.get(token)
@@ -1969,13 +2387,59 @@ class Trader_Singleton:
                 q = batch_quotes.get(data["tradingsymbol"])
 
                 if q:
+
                     price = q[0]
+
+                # Persist real prices (websocket tick or REST quote) so a
+                # later session can fall back to the last real premium
+                # instead of the flat 100. Fallback prices are never saved.
+                if price:
+
+                    self.save_last_known_price(
+                        data["tradingsymbol"],
+                        price,
+                        open_price=(q[1] if q else None),
+                        prev_close=(
+                            self._prev_close_prices.get(token)
+                            or (q[2] if (q and len(q) > 2) else None)
+                        )
+                    )
+
+                persisted = None
 
                 if not price:
 
-                    logger.info(f"REST quote unavailable for {data['tradingsymbol']}; using fallback price 100")
+                    # Yesterday's (or earlier) persisted real premium is far
+                    # more accurate than the flat fallback of 100.
+                    persisted = self.load_last_known_price(data["tradingsymbol"])
 
-                    price = 100
+                    if persisted:
+
+                        logger.info(
+                            f"Websocket and REST quotes unavailable for "
+                            f"{data['tradingsymbol']}; using persisted last-known "
+                            f"price {persisted['ltp']} (age {persisted['age_days']} day(s))."
+                        )
+
+                        price = persisted["ltp"]
+
+                    else:
+
+                        logger.info(f"REST quote unavailable for {data['tradingsymbol']}; using fallback price 100")
+
+                        price = 100
+
+
+                prev_close = self._prev_close_prices.get(token)
+
+                if not prev_close and q and len(q) > 2 and q[2]:
+                    prev_close = q[2]
+
+                if not prev_close and persisted:
+                    prev_close = persisted.get("prev_close")
+
+                if not prev_close:
+                    prev_close = price
 
 
                 self.weekly_options_initialize(
@@ -1984,7 +2448,7 @@ class Trader_Singleton:
                     cp,
                     price,
                     level=level,
-                    open=price
+                    prev_close=prev_close
                 )
 
                 self._order_strategy_mapping[token] = "ULTRA_SCALPING"
@@ -2290,7 +2754,7 @@ class Trader_Singleton:
             )
 
 
-    def set_latest_price(self, instrument_token, tradingsymbol, price):
+    def set_latest_price(self, instrument_token, tradingsymbol, price, close=None):
         try:
             token = str(instrument_token)
 
@@ -2304,6 +2768,16 @@ class Trader_Singleton:
 
             # Store latest price for strategy use
             self._latest_prices[token] = price
+
+            # Previous day close is constant for the whole session;
+            # store the first valid value seen for the token.
+            if close is not None:
+                try:
+                    close_val = float(close)
+                except (TypeError, ValueError):
+                    close_val = 0.0
+                if close_val > 0 and token not in self._prev_close_prices:
+                    self._prev_close_prices[token] = close_val
 
             if token in self._position_data:
                 self.position_data_update(
@@ -2341,12 +2815,36 @@ class Trader_Singleton:
                     price
                 )
 
+                prev_close = self._prev_close_prices.get(token)
+
+                if prev_close:
+                    self._five_weekly_option_contracts[token]["prev_close"] = prev_close
+
+                # Keep the persisted last-known premium fresh during the
+                # session (throttled to one write per token per minute) so
+                # the next session can fall back to the most recent real
+                # price instead of the flat 100. Some tick paths deliver no
+                # tradingsymbol, so resolve it from the contract table.
+                now_ts = time.time()
+                if now_ts - self._price_persist_ts.get(token, 0) >= 60:
+                    self._price_persist_ts[token] = now_ts
+                    symbol = tradingsymbol or self._five_weekly_option_contracts[token].get("name")
+                    if symbol:
+                        self.save_last_known_price(
+                            symbol,
+                            price,
+                            prev_close=self._prev_close_prices.get(token)
+                        )
+
                 payload = {
                     'token': token,
                     'name': tradingsymbol,
                     'ltp': price,
                     'lots': self._five_weekly_option_contracts[token]["lots"]
                 }
+
+                if prev_close:
+                    payload['prev_close'] = prev_close
 
                 # logger.info(
                 #     f"MSTOCK EMIT price-updated-order | "
@@ -2380,16 +2878,23 @@ class Trader_Singleton:
             if token in self._near_month_data:
                 self._near_month_data[token] = price
 
-                chgO = round(
-                    (price - self.open_near_month_future)
-                    * 100
-                    / self.open_near_month_future,
-                    2
+                prev_close = (
+                    self._prev_close_prices.get(token)
+                    or self.prev_close_near_month_future
+                    or self.open_near_month_future
                 )
+
+                chgO = round(
+                    (price - prev_close)
+                    * 100
+                    / prev_close,
+                    2
+                ) if prev_close else 0.0
 
                 payload = {
                     "ltp": price,
-                    "chgO": chgO
+                    "chgO": chgO,
+                    "ptsChg": round(price - prev_close, 2) if prev_close else 0.0
                 }
 
                 self._near_month_future_ltp = price
@@ -2493,7 +2998,7 @@ class Trader_Singleton:
             self.frontend_data_socket.run(
                 app,
                 host='0.0.0.0',
-                port=5001,
+                port=int(os.getenv("SOCKET_IO_PORT", "5001")),
                 allow_unsafe_werkzeug=True
             )
             
@@ -2541,7 +3046,13 @@ class Trader_Singleton:
 
     def on_start(self):
         logger.info("Trader on_start initialization...")
-        self.refresh_open_pos_buy_price()
+        if self._mode == "PAPER":
+            # PAPER mode: the position grid comes from the paper trade
+            # log, NOT from live broker REST calls. refresh_open_pos_
+            # buy_price() would overwrite/clear the paper positions.
+            self.refresh_paper_positions()
+        else:
+            self.refresh_open_pos_buy_price()
 
     
 
@@ -2552,6 +3063,75 @@ class Trader_Singleton:
    #
    #                '1M': {'PVT': 0.61, 'PVTPoiseFlag': 1, 'PVTTrendFlag': 1, 'PVTCrossOverIndex': 5, 'PVTCrossUnderIndex': 7, 'Trend_1226': 1, 'X_1226': 1, 'Y_1226': 6, 'MACD_1226': 87.8, 'Signal_1226': 87.36, 'Hist_1226': 0.44, 'Trend_2452': 1, 'X_2452': 44, 'Y_2452': 74, 'MACD_2452': 144.72, 'Signal_2452': 138.74, 'Hist_2452': 5.98, 'ZCross': 0, 'K': 36.27, 'KTrendFlag': 1, 'StochPoiseFlag': 1, 'KCrossoverIndex': 1, 'KCrossUnderIndex': 13, 'EMA9': 103828, 'EMA21': 103752, 'EMA50': 103598, 'EMA100': 103391, 'EMA200': 103061, 'VWAP': 102242.58, 'VOC': 21.48, 'VOCTrendFlag': 1, 'VOCCrossOverIndex': 1, 'VOCCrossUnderIndex': 3}, '5M': {'PVT': 0.24, 'PVTPoiseFlag': 1, 'PVTTrendFlag': 1, 'PVTCrossOverIndex': 34, 'PVTCrossUnderIndex': 40, 'Trend_1226': 1, 'X_1226': 4, 'Y_1226': 12, 'MACD_1226': 274.3, 'Signal_1226': 253.67, 'Hist_1226': 20.63, 'Trend_2452': 1, 'X_2452': 33, 'Y_2452': 36, 'MACD_2452': 405.67, 'Signal_2452': 374.73, 'Hist_2452': 30.95, 'ZCross': 0, 'K': 69.72, 'KTrendFlag': 1, 'StochPoiseFlag': 1, 'KCrossoverIndex': 7, 'KCrossUnderIndex': 16, 'EMA9': 103643, 'EMA21': 103392, 'EMA50': 102953, 'EMA100': 102571, 'EMA200': 102302, 'VWAP': 102240.71, 'VOC': -7.05, 'VOCTrendFlag': 1, 'VOCCrossOverIndex': 45, 'VOCCrossUnderIndex': 10}, '30M': {'PVT': 1, 'PVTPoiseFlag': 1, 'PVTTrendFlag': 1, 'PVTCrossOverIndex': 9, 'PVTCrossUnderIndex': 13, 'Trend_1226': 1, 'X_1226': 20, 'Y_1226': 30, 'MACD_1226': 382.46, 'Signal_1226': 191.07, 'Hist_1226': 191.38, 'Trend_2452': 1, 'X_2452': 10, 'Y_2452': 12, 'MACD_2452': 213.28, 'Signal_2452': 72.33, 'Hist_2452': 140.94, 'ZCross': 0, 'K': 97.07, 'KTrendFlag': 1, 'StochPoiseFlag': 1, 'KCrossoverIndex': 7, 'KCrossUnderIndex': 11, 'EMA9': 102959, 'EMA21': 102497, 'EMA50': 102232, 'EMA100': 102199, 'EMA200': 102691, 'VWAP': 102239.26, 'VOC': 16.28, 'VOCTrendFlag': -1, 'VOCCrossOverIndex': 8, 'VOCCrossUnderIndex': 10}, '2H': {'PVT': 0.25, 'PVTPoiseFlag': 1, 'PVTTrendFlag': 1, 'PVTCrossOverIndex': 2, 'PVTCrossUnderIndex': 6, 'Trend_1226': 1, 'X_1226': 2, 'Y_1226': 6, 'MACD_1226': 39.07, 'Signal_1226': -87.12, 'Hist_1226': 126.19, 'Trend_2452': 1, 'X_2452': 24, 'Y_2452': 26, 'MACD_2452': -554.26, 'Signal_2452': -697.93, 'Hist_2452': 143.68, 'ZCross': 0, 'K': 51.58, 'KTrendFlag': 1, 'StochPoiseFlag': 1, 'KCrossoverIndex': 2, 'KCrossUnderIndex': 16, 'EMA9': 102320, 'EMA21': 102195, 'EMA50': 102697, 'EMA100': 104320, 'EMA200': 106715, 'VWAP': 102236.68, 'VOC': -6.56, 'VOCTrendFlag': 1, 'VOCCrossOverIndex': 25, 'VOCCrossUnderIndex': 20}, 'D': {'PVT': -0.57, 'PVTPoiseFlag': 1, 'PVTTrendFlag': -1, 'PVTCrossOverIndex': 40, 'PVTCrossUnderIndex': 31, 'Trend_1226': -1, 'X_1226': 15, 'Y_1226': 7, 'MACD_1226': -2783.24, 'Signal_1226': -2130.73, 'Hist_1226': -652.51, 'Trend_2452': -1, 'X_2452': 39, 'Y_2452': 29, 'MACD_2452': -2627.45, 'Signal_2452': -1943.24, 'Hist_2452': -684.21, 'ZCross': 0, 'K': 4.31, 'KTrendFlag': -1, 'StochPoiseFlag': -1, 'KCrossoverIndex': 20, 'KCrossUnderIndex': 10, 'EMA9': 104564, 'EMA21': 107442, 'EMA50': 110461, 'EMA100': 111285, 'EMA200': 108040, 'VWAP': 102771.11, 'VOC': -3.22, 'VOCTrendFlag': -1, 'VOCCrossOverIndex': 6, 'VOCCrossUnderIndex': 1}, 'W': {'PVT': -0.5, 'PVTPoiseFlag': -1, 'PVTTrendFlag': -1, 'PVTCrossOverIndex': 28, 'PVTCrossUnderIndex': 4, 'Trend_1226': -1, 'X_1226': 26, 'Y_1226': 11, 'MACD_1226': 2937.8, 'Signal_1226': 4649.85, 'Hist_1226': -1712.05, 'Trend_2452': -1, 'X_2452': 25, 'Y_2452': 9, 'MACD_2452': 9634.24, 'Signal_2452': 10667.07, 'Hist_2452': -1032.83, 'ZCross': 0, 'K': 13.96, 'KTrendFlag': -1, 'StochPoiseFlag': -1, 'KCrossoverIndex': 4, 'KCrossUnderIndex': 3, 'EMA9': 111835, 'EMA21': 110478, 'EMA50': 100727, 'EMA100': 84918, 'EMA200': 65364, 'VWAP': 105734.63, 'VOC': 2.56, 'VOCTrendFlag': 1, 'VOCCrossOverIndex': 1, 'VOCCrossUnderIndex': 2}}}
 
+    def _is_tv_validation_required(self):
+        val = fetch_from_json("settings.json", "TV_DATA_Validation_REQUIRED")
+        if isinstance(val, str):
+            return val.strip().upper() in ("TRUE", "1", "YES", "Y", "ON")
+        return bool(val)
+
+    def _update_tv_buy_validation(self, data):
+        """
+        Evaluate TradingView entry validation and update CE/PE buy permissions.
+
+        CE buy allowed when 30M PVT > 0 OR (5M PVT > 0 AND 1m close > 1M VWAP).
+        PE buy allowed when 30M PVT < 0 OR (5M PVT < 0 AND 1m close < 1M VWAP).
+        1m close comes from the webhook's 1M.CLOSE when present, else the
+        near-month future LTP. Fail-safe: any missing/invalid input blocks
+        the affected permission(s).
+        """
+        try:
+            indicators = data.get("INDICATORS", {}) or {}
+            pvt_30m = float(indicators["30M"]["PVT"])
+            pvt_5m = float(indicators["5M"]["PVT"])
+            vwap_1m = float(indicators["1M"]["VWAP"])
+
+            close_1m = indicators["1M"].get("CLOSE")
+            if close_1m is None:
+                close_1m = self._near_month_future_ltp or self.ltp_near_month_future
+            close_1m = float(close_1m)
+            close_valid = close_1m > 0
+
+            ce_via_30m = pvt_30m > 0
+            ce_via_5m = close_valid and pvt_5m > 0 and close_1m > vwap_1m
+            pe_via_30m = pvt_30m < 0
+            pe_via_5m = close_valid and pvt_5m < 0 and close_1m < vwap_1m
+
+            new_ce_allowed = ce_via_30m or ce_via_5m
+            new_pe_allowed = pe_via_30m or pe_via_5m
+
+            if ce_via_30m:
+                ce_reason = f"30M PVT {pvt_30m:g} > 0"
+            elif ce_via_5m:
+                ce_reason = f"5M PVT {pvt_5m:g} > 0 and 1m close {close_1m:g} > 1M VWAP {vwap_1m:g}"
+            elif close_valid:
+                ce_reason = f"30M PVT {pvt_30m:g} not > 0 and (5M PVT {pvt_5m:g} not > 0 or 1m close {close_1m:g} not > 1M VWAP {vwap_1m:g})"
+            else:
+                ce_reason = f"30M PVT {pvt_30m:g} not > 0 and 1m close unavailable (underlying LTP {close_1m:g})"
+
+            if pe_via_30m:
+                pe_reason = f"30M PVT {pvt_30m:g} < 0"
+            elif pe_via_5m:
+                pe_reason = f"5M PVT {pvt_5m:g} < 0 and 1m close {close_1m:g} < 1M VWAP {vwap_1m:g}"
+            elif close_valid:
+                pe_reason = f"30M PVT {pvt_30m:g} not < 0 and (5M PVT {pvt_5m:g} not < 0 or 1m close {close_1m:g} not < 1M VWAP {vwap_1m:g})"
+            else:
+                pe_reason = f"30M PVT {pvt_30m:g} not < 0 and 1m close unavailable (underlying LTP {close_1m:g})"
+
+            if new_ce_allowed != self._tv_ce_buy_allowed or new_pe_allowed != self._tv_pe_buy_allowed:
+                logger.info(f"TradingView buy validation changed - CE allowed: {new_ce_allowed} ({ce_reason}) | PE allowed: {new_pe_allowed} ({pe_reason})")
+
+            self._tv_ce_buy_allowed = new_ce_allowed
+            self._tv_pe_buy_allowed = new_pe_allowed
+            self._tv_ce_reason = ce_reason
+            self._tv_pe_reason = pe_reason
+
+        except Exception as e:
+            self._tv_ce_buy_allowed = False
+            self._tv_pe_buy_allowed = False
+            self._tv_ce_reason = f"Invalid TradingView data: {e}"
+            self._tv_pe_reason = f"Invalid TradingView data: {e}"
+            logger.warning(f"TradingView buy validation failed, blocking CE and PE buys: {e}")
+
     def process_TradingView_Data(self , data):
         try:
             recommendation = ""
@@ -2560,6 +3140,10 @@ class Trader_Singleton:
             self._tradingView_Data = data
             logger.debug(f"TradingView Data is assigned to internal variable {self._tradingView_Data}")
             #logger.debug(f"1m EMA 50:{data['EMA']['1m']['EMA50']}") 
+
+            # TradingView entry validation (TV_DATA_Validation_REQUIRED)
+            self._tv_validation_required = self._is_tv_validation_required()
+            self._update_tv_buy_validation(data)
 
             indicators = data["INDICATORS"]
             trade_setups = []
@@ -2597,7 +3181,12 @@ class Trader_Singleton:
             # ✅ Prepare data payload for frontend
             json_data = {
                 "TradingView_Data": data,
-                "TradeSetups": trade_setups
+                "TradeSetups": trade_setups,
+                "TVValidationRequired": self._tv_validation_required,
+                "CE_BUY_ALLOWED": self._tv_ce_buy_allowed,
+                "PE_BUY_ALLOWED": self._tv_pe_buy_allowed,
+                "CE_REASON": self._tv_ce_reason,
+                "PE_REASON": self._tv_pe_reason
             }
 
             # ✅ Emit event to frontend (Socket.IO)
@@ -2610,45 +3199,260 @@ class Trader_Singleton:
 
         except Exception as e:
             logger.error(f"TradingView Data processing failed: {e}")    
+            # Fail-safe: block both sides and push the blocked state to the frontend
+            self._tv_ce_buy_allowed = False
+            self._tv_pe_buy_allowed = False
+            self._tv_ce_reason = f"TradingView data processing failed: {e}"
+            self._tv_pe_reason = f"TradingView data processing failed: {e}"
+            try:
+                self.frontend_data_socket.emit("update_trading_view_data", {
+                    "TradingView_Data": self._tradingView_Data,
+                    "TradeSetups": [],
+                    "TVValidationRequired": self._is_tv_validation_required(),
+                    "CE_BUY_ALLOWED": False,
+                    "PE_BUY_ALLOWED": False,
+                    "CE_REASON": self._tv_ce_reason,
+                    "PE_REASON": self._tv_pe_reason
+                })
+            except Exception as emit_err:
+                logger.error(f"Failed to emit blocked TradingView validation state: {emit_err}")
             return []
         
 
-    def get_open_position_buy_time(self, token):
+    def get_open_position_buy_time(self, token, tradingsymbol=None):
+        """
+        Find the latest BUY time for a position from the paper trade log.
 
+        Matches by tradingsymbol first (robust when the position token
+        was re-bound to the active broker's token space), falling back
+        to the token recorded in the trade file.
+        """
         trades = self.fetch_paper_trades()
 
         token = str(token)
+        symbol = str(tradingsymbol).strip().upper() if tradingsymbol else None
 
-        # ---------------------------------------------------------
-        # Find the latest BUY for this token
-        # ---------------------------------------------------------
+        def _latest_buy_time(match_symbol=None, match_token=None):
+            for trade in reversed(trades):
+                if match_symbol is not None:
+                    if str(trade.get("Instrument", "")).strip().upper() != match_symbol:
+                        continue
+                if match_token is not None:
+                    if str(trade.get("Token")) != match_token:
+                        continue
+                if trade.get("Type", "").upper() != "BUY":
+                    continue
+                buy_time = trade.get("Time")
+                if buy_time:
+                    return buy_time
+            return None
 
-        for trade in reversed(trades):
+        buy_time = None
+        if symbol:
+            buy_time = _latest_buy_time(match_symbol=symbol)
+        if buy_time is None:
+            buy_time = _latest_buy_time(match_token=token)
 
-            if str(trade.get("Token")) != token:
-                continue
+        if buy_time:
+            logger.debug(f"Latest BUY time for {symbol or token}: {buy_time}")
+            return buy_time
 
-            if trade.get("Type", "").upper() != "BUY":
-                continue
-
-            buy_time = trade.get("Time")
-
-            if buy_time:
-                logger.debug(
-                    f"Latest BUY time for token {token}: {buy_time}"
-                )
-                return buy_time
-
-        logger.warning(
-            f"No BUY time found for token {token}"
-        )
-
+        logger.warning(f"No BUY time found for {symbol or token}")
         return None
 
 
+    def write_paper_trade(
+        self,
+        transaction_type,
+        tradingsymbol,
+        token,
+        qty,
+        ltp,
+        product="MIS",
+        buy_price=None,
+        lot_size=1,
+        buy_time=None
+    ):
+        """
+        Append one row to the paper trade file.
+
+        Shared by the buy/sell socket handlers and the auto-sell watcher
+        so every writer produces the identical 12-column format that
+        fetch_paper_trades() parses. Repairs a missing header line so
+        legacy header-less files become readable again.
+        """
+
+        filename = self._PAPER_TRADE_FILENAME
+
+        # ---------------------------------------------------------
+        # Fixed column widths
+        # ---------------------------------------------------------
+
+        WIDTH_TIME       = 20
+        WIDTH_TYPE       = 8
+        WIDTH_INSTRUMENT = 24
+        WIDTH_TOKEN      = 12
+        WIDTH_PRODUCT    = 10
+        WIDTH_QTY        = 10
+        WIDTH_PRICE      = 12
+        WIDTH_STATUS     = 12
+        WIDTH_DURATION   = 12
+        WIDTH_PNL_RATE   = 12
+        WIDTH_PNL_PCT    = 12
+        WIDTH_PNL        = 16
+
+        headers = [
+            "Time".ljust(WIDTH_TIME),
+            "Type".ljust(WIDTH_TYPE),
+            "Instrument".ljust(WIDTH_INSTRUMENT),
+            "Token".ljust(WIDTH_TOKEN),
+            "Product".ljust(WIDTH_PRODUCT),
+            "Qty.".ljust(WIDTH_QTY),
+            "Avg. price".ljust(WIDTH_PRICE),
+            "Status".ljust(WIDTH_STATUS),
+            "Duration".rjust(WIDTH_DURATION),
+            "PnL Rate".rjust(WIDTH_PNL_RATE),
+            "PnL %".rjust(WIDTH_PNL_PCT),
+            "PnL".rjust(WIDTH_PNL)
+        ]
+
+        header_line = "\t".join(headers)
+
+        # ---------------------------------------------------------
+        # Default PnL values (BUY rows keep these blank)
+        # ---------------------------------------------------------
+
+        pnl_rate = ""
+        pnl = ""
+        pnl_pct = ""
+        duration = ""
+
+        # ---------------------------------------------------------
+        # Calculate PnL ONLY for SELL. Duration is optional: a missing
+        # or unparsable buy_time must not fail the SELL record.
+        # ---------------------------------------------------------
+
+        if transaction_type.upper() == "SELL" and buy_price is not None:
+
+            sell_time = datetime.datetime.now()
+
+            parsed_buy_time = None
+            if isinstance(buy_time, datetime.datetime):
+                parsed_buy_time = buy_time
+            elif isinstance(buy_time, str) and buy_time.strip():
+                try:
+                    parsed_buy_time = datetime.datetime.strptime(
+                        buy_time.strip(),
+                        "%m/%d/%Y %H:%M:%S"
+                    )
+                except ValueError:
+                    logger.warning(
+                        f"Unparsable buy_time '{buy_time}' for "
+                        f"{tradingsymbol}; duration will be blank"
+                    )
+
+            if parsed_buy_time is not None:
+                elapsed = sell_time - parsed_buy_time
+                total_seconds = int(elapsed.total_seconds())
+
+                hours = total_seconds // 3600
+                minutes = (total_seconds % 3600) // 60
+                seconds = total_seconds % 60
+
+                if hours > 0:
+                    duration = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+                else:
+                    duration = f"{minutes:02d}:{seconds:02d}"
+
+            buy_price = float(buy_price)
+            sell_price = float(ltp)
+            quantity = int(qty) * int(lot_size)
+
+            # PnL Rate = Sell Price - Buy Price
+            pnl_rate_value = sell_price - buy_price
+
+            # PnL = (Sell Price - Buy Price) * Qty (units)
+            pnl_value = pnl_rate_value * quantity
+
+            # PnL % = (Sell Price - Buy Price) * 100 / Buy Price
+            pnl_pct_value = (
+                (pnl_rate_value * 100) / buy_price
+                if buy_price != 0
+                else 0
+            )
+
+            pnl_rate = f"{pnl_rate_value:.2f}"
+            pnl = f"{pnl_value:,.0f}"
+            pnl_pct = f"{pnl_pct_value:.2f}"
+
+        # ---------------------------------------------------------
+        # Timestamp (platform independent: no %-m / %#m directives)
+        # ---------------------------------------------------------
+
+        now = datetime.datetime.now()
+        timestamp = f"{now.month}/{now.day}/{now.year} {now:%H:%M:%S}"
+
+        # ---------------------------------------------------------
+        # Prepare row
+        # ---------------------------------------------------------
+
+        values = [
+            timestamp.ljust(WIDTH_TIME),
+            transaction_type.ljust(WIDTH_TYPE),
+            tradingsymbol.ljust(WIDTH_INSTRUMENT),
+            str(token).ljust(WIDTH_TOKEN),
+            product.ljust(WIDTH_PRODUCT),
+            f"{qty}/{qty}".ljust(WIDTH_QTY),
+            f"{float(ltp):.2f}".rjust(WIDTH_PRICE),
+            "COMPLETE".ljust(WIDTH_STATUS),
+            duration.rjust(WIDTH_DURATION),
+            pnl_rate.rjust(WIDTH_PNL_RATE),
+            pnl_pct.rjust(WIDTH_PNL_PCT),
+            pnl.rjust(WIDTH_PNL)
+        ]
+
+        # ---------------------------------------------------------
+        # Write transaction. Header check + repair + append run under
+        # a lock so the watcher thread and the socket handlers can
+        # never interleave a repair with a row append.
+        # ---------------------------------------------------------
+
+        with self._paper_trade_lock:
+
+            needs_header = True
+            if os.path.exists(filename):
+                try:
+                    with open(filename, "r", encoding="utf-8") as f:
+                        first_line = f.readline()
+                    if first_line.split("\t")[0].strip() == "Time":
+                        needs_header = False
+                except Exception as e:
+                    logger.warning(f"Could not inspect {filename}: {e}")
+
+            if needs_header:
+                existing = ""
+                if os.path.exists(filename):
+                    try:
+                        with open(filename, "r", encoding="utf-8") as f:
+                            existing = f.read()
+                    except Exception as e:
+                        logger.warning(
+                            f"Could not read {filename} for header repair: {e}"
+                        )
+
+                with open(filename, "w", encoding="utf-8") as f:
+                    f.write(header_line + "\n")
+                    if existing:
+                        f.write(existing)
+
+                logger.info("PaperTrading.txt header written/repaired")
+
+            with open(filename, "a", encoding="utf-8") as f:
+                f.write("\t".join(values) + "\n")
+
     def fetch_paper_trades(self):
 
-        filename = "PaperTrading.txt"
+        filename = self._PAPER_TRADE_FILENAME
 
         if not os.path.exists(filename):
             return []
@@ -2664,13 +3468,26 @@ class Trader_Singleton:
                 return []
 
             # ---------------------------------------------------------
-            # Read header
+            # Read header.
+            #
+            # Legacy files were written without a header line (the
+            # first line is a DATA row). In that case fall back to the
+            # standard header and parse every line as data.
             # ---------------------------------------------------------
 
-            headers = [
-                h.strip()
-                for h in lines[0].rstrip("\n").split("\t")
-            ]
+            first_fields = lines[0].rstrip("\n").split("\t")
+            header_is_present = first_fields[0].strip() == "Time"
+
+            if header_is_present:
+                headers = [h.strip() for h in first_fields]
+                data_lines = lines[1:]
+            else:
+                headers = list(self._PAPER_TRADE_HEADERS)
+                data_lines = lines
+                logger.warning(
+                    "PaperTrading.txt has no header line; "
+                    "using default header for all rows"
+                )
 
             logger.debug(f"PaperTrading headers: {headers}")
 
@@ -2678,7 +3495,10 @@ class Trader_Singleton:
             # Read transactions
             # ---------------------------------------------------------
 
-            for line_number, line in enumerate(lines[1:], start=2):
+            for line_number, line in enumerate(
+                data_lines,
+                start=2 if header_is_present else 1
+            ):
 
                 line = line.rstrip("\n")
 
@@ -2686,6 +3506,14 @@ class Trader_Singleton:
                     continue
 
                 values = line.split("\t")
+
+                # -----------------------------------------------------
+                # Legacy 8-column rows (old inline writers): pad the
+                # Duration/PnL columns so they still parse.
+                # -----------------------------------------------------
+
+                if len(values) == 8 and len(headers) == len(self._PAPER_TRADE_HEADERS):
+                    values = values + ["", "", "", ""]
 
                 # -----------------------------------------------------
                 # Make sure the row has the same number of columns
@@ -2773,7 +3601,70 @@ class Trader_Singleton:
 
             return []
 
+    def fetch_paper_orders(self):
+        """
+        Paper trades as normalized broker-order dicts (quantity in lots
+        plus an explicit lot_size) so the Orders grid and Excel export
+        render paper fills through the same pipeline as broker fills.
+        """
+        orders = []
+
+        for trade in self.fetch_paper_trades():
+
+            try:
+                symbol = str(trade["Instrument"]).strip()
+                qty = int(str(trade["Qty."]).split("/")[0])
+                price = float(trade["Avg. price"])
+                transaction_type = str(trade["Type"]).strip().upper()
+                timestamp = datetime.datetime.strptime(
+                    str(trade["Time"]).strip(),
+                    "%m/%d/%Y %H:%M:%S"
+                )
+            except (KeyError, ValueError, TypeError) as e:
+                logger.warning(
+                    f"Skipping invalid paper trade for orders grid: {e}"
+                )
+                continue
+
+            if not symbol:
+                continue
+
+            lot_size = 1
+            try:
+                instrument_data = self._broker.get_instrument_details(
+                    symbol
+                )
+                if instrument_data:
+                    lot_size = int(
+                        instrument_data.get("lot_size", 1) or 1
+                    )
+            except Exception as e:
+                logger.warning(
+                    f"Lot size lookup failed for paper order "
+                    f"{symbol}: {e}"
+                )
+
+            orders.append({
+                "timestamp": timestamp,
+                "tradingsymbol": symbol,
+                "transaction_type": transaction_type,
+                "quantity": qty,
+                "average_price": price,
+                "order_status": "COMPLETE",
+                "status": "COMPLETE",
+                "lot_size": lot_size,
+            })
+
+        return orders
+
     def calculate_paper_positions(self):
+        """
+        Aggregate paper trades into net positions keyed by tradingsymbol.
+
+        Keying by symbol (not token) keeps accounting correct when the
+        same instrument was recorded under different broker/exchange
+        token spaces (e.g. after switching BROKER or UNDERLYING).
+        """
 
         trades = self.fetch_paper_trades()
 
@@ -2782,8 +3673,8 @@ class Trader_Singleton:
         for trade in trades:
 
             try:
-                token = str(trade["Token"])
-                symbol = trade["Instrument"]
+                symbol = str(trade["Instrument"]).strip()
+                token = str(trade["Token"]).strip()
 
                 qty = int(str(trade["Qty."]).split("/")[0])
                 price = float(trade["Avg. price"])
@@ -2795,8 +3686,11 @@ class Trader_Singleton:
                 )
                 continue
 
-            if token not in positions:
-                positions[token] = {
+            if not symbol:
+                continue
+
+            if symbol not in positions:
+                positions[symbol] = {
                     "tradingsymbol": symbol,
                     "instrument_token": token,
                     "buy_quantity": 0,
@@ -2805,7 +3699,7 @@ class Trader_Singleton:
                     "sell_value": 0.0,
                 }
 
-            position = positions[token]
+            position = positions[symbol]
 
             if transaction_type == "BUY":
 
@@ -2819,6 +3713,74 @@ class Trader_Singleton:
 
         return positions
 
+    def _get_paper_initial_cash(self):
+        try:
+            value = fetch_from_json("settings.json", "CASH_BALANCE_PAPER_TRADING")
+            if value is not None:
+                return float(value)
+        except (TypeError, ValueError):
+            pass
+        return float(self._CASH_BALANCE_PAPER_TRADING or 0)
+
+    def _calculate_paper_invested(self):
+        invested = 0.0
+        for pos in self._position_data.values():
+            try:
+                invested += (
+                    float(pos.get("average_price", 0) or 0)
+                    * int(pos.get("net_quantity", 0) or 0)
+                    * int(pos.get("lotsize", 1) or 1)
+                )
+            except (TypeError, ValueError):
+                continue
+        return invested
+
+    def _calculate_paper_realized_pnl(self, trades):
+        realized_pnl = 0.0
+        for trade in trades:
+            if str(trade.get("Type", "")).upper() != "SELL":
+                continue
+            raw_pnl = str(trade.get("PnL", "") or "").replace(",", "").strip()
+            if not raw_pnl:
+                continue
+            try:
+                realized_pnl += float(raw_pnl)
+            except ValueError:
+                logger.warning(
+                    f"Skipping unparsable paper PnL '{trade.get('PnL')}' "
+                    f"for {trade.get('Instrument')}"
+                )
+        return realized_pnl
+
+    def _get_paper_available_cash(self):
+        return (
+            self._get_paper_initial_cash()
+            + float(self._paper_realized_pnl or 0)
+            - self._calculate_paper_invested()
+        )
+
+    def get_paper_fund_summary(self):
+        """
+        Paper-account fund summary mirroring the broker payload shape
+        (cash_balance) so the UI displays paper funds in PAPER mode.
+        """
+        realized_pnl = self._calculate_paper_realized_pnl(
+            self.fetch_paper_trades()
+        )
+        self._paper_realized_pnl = realized_pnl
+
+        initial_cash = self._get_paper_initial_cash()
+        invested = self._calculate_paper_invested()
+        available = initial_cash + realized_pnl - invested
+
+        return {
+            "cash_balance": round(available, 2),
+            "initial_cash": round(initial_cash, 2),
+            "realized_pnl": round(realized_pnl, 2),
+            "invested": round(invested, 2),
+            "mode": "PAPER",
+        }
+
     def refresh_paper_positions(self):
 
         logger.info("========================================")
@@ -2830,13 +3792,15 @@ class Trader_Singleton:
         logger.info(f"Paper trades read: {len(trades)}")
         logger.debug(f"Paper trades: {trades}")
 
+        self._paper_realized_pnl = self._calculate_paper_realized_pnl(trades)
+
         paper_positions = self.calculate_paper_positions()
 
         logger.info(f"Calculated paper positions: {paper_positions}")
 
         new_position_data = {}
 
-        for token, position in paper_positions.items():
+        for symbol, position in paper_positions.items():
 
             net_quantity = (
                 position["buy_quantity"]
@@ -2844,7 +3808,7 @@ class Trader_Singleton:
             )
 
             logger.debug(
-                f"Token={token} "
+                f"Symbol={symbol} "
                 f"BUY={position['buy_quantity']} "
                 f"SELL={position['sell_quantity']} "
                 f"NET={net_quantity}"
@@ -2858,31 +3822,60 @@ class Trader_Singleton:
                 / position["buy_quantity"]
             )
 
+            # ---------------------------------------------------------
+            # Resolve the instrument through the ACTIVE broker master:
+            #   1. correct lot size for PnL math
+            #   2. re-bind the position to the active broker's token
+            #      space so websocket ticks keep updating positions
+            #      recorded under a different broker/exchange earlier.
+            # Fall back to the token recorded in the trade file when
+            # the instrument is not in today's master.
+            # ---------------------------------------------------------
+
+            lotsize = 1
+            exchange = self._exchange
+            active_token = str(position["instrument_token"])
+
+            instrument_data = None
             try:
                 instrument_data = self._broker.get_instrument_details(
-                    position["tradingsymbol"]
+                    symbol
                 )
-
-                lotsize = int(
-                    instrument_data.get("lot_size", 1)
-                )
-
-                exchange = instrument_data.get(
-                    "exchange",
-                    self._exchange
-                )
-
             except Exception as e:
-
                 logger.warning(
                     f"Could not get instrument details for "
-                    f"{position['tradingsymbol']}: {e}"
+                    f"{symbol}: {e}"
                 )
 
-                lotsize = 1
-                exchange = self._exchange
+            if instrument_data:
+                try:
+                    lotsize = int(
+                        instrument_data.get("lot_size", 1) or 1
+                    )
+                    resolved_token = str(
+                        instrument_data.get("instrument_token") or ""
+                    ).strip()
+                    if resolved_token:
+                        active_token = resolved_token
+                    resolved_exchange = str(
+                        instrument_data.get("exchange") or ""
+                    ).strip()
+                    if resolved_exchange:
+                        exchange = resolved_exchange
+                except Exception as e:
+                    logger.warning(
+                        f"Instrument detail parsing failed for "
+                        f"{symbol}: {e}"
+                    )
+            else:
+                logger.warning(
+                    f"Instrument {symbol} not found in the active "
+                    f"broker instrument master. Using lotsize=1 and "
+                    f"the token recorded in the paper trade file; PnL "
+                    f"and lot sizing for this position may be wrong."
+                )
 
-            latest_price = self.get_latest_price(token)
+            latest_price = self.get_latest_price(active_token)
 
             if not latest_price:
                 latest_price = average_buy_price
@@ -2897,14 +3890,17 @@ class Trader_Singleton:
                 latest_price
             )
 
-            total_pl = pts_pl * net_quantity
+            # net_quantity is in LOTS - multiply by lotsize for units,
+            # consistent with position_data_update() and
+            # write_paper_trade().
+            total_pl = pts_pl * net_quantity * lotsize
 
-            new_position_data[token] = {
+            new_position_data[active_token] = {
                 "tradingsymbol": position["tradingsymbol"],
                 "average_price": average_buy_price,
                 "net_quantity": net_quantity,
                 "latest_price": latest_price,
-                "instrument_token": token,
+                "instrument_token": active_token,
                 "exchange": exchange,
                 "lotsize": lotsize,
                 "lots": net_quantity,
@@ -2913,7 +3909,7 @@ class Trader_Singleton:
                 "total_pl": total_pl,
                 "order_strategy":
                     self._order_strategy_mapping.get(
-                        token,
+                        active_token,
                         "ULTRA_SCALPING"
                     )
             }
@@ -2946,37 +3942,74 @@ class Trader_Singleton:
             logger.info(f"MSTOCK SOCKET CONNECTED | sid={request.sid}")
             logger.debug(self._near_month_data)
             payload = {
-                    "broker" : self._broker_string , 
+                    "broker" : self._broker_string ,
                     "exchange" : self._exchange ,
-                    "underlying" : self._near_month_future_symbol, 
+                    "underlying" : self._underlying,
                     "positions_data" : self._position_data,
-                    "order_strategy_mapping" : self._order_strategy_mapping
+                    "order_strategy_mapping" : self._order_strategy_mapping,
+                    "mode" : self._mode
                 }
+            setup_payload = {
+                    "broker" : self._broker_string ,
+                    "exchange" : self._exchange ,
+                    "underlying" : self._underlying,
+                    "positions_data" : self._position_data,
+                    "order_strategy_mapping" : self._order_strategy_mapping,
+                    "mode" : self._mode,
+                    "TVValidationRequired" : self._is_tv_validation_required(),
+                    "CE_BUY_ALLOWED" : self._tv_ce_buy_allowed,
+                    "PE_BUY_ALLOWED" : self._tv_pe_buy_allowed,
+                    "CE_REASON" : self._tv_ce_reason,
+                    "PE_REASON" : self._tv_pe_reason
+                }
+
+            # In playback mode, share the replay time bounds so the
+            # dashboard can constrain its date/time picker.
+            if self._mode == "PLAYBACK" and hasattr(self._broker, "get_playback_status"):
+                try:
+                    playback_status = self._broker.get_playback_status()
+                    setup_payload["playback"] = playback_status
+                except Exception as playback_error:
+                    logger.warning(f"Could not fetch playback status for setup_data: {playback_error}")
+
             self.frontend_data_socket.emit(
                 'setup_data',
-                {
-                    "broker" : self._broker_string , 
-                    "exchange" : self._exchange ,
-                    "underlying" : self._near_month_future_symbol, 
-                    "positions_data" : self._position_data,
-                    "order_strategy_mapping" : self._order_strategy_mapping
-                }
+                setup_payload
             )
 
                         # Send the last known near-month future price to a newly connected frontend
-            if self._near_month_future_ltp and self.open_near_month_future:
-                chgO = round(
-                    (self._near_month_future_ltp - self.open_near_month_future)
-                    * 100
-                    / self.open_near_month_future,
-                    2
+            # _near_month_future_ltp is set per websocket tick; when no tick
+            # has arrived yet (e.g. weekend / ws down) fall back to the
+            # setup-seeded ltp_near_month_future so a value is always sent.
+            ltp = self._near_month_future_ltp or self.ltp_near_month_future
+
+            if ltp and self.open_near_month_future:
+                prev_close = None
+
+                for token in self._near_month_data:
+                    prev_close = self._prev_close_prices.get(token)
+                    if prev_close:
+                        break
+
+                prev_close = (
+                    prev_close
+                    or self.prev_close_near_month_future
+                    or self.open_near_month_future
                 )
+
+                chgO = round(
+                    (ltp - prev_close)
+                    * 100
+                    / prev_close,
+                    2
+                ) if prev_close else 0.0
 
                 self.frontend_data_socket.emit(
                     'near-month-ltp-updated',
                     {
-                        'ltp': self._near_month_future_ltp,
-                        'chgO': chgO
+                        'ltp': ltp,
+                        'chgO': chgO,
+                        'ptsChg': round(ltp - prev_close, 2) if prev_close else 0.0
                     }
                 )
 
@@ -3008,8 +4041,125 @@ class Trader_Singleton:
         @self.frontend_data_socket.on('refresh-options-table')
         def refresh_table():
             logger.info("Refreshing frontend options table")
-            self.refresh_open_pos_buy_price()
+            if self._mode == "PAPER":
+                # PAPER mode: rebuild from the paper trade log. The live
+                # REST refresh would wipe the paper position grid.
+                self.refresh_paper_positions()
+                self.refresh_subscriptions()
+            else:
+                self.refresh_open_pos_buy_price()
             self.setup_woc_subscriptions()
+
+        # =========================================================
+        # PLAYBACK CONTROLS
+        # =========================================================
+        def _emit_playback_status():
+            if hasattr(self._broker, "get_playback_status"):
+                self.frontend_data_socket.emit(
+                    'playback_status',
+                    self._broker.get_playback_status()
+                )
+
+        @self.frontend_data_socket.on('start_playback')
+        def handle_start_playback(payload):
+            """Starts price replay from the user-selected date/time."""
+            logger.info(f"Received playback start request: {payload}")
+            try:
+                if self._mode != "PLAYBACK":
+                    self.frontend_data_socket.emit(
+                        'status_message',
+                        {"success": False, "message": "Playback is only available in PLAYBACK mode"}
+                    )
+                    return
+
+                start_datetime = (payload or {}).get("start_datetime")
+                if not start_datetime:
+                    self.frontend_data_socket.emit(
+                        'status_message',
+                        {"success": False, "message": "Select a playback date and time first"}
+                    )
+                    return
+
+                playback_symbol = str(self._broker.get_playback_instrument_name()).upper()
+
+                # Requirement: if the playback instrument is not present in
+                # the buy dashboard, flash an error in the status box.
+                matching_tokens = [
+                    token
+                    for token, data in self._five_weekly_option_contracts.items()
+                    if str(data.get("name", "")).upper() == playback_symbol
+                ]
+                if not matching_tokens:
+                    self.frontend_data_socket.emit(
+                        'status_message',
+                        {"success": False, "message": f"Playback instrument {playback_symbol} not found in the buy dashboard"}
+                    )
+                    return
+
+                actual_start = self._broker.start_playback(start_datetime)
+
+                self.frontend_data_socket.emit(
+                    'status_message',
+                    {"success": True, "message": f"Playback started from {actual_start:%Y-%m-%d %H:%M:%S}"}
+                )
+                _emit_playback_status()
+            except Exception as playback_error:
+                logger.error(f"Error starting playback: {playback_error}", exc_info=True)
+                self.frontend_data_socket.emit(
+                    'status_message',
+                    {"success": False, "message": f"Playback start failed: {playback_error}"}
+                )
+
+        @self.frontend_data_socket.on('pause_playback')
+        def handle_pause_playback():
+            logger.info("Received playback pause request")
+            self._broker.pause_playback()
+            self.frontend_data_socket.emit(
+                'status_message',
+                {"success": True, "message": "Playback paused"}
+            )
+            _emit_playback_status()
+
+        @self.frontend_data_socket.on('resume_playback')
+        def handle_resume_playback():
+            logger.info("Received playback resume request")
+            self._broker.resume_playback()
+            self.frontend_data_socket.emit(
+                'status_message',
+                {"success": True, "message": "Playback resumed"}
+            )
+            _emit_playback_status()
+
+        @self.frontend_data_socket.on('stop_playback')
+        def handle_stop_playback():
+            logger.info("Received playback stop request")
+            self._broker.stop_playback()
+            self.frontend_data_socket.emit(
+                'status_message',
+                {"success": True, "message": "Playback stopped"}
+            )
+            _emit_playback_status()
+
+        @self.frontend_data_socket.on('set_playback_speed')
+        def handle_set_playback_speed(payload):
+            speed = (payload or {}).get("speed", 1)
+            logger.info(f"Received playback speed request: {speed}")
+            try:
+                self._broker.set_playback_speed(speed)
+                self.frontend_data_socket.emit(
+                    'status_message',
+                    {"success": True, "message": f"Playback speed set to {self._broker.get_playback_status().get('speed')}x"}
+                )
+                _emit_playback_status()
+            except Exception as speed_error:
+                self.frontend_data_socket.emit(
+                    'status_message',
+                    {"success": False, "message": f"Could not set playback speed: {speed_error}"}
+                )
+
+        @self.frontend_data_socket.on('request_playback_status')
+        def handle_request_playback_status():
+            _emit_playback_status()
 
 
         @self.frontend_data_socket.on('request_weekly_options')
@@ -3047,6 +4197,27 @@ class Trader_Singleton:
             """Handles a sell order request from the frontend."""
             logger.debug(f"Available positions: {self._position_data}")
             logger.debug(f"Received sell order from client: {order_details}")
+
+            token = str(order_details.get("token", ""))
+            now = time.time()
+            with self._sell_order_lock:
+                last_ts = self._sell_in_flight.get(token)
+                if last_ts is not None and (now - last_ts) < self._SELL_IN_FLIGHT_TIMEOUT_SECS:
+                    logger.warning(
+                        f"Duplicate sell request ignored for token {token} "
+                        f"({order_details.get('tradingsymbol', '?')}); another sell for this token is already in progress."
+                    )
+                    self.frontend_data_socket.emit(
+                        'sell_order_result',
+                        {
+                            "success": False,
+                            "tradingsymbol": order_details.get("tradingsymbol", "?"),
+                            "error": "Duplicate sell request ignored - a sell for this position is already in progress.",
+                        },
+                    )
+                    return
+                self._sell_in_flight[token] = now
+
             try:
                 #ltp = self._five_weekly_option_contracts[order_details["token"]]["ltp"]
                 ltp = self._position_data[order_details["token"]]["latest_price"]
@@ -3059,28 +4230,51 @@ class Trader_Singleton:
                 # =========================================================
                 # PAPER MODE
                 # =========================================================
-                if self._mode not in ("LIVE", "SIMULATION"):
+                if self._mode not in ("LIVE", "SIMULATION", "PLAYBACK"):
 
-                    buy_price = self._position_data[order_details["token"]]["average_price"]
-                    lot_size = self._position_data[order_details["token"]]["lotsize"]
-                    buy_time = self.get_open_position_buy_time(order_details["token"])
+                    position = self._position_data.get(order_details["token"])
+                    if not position:
+                        raise Exception(
+                            f"No open paper position for token "
+                            f"{order_details['token']}"
+                        )
 
-                    write_paper_trade(
+                    held_lots = int(position.get("net_quantity", 0) or 0)
+                    sell_lots = int(order_details["lots"])
+
+                    if sell_lots <= 0:
+                        raise Exception("Sell lots must be greater than zero")
+
+                    if sell_lots > held_lots:
+                        raise Exception(
+                            f"Cannot sell {sell_lots} lots of "
+                            f"{order_details['tradingsymbol']}; only "
+                            f"{held_lots} lots held"
+                        )
+
+                    buy_price = position["average_price"]
+                    lot_size = position["lotsize"]
+                    buy_time = self.get_open_position_buy_time(
+                        order_details["token"],
+                        tradingsymbol=order_details["tradingsymbol"]
+                    )
+
+                    self.write_paper_trade(
                         transaction_type="SELL",
                         tradingsymbol=order_details["tradingsymbol"],
                         token=order_details["token"],
-                        qty=order_details["lots"],
+                        qty=sell_lots,
                         ltp=ltp,
                         product="MIS",
                         buy_price=buy_price,
                         lot_size=lot_size,
                         buy_time=buy_time
-                    )                
+                    )
                     logger.info(
-                    f"Paper SELL recorded for "
-                    f"{order_details['tradingsymbol']} "
-                    f"({order_details['lots']} lots) @ {ltp}"
-                )
+                        f"Paper SELL recorded for "
+                        f"{order_details['tradingsymbol']} "
+                        f"({sell_lots} lots) @ {ltp}"
+                    )
 
                     # Recalculate paper positions
                     self.refresh_paper_positions()
@@ -3090,7 +4284,7 @@ class Trader_Singleton:
                         {
                             "success": True,
                             "tradingsymbol": order_details["tradingsymbol"],
-                            "lots": order_details["lots"],
+                            "lots": sell_lots,
                             "paper": True
                         }
                     )
@@ -3109,7 +4303,10 @@ class Trader_Singleton:
                     'sell_order_result',
                     {"success": False, "tradingsymbol": order_details.get("tradingsymbol", "?"), "error": str(e)}
                 )
-                                               
+            finally:
+                with self._sell_order_lock:
+                    self._sell_in_flight.pop(token, None)
+
         @self.frontend_data_socket.on('request_pending_orders')
         def send_pending():
             self.frontend_data_socket.emit('update_pending_orders', self._broker.fetch_all_pending_orders())                     
@@ -3144,162 +4341,6 @@ class Trader_Singleton:
                 self.frontend_data_socket.emit('status_message', {"success": False,"message": f"Error cancelling order: {str(e)}"})
 
 
-        def write_paper_trade(
-            transaction_type,
-            tradingsymbol,
-            token,
-            qty,
-            ltp,
-            product="MIS",
-            buy_price=None,
-            lot_size=1,
-            buy_time=None
-        ):
-
-            filename = "PaperTrading.txt"
-
-            # ---------------------------------------------------------
-            # Fixed column widths
-            # ---------------------------------------------------------
-
-            WIDTH_TIME       = 20
-            WIDTH_TYPE       = 8
-            WIDTH_INSTRUMENT = 24
-            WIDTH_TOKEN      = 12
-            WIDTH_PRODUCT    = 10
-            WIDTH_QTY        = 10
-            WIDTH_PRICE      = 12
-            WIDTH_STATUS     = 12
-            WIDTH_DURATION   = 12
-            WIDTH_PNL_RATE   = 12
-            WIDTH_PNL        = 16
-            WIDTH_PNL_PCT    = 12
-
-            # ---------------------------------------------------------
-            # Header
-            # ---------------------------------------------------------
-
-            headers = [
-                "Time".ljust(WIDTH_TIME),
-                "Type".ljust(WIDTH_TYPE),
-                "Instrument".ljust(WIDTH_INSTRUMENT),
-                "Token".ljust(WIDTH_TOKEN),
-                "Product".ljust(WIDTH_PRODUCT),
-                "Qty.".ljust(WIDTH_QTY),
-                "Avg. price".ljust(WIDTH_PRICE),
-                "Status".ljust(WIDTH_STATUS),
-                "Duration".rjust(WIDTH_DURATION),
-                "PnL Rate".rjust(WIDTH_PNL_RATE),
-                "PnL %".rjust(WIDTH_PNL_PCT),
-                "PnL".rjust(WIDTH_PNL)
-            ]
-
-            # Create header if file doesn't exist
-            if not os.path.exists(filename):
-
-                with open(filename, "w", encoding="utf-8") as f:
-                    f.write("\t".join(headers) + "\n")
-
-            # ---------------------------------------------------------
-            # Default PnL values
-            # BUY records will have blank PnL columns
-            # ---------------------------------------------------------
-
-            pnl_rate = ""
-            pnl = ""
-            pnl_pct = ""
-            duration = ""
-
-            # ---------------------------------------------------------
-            # Calculate PnL ONLY for SELL
-            # ---------------------------------------------------------
-
-            if transaction_type.upper() == "SELL" and buy_price is not None:
-
-                sell_time = datetime.datetime.now()
-
-                if isinstance(buy_time, str):
-                    buy_time = datetime.datetime.strptime(
-                        buy_time,
-                        "%m/%d/%Y %H:%M:%S"
-                    )
-
-                elapsed = sell_time - buy_time
-                total_seconds = int(elapsed.total_seconds())
-
-                hours = total_seconds // 3600
-                minutes = (total_seconds % 3600) // 60
-                seconds = total_seconds % 60
-
-                if hours > 0:
-                    duration = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
-                else:
-                    duration = f"{minutes:02d}:{seconds:02d}"
-
-                buy_price = float(buy_price)
-                sell_price = float(ltp)
-                #quantity = int(qty)
-                quantity = int(qty) * int(lot_size)
-
-                # PnL Rate = Sell Price - Buy Price
-                pnl_rate_value = sell_price - buy_price
-
-                # PnL = (Sell Price - Buy Price) * Qty
-                pnl_value = pnl_rate_value * quantity
-
-                # PnL % = (Sell Price - Buy Price) * 100 / Buy Price
-                pnl_pct_value = (
-                    (pnl_rate_value * 100) / buy_price
-                    if buy_price != 0
-                    else 0
-                )
-
-                pnl_rate = f"{pnl_rate_value:.2f}"
-
-                # No decimal places + comma separated
-                pnl = f"{pnl_value:,.0f}"
-
-                pnl_pct = f"{pnl_pct_value:.2f}"
-
-            # ---------------------------------------------------------
-            # Timestamp
-            # ---------------------------------------------------------
-
-            timestamp = datetime.datetime.now().strftime(
-                "%#m/%#d/%Y %H:%M:%S"
-            )
-
-            # ---------------------------------------------------------
-            # Prepare row
-            # ---------------------------------------------------------
-
-            values = [
-                timestamp.ljust(WIDTH_TIME),
-                transaction_type.ljust(WIDTH_TYPE),
-                tradingsymbol.ljust(WIDTH_INSTRUMENT),
-                str(token).ljust(WIDTH_TOKEN),
-                product.ljust(WIDTH_PRODUCT),
-                f"{qty}/{qty}".ljust(WIDTH_QTY),
-                f"{float(ltp):.2f}".rjust(WIDTH_PRICE),
-                "COMPLETE".ljust(WIDTH_STATUS),
-                duration.rjust(WIDTH_DURATION),
-                # PnL columns
-                pnl_rate.rjust(WIDTH_PNL_RATE),
-                pnl_pct.rjust(WIDTH_PNL_PCT),
-                pnl.rjust(WIDTH_PNL)
-            ]
-
-            # ---------------------------------------------------------
-            # Write transaction
-            # ---------------------------------------------------------
-
-            with open(filename, "a", encoding="utf-8") as f:
-
-                f.write(
-                    "\t".join(values) + "\n"
-                )
-
-
         @self.frontend_data_socket.on('place_buy_order')
         def handle_buy_order(order_details):
             logger.debug(f"Received buy order from client: {order_details}")
@@ -3312,15 +4353,33 @@ class Trader_Singleton:
                 elif order_details["strategy"].upper() == "ULTRASCALPING":
                     target_profit = PTS_PROFIT_ULTRA_SCALPING_FACTOR* PNT_BOOK_PROFIT
 
-                # Trading mode is PAPER, LIVE, or SIMULATION.
+                # Trading mode is PAPER, LIVE, SIMULATION, or PLAYBACK.
                 self._mode = fetch_from_json("settings.json" , "MODE")
                 sell_mode = order_details.get("SELL_MODE", "T")
                 logger.debug(f"Mode set is {self._mode} ; Strategy set is {order_details['strategy']}  Sell Mode is {sell_mode} ")
 
+                # TradingView entry validation (TV_DATA_Validation_REQUIRED).
+                # Applies to every mode; sells are not affected.
+                if self._is_tv_validation_required():
+                    tradingsymbol = str(order_details.get("tradingsymbol", ""))
+                    is_pe = tradingsymbol.upper().endswith("PE")
+                    side = "PE" if is_pe else "CE"
+                    allowed = self._tv_pe_buy_allowed if is_pe else self._tv_ce_buy_allowed
+                    reason = self._tv_pe_reason if is_pe else self._tv_ce_reason
+                    if not allowed:
+                        logger.warning(f"{side} buy rejected by TradingView validation for {tradingsymbol}: {reason}")
+                        self.frontend_data_socket.emit('buy_order_result', {
+                            "success": False,
+                            "tradingsymbol": tradingsymbol,
+                            "lots": order_details["lots"],
+                            "error": f"{side} buy blocked by TradingView validation: {reason}"
+                        })
+                        return
+
                 ltp = self._five_weekly_option_contracts[order_details["token"]]["ltp"]
 
-                if self._mode not in ("LIVE", "SIMULATION"):
-                    write_paper_trade(transaction_type="BUY",tradingsymbol=order_details["tradingsymbol"],token=order_details["token"],qty=order_details["lots"],ltp=ltp,product="MIS")
+                if self._mode not in ("LIVE", "SIMULATION", "PLAYBACK"):
+                    self.write_paper_trade(transaction_type="BUY",tradingsymbol=order_details["tradingsymbol"],token=order_details["token"],qty=order_details["lots"],ltp=ltp,product="MIS")
                     logger.info(
                             f"Paper BUY recorded: "
                             f"{order_details['tradingsymbol']} "

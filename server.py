@@ -5,7 +5,7 @@ import asyncio
 import os
 import pandas as pd
 
-from flask import Flask, jsonify, request, Response, render_template
+from flask import Flask, jsonify, request, Response, render_template, redirect
 from flask_cors import CORS
 from datetime import datetime
 from datetime import timedelta
@@ -16,9 +16,10 @@ from interface.broker_interface import BrokerInterface
 from adapter.kite_adapter import KiteAdapter
 from adapter.mstock_adapter import MStockAdapter
 from adapter.simulator_adapter import SimulatorAdapter
+from adapter.playback_adapter import PlaybackAdapter
 from core.trading_view_handler import trading_view_handle_func
 
-from utils import is_market_open , fetch_from_json,backup_old_logs
+from utils import is_market_open, fetch_from_json, load_json_with_retry, backup_old_logs, resolve_day_start_cash, check_internet_connectivity, clear_json_cache, UNDERLYING_TO_EXCHANGE
 
 from adapter.mstock_utils import save_orders_to_xlsx, build_orders_export,write_orders_workbook
 
@@ -70,6 +71,7 @@ logger.add(
     rotation="10 MB",
     retention="7 days",
     level="DEBUG",
+    enqueue=True,
     format=(
         "{time:YYYY-MM-DD HH:mm:ss:SSS} | "
         "{level:<8} | "
@@ -81,9 +83,12 @@ logger.add(
 
 
 #Console logging
+# enqueue=True moves the (very slow on Windows) console print and file
+# writes to a background thread so logging never blocks trading logic.
 logger.add(
     sink=lambda msg: print(msg, end=""),
     colorize=True,
+    enqueue=True,
     format= "<green>{time:YYYY-MM-DD HH:mm:ss}</green> | "
             "<level>{level: <8}</level> | "
             "<cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - |"
@@ -123,44 +128,78 @@ logger.info("Logger initialized successfully")
 app = Flask(__name__)
 CORS(app)
 
-BROKER_MAP = {"KITE": KiteAdapter, "MSTOCK": MStockAdapter, "SIMULATOR": SimulatorAdapter}
+BROKER_MAP = {"KITE": KiteAdapter, "MSTOCK": MStockAdapter, "SIMULATOR": SimulatorAdapter, "PLAYBACK": PlaybackAdapter}
 
-CURRENT_BROKER = fetch_from_json("constants.json" , "BROKER")
-UNDERLYING = fetch_from_json("constants.json" , "UNDERLYING")
-CURRENT_MODE = str(fetch_from_json("settings.json", "MODE") or "ALERT").upper()
-VALID_MODES = {"LIVE", "PAPER", "SIMULATION"}
+try:
+    CURRENT_BROKER = fetch_from_json("constants.json" , "BROKER")
+    UNDERLYING = fetch_from_json("constants.json" , "UNDERLYING")
+    CURRENT_MODE = str(fetch_from_json("settings.json", "MODE") or "ALERT").upper()
+    VALID_MODES = {"LIVE", "PAPER", "SIMULATION", "PLAYBACK"}
 
-if CURRENT_MODE not in VALID_MODES:
-    raise RuntimeError(
-        f"Invalid MODE '{CURRENT_MODE}'. Allowed values are: "
-        f"{', '.join(sorted(VALID_MODES))}"
-    )
+    if CURRENT_MODE not in VALID_MODES:
+        raise RuntimeError(
+            f"Invalid MODE '{CURRENT_MODE}'. Allowed values are: "
+            f"{', '.join(sorted(VALID_MODES))}"
+        )
 
-SIMULATION_CONFIG = {}
+    if CURRENT_MODE in ("LIVE", "PAPER"):
+        logger.info(f"Mode is {CURRENT_MODE}. Verifying internet connectivity before startup.")
+        if not check_internet_connectivity():
+            raise RuntimeError(
+                "NO INTERNET CONNECTIVITY detected. "
+                f"Startup aborted - {CURRENT_MODE} mode requires an active internet connection. "
+                "Please check your network and restart the application."
+            )
+        logger.info("Internet connectivity verified. Proceeding with startup.")
 
-if CURRENT_MODE == "SIMULATION":
-    try:
-        with open("simulation.json", "r", encoding="utf-8") as simulation_file:
-            SIMULATION_CONFIG = json.load(simulation_file)
-    except (OSError, json.JSONDecodeError) as error:
-        raise RuntimeError("MODE is SIMULATION but simulation.json could not be loaded") from error
+    SIMULATION_CONFIG = {}
+    PLAYBACK_CONFIG = {}
 
-if CURRENT_MODE == "SIMULATION" and SIMULATION_CONFIG.get("REQUIRE_MARKET_CLOSED", True) and is_market_open():
-    raise RuntimeError("Simulation mode is configured for non-market hours, but the market is open")
+    if CURRENT_MODE == "SIMULATION":
+        simulation_json_path = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), "simulation.json"
+        )
+        SIMULATION_CONFIG = load_json_with_retry(simulation_json_path)
 
-if CURRENT_MODE == "SIMULATION":
-    CURRENT_BROKER = "SIMULATOR"
+    if CURRENT_MODE == "SIMULATION" and SIMULATION_CONFIG.get("REQUIRE_MARKET_CLOSED", True) and is_market_open():
+        raise RuntimeError("Simulation mode is configured for non-market hours, but the market is open")
+
+    if CURRENT_MODE == "SIMULATION":
+        CURRENT_BROKER = "SIMULATOR"
+
+    if CURRENT_MODE == "PLAYBACK":
+        playback_json_path = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), "Playback.json"
+        )
+        PLAYBACK_CONFIG = load_json_with_retry(playback_json_path)
+
+        if not str(PLAYBACK_CONFIG.get("INSTRUMENT") or "").strip():
+            raise RuntimeError("Playback.json must define INSTRUMENT (option tradingsymbol)")
+
+        playback_price_file = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)),
+            str(PLAYBACK_CONFIG.get("PLAYBACK_PRICE_FILE", "PlaybackPrice.csv")),
+        )
+        if not os.path.exists(playback_price_file):
+            raise RuntimeError(f"Playback price file not found: {playback_price_file}")
+
+        CURRENT_BROKER = "PLAYBACK"
+except Exception:
+    logger.exception("Startup configuration loading failed. Aborting session.")
+    raise
 
 logger.debug(f"Current Broker is {CURRENT_BROKER} and underlying is {UNDERLYING}")
 
-if UNDERLYING == "NIFTY":
-    EXCHANGE = "NFO"
-elif UNDERLYING == "SENSEX":
-    EXCHANGE = "BFO"
-elif UNDERLYING == "CRUDEOIL" :
-    EXCHANGE = "MCX"
-elif UNDERLYING == "CRUDEOILM" :
-    EXCHANGE = "MCX"
+# Shared map (utils.py) — the exchange is fully determined by the
+# underlying; the old instrument-derived EXCHANGE constant is gone.
+
+if UNDERLYING not in UNDERLYING_TO_EXCHANGE:
+    raise RuntimeError(
+        f"Unsupported UNDERLYING '{UNDERLYING}'. Allowed values: "
+        f"{', '.join(sorted(UNDERLYING_TO_EXCHANGE))}"
+    )
+
+EXCHANGE = UNDERLYING_TO_EXCHANGE[UNDERLYING]
 
 broker: BrokerInterface = BROKER_MAP[CURRENT_BROKER]()
 
@@ -215,11 +254,26 @@ def load_settings():
 
 @app.route("/save_settings", methods=["POST"])
 def save_settings():
-    """Save settings back to settings.json."""
+    """Save settings.json and return as JSON."""
     try:
         data = request.get_json()
+        # Merge into the existing settings instead of replacing the file,
+        # so keys that are not part of the settings form (STOP_LOSS_*,
+        # ENTRY_CHECK_*, POSITION_PNL_LOG_FREQ, cash balances, etc.)
+        # survive a save from the UI.
+        try:
+            with open(SETTINGS_FILE, "r") as f:
+                settings = json.load(f)
+        except Exception:
+            settings = {}
+        if isinstance(data, dict):
+            settings.update(data)
         with open(SETTINGS_FILE, "w") as f:
-            json.dump(data, f, indent=4)
+            json.dump(settings, f, indent=4)
+        # settings.json is cached by fetch_from_json(); clear it so
+        # runtime re-reads (e.g. MODE in the order handlers) see the
+        # new values instead of the stale import-time cache.
+        clear_json_cache(SETTINGS_FILE)
         return jsonify({"status": "success"})
     except Exception as e:
         print("Error saving settings:", e)
@@ -235,10 +289,17 @@ def update_sell_mode():
         with open("settings.json", "r") as f:
             settings = json.load(f)
 
-        settings["MODE"] = new_mode  # ✅ ONLY UPDATES MODE
+        # Store under a dedicated SELL_MODE key. Writing to "MODE" would
+        # clobber the trading mode (PAPER/LIVE/SIMULATION/PLAYBACK) that
+        # startup and the order handlers rely on.
+        settings["SELL_MODE"] = new_mode
 
         with open("settings.json", "w") as f:
             json.dump(settings, f, indent=4)
+
+        # Keep the fetch_from_json cache in sync so the new MODE is
+        # picked up by the next order instead of a restart.
+        clear_json_cache("settings.json")
 
         return jsonify({"success": True})
 
@@ -265,15 +326,30 @@ def save_constants():
     if not data:
         return jsonify({"error": "No data received"}), 400
     try:
+        # Merge the posted form values into the existing constants so
+        # any key not currently shown on the UI page survives a save
+        # instead of being wiped by a full-file replacement.
+        existing = {}
+        if os.path.exists(CONSTANTS_FILE):
+            try:
+                with open(CONSTANTS_FILE, "r") as f:
+                    existing = json.load(f) or {}
+            except (OSError, json.JSONDecodeError):
+                existing = {}
+        merged = {**existing, **data}
         with open(CONSTANTS_FILE, "w") as f:
-            json.dump(data, f, indent=4)
+            json.dump(merged, f, indent=4)
+        # constants.json is cached by fetch_from_json(); clear it so
+        # runtime re-reads (e.g. WOC factors in setup_woc_) see the
+        # new values without an app restart.
+        clear_json_cache(CONSTANTS_FILE)
         return jsonify({"message": "Saved successfully"})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
     
 
-@app.route("/orders")
+@app.route("/api/orders")
 def get_orders():
     logger.info("Fetching all orders")
     orders = broker.fetch_all_orders()
@@ -297,6 +373,25 @@ def import_executed_trades_kite_route():
             return jsonify({"success": False, "error": "Missing trade_date"}), 400
 
         trade_date = payload["trade_date"]
+
+        # Kite's order/trade book is day-only; past dates cannot be
+        # served from the API (Console reports are the only source).
+        try:
+            kite_requested_date = pd.to_datetime(trade_date, errors="coerce").date()
+        except Exception:
+            kite_requested_date = None
+        if (
+            kite_requested_date is not None
+            and not pd.isna(kite_requested_date)
+            and kite_requested_date < datetime.now().date()
+        ):
+            return jsonify({
+                "success": False,
+                "error": (
+                    "KITE provides same-day trade data only; past dates "
+                    "are not available via the API"
+                )
+            })
 
         # 1️⃣ Fetch all orders
         all_orders = broker.fetch_all_orders_for_export()
@@ -367,13 +462,15 @@ def import_executed_trades_kite_route():
 def import_executed_trades_route():
     """
     Flask endpoint:
-    - receives trade_date from Utilities.html
+    - receives trade_date from orders.html
     - loads all orders via MStockAdapter.fetch_all_orders()
     - filters orders by date
     - calls adapter.save_orders_to_csv()
     """
     try:
-        if CURRENT_BROKER == "KITE":
+        paper_mode = str(fetch_from_json("settings.json", "MODE") or "").upper() == "PAPER"
+
+        if not paper_mode and CURRENT_BROKER == "KITE":
             return import_executed_trades_kite_route()
 
         payload = request.get_json(silent=True)
@@ -386,8 +483,35 @@ def import_executed_trades_route():
 
         trade_date = payload["trade_date"]
 
-        # 1️⃣ Fetch all orders
-        all_orders = broker.fetch_all_orders()
+        # Past dates are not present in the daily order book. M.Stock
+        # exposes a dated trade-history endpoint; other brokers provide
+        # same-day data only.
+        try:
+            mstock_requested_date = pd.to_datetime(trade_date, errors="coerce").date()
+        except Exception:
+            mstock_requested_date = None
+        mstock_is_past_date = bool(
+            mstock_requested_date is not None
+            and not pd.isna(mstock_requested_date)
+            and mstock_requested_date < datetime.now().date()
+        )
+
+        if paper_mode:
+            # Paper fills never reach the broker; the Excel export reads
+            # them from the paper trade log instead.
+            all_orders = trader.fetch_paper_orders()
+        elif mstock_is_past_date and hasattr(broker, "fetch_trades_for_date"):
+            all_orders = broker.fetch_trades_for_date(trade_date)
+        elif mstock_is_past_date:
+            return jsonify({
+                "success": False,
+                "error": (
+                    f"{CURRENT_BROKER} provides same-day trade data only; "
+                    f"past dates are not available via the API"
+                )
+            })
+        else:
+            all_orders = broker.fetch_all_orders()
         logger.info(f"Total orders fetched: {len(all_orders)}")
 
 
@@ -445,24 +569,29 @@ def import_executed_trades_route():
             available_statuses = sorted(
                 df_all_statuses.str.strip().str.upper().unique()
             )
+            detail = (
+                "PaperTrading.txt has no rows for this date."
+                if paper_mode else
+                f"M.Stock returned dates={available_dates}, "
+                f"statuses={available_statuses}."
+            )
             return jsonify({
                 "success": False,
                 "error": (
                     f"No executed trades on {trade_date}. "
-                    f"M.Stock returned dates={available_dates}, "
-                    f"statuses={available_statuses}."
+                    f"{detail}"
                 )
             })
 
         filtered_orders = df.to_dict(orient="records")
 
-        logger.info(f"Filtered executed orders count: {filtered_orders}")
+        logger.info(f"Filtered executed orders count: {len(filtered_orders)}")
 
         workbook_path = save_orders_to_xlsx(filtered_orders)
         return send_file(
             workbook_path,
             as_attachment=True,
-            download_name=f"MStock_Orders_{trade_date.replace('-', '_')}.xlsx",
+            download_name=f"{'Paper' if paper_mode else 'MStock'}_Orders_{trade_date.replace('-', '_')}.xlsx",
             mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         )
 
@@ -504,9 +633,36 @@ def get_trades():
 @app.route("/fund_summary")
 def get_fund_summary():
     logger.info("Fetching fund summary")
+    current_mode = str(fetch_from_json("settings.json", "MODE") or "").upper()
+    if current_mode == "PAPER":
+        fund_summary = trader.get_paper_fund_summary()
+        logger.log("DATA", f"Paper Fund Summary: {fund_summary}")
+        return jsonify({"data": fund_summary})
     fund_summary = broker.fetch_fund_summary()
     logger.log("DATA", f"Fund Summary: {fund_summary}")
     return jsonify({"data" : fund_summary})
+
+@app.route("/day_cash")
+def get_day_cash():
+    logger.info("Fetching day-start cash")
+    current_mode = str(fetch_from_json("settings.json", "MODE") or "").upper()
+    if current_mode == "PAPER":
+        paper_summary = trader.get_paper_fund_summary()
+        return jsonify({
+            "success": True,
+            "cash_balance": paper_summary.get("initial_cash", 0),
+            "source": "PAPER"
+        })
+    try:
+        cash_value, source = resolve_day_start_cash(broker)
+    except Exception as e:
+        logger.exception("Error resolving day-start cash")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+    if cash_value is None:
+        return jsonify({"success": False, "error": "Day-start cash unavailable"})
+
+    return jsonify({"success": True, "cash_balance": cash_value, "source": source})
 
 # @app.route("/instrument_quote")
 # def get_instrument_quote():
@@ -586,39 +742,50 @@ def run_flask_app():
         threaded=True
     )
 
-@app.route("/alert")
-def alert_page():
-    logger.info("Rendering alert page")
-    return render_template("alert.html")
+# Default landing page: the consolidated Trade page.
+@app.route("/")
+def index():
+    logger.info("INDEX: Rendering trade page (default)")
+    return render_template("trade.html")
 
-@app.route("/home")
-def home_page():
-    logger.info("Rendering home page")
-    return render_template("home.html")
-
-@app.route("/widget_one")
-def widget_one():
-    logger.info("Rendering widget one page")
-    return render_template("widget_one.html")
-
-@app.route("/buy_dashboard")
-def dashboard():
-    logger.info("BUY DASHBOARD: Request received")
-    page = render_template("buy_dashboard.html")
-    logger.info("BUY DASHBOARD: Template rendered")
+@app.route("/trade")
+def trade_page():
+    logger.info("TRADE PAGE: Request received")
+    page = render_template("trade.html")
+    logger.info("TRADE PAGE: Template rendered")
     return page
 
-@app.route("/settings")
-def settings():
-    logger.info("Rendering settings page")
-    return render_template("settings.html")
+# The Home page was removed; its old URL now lands on the default page.
+@app.route("/home")
+def home_page():
+    return redirect("/")
 
+# Legacy URL: the buy dashboard and sell widget were consolidated into
+# trade.html; keep the old address working.
+@app.route("/buy_dashboard")
+def dashboard():
+    return redirect("/trade")
+
+# Orders page (executed-trades grid + utilities). The raw broker-orders
+# JSON API moved to /api/orders so this page can own the /orders URL.
+@app.route("/orders")
+def orders_page():
+    logger.info("Rendering Orders page")
+    return render_template("orders.html")
+
+# Capitalized /Orders kept as a redirect for URLs used before the page
+# route was lowercased.
+@app.route("/Orders")
+def orders_page_legacy():
+    return redirect("/orders")
+
+# Legacy Utilities URLs: the utilities functions moved to the Orders
+# page, so redirect there.
 @app.route("/Utilities")
 @app.route("/utilities")
 @app.route("/utilities.html")
 def Utilities():
-    logger.info("Rendering Utilities page")
-    return render_template("Utilities.html")
+    return redirect("/orders")
 
 
 @app.route("/convert_contract_note", methods=["POST"])
@@ -657,6 +824,50 @@ def convert_contract_note():
         mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
 
+@app.route("/convert_contract_note_rows", methods=["POST"])
+def convert_contract_note_rows():
+    """
+    Convert an uploaded M.Stock contract-note PDF into the same
+    formatted rows used by the Orders grid and the Excel workbook,
+    returning them as JSON (plus the PineScript and trade date)
+    instead of writing a file.
+    """
+    pdf_file = request.files.get("pdf")
+    if not pdf_file:
+        return jsonify({"success": False, "error": "No PDF uploaded"}), 400
+
+    # Create a closed temporary path so Camelot can open it on Windows.
+    tmp_fd, tmp_pdf_path = tempfile.mkstemp(suffix=".pdf")
+    os.close(tmp_fd)
+
+    try:
+        pdf_file.save(tmp_pdf_path)
+        # Contract-note conversion is an mStock utility even in simulation
+        # mode, where the active trading broker is SimulatorAdapter.
+        converter = (
+            broker
+            if hasattr(broker, "convert_mstock_contract_note_data")
+            else MStockAdapter()
+        )
+        rows, pine_script, trade_date = converter.convert_mstock_contract_note_data(
+            tmp_pdf_path
+        )
+    except Exception as e:
+        logger.exception("Contract-note conversion failed")
+        return jsonify({"success": False, "error": str(e)}), 500
+    finally:
+        try:
+            os.unlink(tmp_pdf_path)
+        except FileNotFoundError:
+            pass
+
+    return jsonify({
+        "success": True,
+        "rows": rows,
+        "pine_script": pine_script,
+        "trade_date": trade_date.isoformat() if trade_date else None,
+    })
+
 @app.route("/get_executed_trades", methods=["POST"])
 def get_executed_trades():
     """
@@ -670,8 +881,13 @@ def get_executed_trades():
     try:
         payload = request.get_json(silent=True) or {}
         trade_date = payload.get("trade_date")
+        current_mode = str(fetch_from_json("settings.json", "MODE") or CURRENT_MODE or "").upper()
 
-        if not trade_date:
+        # In playback mode the orders carry playback-clock timestamps and
+        # the price file can span more than one replayed day, so the
+        # requested (browser) date is ignored: every session order is
+        # returned and the date filter below is skipped.
+        if current_mode != "PLAYBACK" and not trade_date:
             return jsonify({
                 "success": False,
                 "error": "Trade date is required"
@@ -681,8 +897,38 @@ def get_executed_trades():
             f"get_executed_trades: fetching orders for trade date {trade_date}"
         )
 
-        # Fetch all orders through the currently selected broker.
-        orders = broker.fetch_all_orders()
+        # Past dates are not present in the daily order book. M.Stock
+        # exposes a dated trade-history endpoint for this; other brokers
+        # (e.g. Kite) provide same-day data only.
+        requested_date = None
+        if current_mode != "PLAYBACK" and trade_date:
+            try:
+                requested_date = pd.to_datetime(trade_date, errors="coerce").date()
+            except Exception:
+                requested_date = None
+        is_past_date = bool(
+            requested_date is not None and not pd.isna(requested_date)
+            and requested_date < datetime.now().date()
+        )
+
+        if current_mode == "PAPER":
+            # Paper fills never reach the broker; the Orders grid reads
+            # them from the paper trade log instead.
+            orders = trader.fetch_paper_orders()
+        elif current_mode == "PLAYBACK":
+            orders = broker.fetch_all_orders()
+        elif is_past_date and hasattr(broker, "fetch_trades_for_date"):
+            orders = broker.fetch_trades_for_date(trade_date)
+        elif is_past_date:
+            return jsonify({
+                "success": False,
+                "error": (
+                    f"{CURRENT_BROKER} provides same-day trade data only; "
+                    f"past dates are not available via the API"
+                )
+            })
+        else:
+            orders = broker.fetch_all_orders()
 
         if not orders:
             return jsonify({
@@ -711,23 +957,32 @@ def get_executed_trades():
             format="mixed"
         )
 
-        # Convert requested date to date object.
-        selected_date = pd.to_datetime(
-            trade_date,
-            errors="coerce"
-        ).date()
+        if current_mode == "PLAYBACK":
+            # Playback orders exist only in this session's memory; return
+            # all of them regardless of which replayed day they occurred on.
+            logger.info(
+                "get_executed_trades: playback mode - returning all session "
+                "orders without a date filter"
+            )
+            df = df[df["timestamp"].notna()].copy()
+        else:
+            # Convert requested date to date object.
+            selected_date = pd.to_datetime(
+                trade_date,
+                errors="coerce"
+            ).date()
 
-        if pd.isna(selected_date):
-            return jsonify({
-                "success": False,
-                "error": f"Invalid trade date: {trade_date}"
-            }), 400
+            if pd.isna(selected_date):
+                return jsonify({
+                    "success": False,
+                    "error": f"Invalid trade date: {trade_date}"
+                }), 400
 
-        # Keep only orders from the selected date.
-        df = df[
-            df["timestamp"].notna()
-            & (df["timestamp"].dt.date == selected_date)
-        ].copy()
+            # Keep only orders from the selected date.
+            df = df[
+                df["timestamp"].notna()
+                & (df["timestamp"].dt.date == selected_date)
+            ].copy()
 
         # Keep only executed/traded orders.
         if "order_status" in df.columns:
@@ -798,10 +1053,21 @@ def export_executed_trades():
             pine_script
         )
 
+        # Optional client-supplied download name (without extension).
+        # Sanitized to a safe basename; default keeps legacy behavior.
+        requested_filename = str(data.get("filename") or "").strip()
+        safe_filename = "".join(
+            character if character.isalnum() or character in "-_" else "_"
+            for character in requested_filename
+        )
+        download_name = (
+            f"{safe_filename}.xlsx" if safe_filename else "Executed_Trades.xlsx"
+        )
+
         return send_file(
             output_path,
             as_attachment=True,
-            download_name="Executed_Trades.xlsx",
+            download_name=download_name,
             mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
 
@@ -862,6 +1128,23 @@ if 1==1: #__name__ == "__main__":
         #broker.fetch_all_instruments()
         broker.download_instrument_list(EXCHANGE,UNDERLYING)
         trader.set_broker(broker)
+
+        # Warm the broker's instrument cache (e.g. Kite CSV) in the
+        # background while the rest of startup proceeds, so the first
+        # get_instrument_details call no longer pays the lazy-load cost.
+        preload_thread = threading.Thread(
+            target=broker.preload_instrument_data,
+            daemon=True,
+            name="instrument-preload"
+        )
+        preload_thread.start()
+        logger.info("Instrument cache preload launched in background.")
+
+        try:
+            day_cash_value, day_cash_source = resolve_day_start_cash(broker)
+            logger.info(f"Day-start cash resolved: {day_cash_value} (source: {day_cash_source})")
+        except Exception as e:
+            logger.warning(f"Could not resolve day-start cash at startup: {e}")
         
         trader.start_frontend_socket_server(app)
         
@@ -885,6 +1168,12 @@ if 1==1: #__name__ == "__main__":
                 trader.start_trading_watcher_thread()
             asyncio.run(start_async_connections())
         elif CURRENT_BROKER == "SIMULATOR":
+            trader.start_trading_watcher_thread()
+            socket_thread = threading.Thread(target=start_socket, daemon=True)
+            socket_thread.start()
+            app.run(debug=True, use_reloader=False)
+        elif CURRENT_BROKER == "PLAYBACK":
+            trader.start_trading_watcher_thread()
             socket_thread = threading.Thread(target=start_socket, daemon=True)
             socket_thread.start()
             app.run(debug=True, use_reloader=False)

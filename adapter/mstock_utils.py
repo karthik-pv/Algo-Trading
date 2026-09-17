@@ -53,6 +53,8 @@ def fund_summary_attribute_mgmt(fund_summary):
     return cropped_fund_summary
 
 def instr_det_attrib_mgmt(instrument_details):
+    if not instrument_details:
+        return None
     logger.info(f"Raw instrument details data: {instrument_details}")
     instrument_details["tradingsymbol"] = instrument_details["name"]
     instrument_details["instrument_token"] = instrument_details["token"]
@@ -309,6 +311,18 @@ def build_orders_export(order_list):
         side = item["transaction_type"]
         quantity = float(item["quantity"])
         price = float(item["average_price"])
+
+        # Orders recorded by the playback adapter carry quantity in LOTS
+        # plus an explicit lot_size field. Live broker orders carry
+        # quantity already in units and no lot_size, so the multiplier
+        # stays 1 for them and their PnL scale is unchanged.
+        try:
+            lot_multiplier = int(float(item.get("lot_size") or 1))
+        except (TypeError, ValueError):
+            lot_multiplier = 1
+        if lot_multiplier <= 0:
+            lot_multiplier = 1
+
         time_var = f"t{timestamp:%y%m%d}_{sequence}"
         timeline.append(f"{time_var}=timestamp('Asia/Kolkata',{timestamp:%Y,%m,%d,%H,%M,%S})")
         duration = ""
@@ -334,9 +348,9 @@ def build_orders_export(order_list):
             matched_quantity = sum(taken for _, taken in matched)
             if matched_quantity:
                 average_buy = sum(buy["price"] * taken for buy, taken in matched) / matched_quantity
-                purchase_amount = average_buy * matched_quantity
+                purchase_amount = average_buy * matched_quantity * lot_multiplier
                 pnl_rate_value = price - average_buy
-                pnl_value = pnl_rate_value * matched_quantity
+                pnl_value = pnl_rate_value * matched_quantity * lot_multiplier
                 cumulative_pnl += pnl_value
                 elapsed = max(0, int((timestamp - matched[0][0]["time"]).total_seconds()))
                 duration = f"{elapsed // 60:02d}:{elapsed % 60:02d}"
@@ -356,7 +370,7 @@ def build_orders_export(order_list):
 
         rows.append({
             "ORDERDATE": timestamp.strftime("%m/%d/%Y"), "ORDERTIME": timestamp.strftime("%H:%M:%S"),
-            "TRAN": side, "CONT": symbol, "Product": "MIS", "Qty.": f"{quantity:g}/{quantity:g}",
+            "TRAN": side, "CONT": symbol, "Product": "MIS", "Qty.": f"{quantity * lot_multiplier:g}/{quantity * lot_multiplier:g}",
             "RATE": round(price, 1), "STATUS": str(item.get("status", "COMPLETE")), "Duration": duration,
             "PurValue": purchase_value, "PnL_Rate": pnl_rate, "PnL": pnl, "PnL%": pnl_pct, "PnL_RT": pnl_rt,
         })

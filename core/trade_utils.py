@@ -9,9 +9,6 @@ from loguru import logger
 india_holidays = holidays.India()
 
 
-from utils import fetch_from_json , find_matching_object
-
-
 def last_tuesday(year: int, month: int) -> datetime.date:
     logger.info(f"Calculating last Tuesday for {month}/{year}") 
     """
@@ -175,41 +172,3 @@ def expiry_filter(exp_date: date, index_name: str,tradingsymbol, expiry_type: st
 
     return True
 
-def get_expiry_date(underlying: str) -> datetime.date:
-    underlying = underlying.upper()
-    month_map = {
-        'JAN': 1, 'FEB': 2, 'MAR': 3, 'APR': 4, 'MAY': 5, 'JUN': 6,
-        'JUL': 7, 'AUG': 8, 'SEP': 9, 'OCT': 10, 'NOV': 11, 'DEC': 12
-    }
-    try:
-        year_str = fetch_from_json("constants.json", "EXPIRY_YEAR")
-        month_abbr = fetch_from_json("constants.json", "EXPIRY_MONTH")
-        year = int(year_str)
-        month = month_map[month_abbr.upper()]
-
-        if underlying == "NIFTY":
-            day_str = fetch_from_json("constants.json", "NIFTY_EXPIRY_DATE")
-            day = int(day_str)
-        elif underlying == "SENSEX":
-            day_str = fetch_from_json("constants.json", "SENSEX_EXPIRY_DATE")
-            day = int(day_str)
-        elif underlying == "CRUDEOIL" or underlying == "CRUDEOILM":
-            day = 19
-        else:
-            raise ValueError(f"Underlying '{underlying}' not supported for pre-defined expiry.")
-            
-        final_expiry = datetime.date(year, month, day)
-        logger.debug(f"Expiry is {final_expiry}")
-        return final_expiry
-
-    except (TypeError, KeyError, ValueError) as e:
-        logger.error(f"Failed to construct expiry date. Check 'constants.json' and underlying. Error: {e}")
-        raise
-
-def get_instrument_tokens_from_symbol(name):
-    logger.debug(f"Fetching instrument token for: {name}")
-    return find_matching_object("mstock_instrument_list_reduced.json" , "name" , name)["token"]
-
-def get_instrument_details_from_json(name):
-    logger.debug(f"Fetching instrument details for: {name}")
-    return find_matching_object("mstock_instrument_list_reduced.json" , "name" , name)

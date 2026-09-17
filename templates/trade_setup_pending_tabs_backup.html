@@ -1,0 +1,338 @@
+<!-- =====================================================================
+     BACKUP STASH - Setup / Tradecases + Pending Orders module tabs
+     Removed from trade.html on request ("just retain the top app tab bar").
+     This file is NOT routed or rendered; it only keeps the code for later
+     reuse. To restore:
+       1. Re-add the MODULE TAB BAR + wrappers from section 1 at the top of
+          <main class="main-content"> in trade.html (the trade content goes
+          back inside the tradeTabPanel div), and re-add the two closing
+          divs ("        </div>" for the panel + "    </div>" for the
+          tab-content) just before </main>.
+       2. Re-add the panels from section 2 after the trade panel.
+       3. Re-add the CSS from sections 3-4 into the head_styles block.
+       4. Re-add the JS from sections 5-7 into the DOMContentLoaded closure.
+       5. Restore "socket.emit('request_pending_orders');" in the connect
+          handler (section 6).
+     ===================================================================== -->
+
+<!-- ================= 1. MODULE TAB BAR + WRAPPERS (removed) ================= -->
+    <!-- === MODULE TABS === -->
+    <div class="dashboard-tabs" id="dashboardTabs">
+        <button class="dashboard-tab active" data-tab="tradeTabPanel" type="button">Trade</button>
+        <button class="dashboard-tab" data-tab="setupTabPanel" type="button">Setup / Tradecases</button>
+        <button class="dashboard-tab" data-tab="pendingTabPanel" type="button">Pending Orders</button>
+    </div>
+
+    <div class="dashboard-tab-content">
+
+        <!-- === TAB 1: TRADE (Sell Positions Grid + Buy Dashboard + info line + status message) === -->
+        <div class="dashboard-tab-panel active" id="tradeTabPanel">
+    <!-- ... trade content (sell widget + buy widget + status bar) went here ... -->
+        </div>
+    <!-- closing wrappers that followed the trade content:
+             </div>   (tradeTabPanel close, 8-space indent)
+         </div>       (dashboard-tab-content close, 4-space indent)
+    -->
+
+<!-- ================= 2. SETUP + PENDING PANELS (removed) ================= -->
+        <!-- === TAB 3: SETUP / TRADECASES === -->
+        <div class="dashboard-tab-panel" id="setupTabPanel">
+            <div id="tradeSetupsContainer"
+                style="width:95%; max-width:1150px; max-height:300px;
+                        overflow-y:auto; margin-top:10px; border:1px solid #444;
+                        border-radius:8px; background:#1f1f1f; padding:12px; color:#ddd;">
+                <h3 style="color:#66bb6a; margin-bottom:10px;">Trade Setups Monitor</h3>
+                <p style="color:#aaa; text-align:center;">Waiting for trade setups...</p>
+            </div>
+        </div>
+
+        <!-- === TAB 4: PENDING ORDERS === -->
+        <div class="dashboard-tab-panel" id="pendingTabPanel">
+            <div id="pendingOrdersContainer"
+                style="width:95%; max-width:1150px; margin-top:10px;
+                        border:1px solid #444; border-radius:8px;
+                        background:#1f1f1f; padding:12px; color:#ddd;">
+                <h3 style="color:#ffcc00; margin-bottom:10px;">Pending Orders</h3>
+                <table class="trade-table">
+                    <thead>
+                        <tr>
+                            <th>Symbol</th>
+                            <th>Qty</th>
+                            <th>Order ID</th>
+                            <th>Avg Price</th>
+                            <th>Order Status</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="pendingOrdersBody">
+                        <tr><td colspan="5" style="text-align:center; color:#888;">No pending orders</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+<!-- ================= 3. MODULE TABS CSS (removed) ================= -->
+<style>
+/* =========================================================
+   TRADE / ORDERS TABS
+   ========================================================= */
+
+.dashboard-tabs {
+    width: 95%;
+    max-width: 1150px;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    margin-top: 5px;
+    border-bottom: 1px solid #555;
+}
+
+.dashboard-tab {
+    background: #2c2c2c;
+    color: #aaa;
+    border: 1px solid #444;
+    border-bottom: none;
+    padding: 7px 28px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+    border-radius: 6px 6px 0 0;
+    margin-right: 3px;
+}
+
+.dashboard-tab:hover {
+    color: #fff;
+    background: #383838;
+}
+
+.dashboard-tab.active {
+    color: #fff;
+    background: #2e7d32;
+    border-color: #2e7d32;
+}
+
+.dashboard-tab-content {
+    width: 100%;
+}
+
+.dashboard-tab-panel {
+    display: none;
+    width: 100%;
+}
+
+.dashboard-tab-panel.active {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+}
+</style>
+
+<!-- ================= 4. TRADE-SETUPS TABLE CSS (removed; .atm-row was kept live for the buy table) ================= -->
+<style>
+    .tradeRecomm {
+    font-weight: bold;
+    color: hsl(0, 9%, 98%); /* default dark text */
+    }
+
+    .tradeRecomm.green {
+    color: #23f023;
+    }
+
+    .tradeRecomm.red {
+    color: #f55656;
+    }
+
+
+    .trade-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 10px;
+    font-family: Arial, sans-serif;
+    }
+
+    .trade-table th, .trade-table td {
+    padding: 8px 10px;
+    border-bottom: 1px solid #ccc;
+    text-align: left;
+    }
+
+    .trade-table thead {
+    background-color: #222;
+    color: #fff;
+    position: sticky;
+    top: 0;
+    }
+
+    .trend-up {
+    background-color: #e6ffe6; /* light green */
+    color: #006600;
+    }
+
+    .trend-down {
+    background-color: #ffe6e6; /* light red */
+    color: #990000;
+    }
+
+    .trend-neutral {
+    background-color: #f0f0f0; /* light gray */
+    color: #555;
+    }
+
+    /* Aggressive rows flash animation */
+    .aggressive {
+    font-weight: bold;
+    animation: flash 1.2s infinite;
+    }
+
+    @keyframes flash {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+    }
+
+    /* Make table scrollable if tall */
+    #tradeSetupsContainer {
+    max-height: 300px;
+    overflow-y: auto;
+    border: 1px solid #999;
+    border-radius: 6px;
+    background: #fff;
+    padding: 5px;
+    }
+</style>
+
+<!-- ================= 5. JS: pending orders handler + cancel listeners + module-tab switching (removed) ================= -->
+<script>
+    const pendingOrdersBody = document.getElementById('pendingOrdersBody');
+
+    // Receive list of pending orders from backend
+    socket.on('update_pending_orders', function(orders) {
+        pendingOrdersBody.innerHTML = "";
+
+        if (!orders || orders.length === 0) {
+            pendingOrdersBody.innerHTML =
+                `<tr><td colspan="5" style="text-align:center; color:#888;">No pending orders</td></tr>`;
+            return;
+        }
+
+        orders.forEach(order => {
+            const row = document.createElement("tr");
+            row.innerHTML = `
+                <td>${order.tradingsymbol}</td>
+                <td>${order.quantity}</td>
+                <td>${order.order_id}</td>
+                <td>${order.average_price}</td>
+                <td>
+                    <button class="sell-button cancel-btn" 
+                            data-orderid="${order.order_id}">
+                        Cancel
+                    </button>
+                </td>
+            `;
+            pendingOrdersBody.appendChild(row);
+        });
+
+        addCancelOrderListeners();
+    });
+
+    function addCancelOrderListeners() {
+    document.querySelectorAll('.cancel-btn').forEach(btn => {
+        btn.addEventListener('click', function() {
+            const orderId = this.dataset.orderid;
+            socket.emit('cancel_pending_order', { order_id: orderId });
+        });
+    });
+}
+
+    // --- MODULE TABS (Trade / Setup / Pending Orders) ---
+    const dashboardTabButtons = document.querySelectorAll('.dashboard-tab');
+    const dashboardTabPanels = document.querySelectorAll('.dashboard-tab-panel');
+
+    function activateTab(tabButton) {
+        dashboardTabButtons.forEach(btn => btn.classList.toggle('active', btn === tabButton));
+        const targetPanelId = tabButton.dataset.tab;
+        dashboardTabPanels.forEach(panel => panel.classList.toggle('active', panel.id === targetPanelId));
+    }
+
+    dashboardTabButtons.forEach(btn => btn.addEventListener('click', () => activateTab(btn)));
+</script>
+
+<!-- ================= 6. JS: request_pending_orders emit on connect (removed) ================= -->
+<script>
+        socket.emit('request_pending_orders');
+</script>
+
+<!-- ================= 7. JS: full update_trading_view_data handler (the live one now only runs TV validation) ================= -->
+<script>
+    socket.on('update_trading_view_data', (payload) => {
+        console.log("Received TradingView data:", payload);
+
+        const data = payload.TradingView_Data || {};
+        const tradeSetups = payload.TradeSetups || [];
+
+        // TradingView entry validation flags (TV_DATA_Validation_REQUIRED).
+        // Must run before any early return below so button state always
+        // tracks the latest webhook.
+        applyTVValidationPayload(payload);
+
+        // --- DEBUG ---
+        console.log("TradeSetups received:", tradeSetups);
+
+        // --- Paint the Trade Setups Table ---
+        const container = document.getElementById("tradeSetupsContainer");
+        if (!container) {
+            console.warn("Missing #tradeSetupsContainer element in DOM");
+            return;
+        }
+
+        // Clear old content
+        container.innerHTML = "";
+
+        if (!Array.isArray(tradeSetups) || tradeSetups.length === 0) {
+            container.innerHTML = `<p style="color:gray;">No trade setups available.</p>`;
+            return;
+        }
+
+        // Build table
+        const table = document.createElement("table");
+        table.classList.add("trade-table");
+
+        // Table Header
+        table.innerHTML = `
+            <thead>
+                <tr>
+                    <th>Trend</th>
+                    <th>SetUp</th>
+                    <th>Description</th>
+                    <th>Trade Case</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        `;
+
+        const tbody = table.querySelector("tbody");
+
+        tradeSetups.forEach((setup) => {
+            const row = document.createElement("tr");
+
+            // Color rows based on trend
+            if (setup.Trend === "Uptrend") row.classList.add("trend-up");
+            else if (setup.Trend === "Downtrend") row.classList.add("trend-down");
+            else row.classList.add("trend-neutral");
+
+            // Flash/bold if aggressive
+            if (setup.Aggressive) row.classList.add("aggressive");
+
+            row.innerHTML = `
+                <td>${setup.Trend}</td>
+                <td>${setup.SetUp}</td>
+                <td>${setup.Description}</td>
+                <td>${setup.TradeCase}</td>
+            `;
+
+            tbody.appendChild(row);
+        });
+
+        container.appendChild(table);
+    });
+</script>

@@ -3,6 +3,7 @@ import rel
 import json
 import asyncio
 import logging
+import socket
 import http.client
 import websockets
 import threading
@@ -10,7 +11,7 @@ import datetime
 from dotenv import load_dotenv
 from loguru import logger
 
-from utils import fetch_from_json , write_to_json
+from utils import fetch_from_json , write_to_json , get_exchange_for_underlying
 from adapter.mstock_utils import parse_quote_message
 
 logging.basicConfig(level=logging.DEBUG)
@@ -20,6 +21,9 @@ load_dotenv()
 MSTOCK_API_KEY = os.getenv("MSTOCK_API_KEY")
 MSTOCK_CLIENT_CODE = os.getenv("MSTOCK_CLIENT_CODE")
 MSTOCK_CLIENT_PASSWORD = os.getenv("MSTOCK_CLIENT_PASSWORD")
+
+WS_HOST = "ws.mstock.trade"
+WS_PORT = 443
 
 
 class MStockSingleton:
@@ -42,6 +46,7 @@ class MStockSingleton:
         if not self._api_key:
             raise ValueError("MSTOCK_API_KEY not found in environment variables")
         self._socket_loop = None
+        self._ws_cached_ips = []
 
     def create_session(self):
         logger.info("Creating M.Stock session...")
@@ -68,7 +73,7 @@ class MStockSingleton:
             headers,
         )
         response = json.loads(conn.getresponse().read().decode("utf-8"))
-        logger.debug("Login response: {response}", response=response)
+        #logger.debug("Login response: {response}", response=response)  # prints jwtToken/refreshToken/feedToken
         return response["data"]["refreshToken"]
 
     def get_session_token(self, refresh_token):
@@ -104,16 +109,63 @@ class MStockSingleton:
         write_to_json(data_to_update_json , "access_token.json")
         self.set_access_token(access_token)
 
+    def _ws_url(self, host=None):
+        host = host or WS_HOST
+        return f"wss://{host}?API_KEY={self._api_key}&ACCESS_TOKEN={self._access_token}"
+
+    async def _refresh_ws_ip_cache(self):
+        """
+        Resolve the websocket host (IPv4) and cache the addresses.
+
+        DNS lookups for this host fail intermittently - transient resolver
+        glitches amplified by Windows negative DNS caching. The cached
+        addresses let the reconnect logic bypass DNS entirely while the
+        resolver recovers.
+        """
+        try:
+            loop = asyncio.get_running_loop()
+            infos = await loop.getaddrinfo(
+                WS_HOST, WS_PORT, family=socket.AF_INET, proto=socket.IPPROTO_TCP
+            )
+            ips = sorted({info[4][0] for info in infos})
+            if ips:
+                self._ws_cached_ips = ips
+        except Exception:
+            # Resolver currently failing - keep previously cached addresses
+            pass
+
+    async def _connect_ws(self):
+        """
+        Connect to the websocket. When DNS resolution fails, fall back to
+        the last known good IP. TLS still verifies the real hostname via
+        server_hostname, so the connection remains secure.
+        """
+        try:
+            return await websockets.connect(self._ws_url())
+        except (socket.gaierror, OSError) as e:
+            if not self._ws_cached_ips:
+                raise
+            ip = self._ws_cached_ips[0]
+            logger.warning(
+                f"DNS lookup for {WS_HOST} failed ({e}); "
+                f"connecting via cached IP {ip}"
+            )
+            return await websockets.connect(
+                self._ws_url(ip),
+                server_hostname=WS_HOST,
+            )
+
     async def start_socket_connection(self, shutdown_event, trader_instance):
         # logger.info("Starting M.Stock WebSocket connection...")
         """Starts the WebSocket connection and handles automatic reconnection."""
         self._trader = trader_instance
-        url = f"wss://ws.mstock.trade?API_KEY={self._api_key}&ACCESS_TOKEN={self._access_token}"
 
         while True:
             try:
+                await self._refresh_ws_ip_cache()
+
                 logger.info("Attempting to connect to M.Stock WebSocket...")
-                async with websockets.connect(url) as ws:
+                async with await self._connect_ws() as ws:
                     self._socket = ws
                     self._socket_loop = asyncio.get_running_loop()
                     logger.info("Connection successful. Logging in...")
@@ -298,7 +350,11 @@ class MStockSingleton:
 
         if isinstance(instruments, list):
 
-            exchange = fetch_from_json("constants.json", "EXCHANGE")
+            # Exchange is derived from the configured underlying (the
+            # old constants.json EXCHANGE key no longer exists).
+            exchange = get_exchange_for_underlying(
+                fetch_from_json("constants.json", "UNDERLYING")
+            )
 
             if exchange == "BFO":
                 exchange_type = 4
@@ -415,7 +471,8 @@ class MStockSingleton:
             self._trader.set_latest_price(
                 token,
                 None,
-                ltp
+                ltp,
+                market_update.get("close")
             )
 
             # logger.debug(
@@ -431,7 +488,7 @@ class MStockSingleton:
     def set_access_token(self, access_token):
         logger.info("Setting access token for M.Stock...")
         self._access_token = access_token
-        logger.debug(f"Access token set: {access_token}")
+        #logger.debug(f"Access token set: {access_token}")  # do not log the token
 
     # development
     def initialise_for_dev(self):
@@ -452,6 +509,6 @@ class MStockSingleton:
             logger.debug("MStock session created for production.")
         else:
             access_token = fetch_from_json("access_token.json", "mstock_jwt_token")
-            logger.debug(access_token)
+            #logger.debug(access_token)  # do not log the token
             logger.info("Fetched access token from JSON for production.")
             self.set_access_token(access_token)

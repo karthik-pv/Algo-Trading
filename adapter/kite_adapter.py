@@ -2,10 +2,11 @@ import logging
 from datetime import datetime
 import calendar
 import csv
+import threading
 from pprint import pprint
 from loguru import logger
 
-from utils import get_trading_symbols_from_json , find_matching_row_in_csv , fetch_from_json
+from utils import get_trading_symbols_from_json , find_matching_row_in_csv , fetch_from_json , compute_limit_margin , round_to_tick , get_exchange_for_underlying
 from core.kite_connector import KiteSingleton
 from interface.broker_interface import BrokerInterface
 from core.trade_logic import Trader_Singleton
@@ -17,8 +18,6 @@ import json
 from utils import is_market_open
 
 from core import shared_state
-
-from utils import clear_json_cache
 
 import os
 
@@ -32,35 +31,30 @@ class KiteAdapter(BrokerInterface):
         self.kite_instance = KiteSingleton()
         self.kite = self.kite_instance.get_kite()
         self._underlying = fetch_from_json("constants.json" , "UNDERLYING")
-        
-        self._limit_margin = fetch_from_json("constants.json" , "LIMIT_MARGIN")
+
         self._ORDER_FREEZE_LIMIT = fetch_from_json("constants.json", f"{'NIFTY' if self._underlying == 'NIFTY' else 'SENSEX'}_ORDER_FREEZE_LIMIT")
 
         self._instrument_cache = {}       # stores processed instruments keyed by tradingsymbol
         self._instrument_data_loaded = {}  # raw data loaded from CSV once
         self._csv_loaded = False           # flag to check if CSV has been read
+        self._csv_load_lock = threading.Lock()  # guards CSV load (background preload + lazy load)
 
-        self.constants = {
-            "EXCHANGE": "",
-            "NEAR_MONTH_FUTURE_TOKEN": "",
-            "EXPIRY_MONTH": "",
-            "EXPIRY_YEAR": "",
-            "NIFTY_EXPIRY_DATE": "",
-            "SENSEX_EXPIRY_DATE": "",
-            "NEAR_FUTURE_NEAR_OPTION_EXPIRE_TOGETHER": False
-        }
-    
-    def update_constants(self, new_values: dict):
-        """Update dictionary with new values"""
-        self.constants.update(new_values)
+        # Instrument-file-derived meta (replaces the old derived keys in
+        # constants.json). Computed in memory at startup from the CSV by
+        # download_instrument_list / compute_instrument_meta.
+        self._instrument_meta = None
 
-    def get_constant(self, key):
-        """Retrieve a specific value"""
-        return self.constants.get(key)
-
-    def show_constants(self):
-        """Print or return the full dictionary"""
-        logger.debug(f"Updated Constants are : {self.constants}")
+    def get_instrument_meta(self):
+        if self._instrument_meta is None and os.path.exists("kite_instruments.csv"):
+            # Lazily derive from the CSV (e.g. a call before the startup
+            # download ran). The CSV is small; parsing it here is cheap.
+            try:
+                self.compute_instrument_meta("kite_instruments.csv", self._underlying)
+            except Exception as e:
+                logger.warning(f"Lazy instrument meta computation failed: {e}")
+        if self._instrument_meta:
+            return self._instrument_meta
+        return super().get_instrument_meta()
 
 
     def _load_instruments_from_csv(self, csv_path="kite_instruments.csv"):
@@ -79,6 +73,18 @@ class KiteAdapter(BrokerInterface):
             logger.error(f"Failed to load instrument CSV: {e}")
 
 
+    def preload_instrument_data(self):
+        """
+        Warm the in-memory instrument CSV cache ahead of first use.
+
+        Safe to call from a background thread at startup: concurrent
+        lazy loads from get_instrument_details block on the same lock
+        and reuse the result instead of re-reading the CSV.
+        """
+        with self._csv_load_lock:
+            if not self._csv_loaded:
+                self._load_instruments_from_csv()
+
     def get_instrument_details(self, tradingsymbol):
         logger.info(f"Attempting to fetch instrument details for {tradingsymbol}")
 
@@ -88,8 +94,12 @@ class KiteAdapter(BrokerInterface):
             return self._instrument_cache[tradingsymbol]
 
         # ✅ 2. Ensure CSV is loaded into memory
+        # (double-checked lock: if a background preload is already
+        # loading the CSV, wait for it instead of loading again)
         if not self._csv_loaded:
-            self._load_instruments_from_csv()
+            with self._csv_load_lock:
+                if not self._csv_loaded:
+                    self._load_instruments_from_csv()
 
         # ✅ 3. Lookup instrument in preloaded memory
         data = self._instrument_data_loaded.get(tradingsymbol)
@@ -280,7 +290,7 @@ class KiteAdapter(BrokerInterface):
             # if the weekly expiry doesnt coincide with monthly expiry of the near month future token ..then it would be first letter of the month followed by 2 digits of expiry date
             # if the weekly expiry coincides with monthly expiry of the near month future token ..then it would be first three letters of the month and no digits of expiry date
             
-            if self.get_constant("NEAR_FUTURE_NEAR_OPTION_EXPIRE_TOGETHER"): 
+            if self.get_instrument_meta().get("expire_together"):
                 month_char = calendar.month_name[expiry.month][:3].upper()
                 dd_str=""
             else:
@@ -303,13 +313,18 @@ class KiteAdapter(BrokerInterface):
         # pvt_30m = data['PVT']['30m']
         # logger.debug(f"pvt_30m is : {pvt_30m}")
         try:
-            lotsize = self.get_instrument_details(trading_symbol)["lot_size"]
+            instrument_details = self.get_instrument_details(trading_symbol)
+            lotsize = instrument_details["lot_size"]
+            tick = instrument_details.get("tick_size") or 0.05
             if exchange == "MCX":
                 order_type = self.kite.ORDER_TYPE_LIMIT
-                price = float(ltp)+float(self._limit_margin)
-
+                price = round_to_tick(float(ltp) + compute_limit_margin(ltp), tick, up=True)
+                # Kite MCX quantity is in LOTS (the margin engine charges
+                # limit price x lot size x lots), so pass the lot count
+                # through unchanged. Multiplying by lot size here makes
+                # every order lot_size times too big.
                 order_id = self.kite.place_order(
-                    tradingsymbol=trading_symbol, 
+                    tradingsymbol=trading_symbol,
                     exchange = exchange,
                     transaction_type=self.kite.TRANSACTION_TYPE_BUY,
                     quantity= str(quantity),
@@ -327,7 +342,7 @@ class KiteAdapter(BrokerInterface):
                 order_type = self.kite.ORDER_TYPE_LIMIT
                 quantity = int(quantity) * int(lotsize)
                 #price = 0
-                price = float(ltp)+float(self._limit_margin) 
+                price = round_to_tick(float(ltp) + compute_limit_margin(ltp), tick, up=True) 
 
 
 
@@ -359,7 +374,7 @@ class KiteAdapter(BrokerInterface):
                     
                     iceberg_legs = quantity // int(self._ORDER_FREEZE_LIMIT) # This will be 2 or more
                     
-                    price = float(ltp)+float(self._limit_margin) 
+                    price = round_to_tick(float(ltp) + compute_limit_margin(ltp), tick, up=True) 
                     logger.debug(f"Arrived iceberg legs - {iceberg_legs} with iceberg quantity {self._ORDER_FREEZE_LIMIT}")
                     order_id = self.kite.place_order(
                         tradingsymbol=trading_symbol, 
@@ -404,13 +419,21 @@ class KiteAdapter(BrokerInterface):
 
     def sell_units(self, trading_symbol, instrument_token , quantity, exchange , ltp):
         logger.debug(f"Inside sell units trading symbol: {trading_symbol} instrument token: {instrument_token} quantity: {quantity} exchange: {exchange} ltp: {ltp}" )
+        original_quantity = quantity
         try:
-            lotsize = self.get_instrument_details(trading_symbol)["lot_size"]
+            instrument_details = self.get_instrument_details(trading_symbol)
+            lotsize = instrument_details["lot_size"]
+            tick = instrument_details.get("tick_size") or 0.05
             if exchange == "MCX":
                 order_type = self.kite.ORDER_TYPE_LIMIT
-                price = float(ltp)-float(self._limit_margin)
+                # Rounded down to the tick and floored at one tick so
+                # low-priced options can never produce an invalid
+                # (zero/negative) sell limit price.
+                price = round_to_tick(float(ltp) - compute_limit_margin(ltp), tick, up=False)
+                # Kite MCX quantity is in LOTS (same as the BUY path);
+                # pass the lot count through unchanged.
                 order_id = self.kite.place_order(
-                    tradingsymbol=trading_symbol, 
+                    tradingsymbol=trading_symbol,
                     exchange = exchange,
                     transaction_type=self.kite.TRANSACTION_TYPE_SELL,
                     quantity= str(quantity),
@@ -424,7 +447,7 @@ class KiteAdapter(BrokerInterface):
                 order_type = self.kite.ORDER_TYPE_LIMIT
                 quantity = int(quantity) * int(lotsize)
                 #price = 0
-                price = float(ltp)-float(self._limit_margin) 
+                price = round_to_tick(float(ltp) - compute_limit_margin(ltp), tick, up=False) 
 
                 #This checks if the quantity is greater the Order Freeze Limit..
                 #If so then it check if it can be converted into 2 legs or more
@@ -469,7 +492,7 @@ class KiteAdapter(BrokerInterface):
                     
                     iceberg_legs = quantity // int(self._ORDER_FREEZE_LIMIT) # This will be 2 or more
                     
-                    price = float(ltp)-float(self._limit_margin) 
+                    price = round_to_tick(float(ltp) - compute_limit_margin(ltp), tick, up=False) 
                     logger.debug(f"Arrived iceberg legs - {iceberg_legs} with iceberg quantity {self._ORDER_FREEZE_LIMIT}")
                     logger.debug(
                         "Placing SELL ICEBERG order",
@@ -502,10 +525,12 @@ class KiteAdapter(BrokerInterface):
 
             logger.info(f"Kite Sell order placed successfully. Order ID: {order_id}")
             self._trader.frontend_data_socket.emit('status_message',{"success": True, "message": "Order executed successfully"})
+            self._trader.frontend_data_socket.emit('sell_order_result',{"success": True, "tradingsymbol": trading_symbol , "lots": original_quantity})
             return order_id
         except Exception as e:
             logger.error(f"Kite sell_units error: {e}")
             self._trader.frontend_data_socket.emit('status_message', {"success": False, "message": "Error placing order..."})
+            self._trader.frontend_data_socket.emit('sell_order_result',{"success": False, "tradingsymbol": trading_symbol , "error": str(e)})
             return None
 
     def subscribe_to_all(self, instruments):
@@ -529,11 +554,26 @@ class KiteAdapter(BrokerInterface):
             for tick in ticks:
                 instrument_token = tick["instrument_token"]
                 price = tick["last_price"]
-                self._trader.set_latest_price(str(instrument_token), None, price)
+                ohlc = tick.get("ohlc") or {}
+                self._trader.set_latest_price(
+                    str(instrument_token),
+                    None,
+                    price,
+                    ohlc.get("close")
+                )
 
         def on_connect(ws, response):
             logger.info("Connected to Kite WebSocket")
-            self._trader.setup_woc_subscriptions()
+            # Setup must NOT run on the websocket dispatch thread:
+            # setup_woc waits for the first ticks, which can only be
+            # delivered by this very thread. Running it on a separate
+            # thread keeps on_ticks flowing while setup waits, so the
+            # websocket (not REST) seeds the option prices.
+            threading.Thread(
+                target=self._trader.setup_woc_subscriptions,
+                daemon=True,
+                name="woc-setup",
+            ).start()
 
         def on_close(ws, code, reason):
             logger.warning(f"Kite WebSocket closed: {code}, {reason}")
@@ -611,8 +651,8 @@ class KiteAdapter(BrokerInterface):
                     if last_run_date == today:
                         logger.info(f"{filename} already downloaded today. Using existing file.")
 
-                        # still update constants from existing file
-                        self.update_instrument_constants(filename, underlying, "constants.json")
+                        # still compute meta from existing file
+                        self.compute_instrument_meta(filename, underlying)
                         return
 
         except Exception as e:
@@ -638,37 +678,25 @@ class KiteAdapter(BrokerInterface):
                 from utils import write_to_json
                 write_to_json({"kite_last_downloaded_instruments_timestamp": datetime.now().isoformat()}, "access_token.json")
 
-                self.update_instrument_constants("kite_instruments.csv", underlying, "constants.json")
+                self.compute_instrument_meta("kite_instruments.csv", underlying)
 
         except NameError:
             logger.error("The 'kite' object is not defined. Please ensure you have properly initialized and authenticated your KiteConnect object before running this code.")
         except Exception as e:
             logger.error(f"An error occurred during fetching or saving: {e}")
 
-    
+    def compute_instrument_meta(self, csv_file, underlying):
+        """
+        Derive the instrument meta (exchange, near-month future token,
+        near option expiry, expire-together flag, strike interval) from
+        the instrument CSV. Nothing is written to constants.json anymore;
+        the meta lives in memory and is exposed via get_instrument_meta().
+        """
+        logger.debug(f"Instrument meta to be computed for {csv_file} and for underlying {underlying}")
+        if not underlying:
+            logger.debug("No underlying supplied; skipping instrument meta computation.")
+            return None
 
-    def update_constants_file(self,data, json_file="constants.json"):
-        logger.info("Constants file going to be updated")
-        """Update or create constants.json with the given data."""
-        try:
-            # Load existing constants
-            with open(json_file, "r") as f:
-                constants = json.load(f)
-        except (FileNotFoundError, json.JSONDecodeError):
-            constants = {}
-
-        # Update keys
-        constants.update(data)
-
-        # Write back to file (pretty format)
-        with open(json_file, "w") as f:
-            json.dump(constants, f, indent=4)
-
-        logger.info("Constants file updated successfully.")
-
-
-    def update_instrument_constants(self,csv_file, underlying, json_file="constants.json"):
-        logger.debug(f"instrument constants to be updated for {csv_file} and for underlying {underlying}")
         df = pd.read_csv(csv_file)
         underlying = underlying.upper().strip()
 
@@ -676,14 +704,16 @@ class KiteAdapter(BrokerInterface):
         index_mapping = {
             'NIFTY': ['NIFTY'],
             'SENSEX': ['SENSEX'],
-            'CRUDEOIL':['CRUDEOIL'],
-            'CRUDEOILM':['CRUDEOILM']
+            'CRUDEOIL': ['CRUDEOIL'],
+            'CRUDEOILM': ['CRUDEOILM']
         }
+        family = index_mapping.get(underlying, [underlying])
+        today = pd.Timestamp.now().normalize()
 
         # --- 1️⃣ Find nearest future ---
         fut_df = df[
             (df['instrument_type'] == 'FUT') &
-            (df['name'].isin(index_mapping.get(underlying, [underlying])))
+            (df['name'].isin(family))
         ].copy()
 
         if fut_df.empty:
@@ -692,61 +722,65 @@ class KiteAdapter(BrokerInterface):
         fut_df['expiry'] = pd.to_datetime(fut_df['expiry'])
         nearest_future = fut_df.sort_values('expiry').iloc[0]
 
-        exchange = nearest_future['exchange']
-        trading_symbol = nearest_future['tradingsymbol']
+        exchange = str(nearest_future['exchange'])
+        trading_symbol = str(nearest_future['tradingsymbol'])
         expiry_date_future = nearest_future['expiry']
-        expiry_month = expiry_date_future.strftime('%b').upper()
-        expiry_year = expiry_date_future.strftime('%Y')
 
-        # --- 2️⃣ Find nearest weekly options ---
+        # --- 2️⃣ Find nearest options (weekly for NIFTY/SENSEX, monthly
+        # for the CRUDEOIL family; replaces the old manual
+        # CRUDEOIL_EXPIRY_DATE constant) ---
         opt_df = df[
             (df['instrument_type'].isin(['CE', 'PE'])) &
-            (df['name'].isin(['NIFTY', 'BANKNIFTY', 'SENSEX']))
+            (df['name'].isin(family))
         ].copy()
 
-        expiry_nifty = None
-        expiry_sensex = None
+        near_option_expiry = None
+        strike_interval = 100 if underlying == "SENSEX" else 50
         expire_together = False  # default
 
         if not opt_df.empty:
             opt_df['expiry'] = pd.to_datetime(opt_df['expiry'])
-            nifty_weekly = opt_df[opt_df['name'] == 'NIFTY'].sort_values('expiry')
-            sensex_weekly = opt_df[opt_df['name'].isin(['SENSEX'])].sort_values('expiry')
+            future_opts = opt_df[opt_df['expiry'] >= today]
 
-            expiry_nifty_date = nifty_weekly['expiry'].iloc[0] if not nifty_weekly.empty else None
-            expiry_sensex_date = sensex_weekly['expiry'].iloc[0] if not sensex_weekly.empty else None
+            if not future_opts.empty:
+                near_option_expiry_ts = future_opts.sort_values('expiry')['expiry'].iloc[0]
+                near_option_expiry = near_option_expiry_ts.date()
 
-            expiry_nifty = expiry_nifty_date.strftime('%d') if expiry_nifty_date is not None else ""
-            expiry_sensex = expiry_sensex_date.strftime('%d') if expiry_sensex_date is not None else ""
+                # --- 3️⃣ Derive the strike grid step from real strikes ---
+                near_expiry_opts = future_opts[future_opts['expiry'] == near_option_expiry_ts]
+                try:
+                    strikes = sorted(
+                        {
+                            int(float(s))
+                            for s in near_expiry_opts['strike'].dropna()
+                            if float(s) > 0
+                        }
+                    )
+                    diffs = [b - a for a, b in zip(strikes, strikes[1:]) if b > a]
+                    if diffs:
+                        strike_interval = max(set(diffs), key=diffs.count)
+                except Exception as e:
+                    logger.warning(f"Strike interval derivation failed ({e}); using {strike_interval}")
 
-            # --- 3️⃣ Determine if near future and near option expire together ---
-            if underlying == "NIFTY" and expiry_nifty_date is not None:
-                expire_together = expiry_nifty_date.date() == expiry_date_future.date()
-            elif underlying == "SENSEX" and expiry_sensex_date is not None:
-                expire_together = expiry_sensex_date.date() == expiry_date_future.date()
+                # --- 4️⃣ Determine if near future and near option expire together ---
+                if near_option_expiry is not None:
+                    expire_together = near_option_expiry == expiry_date_future.date()
 
-        # --- 4️⃣ Prepare update dictionary ---
-        update_data = {
-            "EXCHANGE": exchange,
-            "NEAR_MONTH_FUTURE_TOKEN": trading_symbol,
-            #"NEAR_MONTH_FUTURE_TOKEN": "CRUDEOILM25DECFUT",
-            "EXPIRY_MONTH": expiry_month,
-            #"EXPIRY_MONTH": "DEC",
-            "EXPIRY_YEAR": expiry_year,
-            "NIFTY_EXPIRY_DATE": expiry_nifty,
-            "SENSEX_EXPIRY_DATE": expiry_sensex,
-            "NEAR_FUTURE_NEAR_OPTION_EXPIRE_TOGETHER": expire_together
+        if not exchange:
+            exchange = get_exchange_for_underlying(underlying) or ""
+
+        self._instrument_meta = {
+            "underlying": underlying,
+            "exchange": exchange,
+            "near_month_future_token": trading_symbol,
+            "near_option_expiry": near_option_expiry.isoformat() if near_option_expiry else None,
+            "expire_together": bool(expire_together),
+            "strike_interval": int(strike_interval),
+            "generated_on": datetime.now().date().isoformat(),
         }
 
-        self._trader._exchange = exchange
-        self._trader._near_month_future_symbol = trading_symbol
-
-
-        # --- 5️⃣ Write to constants.json ---
-        self.update_constants_file(update_data, json_file)
-        clear_json_cache("constants.json")
-        self.update_constants(update_data)
-        logger.debug(self.show_constants())
+        logger.info(f"Computed instrument meta: {json.dumps(self._instrument_meta, indent=4)}")
+        return self._instrument_meta
 
     def get_quote(self, tradingsymbol):
 
@@ -764,7 +798,7 @@ class KiteAdapter(BrokerInterface):
                 price = float(data.get("last_price", 0))
 
                 if price > 0:
-                    return [price, price]
+                    return [price, price, price]
 
             quote = self.fetch_instrument_quote(data["exchange"], tradingsymbol)
 
@@ -780,8 +814,9 @@ class KiteAdapter(BrokerInterface):
 
             ltp = q["last_price"]
             open_price = q["ohlc"]["open"]
+            close_price = q["ohlc"].get("close")
 
-            return [ltp, open_price]
+            return [ltp, open_price, close_price]
 
         except Exception as e:
 
@@ -897,17 +932,28 @@ class KiteAdapter(BrokerInterface):
     #         logger.error(f"Batch quote failed: {e}")
     #         return {}    
 
+    def _resolve_quote_exchange(self, sym):
+        """
+        Exchange for a quote request, resolved from the instrument
+        master (correct for every exchange incl. BFO/SENSEX) with the
+        old CRUDEOIL-prefix heuristic as the fallback for symbols that
+        are not in the master.
+        """
+        self.preload_instrument_data()
+        row = self._instrument_data_loaded.get(sym)
+        exchange = str((row or {}).get("exchange") or "").strip().upper()
+        if exchange:
+            return exchange
+        if sym.upper().startswith(("CRUDEOIL", "CRUDEOILM")):
+            return "MCX"
+        return "NFO"
+
     def get_quotes_batch(self, symbols):
         try:
             instruments = []
 
             for sym in symbols:
-
-                if sym.upper().startswith(("CRUDEOIL", "CRUDEOILM")):
-                    exchange = "MCX"
-                else:
-                    exchange = "NFO"
-
+                exchange = self._resolve_quote_exchange(sym)
                 instruments.append(f"{exchange}:{sym}")
 
             logger.info(
@@ -920,20 +966,15 @@ class KiteAdapter(BrokerInterface):
             result = {}
 
             for sym in symbols:
-
-                if sym.upper().startswith(("CRUDEOIL", "CRUDEOILM")):
-                    exchange = "MCX"
-                else:
-                    exchange = "NFO"
-
-                key = f"{exchange}:{sym}"
+                key = f"{self._resolve_quote_exchange(sym)}:{sym}"
 
                 if key in data:
                     q = data[key]
 
                     result[sym] = [
                         q["last_price"],
-                        q["ohlc"]["open"]
+                        q["ohlc"]["open"],
+                        q["ohlc"].get("close")
                     ]
 
             return result

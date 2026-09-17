@@ -12,80 +12,130 @@
             background-color: #1a1a1a;
             color: #e0e0e0;
             margin: 0;
-            height: 100vh;
+            min-height: 100vh;
             overflow-x: hidden; /* Prevent horizontal scroll */
         }
 
-        /* --- STYLES FOR THE SHARED NAVBAR COMPONENT --- */
-        .header {
-            position: fixed;
+        /* --- TOP TAB BAR (replaces the old left sidebar nav) --- */
+        .app-tabbar {
+            position: sticky;
             top: 0;
-            left: 0;
-            width: 100%;
-            padding: 0.5rem 0;
-            z-index: 1001;
+            z-index: 1000;
+            display: flex;
+            align-items: center;
+            background-color: #2c2c2c;
+            border-bottom: 1px solid #444;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+            padding: 0 8px;
+            min-height: 48px;
+            box-sizing: border-box;
         }
-        .menu-button {
-            background: none; border: none; cursor: pointer; padding: 15px;
-            display: flex; flex-direction: column; justify-content: space-around;
-            width: 44px; height: 44px; margin-left: 1.5rem; box-sizing: border-box;
+        .tab-scroll-btn {
+            flex: 0 0 auto;
+            display: none; /* only shown by JS when the tab strip overflows */
+            align-items: center;
+            justify-content: center;
+            width: 30px;
+            height: 30px;
+            margin: 0 4px;
+            background: transparent;
+            color: #ccc;
+            border: 1px solid #666;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 1rem;
+            line-height: 1;
         }
-        .menu-button span {
-            width: 100%; height: 3px; background-color: white; border-radius: 2px;
-            transition: all 0.3s ease-in-out;
+        .tab-scroll-btn.visible { display: inline-flex; }
+        .tab-scroll-btn:hover { background: #444; color: #fff; }
+        .app-tabs {
+            flex: 1 1 auto;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            overflow-x: auto;
+            padding: 6px 0;
+            scrollbar-width: none;      /* Firefox */
+            -ms-overflow-style: none;   /* legacy Edge/IE */
         }
-        .sidebar {
-            position: fixed; top: 0; left: 0; height: 100%; width: 280px;
-            background-color: #2c2c2c; border-right: 1px solid #444;
-            box-shadow: 4px 0 15px rgba(0, 0, 0, 0.5); padding-top: 5rem;
-            transform: translateX(-100%); transition: transform 0.3s ease-in-out; z-index: 1000;
+        .app-tabs::-webkit-scrollbar { display: none; } /* Chrome/Edge/Safari */
+        .app-tab {
+            flex: 0 0 auto;
+            display: inline-flex;
+            align-items: center;
+            padding: 7px 24px;
+            color: #aaa;
+            text-decoration: none;
+            font-size: 0.9rem;
+            font-weight: 600;
+            background: #2c2c2c;
+            border: 1px solid #444;
+            border-bottom: none;
+            border-radius: 6px 6px 0 0;
+            cursor: pointer;
+            white-space: nowrap;
+            transition: background-color 0.2s, color 0.2s;
         }
-        .sidebar.active { transform: translateX(0); }
-        .sidebar ul { list-style: none; padding: 0; margin: 0; }
-        .sidebar a {
-            display: block; padding: 1rem 1.5rem; color: #e0e0e0; text-decoration: none;
-            font-size: 1.1rem; border-bottom: 1px solid #383838; transition: background-color 0.2s;
+        .app-tab:hover { color: #fff; background: #383838; }
+        .app-tab.active {
+            color: #fff;
+            background: #2e7d32;
+            border-color: #2e7d32;
         }
-        .sidebar a:hover { background-color: #444; }
-        .overlay {
-            position: fixed; top: 0; left: 0; height: 100%; width: 100%;
-            background-color: rgba(0, 0, 0, 0.7); z-index: 999;
-            opacity: 0; visibility: hidden;
-            transition: opacity 0.3s ease-in-out, visibility 0.3s ease-in-out;
-        }
-        .overlay.active { opacity: 1; visibility: visible; }
     </style>
     {% block head_styles %}{% endblock %}
 </head>
 <body>
 
-    <nav class="sidebar" id="mainSidebar">
-        <ul>
-            <li><a href="/home">Home</a></li>
-            <!-- <li><a href="/buy_widget">Options Widget</a></li>
-            <li><a href="/sell_widget">Sell Positions Widget</a></li> -->
-            <li><a href="/buy_dashboard"> Buy and Sell Dashboard</a></li>
-            <li><a href="/Utilities"> Utilities</a></li>
-            <li><a href="/constants"> Constants</a></li>
-            <li><a href="/settings"> Trade Settings</a></li>
-        </ul>
+    <nav class="app-tabbar" id="appTabbar">
+        <button class="tab-scroll-btn" id="tabScrollLeft" type="button" title="Scroll tabs left">&#x276E;</button>
+        <div class="app-tabs" id="appTabs">
+            <a class="app-tab {% if request.path in ('/trade', '/') %}active{% endif %}" href="/trade">Trade</a>
+            <a class="app-tab {% if request.path == '/orders' %}active{% endif %}" href="/orders">Orders</a>
+            <a class="app-tab {% if request.path == '/constants' %}active{% endif %}" href="/constants">Constants</a>
+            <a class="app-tab {% if request.path == '/settings' %}active{% endif %}" href="/settings">Trade Settings</a>
+        </div>
+        <button class="tab-scroll-btn" id="tabScrollRight" type="button" title="Scroll tabs right">&#x276F;</button>
     </nav>
-    <div class="overlay" id="overlay"></div>
+
     {% block content %}{% endblock %}
+
     <script>
         document.addEventListener('DOMContentLoaded', function() {
-            if (menuToggle) {
-                menuToggle.addEventListener('click', toggleMenu);
-            }
-            const mainSidebar = document.getElementById('mainSidebar');
-            const overlay = document.getElementById('overlay');
+            const tabs = document.getElementById('appTabs');
+            const leftBtn = document.getElementById('tabScrollLeft');
+            const rightBtn = document.getElementById('tabScrollRight');
+            if (!tabs || !leftBtn || !rightBtn) return;
 
-            function toggleMenu() {
-                mainSidebar.classList.toggle('active');
-                overlay.classList.toggle('active');
+            const SCROLL_STEP = 200;
+
+            // Arrows appear only while the tab strip can actually scroll
+            // in that direction.
+            function updateArrowVisibility() {
+                const canScrollLeft = tabs.scrollLeft > 1;
+                const canScrollRight = tabs.scrollLeft < (tabs.scrollWidth - tabs.clientWidth - 1);
+                leftBtn.classList.toggle('visible', canScrollLeft);
+                rightBtn.classList.toggle('visible', canScrollRight);
             }
-            menuToggle.addEventListener('click', toggleMenu);
-            overlay.addEventListener('click', toggleMenu);
+
+            leftBtn.addEventListener('click', function() {
+                tabs.scrollBy({ left: -SCROLL_STEP, behavior: 'smooth' });
+            });
+            rightBtn.addEventListener('click', function() {
+                tabs.scrollBy({ left: SCROLL_STEP, behavior: 'smooth' });
+            });
+
+            tabs.addEventListener('scroll', updateArrowVisibility, { passive: true });
+            window.addEventListener('resize', updateArrowVisibility);
+
+            // On load, bring the active tab into view without scrolling
+            // the page itself.
+            const activeTab = tabs.querySelector('.app-tab.active');
+            if (activeTab && tabs.scrollWidth > tabs.clientWidth) {
+                activeTab.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+            }
+
+            updateArrowVisibility();
         });
     </script>
 

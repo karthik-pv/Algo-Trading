@@ -137,12 +137,13 @@ input:focus {
         <h2>Constants Editor</h2>
 
         <form id="constantsForm">
-            <!-- Row 1: Exchange + Broker -->
+            <!-- Row 1: Underlying + Broker -->
             <div class="double-row">
                 <div class="form-group">
-                    <label>Exchange</label>
-                    <select id="EXCHANGE">
-                        <option>MCX</option><option>NFO</option><option>BFO</option>
+                    <label>Underlying</label>
+                    <select id="UNDERLYING">
+                        <option>NIFTY</option><option>SENSEX</option>
+                        <option>CRUDEOIL</option><option>CRUDEOILM</option>
                     </select>
                 </div>
                 <div class="form-group">
@@ -153,68 +154,72 @@ input:focus {
                 </div>
             </div>
 
-            <!-- Row 2: Underlying + Near Month Future Token -->
+            <!-- Row 2: Order Freeze Limits -->
             <div class="double-row">
                 <div class="form-group">
-                    <label>Underlying</label>
-                    <select id="UNDERLYING">
-                        <option>NIFTY</option><option>SENSEX</option>
-                        <option>CRUDEOIL</option><option>CRUDEOILM</option>
-                    </select>
+                    <label>NIFTY Order Freeze Limit</label>
+                    <input type="number" id="NIFTY_ORDER_FREEZE_LIMIT">
                 </div>
                 <div class="form-group">
-                    <label>Near Month Future Token</label>
-                    <select id="NEAR_MONTH_FUTURE_TOKEN">
-                        <option>NIFTY25OCTFUT</option>
-                        <option>NIFTY25NOVFUT</option>
-                        <option>NIFTY25DECFUT</option>
-                        <option>SENSEX25OCTFUT</option>
-                        <option>SENSEX25NOVFUT</option>
-                        <option>SENSEX25DECFUT</option>
-                        <option>CRUDEOIL25OCTFUT</option>
-                        <option>CRUDEOIL25NOVFUT</option>
-                        <option>CRUDEOIL25DECFUT</option>
-                        <option>CRUDEOILM25OCTFUT</option>
-                        <option>CRUDEOILM25NOVFUT</option>
-                        <option>CRUDEOILM25DECFUT</option>
-                    </select>
+                    <label>SENSEX Order Freeze Limit</label>
+                    <input type="number" id="SENSEX_ORDER_FREEZE_LIMIT">
                 </div>
             </div>
 
-            <!-- Row 3: NIFTY / SENSEX Expiry Date -->
+            <!-- Row 3: WOC Factors -->
             <div class="double-row">
                 <div class="form-group">
-                    <label>NIFTY Expiry Date</label>
-                    <select id="NIFTY_EXPIRY_DATE"></select>
+                    <label>WOC Call Factor</label>
+                    <input type="number" id="WOC_CALL_FACTOR">
                 </div>
                 <div class="form-group">
-                    <label>SENSEX Expiry Date</label>
-                    <select id="SENSEX_EXPIRY_DATE"></select>
+                    <label>WOC Put Factor</label>
+                    <input type="number" id="WOC_PUT_FACTOR">
                 </div>
             </div>
 
-            <!-- Row 4: Expiry Month / Year -->
+            <!-- Row 4: Fallback LTPs -->
             <div class="double-row">
                 <div class="form-group">
-                    <label>Expiry Month</label>
-                    <select id="EXPIRY_MONTH">
-                        <option>JAN</option><option>FEB</option><option>MAR</option><option>APR</option>
-                        <option>MAY</option><option>JUN</option><option>JUL</option><option>AUG</option>
-                        <option>SEP</option><option>OCT</option><option>NOV</option><option>DEC</option>
-                    </select>
+                    <label>NIFTY Fallback LTP</label>
+                    <input type="number" id="NIFTY_FALLBACK_LTP" step="0.01">
                 </div>
                 <div class="form-group">
-                    <label>Expiry Year</label>
-                    <select id="EXPIRY_YEAR">
-                        <option>2025</option><option>2026</option>
-                    </select>
+                    <label>SENSEX Fallback LTP</label>
+                    <input type="number" id="SENSEX_FALLBACK_LTP" step="0.01">
                 </div>
             </div>
 
-            <!-- Row 5: Limit Margin -->
-            <div class="form-group">
-                <label>Limit Margin</label>
-                <input type="number" id="LIMIT_MARGIN" step="0.01">
+            <!-- Row 5b: Tiered market-protection buffer (Zerodha-style, % of LTP) -->
+            <div class="double-row">
+                <div class="form-group">
+                    <label>Limit Margin % (LTP &lt; 10)</label>
+                    <input type="number" id="LIMIT_MARGIN_PCT_LT_10" step="0.1">
+                </div>
+                <div class="form-group">
+                    <label>Limit Margin % (10 - 100)</label>
+                    <input type="number" id="LIMIT_MARGIN_PCT_10_100" step="0.1">
+                </div>
+            </div>
+            <div class="double-row">
+                <div class="form-group">
+                    <label>Limit Margin % (100 - 500)</label>
+                    <input type="number" id="LIMIT_MARGIN_PCT_100_500" step="0.1">
+                </div>
+                <div class="form-group">
+                    <label>Limit Margin % (&gt; 500)</label>
+                    <input type="number" id="LIMIT_MARGIN_PCT_GT_500" step="0.1">
+                </div>
+            </div>
+            <div class="double-row">
+                <div class="form-group">
+                    <label>Limit Margin Min (pts)</label>
+                    <input type="number" id="LIMIT_MARGIN_MIN_PTS" step="0.01">
+                </div>
+                <div class="form-group">
+                    <label>Limit Margin Max (pts)</label>
+                    <input type="number" id="LIMIT_MARGIN_MAX_PTS" step="0.01">
+                </div>
             </div>
 
             
@@ -241,23 +246,6 @@ input:focus {
 </main>
 
 <script>
-// Fill expiry days 1–31
-function populateDays(id) {
-    const sel = document.getElementById(id);
-    const today = new Date(); // reference year/month doesn't matter for day calculation
-    for (let i = 1; i <= 31; i++) {
-        // Use a fixed month and year for day calculation (e.g., Jan 2025)
-        const date = new Date(2025, 0, i); // Month is 0-based: 0 = January
-        const dayStr = date.toLocaleDateString('en-US', { weekday: 'short' }); // "Mon", "Tue", etc.
-        const opt = document.createElement("option");
-        opt.value = i;           // numeric date is the value saved
-        opt.textContent = `${i} ${dayStr}`; // display "20 Mon"
-        sel.appendChild(opt);
-    }
-}
-populateDays("NIFTY_EXPIRY_DATE");
-populateDays("SENSEX_EXPIRY_DATE");
-
 let constants = {};
 
 async function loadConstants() {

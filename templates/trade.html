@@ -24,6 +24,7 @@
     /* --- STYLES FROM BUY WIDGET --- */
     .widget-container {
         position: relative; background-color: #2c2c2c; padding: 10px;
+        box-sizing: border-box;
         border-radius: 12px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
         border: 1px solid #444; transition: box-shadow 0.4s ease, border-color 0.4s ease;
     }
@@ -74,7 +75,6 @@
         overflow: hidden;
     }
     .toggle-button { background-color: transparent; color: #ccc; border: 1px solid #666; padding: 0.6rem 1.2rem; cursor: pointer; font-size: 0.9rem; font-weight: 500; transition: background-color 0.3s; }
-    .toggle-button + .toggle-button { border-left: none; }
     .toggle-button.active-toggle { background-color: #2e7d32; color: white; }
     #buy-widget-container.put-view .toggle-button.active-toggle { background-color: #c62828; }
     .announcement-toggle-label {
@@ -106,23 +106,23 @@
         min-width: auto;
         white-space: nowrap;
         flex: 0 0 auto;
-        margin-right: 18px;
         font-size: 0.8rem;
     }
 
     .toggle-container {
     width :100%;
+    box-sizing: border-box;
     display: flex;
     align-items: center;
     justify-content: space-between; /* 👈 pushes label left, buttons right */
     padding: 8px 12px;
-    }   
+    }
     .toggle-container > div:first-child {
     flex: 1 1 auto;
     min-width: 0;
     display: flex;
     align-items: center;
-    gap: 0;
+    gap: 4px;
     overflow: visible;
     }
 
@@ -153,6 +153,20 @@
     display: inline-flex;
     align-items: center;
     white-space: nowrap;
+}
+
+#nmf_pts.profit, #nmf_chgo.profit {
+    background-color: #00B050;
+    border-color: #00B050;
+    color: #fff;
+    font-weight: 700;
+}
+
+#nmf_pts.loss, #nmf_chgo.loss {
+    background-color: #d32f2f;
+    border-color: #d32f2f;
+    color: #fff;
+    font-weight: 700;
 }
 
 /*
@@ -198,83 +212,10 @@
     vertical-align: middle;
     }
 
-    .tradeRecomm {
-    font-weight: bold;
-    color: hsl(0, 9%, 98%); /* default dark text */
-    }
-
-    .tradeRecomm.green {
-    color: #23f023;
-    }
-
-    .tradeRecomm.red {
-    color: #f55656;
-    }
-
-
-    .trade-table {
-    width: 100%;
-    border-collapse: collapse;
-    margin-top: 10px;
-    font-family: Arial, sans-serif;
-    }
-
-    .trade-table th, .trade-table td {
-    padding: 8px 10px;
-    border-bottom: 1px solid #ccc;
-    text-align: left;
-    }
-
-    .trade-table thead {
-    background-color: #222;
-    color: #fff;
-    position: sticky;
-    top: 0;
-    }
-
-    .trend-up {
-    background-color: #e6ffe6; /* light green */
-    color: #006600;
-    }
-
-    .trend-down {
-    background-color: #ffe6e6; /* light red */
-    color: #990000;
-    }
-
-    .trend-neutral {
-    background-color: #f0f0f0; /* light gray */
-    color: #555;
-    }
-
-    /* Aggressive rows flash animation */
-    .aggressive {
-    font-weight: bold;
-    animation: flash 1.2s infinite;
-    }
-
     .atm-row {
     background-color: hwb(0 29% 71%);   /* light gray */
     color: hsl(0, 25%, 98%);
     }
-
-    @keyframes flash {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.5; }
-    }
-
-    /* Make table scrollable if tall */
-    #tradeSetupsContainer {
-    max-height: 300px;
-    overflow-y: auto;
-    border: 1px solid #999;
-    border-radius: 6px;
-    background: #fff;
-    padding: 5px;
-    }
-
-
-    
     /* --- STYLES FROM SELL WIDGET --- */
     #sell-widget-container { width: 100%; max-width: none; }
     #sell-widget-container h2 { text-align: center; color: #ffffff; margin-bottom: 1.5rem; }
@@ -282,6 +223,7 @@
     .loss { color: #ef5350; font-weight: 500; }
     .sell-button { background-color: #c62828; color: white; border: none; padding: 0.6rem 1rem; border-radius: 5px; cursor: pointer; font-size: 0.9rem; font-weight: 500; transition: background-color 0.2s; }
     .sell-button:hover { background-color: #a12020; }
+    .sell-button:disabled {background-color: #ccc; color: #666;cursor: not-allowed;opacity: 0.7;}
     
     /* --- COMMON & SHARED STYLES --- */
     .option-table { width: 100%; border-collapse: collapse; }
@@ -311,20 +253,6 @@
         .lots-override-input { padding: 0.3rem; }
     }
 
-    #refreshBtn {
-        padding: 0.6rem 0.8rem; /* Tighter padding for an icon */
-        font-size: 1.1rem;      /* Make the icon a bit bigger */
-        line-height: 1.2;       /* Helps vertical alignment */
-    }
-    #refreshBtn:hover {
-        background-color: #444; /* Add a hover effect */
-    }
-    #refreshBtn:disabled {
-        color: #666;
-        cursor: not-allowed;
-        background-color: transparent;
-    }
-
     .buy-options-header {
     display: flex;
     align-items: center;
@@ -344,22 +272,203 @@
         gap: 8px;
     }
 
-    #orderStatusLabel {
-        min-height: 1.25rem;
-        margin: 0.15rem 0 0.25rem;
-        padding: 0.25rem 0.5rem;
+    .status-bar {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        min-height: 1.4rem;
+        margin: 0.1rem 0;
+    }
+
+    .status-bar-left {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        font-size: 0.78rem;
         color: #bdbdbd;
-        font-size: 0.8rem;
-        text-align: center;
+        min-width: 0;
+    }
+
+    /* Mode label (LIVE / PAPER / SIMULATION / PLAYBACK) in the status bar */
+    .mode-label {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+        padding: 0.25rem 0.6rem;
+        border-radius: 4px;
+        border: 1px solid #888;
+        background-color: hsl(0, 1%, 26%);
+        color: #fff;
+        font-size: 0.72rem;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        white-space: nowrap;
+        flex: 0 0 auto;
+    }
+    .mode-label::before {
+        content: "";
+        width: 0.5rem;
+        height: 0.5rem;
+        border-radius: 50%;
+        background-color: #9e9e9e;
+    }
+    /* LIVE: green box + blinking dot with expanding concentric pulse rings */
+    .mode-label[data-mode="LIVE"] {
+        position: relative;
+        border-color: #66bb6a;
+        background-color: #1b4622;
+    }
+    .mode-label[data-mode="LIVE"]::before {
+        background-color: #66bb6a;
+        animation: live-dot-blink 1.6s ease-in-out infinite;
+    }
+    .mode-label[data-mode="LIVE"]::after {
+        content: "";
+        position: absolute;
+        left: 0.6rem;
+        top: 50%;
+        width: 0.5rem;
+        height: 0.5rem;
+        border-radius: 50%;
+        transform: translateY(-50%);
+        pointer-events: none;
+        animation: live-pulse-rings 1.8s ease-out infinite;
+    }
+    @keyframes live-dot-blink {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.35; }
+    }
+    @keyframes live-pulse-rings {
+        0% {
+            box-shadow: 0 0 0 0 rgba(102, 187, 106, 0.75),
+                        0 0 0 0 rgba(102, 187, 106, 0.45);
+        }
+        70% {
+            box-shadow: 0 0 0 6px rgba(102, 187, 106, 0),
+                        0 0 0 6px rgba(102, 187, 106, 0.30);
+        }
+        100% {
+            box-shadow: 0 0 0 6px rgba(102, 187, 106, 0),
+                        0 0 0 14px rgba(102, 187, 106, 0);
+        }
+    }
+    .mode-label[data-mode="PAPER"] { border-color: #42a5f5; background-color: #14304a; }
+    .mode-label[data-mode="PAPER"]::before { background-color: #42a5f5; }
+    .mode-label[data-mode="SIMULATION"] { border-color: #ffb74d; background-color: #4a3413; }
+    .mode-label[data-mode="SIMULATION"]::before { background-color: #ffb74d; }
+    .mode-label[data-mode="PLAYBACK"] { border-color: #ba68c8; background-color: #3d1f47; }
+    .mode-label[data-mode="PLAYBACK"]::before { background-color: #ba68c8; }
+
+    /* Playback controls next to the mode label */
+    .playback-controls {
+        display: flex;
+        align-items: center;
+        gap: 0.4rem;
+        flex: 0 0 auto;
+    }
+    #playbackStartInput {
+        background-color: #1a1a1a;
+        border: 1px solid #555;
+        color: #fff;
+        padding: 0.25rem 0.45rem;
+        border-radius: 4px;
+        font-size: 0.75rem;
+        width: 205px;
+        color-scheme: dark;
+    }
+    .playback-btn {
+        background-color: transparent;
+        color: #ccc;
+        border: 1px solid #666;
+        border-radius: 4px;
+        padding: 0.22rem 0.5rem;
+        cursor: pointer;
+        font-size: 0.85rem;
+        line-height: 1;
+        transition: background-color 0.2s, color 0.2s;
+    }
+    .playback-btn:hover { background-color: #333; color: #fff; }
+    .playback-btn.playback-active { background-color: #2e7d32; color: #fff; border-color: #66bb6a; }
+    #playbackSpeedSelect {
+        background-color: #1a1a1a;
+        border: 1px solid #555;
+        color: #fff;
+        padding: 0.25rem 0.35rem;
+        border-radius: 4px;
+        font-size: 0.75rem;
+        cursor: pointer;
+        color-scheme: dark;
+    }
+
+    #orderStatusLabel {
+        margin-left: auto;
+        padding: 0;
+        font-size: 0.78rem;
         white-space: normal;
+        flex-shrink: 0;
+    }
+
+    #orderStatusLabel.success,
+    #orderStatusLabel.error {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4rem;
+        padding: 0.35rem 0.7rem;
+        font-size: 0.78rem;
+        font-weight: 600;
+        letter-spacing: 0.01em;
+        border-radius: 6px;
+        color: #ffffff;
+        animation: statusSlideIn 0.3s ease;
+        transition: opacity 0.3s ease, transform 0.3s ease;
     }
 
     #orderStatusLabel.success {
-        color: #66bb6a;
+        background: linear-gradient(135deg, #1b5e20 0%, #2e7d32 45%, #43a047 100%);
+        border: 1px solid #66bb6a;
+        border-left: 4px solid #66bb6a;
+        box-shadow: 0 2px 10px rgba(46, 125, 50, 0.4);
     }
 
     #orderStatusLabel.error {
-        color: #ef5350;
+        background: linear-gradient(135deg, #7f1d1d 0%, #b71c1c 45%, #d32f2f 100%);
+        border: 1px solid #ef5350;
+        border-left: 4px solid #ef5350;
+        box-shadow: 0 2px 10px rgba(183, 28, 28, 0.4);
+    }
+
+    #orderStatusLabel .status-icon {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 1.1rem;
+        height: 1.1rem;
+        border-radius: 50%;
+        background: rgba(255, 255, 255, 0.2);
+        flex-shrink: 0;
+    }
+
+    #orderStatusLabel .status-icon svg {
+        width: 0.65rem;
+        height: 0.65rem;
+        display: block;
+    }
+
+    #orderStatusLabel.hiding {
+        opacity: 0;
+        transform: translateX(10px);
+    }
+
+    @keyframes statusSlideIn {
+        from {
+            opacity: 0;
+            transform: translateX(12px);
+        }
+        to {
+            opacity: 1;
+            transform: translateX(0);
+        }
     }
 
     /* Temporary BUY price shown before broker/order reconciliation */
@@ -369,74 +478,37 @@
         font-weight: 700;
     }
 
-/* =========================================================
-   TRADE / ORDERS TABS
-   ========================================================= */
-
-.dashboard-tabs {
-    width: 95%;
-    max-width: 1150px;
-    display: flex;
-    align-items: flex-end;
-    margin-top: 5px;
-    border-bottom: 1px solid #555;
-}
-
-.dashboard-tab {
-    background: #2c2c2c;
-    color: #aaa;
-    border: 1px solid #444;
-    border-bottom: none;
-    padding: 7px 28px;
-    font-size: 0.85rem;
-    font-weight: 600;
-    cursor: pointer;
-    border-radius: 6px 6px 0 0;
-    margin-right: 3px;
-}
-
-.dashboard-tab:hover {
-    color: #fff;
-    background: #383838;
-}
-
-.dashboard-tab.active {
-    color: #fff;
-    background: #2e7d32;
-    border-color: #2e7d32;
-}
-
-.dashboard-tab-content {
-    width: 100%;
-}
-
-.dashboard-tab-panel {
-    display: none;
-    width: 100%;
-}
-
-.dashboard-tab-panel.active {
-    display: block;
-}
-
-/* Orders content should fit the dashboard rather than
-   behaving like a separate full page */
-#ordersTabPanel .main-content {
-    padding: 10px 0;
-}
-
-#ordersTabPanel .widget-container {
-    width: 500px;
-    max-width: 95%;
-}    
-
-
 </style>
 {% endblock %}
 
 {% block content %}
 <main class="main-content">
-    {% include 'sell_widget_partial.html' %}    
+
+    <!-- === TRADE (Sell Positions Grid + Buy Dashboard + info line + status message) === -->
+    <div class="widget-container" id="sell-widget-container">
+        <table class="option-table">
+            <thead>
+                <tr>
+                    <th class="center">Action</th>
+                    <th>P/L</th>
+                    <th>%</th>
+                    <th>PTS</th>
+                    <th>Levels</th>
+                    <th>XE</th>
+                    <th>SPrice</th>
+                    <th>BPrice</th>
+                    <th>MPrice</th>
+                    <th>Lots</th>
+                    <th>Lots(O)</th>
+                    <th>Type</th>
+                    <th>Sell Type</th>
+                </tr>
+            </thead>
+            <tbody id="positionsTableBody">
+                <tr><td colspan="13" class="no-options">Loading open positions...</td></tr>
+            </tbody>
+        </table>
+    </div>
     <div class="widget-container" id="buy-widget-container">
         <table class="option-table">
             <thead>
@@ -457,26 +529,6 @@
                 <tr><td colspan="7" class="no-options">Waiting for data from server...</td></tr>
             </tbody>
         </table>        
-        <!--<h2 id="optionsTitle">Buy Options</h2>-->
-<!--        <div class="buy-options-header">
-            <div class="toggle-buttons">
-                <button class="toggle-button" id="refreshBtn" title="Refresh Options">&#x21bb;</button>
-                <button class="toggle-button active-toggle" id="callBtn">Calls</button>
-                <button class="toggle-button" id="putBtn">Puts</button>
-            </div>
-        </div>
-        <p>Status: <strong id="buyConnectionStatus" style="color: #ffc107;">Connecting...</strong></p> 
-        <div class="summary-container">
-            <div class="summary-item">
-                <span class="summary-label">Cash Balance</span>
-                <span class="summary-value" id="cashBalanceValue">Loading...</span>
-            </div>
-            <div class="summary-item">
-                <span class="summary-label">Utilized Funds</span>
-                <span class="summary-value" id="utilizedValue">Loading...</span>
-            </div>
-        </div>
--->        
         <div class="toggle-container">
 
         <!-- Left: Broker / Exchange / Future / Prices / Expiry -->
@@ -491,12 +543,16 @@
             </label>
 -->
 
-            <label id="underlying" class="expiry-label" style="margin-right: 20px;">
+            <label id="underlying" class="expiry-label">
                 <span id="underlyingValue">--</span>
             </label>
 
             <label id="ltp" class="expiry-label">
                 <span id="ltpValue">--</span>
+            </label>
+
+            <label id="nmf_pts" class="expiry-label" title="Points change since previous day close">
+                <span id="nmf_pts_value">--</span>
             </label>
 
             <label id="nmf_chgo" class="expiry-label">
@@ -509,16 +565,16 @@
 
         </div>
 
-    <!-- Right: Refresh / Calls / Puts -->
+    <!-- Right: Available Balance / Refresh / Calls / Puts -->
     <div class="toggle-buttons">
+        <label id="availableBalance" class="expiry-label" title="Available balance to trade">
+            <span id="availableBalanceValue">--</span>
+        </label>
+
         <label class="announcement-toggle-label" title="Enable or disable voice announcement" aria-label="Voice announcement toggle">
             <input type="checkbox" id="announcementToggle" checked>
             <span aria-hidden="true">&#128266;</span>
         </label>
-
-        <button class="toggle-button" id="refreshBtn" title="Refresh Options">
-            &#x21bb;
-        </button>
 
         <button class="toggle-button active-toggle" id="callBtn">
             Calls
@@ -531,45 +587,29 @@
 
 </div>
 
-    <div id="orderStatusLabel" role="status" aria-live="polite"></div>
+    <div class="status-bar">
+        <!-- Left zone: trading mode label + playback controls (same line as order status) -->
+        <div id="statusBarLeft" class="status-bar-left">
+            <span id="modeLabel" class="mode-label" data-mode="" title="Current trading mode">--</span>
+            <div id="playbackControls" class="playback-controls" style="display: none;">
+                <input type="datetime-local" id="playbackStartInput" step="1"
+                       title="Playback start date &amp; time (seconds included)">
+                <button id="playbackStartBtn" class="playback-btn" title="Start playback from the selected time">&#x25B6;</button>
+                <button id="playbackPauseBtn" class="playback-btn" title="Pause / resume playback">&#x23F8;</button>
+                <button id="playbackStopBtn" class="playback-btn" title="Stop playback">&#x23F9;</button>
+                <select id="playbackSpeedSelect" title="Playback speed">
+                    <option value="0.5">0.5x</option>
+                    <option value="1" selected>1x</option>
+                    <option value="2">2x</option>
+                    <option value="5">5x</option>
+                    <option value="10">10x</option>
+                </select>
+            </div>
+        </div>
+        <div id="orderStatusLabel" role="status" aria-live="polite"></div>
+    </div>
       
     </div>
-
-    <!-- === Trade Setups Table Container (below Sell Positions) === -->
-    <div id="tradeSetupsContainer"
-        style="width:95%; max-width:1150px; max-height:300px;
-                overflow-y:auto; margin-top:25px; border:1px solid #444;
-                border-radius:8px; background:#1f1f1f; padding:12px; color:#ddd;">
-        <h3 style="color:#66bb6a; margin-bottom:10px;">Trade Setups Monitor</h3>
-        <p style="color:#aaa; text-align:center;">Waiting for trade setups...</p>
-    </div>
-
-    
-
-    <!-- ==== Pending Orders Table ==== -->
-    <div id="pendingOrdersContainer"
-        style="width:95%; max-width:1150px; margin-top:20px;
-                border:1px solid #444; border-radius:8px;
-                background:#1f1f1f; padding:12px; color:#ddd;">
-        <h3 style="color:#ffcc00; margin-bottom:10px;">Pending Orders</h3>
-        <table class="trade-table">
-            <thead>
-                <tr>
-                    <th>Symbol</th>
-                    <th>Qty</th>
-                    <th>Order ID</th>
-                    <th>Avg Price</th>
-                    <th>Order Status</th>
-                    <th>Action</th>
-                </tr>
-            </thead>
-            <tbody id="pendingOrdersBody">
-                <tr><td colspan="5" style="text-align:center; color:#888;">No pending orders</td></tr>
-            </tbody>
-        </table>
-    </div>
-
-
 </main>
 {% endblock %}
 
@@ -577,29 +617,27 @@
 {% block scripts %}
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-    console.log('BUY DASHBOARD JS: DOMContentLoaded', new Date().toISOString());
+    console.log('TRADE PAGE JS: DOMContentLoaded', new Date().toISOString());
     // --- SOCKET CONNECTION ---
     const socket = io('http://localhost:5001');
 
     // --- DOM ELEMENTS ---
     const buyWidgetContainer = document.getElementById('buy-widget-container');
     const optionsTableBody = document.getElementById('optionsTableBody');
-    const buyConnectionStatus = document.getElementById('buyConnectionStatus');
-    const optionsTitle = document.getElementById('optionsTitle');
     const callBtn = document.getElementById('callBtn');
     const putBtn = document.getElementById('putBtn');
-    const cashBalanceEl = document.getElementById('cashBalanceValue');
-    const utilizedEl = document.getElementById('utilizedValue');
     const brokerValueEl = document.getElementById('brokerValue');
     //const exchangeValueEl = document.getElementById('exchangeValue');
     const underlyingValueEl = document.getElementById('underlyingValue');
     const ltpValueEl = document.getElementById('ltpValue');
+    const ptsValueEl = document.getElementById('nmf_pts_value');
+    const ptsLabelEl = document.getElementById('nmf_pts');
     const chgOValueEl = document.getElementById('nmf_chgo_value');
+    const chgOLabelEl = document.getElementById('nmf_chgo');
     const expiryValueEl = document.getElementById('expiryValue');
     const announcementToggleEl = document.getElementById('announcementToggle');
+    const availableBalanceEl = document.getElementById('availableBalanceValue');
     const positionsTableBody = document.getElementById('positionsTableBody');
-    console.log('positionsTableBody =', positionsTableBody);
-    const sellConnectionStatus = document.getElementById('sellConnectionStatus');
 
 
     // --- STATE VARIABLES ---
@@ -608,47 +646,15 @@ document.addEventListener('DOMContentLoaded', function() {
     let orderStrategyMapping = {}; // To store strategies from setup_data
     // Tokens whose BUY Price is temporarily displayed using LTP
     let temporaryBuyPriceTokens = new Set();
+    // Trading symbols with a sell request in flight (duplicate click guard)
+    const pendingSellSymbols = new Set();
 
-    const pendingOrdersBody = document.getElementById('pendingOrdersBody');
-
-    // Receive list of pending orders from backend
-    socket.on('update_pending_orders', function(orders) {
-        pendingOrdersBody.innerHTML = "";
-
-        if (!orders || orders.length === 0) {
-            pendingOrdersBody.innerHTML =
-                `<tr><td colspan="5" style="text-align:center; color:#888;">No pending orders</td></tr>`;
-            return;
-        }
-
-        orders.forEach(order => {
-            const row = document.createElement("tr");
-            row.innerHTML = `
-                <td>${order.tradingsymbol}</td>
-                <td>${order.quantity}</td>
-                <td>${order.order_id}</td>
-                <td>${order.average_price}</td>
-                <td>
-                    <button class="sell-button cancel-btn" 
-                            data-orderid="${order.order_id}">
-                        Cancel
-                    </button>
-                </td>
-            `;
-            pendingOrdersBody.appendChild(row);
-        });
-
-        addCancelOrderListeners();
-    });
-
-    function addCancelOrderListeners() {
-    document.querySelectorAll('.cancel-btn').forEach(btn => {
-        btn.addEventListener('click', function() {
-            const orderId = this.dataset.orderid;
-            socket.emit('cancel_pending_order', { order_id: orderId });
-        });
-    });
-}
+    // TradingView entry validation state (TV_DATA_Validation_REQUIRED).
+    // Fail-safe defaults: assume validation is ON and both sides blocked
+    // until setup_data / update_trading_view_data confirm otherwise.
+    let tvValidationRequired = true;
+    let tvCEBuyAllowed = false;
+    let tvPEBuyAllowed = false;
 
     // --- SOCKET EVENT HANDLERS ---
     socket.on('connect', () => {
@@ -660,17 +666,8 @@ document.addEventListener('DOMContentLoaded', function() {
             socket.connected
         );
         
-        if (buyConnectionStatus) {
-            buyConnectionStatus.textContent = 'Connected';
-            buyConnectionStatus.style.color = '#28a745';
-        }
-        if (sellConnectionStatus) {
-            sellConnectionStatus.textContent = 'Connected';
-            sellConnectionStatus.style.color = '#28a745';
-        }
         socket.emit('request_weekly_options');
         socket.emit('request_open_positions');
-        socket.emit('request_pending_orders');
         socket.emit('voice_announcement_toggle', {
             enabled: announcementToggleEl ? announcementToggleEl.checked : true
         });
@@ -685,16 +682,6 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
-    socket.on('disconnect', () => {
-        if (buyConnectionStatus) {
-            buyConnectionStatus.textContent = 'Disconnected';
-            buyConnectionStatus.style.color = '#dc3545';
-        }
-        if (sellConnectionStatus) {
-            sellConnectionStatus.textContent = 'Disconnected';
-            sellConnectionStatus.style.color = '#dc3545';
-        }
-    });
 
     socket.on('setup_data', (data) => {
         if (data.broker) brokerValueEl.textContent = data.broker;
@@ -707,6 +694,10 @@ document.addEventListener('DOMContentLoaded', function() {
             orderStrategyMapping = data.order_strategy_mapping;
             console.log("Received strategy mapping:", orderStrategyMapping);
         }
+        if (data.mode) applyModeLabel(data.mode);
+        if (data.playback) configurePlaybackControls(data.playback);
+        // TradingView entry validation flags (TV_DATA_Validation_REQUIRED)
+        applyTVValidationPayload(data);
         // Repopulate tables if needed to apply initial strategies
         if (Object.keys(allContracts).length > 0) populateOptionsTable(allContracts, callBtn.classList.contains('active-toggle') ? 'CE' : 'PE');
         //if (Object.keys(openPositions).length > 0 && positionsTableBody) populatePositionsTable(openPositions);
@@ -719,9 +710,24 @@ document.addEventListener('DOMContentLoaded', function() {
     socket.on('near-month-ltp-updated', (payload) => {
         //alert(payload)
         if (payload.ltp !== undefined) {
-            ltpValueEl.textContent = payload.ltp.toFixed(2);
-            chgOValueEl.textContent = payload.chgO + '%';
-            
+            ltpValueEl.textContent = Number(payload.ltp).toFixed(2);
+
+            const ptsValue = Number(payload.ptsChg);
+            if (Number.isFinite(ptsValue)) {
+                ptsValueEl.textContent = (ptsValue > 0 ? '+' : '') + ptsValue.toFixed(2);
+                ptsLabelEl.classList.remove('profit', 'loss');
+                if (ptsValue > 0) ptsLabelEl.classList.add('profit');
+                else if (ptsValue < 0) ptsLabelEl.classList.add('loss');
+            }
+
+            const chgOValue = Number(payload.chgO);
+            if (Number.isFinite(chgOValue)) {
+                chgOValueEl.textContent = (chgOValue > 0 ? '+' : '') + chgOValue.toFixed(2) + '%';
+                chgOLabelEl.classList.remove('profit', 'loss');
+                if (chgOValue > 0) chgOLabelEl.classList.add('profit');
+                else if (chgOValue < 0) chgOLabelEl.classList.add('loss');
+            }
+
              // Apply flash effect
             ltpValueEl.classList.add('flash');
             // Remove flash after animation completes
@@ -741,68 +747,11 @@ document.addEventListener('DOMContentLoaded', function() {
     socket.on('update_trading_view_data', (payload) => {
         console.log("Received TradingView data:", payload);
 
-        const data = payload.TradingView_Data || {};
-        const tradeSetups = payload.TradeSetups || [];
-
-        // --- DEBUG ---
-        console.log("TradeSetups received:", tradeSetups);
-
-        // --- Paint the Trade Setups Table ---
-        const container = document.getElementById("tradeSetupsContainer");
-        if (!container) {
-            console.warn("Missing #tradeSetupsContainer element in DOM");
-            return;
-        }
-
-        // Clear old content
-        container.innerHTML = "";
-
-        if (!Array.isArray(tradeSetups) || tradeSetups.length === 0) {
-            container.innerHTML = `<p style="color:gray;">No trade setups available.</p>`;
-            return;
-        }
-
-        // Build table
-        const table = document.createElement("table");
-        table.classList.add("trade-table");
-
-        // Table Header
-        table.innerHTML = `
-            <thead>
-                <tr>
-                    <th>Trend</th>
-                    <th>SetUp</th>
-                    <th>Description</th>
-                    <th>Trade Case</th>
-                </tr>
-            </thead>
-            <tbody></tbody>
-        `;
-
-        const tbody = table.querySelector("tbody");
-
-        tradeSetups.forEach((setup) => {
-            const row = document.createElement("tr");
-
-            // Color rows based on trend
-            if (setup.Trend === "Uptrend") row.classList.add("trend-up");
-            else if (setup.Trend === "Downtrend") row.classList.add("trend-down");
-            else row.classList.add("trend-neutral");
-
-            // Flash/bold if aggressive
-            if (setup.Aggressive) row.classList.add("aggressive");
-
-            row.innerHTML = `
-                <td>${setup.Trend}</td>
-                <td>${setup.SetUp}</td>
-                <td>${setup.Description}</td>
-                <td>${setup.TradeCase}</td>
-            `;
-
-            tbody.appendChild(row);
-        });
-
-        container.appendChild(table);
+        // TradingView entry validation flags (TV_DATA_Validation_REQUIRED).
+        // These gate the CE/PE Buy buttons on every webhook. The Trade
+        // Setups table painting that used to live here is stashed in
+        // trade_setup_pending_tabs_backup.html for later reuse.
+        applyTVValidationPayload(payload);
     });
 
     
@@ -815,39 +764,6 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // });
 
-
-
-
-    function extractIndicators(data) {
-        if (!data) {
-            console.warn("No data received");
-            return;
-        }
-
-        const result = {};
-
-        try {
-            // EMA values
-            result.ema_1m_9 = data?.EMA?.["1m"]?.EMA9 ?? null;
-            result.ema_1m_21 = data?.EMA?.["1m"]?.EMA21 ?? null;
-            result.ema_1m_50 = data?.EMA?.["1m"]?.EMA50 ?? null;
-
-            // PVT values
-            result.pvt_30m = data?.PVT?.["30m"] ?? null;
-
-            // MACD
-            result.macd_1m = data?.MACD?.["1m"] ?? null;
-            result.macd_30m = data?.MACD?.["30m"] ?? null;
-
-            // VWAP
-            result.vwap_5m = data?.VWAP?.["5m"] ?? null;
-
-            return result;
-        } catch (err) {
-            console.error("Error extracting indicators:", err);
-            return {};
-        }
-        }
 
 
 
@@ -915,14 +831,17 @@ document.addEventListener('DOMContentLoaded', function() {
         if (!Number.isFinite(ltp)) return;
 
         if (allContracts[token]) {
-            const open = allContracts[token].open;
+            if (tick.prev_close !== undefined && Number(tick.prev_close) > 0) {
+                allContracts[token].prev_close = Number(tick.prev_close);
+            }
+            const prevClose = allContracts[token].prev_close;
 
-        console.log("OPEN =", open, "LTP =", ltp);
+        console.log("PREV CLOSE =", prevClose, "LTP =", ltp);
 
         allContracts[token].ltp = ltp;
         
         
-        allContracts[token].chgO = open ? (((ltp - open) / open) * 100).toFixed(2) : '0.00';
+        allContracts[token].chgO = prevClose ? (((ltp - prevClose) / prevClose) * 100).toFixed(2) : '0.00';
 
         const chgOCell = document.getElementById(`chgO-${token}`);
         
@@ -948,9 +867,13 @@ document.addEventListener('DOMContentLoaded', function() {
         if (lotsCell && tick.lots !== undefined) {
              lotsCell.textContent = tick.lots;
              const overrideInput = document.getElementById(`override-lots-${token}`);
-             //if (overrideInput && !overrideInput.value) {
               if (overrideInput ) { //This allows override input also to be updated when qty is recalculated based on new price
-                overrideInput.placeholder = tick.lots;
+                 overrideInput.placeholder = tick.lots;
+                 overrideInput.value = tick.lots;
+             }
+             const buyButton = document.querySelector(`#row-${token} .buy-button`);
+             if (buyButton) {
+                 buyButton.dataset.lots = tick.lots;
              }
          }
     });
@@ -997,17 +920,15 @@ document.addEventListener('DOMContentLoaded', function() {
     // --- UTILITY FUNCTIONS ---
     async function fetchFundSummary() {
         try {
-            cashBalanceEl.textContent = 'Fetching...';
-            utilizedEl.textContent = 'Fetching...';
-            const response = await fetch('http://127.0.0.1:5000/fund_summary');
+            if (availableBalanceEl) availableBalanceEl.textContent = 'Fetching...';
+            const response = await fetch('/fund_summary');
             if (!response.ok) { throw new Error(`HTTP Error: ${response.status}`); }
             const summary = await response.json();
-            cashBalanceEl.textContent = `${parseFloat(summary.data.cash_balance).toLocaleString('en-IN')}`;
-            utilizedEl.textContent = `${parseFloat(summary.data.utilized).toLocaleString('en-IN')}`;
+            const cashBalance = parseFloat(summary.data.cash_balance).toLocaleString('en-IN', { maximumFractionDigits: 0 });
+            if (availableBalanceEl) availableBalanceEl.textContent = `Bal: ${cashBalance}`;
         } catch (error) {
             console.error("Could not fetch fund summary:", error);
-            cashBalanceEl.textContent = 'Error';
-            utilizedEl.textContent = 'Error';
+            if (availableBalanceEl) availableBalanceEl.textContent = 'Error';
         }
     }
 
@@ -1122,7 +1043,7 @@ filteredContracts.sort(([, a], [, b]) => {
             const strikePrice = match ? Number(match[1]) : null;
 
 
-            const chgO = contract.open !== undefined && contract.open !== 0 ? (((contract.ltp - contract.open) / contract.open) * 100).toFixed(2) : '0.00';
+            const chgO = contract.prev_close !== undefined && contract.prev_close !== 0 ? (((contract.ltp - contract.prev_close) / contract.prev_close) * 100).toFixed(2) : '0.00';
 
             const row = document.createElement('tr');
             row.id = `row-${token}`;
@@ -1215,9 +1136,36 @@ filteredContracts.sort(([, a], [, b]) => {
             optionsTableBody.appendChild(row);
         }
         addBuyButtonListeners();
+        // Re-apply TradingView buy validation: this table rebuild creates
+        // fresh (enabled) buttons on every CE/PE view switch or refresh.
+        applyTVBuyValidation();
         //Since ondocument load this ia called - end of this page..we dont have to call it each time when option table is switched between CE/PE
-        //fetchFundSummary(); 
+        //fetchFundSummary();
         addStrategyRadioListeners();
+    }
+
+    // Applies the TradingView entry validation (TV_DATA_Validation_REQUIRED)
+    // to the CE/PE Buy buttons. When validation is OFF both sides stay
+    // enabled (previous behaviour); when ON a side is enabled only if the
+    // backend marked it allowed.
+    function applyTVBuyValidation() {
+        const ceButtons = document.querySelectorAll('button.buy-button[data-tradingsymbol$="CE"]');
+        const peButtons = document.querySelectorAll('button.buy-button[data-tradingsymbol$="PE"]');
+        if (!tvValidationRequired) {
+            ceButtons.forEach(btn => btn.disabled = false);
+            peButtons.forEach(btn => btn.disabled = false);
+        } else {
+            ceButtons.forEach(btn => btn.disabled = !tvCEBuyAllowed);
+            peButtons.forEach(btn => btn.disabled = !tvPEBuyAllowed);
+        }
+    }
+
+    function applyTVValidationPayload(payload) {
+        if (payload.TVValidationRequired === undefined) return;
+        tvValidationRequired = !!payload.TVValidationRequired;
+        tvCEBuyAllowed = payload.CE_BUY_ALLOWED === true;
+        tvPEBuyAllowed = payload.PE_BUY_ALLOWED === true;
+        applyTVBuyValidation();
     }
 
     function addBuyButtonListeners() {
@@ -1238,6 +1186,7 @@ filteredContracts.sort(([, a], [, b]) => {
     }
 
     let inlineStatusTimer = null;
+    let inlineStatusHideTimer = null;
 
     function showInlineStatus(message, type = 'success', duration = 3500) {
         const statusLabel = document.getElementById('orderStatusLabel');
@@ -1246,13 +1195,28 @@ filteredContracts.sort(([, a], [, b]) => {
         if (inlineStatusTimer) {
             clearTimeout(inlineStatusTimer);
         }
+        if (inlineStatusHideTimer) {
+            clearTimeout(inlineStatusHideTimer);
+        }
+
+        const iconSvg = (type === 'error')
+            ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg>'
+            : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 12.5 9.5 18 20 6.5"/></svg>';
 
         statusLabel.className = type;
-        statusLabel.textContent = message;
+        statusLabel.innerHTML = `<span class="status-icon">${iconSvg}</span>`;
+
+        const textSpan = document.createElement('span');
+        textSpan.textContent = message;
+        statusLabel.appendChild(textSpan);
 
         inlineStatusTimer = setTimeout(() => {
-            statusLabel.textContent = '';
-            statusLabel.className = '';
+            statusLabel.classList.add('hiding');
+            inlineStatusHideTimer = setTimeout(() => {
+                statusLabel.textContent = '';
+                statusLabel.className = '';
+                inlineStatusHideTimer = null;
+            }, 300);
             inlineStatusTimer = null;
         }, duration);
     }
@@ -1285,6 +1249,9 @@ filteredContracts.sort(([, a], [, b]) => {
     });
 
     socket.on('sell_order_result', function (result) {
+    pendingSellSymbols.delete(result.tradingsymbol);
+    const sellBtn = positionsTableBody && positionsTableBody.querySelector(`.sell-button[data-tradingsymbol="${result.tradingsymbol}"]`);
+    if (sellBtn) { sellBtn.disabled = false; sellBtn.textContent = 'Sell'; }
     if (result.success) {
         showTransactionSuccess(`Sell order successful for ${result.tradingsymbol} (${result.lots} lots)`);
     } else {
@@ -1339,6 +1306,7 @@ filteredContracts.sort(([, a], [, b]) => {
             }
 
             const level = pos.level || contract.level || '';
+            const sellPending = pendingSellSymbols.has(pos.tradingsymbol);
 
             
 
@@ -1346,7 +1314,7 @@ filteredContracts.sort(([, a], [, b]) => {
 
             row.innerHTML = `
                 <td class="center">
-                    <button class="sell-button" data-token="${token}" data-tradingsymbol="${pos.tradingsymbol}" data-lots="${pos.lots || 0}" data-quantity="${pos.net_quantity || 0}" data-lotsize="${pos.lotsize || ''}">Sell</button>
+                    <button class="sell-button" data-token="${token}" data-tradingsymbol="${pos.tradingsymbol}" data-lots="${pos.lots || 0}" data-quantity="${pos.net_quantity || 0}" data-lotsize="${pos.lotsize || ''}" ${sellPending ? 'disabled' : ''}>${sellPending ? 'Selling..' : 'Sell'}</button>
                 </td>                        
                 <td id="total-pl-${token}" class="${plClass}">${(pos.total_pl || 0).toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
                 <td id="pct-${token}" class="${plClass}">${(pos.pct_pl || 0).toFixed(2)}</td>
@@ -1382,12 +1350,23 @@ filteredContracts.sort(([, a], [, b]) => {
         positionsTableBody.querySelectorAll('.sell-button').forEach(button => {
             button.addEventListener('click', function() {
                 const token = this.dataset.token;
+                const symbol = this.dataset.tradingsymbol;
+                if (pendingSellSymbols.has(symbol)) return;
                 const overrideInput = document.getElementById(`override-lots-sell-${token}`);
                 const lotsToSell = (overrideInput && overrideInput.value > 0) ? overrideInput.value : this.dataset.lots;
                 const lotSize = parseInt(this.dataset.lotsize || 0);
                 const displayQuantity = (lotSize > 0) ? (lotsToSell) : this.dataset.quantity;
+                pendingSellSymbols.add(symbol);
+                this.disabled = true;
+                this.textContent = 'Selling..';
+                setTimeout(() => {
+                    if (pendingSellSymbols.delete(symbol)) {
+                        const btn = positionsTableBody && positionsTableBody.querySelector(`.sell-button[data-tradingsymbol="${symbol}"]`);
+                        if (btn) { btn.disabled = false; btn.textContent = 'Sell'; }
+                    }
+                }, 10000);
                 // if (confirm(`Are you sure you want to sell ${displayQuantity} shares (${lotsToSell} lots) of ${this.dataset.tradingsymbol}?`)) {
-                socket.emit('place_sell_order', { token: token, tradingsymbol: this.dataset.tradingsymbol, lots: lotsToSell });
+                socket.emit('place_sell_order', { token: token, tradingsymbol: symbol, lots: lotsToSell });
                     // alert(`Sell order for ${lotsToSell} lots sent!`);
                 // }
             });
@@ -1438,50 +1417,12 @@ filteredContracts.sort(([, a], [, b]) => {
         }
     }
 
-    override_trend_driven_trading = true
-
-    function enable_disable_callput_buttons(recommendation)
-    {
-        
-        if (override_trend_driven_trading == true)
-            return
-
-        
-        
-        
-        //alert("enable_disable_callput_buttons called with recommendation being:" + recommendation )
-        // --- Enable/Disable Buy Buttons ---
-        const ceButtons = document.querySelectorAll('button.buy-button[data-tradingsymbol$="CE"]');
-        const peButtons = document.querySelectorAll('button.buy-button[data-tradingsymbol$="PE"]');
-
-        if (recommendation.includes('CE')) {
-            //alert("CE buttons enabled")
-            ceButtons.forEach(btn => btn.disabled = false);
-            peButtons.forEach(btn => btn.disabled = true);
-            //alert("buttons are enabled / disabled")
-        } else if (recommendation.includes('PE')) {
-            //alert("PE buttons enabled")
-            ceButtons.forEach(btn => btn.disabled = true);
-            peButtons.forEach(btn => btn.disabled = false);
-            //alert("buttons are enabled / disabled")
-        } else {
-            // Neutral → disable both
-            //alert("Both are disabled")
-            ceButtons.forEach(btn => btn.disabled = true);
-            peButtons.forEach(btn => btn.disabled = true);
-            //alert("buttons are enabled / disabled")
-        }
-    }
-
-
-
     // --- EVENT LISTENERS & INITIAL CALLS ---
     callBtn.addEventListener('click', () => {
         buyWidgetContainer.classList.remove('put-view');
         putBtn.classList.remove('active-toggle');
         callBtn.classList.add('active-toggle');
         populateOptionsTable(allContracts, 'CE');
-        enable_disable_callput_buttons(tvRecommendation)
     });
 
     putBtn.addEventListener('click', () => {
@@ -1491,58 +1432,140 @@ filteredContracts.sort(([, a], [, b]) => {
         putBtn.classList.add('active-toggle');
         //alert("enable_disable_callput_buttons function called")
         populateOptionsTable(allContracts, 'PE');
-        enable_disable_callput_buttons(tvRecommendation)        
     });
 
-    // --- SELL GRID REFRESH BUTTON HANDLER ---
-    // place this after the other button listeners (e.g. after refreshBtn listener)
-    const refreshSellBtn = document.getElementById('refreshSellBtn');
+    // =================================================================
+    // MODE LABEL + PLAYBACK CONTROLS
+    // =================================================================
+    let playbackState = { running: false, paused: false, speed: 1 };
 
-    if (refreshSellBtn) {
-        refreshSellBtn.addEventListener('click', async () => {
-            console.log('Sell-grid refresh clicked. Emitting manual refresh and calling server route.');
+    function applyModeLabel(mode) {
+        const modeLabel = document.getElementById('modeLabel');
+        if (!modeLabel) return;
+        const normalized = String(mode || '').trim().toUpperCase();
+        modeLabel.textContent = normalized || '--';
+        modeLabel.dataset.mode = normalized;
 
-            // immediate UI feedback
-            refreshSellBtn.disabled = true;
-            const originalContent = refreshSellBtn.innerHTML;
-            refreshSellBtn.textContent = '...';
+        const controls = document.getElementById('playbackControls');
+        if (controls) controls.style.display = normalized === 'PLAYBACK' ? 'flex' : 'none';
+    }
 
-            // 1) emit socket event (backend may listen for this)
-            try {
-                socket.emit('manual-refresh-positions'); // adjust name if your server expects a different event
-            } catch (err) {
-                console.warn('Socket emit failed for manual-refresh-positions:', err);
+    function toDatetimeLocalValue(bound) {
+        // Backend sends "YYYY-MM-DD HH:MM:SS"; datetime-local wants "YYYY-MM-DDTHH:MM:SS"
+        return String(bound || '').replace(' ', 'T');
+    }
+
+    function setPlaybackInputTime(timeStr) {
+        const input = document.getElementById('playbackStartInput');
+        if (!input || !timeStr) return;
+        // Don't fight the user while they are picking a new time
+        if (document.activeElement === input) return;
+        input.value = toDatetimeLocalValue(timeStr);
+    }
+
+    socket.on('playback_time', (payload) => {
+        // Live replay clock: keeps the date/time control in sync as
+        // playback seconds tick by.
+        setPlaybackInputTime(payload && payload.time);
+    });
+
+    function updatePlaybackSpeedSelect(speed) {
+        const speedSelect = document.getElementById('playbackSpeedSelect');
+        if (!speedSelect || speed === undefined || speed === null) return;
+        const value = String(speed);
+        if (![...speedSelect.options].some(option => option.value === value)) {
+            const option = document.createElement('option');
+            option.value = value;
+            option.textContent = value + 'x';
+            speedSelect.appendChild(option);
+        }
+        speedSelect.value = value;
+    }
+
+    function updatePlaybackButtons(status) {
+        const pauseBtn = document.getElementById('playbackPauseBtn');
+        const startBtn = document.getElementById('playbackStartBtn');
+        if (!pauseBtn || !startBtn || !status) return;
+
+        if (status.paused) {
+            pauseBtn.innerHTML = '&#x25B6;'; // play icon while paused
+            pauseBtn.title = 'Resume playback';
+            pauseBtn.classList.add('playback-active');
+        } else {
+            pauseBtn.innerHTML = '&#x23F8;'; // pause icon while running
+            pauseBtn.title = 'Pause playback';
+            pauseBtn.classList.remove('playback-active');
+        }
+
+        startBtn.classList.toggle('playback-active', !!status.running);
+    }
+
+    function configurePlaybackControls(playback) {
+        const input = document.getElementById('playbackStartInput');
+        if (!input || !playback) return;
+
+        if (playback.start_bound) input.min = toDatetimeLocalValue(playback.start_bound);
+        if (playback.end_bound) input.max = toDatetimeLocalValue(playback.end_bound);
+        if (playback.start_bound && !input.value) input.value = toDatetimeLocalValue(playback.start_bound);
+
+        playbackState = {
+            running: !!playback.running,
+            paused: !!playback.paused,
+            speed: playback.speed || 1
+        };
+        updatePlaybackSpeedSelect(playback.speed);
+        updatePlaybackButtons(playback);
+    }
+
+    socket.on('playback_status', (status) => {
+        console.log('Received playback status:', status);
+        if (!status) return;
+        playbackState = {
+            running: !!status.running,
+            paused: !!status.paused,
+            speed: status.speed || 1
+        };
+        updatePlaybackButtons(status);
+        updatePlaybackSpeedSelect(status.speed);
+        // Keep the date/time control current on pause/resume/stop too
+        setPlaybackInputTime(status.current_time);
+    });
+
+    const playbackStartBtn = document.getElementById('playbackStartBtn');
+    const playbackPauseBtn = document.getElementById('playbackPauseBtn');
+    const playbackStopBtn = document.getElementById('playbackStopBtn');
+    const playbackSpeedSelect = document.getElementById('playbackSpeedSelect');
+    const playbackStartInput = document.getElementById('playbackStartInput');
+
+    if (playbackStartBtn) {
+        playbackStartBtn.addEventListener('click', () => {
+            if (!playbackStartInput || !playbackStartInput.value) {
+                showInlineStatus('Select a playback date and time first', 'error');
+                return;
             }
+            socket.emit('start_playback', { start_datetime: playbackStartInput.value });
+        });
+    }
 
-            // 2) also call the Flask HTTP route as fallback
-            try {
-                const resp = await fetch('/manual-refresh-positions', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                });
-
-                if (!resp.ok) {
-                    const txt = await resp.text().catch(() => null);
-                    console.error('Manual refresh HTTP error:', resp.status, txt);
-                    showInlineStatus('Failed to refresh positions', 'error');
-                } else {
-                    const data = await resp.json().catch(() => null);
-                    console.log('Manual refresh HTTP response:', data);
-
-                    // ask backend to push updated positions and pending orders via socket
-                    socket.emit('request_open_positions');
-                    socket.emit('request_pending_orders');
-                }
-            } catch (error) {
-                console.error('Error calling /manual-refresh-positions:', error);
-                showInlineStatus('Error refreshing positions', 'error');
-            } finally {
-                // restore button state
-                setTimeout(() => {
-                    refreshSellBtn.disabled = false;
-                    refreshSellBtn.innerHTML = originalContent;
-                }, 800);
+    if (playbackPauseBtn) {
+        playbackPauseBtn.addEventListener('click', () => {
+            if (playbackState.paused) {
+                socket.emit('resume_playback');
+            } else {
+                socket.emit('pause_playback');
             }
+        });
+    }
+
+    if (playbackStopBtn) {
+        playbackStopBtn.addEventListener('click', () => {
+            socket.emit('stop_playback');
+        });
+    }
+
+    if (playbackSpeedSelect) {
+        playbackSpeedSelect.addEventListener('change', () => {
+            socket.emit('set_playback_speed', { speed: parseFloat(playbackSpeedSelect.value) });
         });
     }
 

@@ -1,0 +1,6 @@
+{
+    "INSTRUMENT": "NIFTY2691523400CE",
+    "CASH_BALANCE": 1000000,
+    "PLAYBACK_PRICE_FILE": "PlaybackPrice.csv",
+    "SPEED": 1
+}
