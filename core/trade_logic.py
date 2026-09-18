@@ -26,13 +26,16 @@ import time
 
 PNT_STOP_LOSS = float(fetch_from_json("settings.json", "PTS_LOSS"))
 PNT_BOOK_PROFIT = float(fetch_from_json("settings.json", "PTS_PROFIT"))
-PCT_BOOK_PROFIT = float(fetch_from_json("settings.json", "PCT_PROFIT"))
-PCT_STOP_LOSS = float(fetch_from_json("settings.json", "PCT_LOSS"))
+PCT_BOOK_PROFIT = float(fetch_from_json("settings.json", "PCT_BOOK_PROFIT"))
+PCT_STOP_LOSS = float(fetch_from_json("settings.json", "PCT_STOP_LOSS"))
 PTS_PROFIT_INTRA_FACTOR = float(fetch_from_json("settings.json", "PTS_PROFIT_INTRA_FACTOR"))
 PTS_PROFIT_SCALPING_FACTOR = float(fetch_from_json("settings.json", "PTS_PROFIT_SCALPING_FACTOR"))
 PTS_PROFIT_ULTRA_SCALPING_FACTOR = float(fetch_from_json("settings.json", "PTS_PROFIT_ULTRA_SCALPING_FACTOR"))
 
-STOP_LOSS_PCT = float(fetch_from_json("settings.json", "STOP_LOSS_PCT"))
+PCT_PROFIT_INTRA_FACTOR = float(fetch_from_json("settings.json", "PCT_PROFIT_INTRA_FACTOR") or 10)
+PCT_PROFIT_SCALPING_FACTOR = float(fetch_from_json("settings.json", "PCT_PROFIT_SCALPING_FACTOR") or 4)
+PCT_PROFIT_ULTRA_SCALPING_FACTOR = float(fetch_from_json("settings.json", "PCT_PROFIT_ULTRA_SCALPING_FACTOR") or 1)
+
 STOP_LOSS_INTRA = fetch_from_json("settings.json", "STOP_LOSS_INTRA")
 STOP_LOSS_SCALPING = fetch_from_json("settings.json", "STOP_LOSS_SCALPING")
 STOP_LOSS_ULTRA_SCALPING = fetch_from_json("settings.json", "STOP_LOSS_ULTRA_SCALPING")
@@ -73,6 +76,7 @@ class Trader_Singleton:
     prev_close_near_month_future = 0.0
     _near_month_future_quote_cache = {}
     _order_strategy_mapping = {}
+    _order_sell_mode_mapping = {}
 
     _cash_balance_margin_pct = fetch_from_json("settings.json" , "MARGIN_USAGE_PCT")
 
@@ -94,8 +98,12 @@ class Trader_Singleton:
     _latest_prices = {}
     _prev_close_prices = {}
     # Per-token throttle timestamps for persisting last-known prices on
-    # live ticks (one write per token per minute).
+    # live ticks (one entry per token per minute).
     _price_persist_ts = {}
+    # Tick-path persistence is batched: entries accumulate here on ticks
+    # and are flushed as a single file write per minute.
+    _pending_tick_price_updates = {}
+    _last_price_flush_ts = 0.0
     _position_pnl_log_freq = POSITION_PNL_LOG_FREQ
     _last_position_pnl_log_ts = 0.0
     _last_freq_log_ts = {}
@@ -735,6 +743,10 @@ class Trader_Singleton:
                 "order_strategy": self._order_strategy_mapping.get(
                     instrument_token,
                     "ULTRA_SCALPING"
+                ),
+                "sell_mode": self._order_sell_mode_mapping.get(
+                    instrument_token,
+                    "T"
                 )
             })
 
@@ -901,6 +913,10 @@ class Trader_Singleton:
                     "order_strategy": self._order_strategy_mapping.get(
                         instrument_token,
                         "ULTRA_SCALPING"
+                    ),
+                    "sell_mode": self._order_sell_mode_mapping.get(
+                        instrument_token,
+                        "T"
                     ),
                     "buy_price_status": "TEMPORARY",
                 }
@@ -1129,6 +1145,10 @@ class Trader_Singleton:
                 "order_strategy": self._order_strategy_mapping.get(
                     position["instrument_token"],
                     "ULTRA_SCALPING"
+                ),
+                "sell_mode": self._order_sell_mode_mapping.get(
+                    position["instrument_token"],
+                    "T"
                 )
             })
 
@@ -1243,13 +1263,21 @@ class Trader_Singleton:
             self._stop_event.wait(timeout=1.0)
     def stop_loss_book_profit_core(self, broker: BrokerInterface):
         logger.info("Started trading watcher thread")
-        
-        
+
+        market_closed_logged = False
 
         while not self._stop_event.is_set():
-            # logger.debug("Evaluating open positions for stop-loss/book-profit...")
-            # logger.debug(self._position_data)
-            #logger.debug(f"Total Open Positions to Evaluate: {len(self._position_data)}")
+            if not is_market_open():
+                if not market_closed_logged:
+                    logger.info("Market closed. Stop-loss watcher idling until market open...")
+                    market_closed_logged = True
+                self._stop_event.wait(timeout=30)
+                continue
+
+            if market_closed_logged:
+                logger.info("Market open. Stop-loss watcher is now monitoring positions.")
+                market_closed_logged = False
+
             for token , data in list(self._position_data.items()):
                 should_log_eval = self._should_log_with_frequency(f"stop_loss_eval:{token}")
                 if should_log_eval:
@@ -1263,7 +1291,7 @@ class Trader_Singleton:
                 tradingsymbol = data.get("tradingsymbol")
                 instrument_token = data.get("instrument_token")
                 order_strategy_type = data.get("order_strategy" , "DEFAULT")
-                #sell_type = 
+                sell_type = data.get("sell_mode" , "T")
                 
 
                 match = re.search(r'(CE|PE)$', tradingsymbol.upper())
@@ -1280,7 +1308,10 @@ class Trader_Singleton:
                 # This trigger check is only applicable when Sell Type = T. For other cases U and D system raises Sell Order immediately after Buy Order is executed
 
                 #sell = self.to_sell_or_not_to_sell(buy_price , ltp , order_strategy_type,contract_type, should_log_eval)
-                sell = self.to_sell_or_not_to_sell_SL(buy_price , ltp , order_strategy_type,contract_type, should_log_eval)
+                # Profit trigger only applies to Sell Type T. U/D positions
+                # book profit via the broker-side limit order raised at buy
+                # time; the monitor only runs the SL safety net for them.
+                sell = self.to_sell_or_not_to_sell_SL(buy_price , ltp , order_strategy_type,contract_type, should_log_eval, check_profit=(sell_type == "T"))
                 
                 if should_log_eval:
                     logger.debug(f"Decision To Sell {tradingsymbol} - {sell}")
@@ -1385,13 +1416,34 @@ class Trader_Singleton:
             return False
         
     #BADD
-    def to_sell_or_not_to_sell_SL(self,buy_price , current_price , order_strategy_type,contract_type, log_enabled=True):
+    def to_sell_or_not_to_sell_SL(self,buy_price , current_price , order_strategy_type,contract_type, log_enabled=True, check_profit=True):
         # that is the question 
         if log_enabled:
             logger.debug(f"Deciding to sell or not for Stop Loss: Buy Price = {buy_price}, Current Price = {current_price} and Order Strategy Type is {order_strategy_type}")
 
+        # PCT thresholds are scaled per strategy: TP% = PCT_BOOK_PROFIT * factor and
+        # SL% = PCT_STOP_LOSS * factor. Unknown strategy types default to factor 1.
+        if order_strategy_type == "INTRA":
+            PCT_FACTOR = PCT_PROFIT_INTRA_FACTOR
+        elif order_strategy_type == "SCALPING":
+            PCT_FACTOR = PCT_PROFIT_SCALPING_FACTOR
+        elif order_strategy_type == "ULTRA_SCALPING":
+            PCT_FACTOR = PCT_PROFIT_ULTRA_SCALPING_FACTOR
+        else:
+            PCT_FACTOR = 1
 
-        #logger.debug(f"STOP_LOSS settings : STOP_LOSS_ULTRA_SCALPING = {STOP_LOSS_ULTRA_SCALPING} , STOP_LOSS_SCALPING = {STOP_LOSS_SCALPING} , STOP_LOSS_INTRA = {STOP_LOSS_INTRA} and STOP_LOSS_PCT = {STOP_LOSS_PCT} ")
+        EFFECTIVE_SL_PCT = PCT_STOP_LOSS
+        BOOK_PROFIT_THRESHOLD_PCT = PCT_BOOK_PROFIT * PCT_FACTOR
+        STOP_LOSS_THRESHOLD_PCT = EFFECTIVE_SL_PCT * PCT_FACTOR
+
+        if log_enabled:
+            logger.debug(
+                f"PCT thresholds: factor {PCT_FACTOR} | Book Profit >= {BOOK_PROFIT_THRESHOLD_PCT}% "
+                f"| Stop Loss >= {STOP_LOSS_THRESHOLD_PCT}% | check_profit={check_profit}"
+            )
+
+
+        #logger.debug(f"STOP_LOSS settings : STOP_LOSS_ULTRA_SCALPING = {STOP_LOSS_ULTRA_SCALPING} , STOP_LOSS_SCALPING = {STOP_LOSS_SCALPING} , STOP_LOSS_INTRA = {STOP_LOSS_INTRA} and PCT_STOP_LOSS = {PCT_STOP_LOSS} ")
         #logger.debug(f"TradingView Data used for Stop Loss Decision : {self._tradingView_Data}")
 
         # if self._tradingView_Data:
@@ -1521,37 +1573,39 @@ class Trader_Singleton:
         #                     logger.debug(f"5M PVT condition for Stop Loss not met. PVT:{ self._tradingView_Data['INDICATORS']['5M']['PVT']}") 
         #                     return False
         # else:
-        #     logger.warning("TradingView Data is empty. Cannot make Stop Loss decision based on indicators. So proceeding with STOP_LOSS_PCT check")
+        #     logger.warning("TradingView Data is empty. Cannot make Stop Loss decision based on indicators. So proceeding with PCT_STOP_LOSS check")
         
         # This will be the fall back Stop Loss based on PCT difference
-        # Orders will be one of the above types : Intra , Scalping , Ultra Scalping...Even if 1m/15s/5s MACD Swing dont trigger the Stop Loss we rely on the STOP_LOSS_PCT parameter
-        # logger.debug("Falling back to STOP_LOSS_PCT based Stop Loss Check")
+        # Orders will be one of the above types : Intra , Scalping , Ultra Scalping...Even if 1m/15s/5s MACD Swing dont trigger the Stop Loss we rely on the PCT_STOP_LOSS parameter
+        # logger.debug("Falling back to PCT_STOP_LOSS based Stop Loss Check")
 
         # Book Profit check: sell when the position has gained at least
-        # PCT_BOOK_PROFIT (PCT_PROFIT in settings.json) percent over the
-        # buy price. A value of 0 disables profit booking.
-        if PCT_BOOK_PROFIT > 0 and current_price > buy_price:
+        # PCT_BOOK_PROFIT * strategy factor percent over the buy price.
+        # A value of 0 disables profit booking. Skipped entirely when
+        # check_profit is False (U/D sell modes - their profit is
+        # handled by the broker-side limit order).
+        if check_profit and PCT_BOOK_PROFIT > 0 and current_price > buy_price:
             profit_diff = self.calculate_pctg_difference(buy_price, current_price)
             if log_enabled:
                 logger.debug(
-                    f"PCT_PROFIT based Book Profit Check. Buy Price is {buy_price} and "
+                    f"PCT_BOOK_PROFIT based Book Profit Check. Buy Price is {buy_price} and "
                     f"Current Price is {current_price}. Profit PCT Diff is {profit_diff} "
-                    f"and PCT_PROFIT is {PCT_BOOK_PROFIT}"
+                    f"and Book Profit threshold is {BOOK_PROFIT_THRESHOLD_PCT} (PCT_BOOK_PROFIT {PCT_BOOK_PROFIT} x factor {PCT_FACTOR})"
                 )
-            if profit_diff >= PCT_BOOK_PROFIT:
+            if profit_diff >= BOOK_PROFIT_THRESHOLD_PCT:
                 if log_enabled:
-                    logger.debug("Returning True for Booking Profit. PCT_PROFIT triggered.")
+                    logger.debug("Returning True for Booking Profit. PCT_BOOK_PROFIT triggered.")
                 return True
 
         if log_enabled:
-            logger.debug(f"STOP_LOSS_PCT based Stop Loss Check. Buy Price is {buy_price} and Current Price is {current_price} and STOP_LOSS_PCT is {STOP_LOSS_PCT}")
-        if float(STOP_LOSS_PCT) > 0 and current_price < buy_price :
+            logger.debug(f"PCT_STOP_LOSS based Stop Loss Check. Buy Price is {buy_price} and Current Price is {current_price} and Stop Loss threshold is {STOP_LOSS_THRESHOLD_PCT}")
+        if EFFECTIVE_SL_PCT > 0 and current_price < buy_price :
             diff = abs(self.calculate_pctg_difference(buy_price,current_price))
             if log_enabled:
-                logger.debug(f"PCT Diff between BUY and Current Market Price is {diff} and STOP_LOSS_PCT is {STOP_LOSS_PCT}")
-            if diff >= float(STOP_LOSS_PCT):
+                logger.debug(f"PCT Diff between BUY and Current Market Price is {diff} and Stop Loss threshold is {STOP_LOSS_THRESHOLD_PCT}")
+            if diff >= STOP_LOSS_THRESHOLD_PCT:
                 if log_enabled:
-                    logger.debug("Returning True for Booking Loss.STOP_LOSS_PCT triggered.")
+                    logger.debug("Returning True for Booking Loss. PCT_STOP_LOSS triggered.")
                 return True
         if log_enabled:
             logger.debug("Returning False for Booking Loss")
@@ -1806,22 +1860,40 @@ class Trader_Singleton:
         }
 
 
+    @staticmethod
+    def _last_known_price_entry(symbol, ltp, open_price=None, prev_close=None):
+        return {
+            "symbol": str(symbol),
+            "ltp": float(ltp),
+            "open": (float(open_price) if open_price else None),
+            "prev_close": (float(prev_close) if prev_close else None),
+            "ts": datetime.datetime.now().isoformat(),
+        }
+
     def save_last_known_price(self, symbol, ltp, open_price=None, prev_close=None):
         """
         Persist the latest real (non-fallback) price for a symbol so a
         later session can fall back to it when every live source fails.
         """
         try:
-            entry = {
-                "symbol": str(symbol),
-                "ltp": float(ltp),
-                "open": (float(open_price) if open_price else None),
-                "prev_close": (float(prev_close) if prev_close else None),
-                "ts": datetime.datetime.now().isoformat(),
-            }
-            write_to_json({str(symbol): entry}, self._LAST_KNOWN_PRICES_FILE)
+            write_to_json(
+                {str(symbol): self._last_known_price_entry(symbol, ltp, open_price, prev_close)},
+                self._LAST_KNOWN_PRICES_FILE
+            )
         except Exception as e:
             logger.debug(f"Could not persist last-known price for {symbol}: {e}")
+
+    def save_last_known_prices(self, entries):
+        """
+        Persist many last-known price entries in a single file write.
+        entries: {symbol: entry_dict} as produced by _last_known_price_entry.
+        """
+        if not entries:
+            return
+        try:
+            write_to_json(entries, self._LAST_KNOWN_PRICES_FILE)
+        except Exception as e:
+            logger.debug(f"Could not persist batched last-known prices: {e}")
 
     def load_last_known_price(self, symbol):
         """
@@ -2376,6 +2448,8 @@ class Trader_Singleton:
             # ------------------------------------
 
             
+            pending_price_updates = {}
+
             for token, (cp, level, data) in all_contracts.items():
 
                 price = prices.get(token)
@@ -2393,9 +2467,11 @@ class Trader_Singleton:
                 # Persist real prices (websocket tick or REST quote) so a
                 # later session can fall back to the last real premium
                 # instead of the flat 100. Fallback prices are never saved.
+                # Entries are collected here and written once after the loop
+                # to avoid a full-file read/rewrite per contract.
                 if price:
 
-                    self.save_last_known_price(
+                    pending_price_updates[str(data["tradingsymbol"])] = self._last_known_price_entry(
                         data["tradingsymbol"],
                         price,
                         open_price=(q[1] if q else None),
@@ -2453,6 +2529,8 @@ class Trader_Singleton:
 
                 self._order_strategy_mapping[token] = "ULTRA_SCALPING"
 
+
+            self.save_last_known_prices(pending_price_updates)
 
             logger.info("Weekly options setup completed")
 
@@ -2821,20 +2899,28 @@ class Trader_Singleton:
                     self._five_weekly_option_contracts[token]["prev_close"] = prev_close
 
                 # Keep the persisted last-known premium fresh during the
-                # session (throttled to one write per token per minute) so
-                # the next session can fall back to the most recent real
-                # price instead of the flat 100. Some tick paths deliver no
-                # tradingsymbol, so resolve it from the contract table.
+                # session so the next session can fall back to the most
+                # recent real price instead of the flat 100. Entries are
+                # throttled to one per token per minute, accumulated in
+                # memory, and flushed as a single batched write every 60
+                # seconds. Some tick paths deliver no tradingsymbol, so
+                # resolve it from the contract table.
                 now_ts = time.time()
                 if now_ts - self._price_persist_ts.get(token, 0) >= 60:
                     self._price_persist_ts[token] = now_ts
                     symbol = tradingsymbol or self._five_weekly_option_contracts[token].get("name")
                     if symbol:
-                        self.save_last_known_price(
+                        self._pending_tick_price_updates[str(symbol)] = self._last_known_price_entry(
                             symbol,
                             price,
                             prev_close=self._prev_close_prices.get(token)
                         )
+
+                if self._pending_tick_price_updates and now_ts - self._last_price_flush_ts >= 60:
+                    self._last_price_flush_ts = now_ts
+                    pending = self._pending_tick_price_updates
+                    self._pending_tick_price_updates = {}
+                    self.save_last_known_prices(pending)
 
                 payload = {
                     'token': token,
@@ -4189,7 +4275,26 @@ class Trader_Singleton:
         @self.frontend_data_socket.on("order_strategy_data_updated_orders")
         def handle_order_strategy_type_orders(order_strategy_details):
             logger.debug(f"Received updated order strategy type for orders {order_strategy_details}")
-            self._order_strategy_mapping[order_strategy_details["instrument_token"]] = order_strategy_details["strategy_type"]
+            token = str(order_strategy_details["instrument_token"])
+            self._order_strategy_mapping[token] = order_strategy_details["strategy_type"]
+
+            # Propagate to any OPEN position so the TP/SL monitor picks up
+            # the new strategy's PCT thresholds mid-trade. Without this the
+            # position keeps the strategy stamped at buy time and a strategy
+            # switch would only apply to future buys.
+            position = self._position_data.get(token)
+            if position is not None:
+                position["order_strategy"] = order_strategy_details["strategy_type"]
+                logger.info(
+                    f"Strategy switched mid-trade for {position.get('tradingsymbol', token)}: "
+                    f"now {order_strategy_details['strategy_type']} (TP/SL thresholds recalculated)"
+                )
+                if self.frontend_data_socket:
+                    self.frontend_data_socket.emit(
+                        'update_open_positions',
+                        self._position_data
+                    )
+
             logger.debug(f"Updated Order Strategy Mapping: {self._order_strategy_mapping}")
 
         @self.frontend_data_socket.on('place_sell_order')
@@ -4356,6 +4461,7 @@ class Trader_Singleton:
                 # Trading mode is PAPER, LIVE, SIMULATION, or PLAYBACK.
                 self._mode = fetch_from_json("settings.json" , "MODE")
                 sell_mode = order_details.get("SELL_MODE", "T")
+                self._order_sell_mode_mapping[order_details["token"]] = sell_mode
                 logger.debug(f"Mode set is {self._mode} ; Strategy set is {order_details['strategy']}  Sell Mode is {sell_mode} ")
 
                 # TradingView entry validation (TV_DATA_Validation_REQUIRED).
@@ -4406,37 +4512,112 @@ class Trader_Singleton:
                     logger.error(f"|Error placing buy order: {e}|", exc_info=True)
                     #Check if the error is because of insufficient fund..If so, reduce the lots by 1 and reattempt
                     error_message = str(e).upper()
+
+                    # New Implementation to keep decrementing the Lots till 0 to check if we could buy some lots with the available funds
+                    # Provided by ChatGPT Go
+
+                    # if "FUND LIMIT INSUFFICIENT" in error_message:
+                    #     reduced_lots = max(1, int(order_details["lots"]) - 1)
+                    #     logger.warning(f"Insufficient funds for {order_details['lots']} lots — retrying with {reduced_lots} lot(s)...")
+                    #     try:
+                    #         ltp = self._five_weekly_option_contracts[order_details["token"]]["ltp"]
+                    #         self._broker.buy_units(order_details["tradingsymbol"] , order_details["token"] , reduced_lots , self._exchange , ltp)
+                    #         self.frontend_data_socket.emit('buy_order_result', { 
+                    #             "success": True,
+                    #             "tradingsymbol": order_details["tradingsymbol"],
+                    #             "lots": reduced_lots,
+                    #             "note": "Retried with reduced lots due to insufficient funds"
+                    #         })
+                    #         return
+                    #     except Exception as retry_error:
+                    #         logger.error(f"Retry buy order failed: {retry_error}", exc_info=True)
+                    #         self.frontend_data_socket.emit('buy_order_result', {
+                    #             "success": False,
+                    #             "tradingsymbol": order_details["tradingsymbol"],
+                    #             "lots": reduced_lots,
+                    #             "error": str(retry_error)
+                    #         })
+                    #         return
+                    # #logger.exception(f"Error placing buy order: {e}")
+                    # # ❌ Notify frontend of failure
+                    # self.frontend_data_socket.emit('buy_order_result', {
+                    #     "success": False,
+                    #     "tradingsymbol": order_details["tradingsymbol"],
+                    #     "lots": order_details["lots"],
+                    #     "error": str(e)
+                    # })
                     if "FUND LIMIT INSUFFICIENT" in error_message:
-                        reduced_lots = max(1, int(order_details["lots"]) - 1)
-                        logger.warning(f"Insufficient funds for {order_details['lots']} lots — retrying with {reduced_lots} lot(s)...")
-                        try:
-                            ltp = self._five_weekly_option_contracts[order_details["token"]]["ltp"]
-                            self._broker.buy_units(order_details["tradingsymbol"] , order_details["token"] , reduced_lots , self._exchange , ltp)
-                            self.frontend_data_socket.emit('buy_order_result', { 
-                                "success": True,
-                                "tradingsymbol": order_details["tradingsymbol"],
-                                "lots": reduced_lots,
-                                "note": "Retried with reduced lots due to insufficient funds"
-                            })
-                            return
-                        except Exception as retry_error:
-                            logger.error(f"Retry buy order failed: {retry_error}", exc_info=True)
-                            self.frontend_data_socket.emit('buy_order_result', {
-                                "success": False,
-                                "tradingsymbol": order_details["tradingsymbol"],
-                                "lots": reduced_lots,
-                                "error": str(retry_error)
-                            })
-                            return
-                    #logger.exception(f"Error placing buy order: {e}")
-                    # ❌ Notify frontend of failure
-                    self.frontend_data_socket.emit('buy_order_result', {
-                        "success": False,
-                        "tradingsymbol": order_details["tradingsymbol"],
-                        "lots": order_details["lots"],
-                        "error": str(e)
-                    })
 
-      
+                        retry_lots = int(order_details["lots"]) - 1
 
-        
+                        while retry_lots >= 1:
+
+                            logger.warning(
+                                f"Insufficient funds for {retry_lots + 1} lots "
+                                f"— retrying with {retry_lots} lot(s)..."
+                            )
+
+                            try:
+                                ltp = self._five_weekly_option_contracts[
+                                    order_details["token"]
+                                ]["ltp"]
+
+                                self._broker.buy_units(
+                                    order_details["tradingsymbol"],
+                                    order_details["token"],
+                                    retry_lots,
+                                    self._exchange,
+                                    ltp,
+                                    self._mode,
+                                    sell_mode,
+                                    target_profit
+                                )
+
+                                self.frontend_data_socket.emit('buy_order_result', {
+                                    "success": True,
+                                    "tradingsymbol": order_details["tradingsymbol"],
+                                    "lots": retry_lots,
+                                    "note": "Retried with reduced lots due to insufficient funds"
+                                })
+
+                                return
+
+                            except Exception as retry_error:
+
+                                retry_error_message = str(retry_error).upper()
+
+                                if "FUND LIMIT INSUFFICIENT" not in retry_error_message:
+                                    logger.error(
+                                        f"Retry buy order failed: {retry_error}",
+                                        exc_info=True
+                                    )
+
+                                    self.frontend_data_socket.emit('buy_order_result', {
+                                        "success": False,
+                                        "tradingsymbol": order_details["tradingsymbol"],
+                                        "lots": retry_lots,
+                                        "error": str(retry_error)
+                                    })
+
+                                    return
+
+                                retry_lots -= 1
+
+                        # No lot size could be placed
+                        logger.error(
+                            f"Insufficient funds even for 1 lot of "
+                            f"{order_details['tradingsymbol']}"
+                        )
+
+                        self.frontend_data_socket.emit('buy_order_result', {
+                            "success": False,
+                            "tradingsymbol": order_details["tradingsymbol"],
+                            "lots": 0,
+                            "error": "Insufficient funds even for 1 lot"
+                        })
+
+                        return
+
+                        
+
+                            

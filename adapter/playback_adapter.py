@@ -263,7 +263,7 @@ class PlaybackAdapter(BrokerInterface):
     def _resolve_playback_instrument(self):
         details = self._lookup_instrument(self._tradingsymbol)
         if details is None:
-            configured_lot = self._config.get("LOT_SIZE") or fetch_from_json("settings.json", "DEFAULT_LOT_SIZE") or 1
+            configured_lot = self._config.get("LOT_SIZE") or 1
             logger.warning(
                 f"Playback instrument {self._tradingsymbol} not found in the instrument "
                 f"lists; synthesizing with lot size {configured_lot}"
@@ -303,7 +303,7 @@ class PlaybackAdapter(BrokerInterface):
             details = {
                 "tradingsymbol": symbol,
                 "instrument_token": token,
-                "lot_size": fetch_from_json("settings.json", "DEFAULT_LOT_SIZE") or 1,
+                "lot_size": self._config.get("LOT_SIZE") or 1,
                 "expiry": None,
                 "exchange": get_exchange_for_underlying(self._underlying()) or "NFO",
             }

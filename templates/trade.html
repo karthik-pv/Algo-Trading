@@ -619,7 +619,9 @@
 document.addEventListener('DOMContentLoaded', function() {
     console.log('TRADE PAGE JS: DOMContentLoaded', new Date().toISOString());
     // --- SOCKET CONNECTION ---
-    const socket = io('http://localhost:5001');
+    // Websocket-only transport: the default polling-then-upgrade
+    // handshake delayed the first data by ~0.5-1s on every page load.
+    const socket = io('http://localhost:5001', { transports: ['websocket'] });
 
     // --- DOM ELEMENTS ---
     const buyWidgetContainer = document.getElementById('buy-widget-container');
@@ -666,8 +668,10 @@ document.addEventListener('DOMContentLoaded', function() {
             socket.connected
         );
         
-        socket.emit('request_weekly_options');
-        socket.emit('request_open_positions');
+        // No request_weekly_options / request_open_positions emits here:
+        // the server already pushes both in setup_data on connect
+        // (handle_connect), so requesting them again only added a
+        // redundant round-trip before the tables could populate.
         socket.emit('voice_announcement_toggle', {
             enabled: announcementToggleEl ? announcementToggleEl.checked : true
         });
@@ -920,7 +924,12 @@ document.addEventListener('DOMContentLoaded', function() {
     // --- UTILITY FUNCTIONS ---
     async function fetchFundSummary() {
         try {
-            if (availableBalanceEl) availableBalanceEl.textContent = 'Fetching...';
+            // Only show 'Fetching...' when no balance is displayed yet;
+            // a background refresh converging to a fresh value should
+            // update in place instead of flashing the placeholder.
+            if (availableBalanceEl && !availableBalanceEl.textContent.startsWith('Bal:')) {
+                availableBalanceEl.textContent = 'Fetching...';
+            }
             const response = await fetch('/fund_summary');
             if (!response.ok) { throw new Error(`HTTP Error: ${response.status}`); }
             const summary = await response.json();

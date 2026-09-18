@@ -3,6 +3,7 @@ import threading
 import logging
 import asyncio
 import os
+import time
 import pandas as pd
 
 from flask import Flask, jsonify, request, Response, render_template, redirect
@@ -630,6 +631,57 @@ def get_trades():
     trades = broker.fetch_all_trades()
     return jsonify(trades if trades else {"error": "Could not fetch trades"})
 
+# Fund summary cache (stale-while-refresh).
+# A synchronous broker REST call on every /fund_summary request adds
+# ~0.3-1s to each Trade-page load, and the page load plus the
+# post-order socket refresh can fire the request twice at once. The
+# cache serves the last known value instantly and refreshes it through
+# a single de-duplicated background thread.
+_fund_summary_cache = {"data": None, "ts": 0.0}
+_fund_summary_refresh_lock = threading.Lock()
+FUND_SUMMARY_REFRESH_INTERVAL_SECONDS = 5
+
+
+def _refresh_fund_summary_background():
+    """
+    Refresh the fund summary cache from the broker in a daemon thread.
+
+    De-duplicated: when a refresh is already running, additional
+    callers return immediately instead of stacking another broker
+    REST call (the double-fetch seen in the 09_17 logs).
+    """
+    def _run():
+        # De-dup guard is taken INSIDE the worker thread and released in
+        # its finally block. Taking it in the requesting thread instead
+        # would leave it held forever (the release only happens here),
+        # deadlocking the re-acquire below and freezing the cache for
+        # the life of the process.
+        if not _fund_summary_refresh_lock.acquire(blocking=False):
+            return
+
+        try:
+            fund_summary = broker.fetch_fund_summary()
+            if isinstance(fund_summary, dict) and fund_summary:
+                previous = _fund_summary_cache["data"]
+                _fund_summary_cache["data"] = fund_summary
+                _fund_summary_cache["ts"] = time.time()
+                # Push the fresh value to the UI only when it actually
+                # changed, so a balance served stale during a page load
+                # converges without extra flicker when nothing moved.
+                # (broker.fetch_fund_summary already syncs the trader's
+                # own copy via the adapter callback.)
+                if fund_summary != previous and trader.frontend_data_socket:
+                    trader.frontend_data_socket.emit('refresh_fund_summary')
+        except Exception as e:
+            logger.warning(f"Background fund summary refresh failed: {e}")
+        finally:
+            _fund_summary_refresh_lock.release()
+
+    threading.Thread(
+        target=_run, daemon=True, name="fund-summary-refresh"
+    ).start()
+
+
 @app.route("/fund_summary")
 def get_fund_summary():
     logger.info("Fetching fund summary")
@@ -638,7 +690,28 @@ def get_fund_summary():
         fund_summary = trader.get_paper_fund_summary()
         logger.log("DATA", f"Paper Fund Summary: {fund_summary}")
         return jsonify({"data": fund_summary})
+
+    # Stale-while-refresh: serve the last known value immediately and
+    # kick off a background refresh once the cache ages out. The
+    # frontend re-fetches when the fresh value differs, so the number
+    # the user sees is never more than a few seconds behind.
+    cached = _fund_summary_cache["data"]
+    if cached:
+        if (
+            time.time() - _fund_summary_cache["ts"]
+            > FUND_SUMMARY_REFRESH_INTERVAL_SECONDS
+        ):
+            _refresh_fund_summary_background()
+        logger.log("DATA", f"Fund Summary (cached): {cached}")
+        return jsonify({"data": cached})
+
+    # First request of the session: fetch synchronously so the UI gets
+    # a real value, and seed the cache.
     fund_summary = broker.fetch_fund_summary()
+    if isinstance(fund_summary, dict) and fund_summary:
+        with _fund_summary_refresh_lock:
+            _fund_summary_cache["data"] = fund_summary
+            _fund_summary_cache["ts"] = time.time()
     logger.log("DATA", f"Fund Summary: {fund_summary}")
     return jsonify({"data" : fund_summary})
 
@@ -1160,12 +1233,10 @@ if 1==1: #__name__ == "__main__":
         if CURRENT_BROKER == "KITE":
             socket_thread = threading.Thread(target=start_socket, daemon=True)
             socket_thread.start()
-            if is_market_open():
-                trader.start_trading_watcher_thread()
+            trader.start_trading_watcher_thread()
             app.run(debug=True , use_reloader = False)
         elif CURRENT_BROKER == "MSTOCK":
-            if is_market_open():
-                trader.start_trading_watcher_thread()
+            trader.start_trading_watcher_thread()
             asyncio.run(start_async_connections())
         elif CURRENT_BROKER == "SIMULATOR":
             trader.start_trading_watcher_thread()

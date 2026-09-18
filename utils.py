@@ -309,7 +309,7 @@ def write_to_json(data_to_write: dict, file_path: str) -> bool:
         key: ("***MASKED***" if "token" in str(key).lower() else value)
         for key, value in data_to_write.items()
     }
-    logger.info(f"Data to write is {safe_data} file path is  {file_path}")
+    logger.debug(f"Data to write is {safe_data} file path is  {file_path}")
     try:
         try:
             with open(file_path, 'r') as f:
@@ -324,7 +324,7 @@ def write_to_json(data_to_write: dict, file_path: str) -> bool:
 
         clear_json_cache(file_path)
         
-        logger.info(f"Successfully wrote updates to {file_path}")   
+        logger.debug(f"Successfully wrote updates to {file_path}")   
         return True
 
     except (IOError, TypeError) as e:

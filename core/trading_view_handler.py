@@ -84,7 +84,7 @@ def trading_view_handle_func(data , trader : Trader_Singleton):
     #     TRIGGER SELL
     
     # # STOP LOSS CHECK BASED ON PCT
-    # IF SELL_TRIGGER_PCT == TRUE AND LTP < AVG_BUY_PRICE AND (AVG_BUY_PRICE - LTP)*100/ AVG_BUY_PRICE > PCT_LOSS 
+    # IF SELL_TRIGGER_PCT == TRUE AND LTP < AVG_BUY_PRICE AND (AVG_BUY_PRICE - LTP)*100/ AVG_BUY_PRICE > PCT_STOP_LOSS 
     #     TRIGGER SELL
 
 

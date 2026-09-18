@@ -235,11 +235,17 @@
         <div class="orders-header">
             <div class="toggle-buttons">
                 <label id="cashSummaryLabel" class="expiry-label cash-summary" style="display: none;" title="Cash: start of day &#8594; current, with day change %">
-                    <span class="cash-caption">Cash</span>
+                    <!-- <span class="cash-caption">Cash</span>
                     <span id="cashBeginValue">--</span>
                     <span class="cash-arrow">&#8594;</span>
                     <span id="cashCurrentValue">--</span>
-                    <span id="cashChangePct">--</span>
+                    <span id="cashChangePct">--</span> -->
+                    <span class="cash-caption">Day Start</span>
+                    <span id="cashBeginValue">--</span>
+                    <span class="cash-arrow">&#8594;</span>
+                    <span class="cash-caption">Net P/L</span>
+                    <span id="cashCurrentValue">--</span>
+                    <span id="cashChangePct">--</span>                    
                 </label>
             </div>
             <div class="orders-header-right">
@@ -288,7 +294,8 @@ document.addEventListener('DOMContentLoaded', function() {
     // --- SOCKET CONNECTION ---
     // This page keeps its own Socket.IO connection so the grid refreshes
     // automatically right after an order is placed from the Trade page.
-    const socket = io('http://localhost:5001');
+    // Websocket-only transport: skips the polling-then-upgrade handshake.
+    const socket = io('http://localhost:5001', { transports: ['websocket'] });
 
     // --- DOM ELEMENTS ---
     const ordersTableBody = document.getElementById('ordersTableBody');
@@ -341,9 +348,11 @@ document.addEventListener('DOMContentLoaded', function() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ trade_date: tradeDate })
             });
+            /*
             const fundPromise = fetch('/fund_summary')
                 .then(response => response.json())
                 .catch(() => null);
+            */
             const dayCashPromise = fetch('/day_cash')
                 .then(response => response.json())
                 .catch(() => null);
@@ -353,11 +362,12 @@ document.addEventListener('DOMContentLoaded', function() {
             if (!response.ok || !data.success) {
                 throw new Error(data.error || `HTTP Error: ${response.status}`);
             }
-
+            /*    
             const fundData = await fundPromise;
             const currentCash = parseFloat(
                 fundData && fundData.data && fundData.data.cash_balance
             );
+            */
 
             const dayCashData = await dayCashPromise;
             const dayStartCash = (dayCashData && dayCashData.success)
@@ -373,7 +383,8 @@ document.addEventListener('DOMContentLoaded', function() {
                     (ordersRowsCache.length > 0 && isToday) ? '' : 'none';
             }
             renderOrders(ordersRowsCache);
-            renderOrdersCashSummary(currentCash, dayStartCash);
+            //renderOrdersCashSummary(currentCash, dayStartCash);
+            renderOrdersCashSummary(dayStartCash);
         } catch (error) {
             console.error("Could not load trades:", error);
             ordersTableBody.innerHTML = `<tr><td colspan="13" class="no-options">Failed to load trades: ${error.message || 'Unknown error'}</td></tr>`;
@@ -516,6 +527,18 @@ document.addEventListener('DOMContentLoaded', function() {
                         displayValue = pnlValue.toLocaleString('en-IN');
                     }
                 }
+                if (column === 'PnL_Rate') {
+                    const pnlRateValue = Number(value);
+                    if (value !== '' && value !== null && value !== undefined && !Number.isNaN(pnlRateValue)) {
+                        displayValue = pnlRateValue.toFixed(2);
+                    }
+                }
+                if (column === 'PnL%') {
+                    const pnlPercent = Number(value);
+                    if (value !== '' && value !== null && value !== undefined && !Number.isNaN(pnlPercent)) {
+                        displayValue = pnlPercent.toFixed(1);
+                    }
+                }
                 td.textContent = displayValue;
 
                 if (column === 'PnL%') {
@@ -544,28 +567,67 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
-    function renderOrdersCashSummary(currentCash, dayStartCash) {
+    // function renderOrdersCashSummary(currentCash, dayStartCash) {
+    //     const cashBeginEl = document.getElementById('cashBeginValue');
+    //     const cashCurrentEl = document.getElementById('cashCurrentValue');
+    //     const cashChangeEl = document.getElementById('cashChangePct');
+    //     if (!cashBeginEl || !cashCurrentEl || !cashChangeEl) return;
+
+    //     cashBeginEl.textContent = Number.isFinite(dayStartCash)
+    //         ? dayStartCash.toLocaleString('en-IN', { maximumFractionDigits: 0 })
+    //         : '--';
+    //     cashCurrentEl.textContent = Number.isFinite(currentCash)
+    //         ? currentCash.toLocaleString('en-IN', { maximumFractionDigits: 0 })
+    //         : '--';
+
+    //     if (Number.isFinite(currentCash) && Number.isFinite(dayStartCash) && dayStartCash > 0) {
+    //         const changePct = ((currentCash - dayStartCash) / dayStartCash) * 100;
+    //         cashChangeEl.textContent = `${changePct.toFixed(2)}%`;
+    //         cashChangeEl.className = changePct > 0 ? 'profit' : (changePct < 0 ? 'loss' : '');
+    //     } else {
+    //         cashChangeEl.textContent = '--';
+    //         cashChangeEl.className = '';
+    //     }
+    // }
+
+    function renderOrdersCashSummary(dayStartCash) {
         const cashBeginEl = document.getElementById('cashBeginValue');
         const cashCurrentEl = document.getElementById('cashCurrentValue');
         const cashChangeEl = document.getElementById('cashChangePct');
+
         if (!cashBeginEl || !cashCurrentEl || !cashChangeEl) return;
 
         cashBeginEl.textContent = Number.isFinite(dayStartCash)
             ? dayStartCash.toLocaleString('en-IN', { maximumFractionDigits: 0 })
             : '--';
-        cashCurrentEl.textContent = Number.isFinite(currentCash)
-            ? currentCash.toLocaleString('en-IN', { maximumFractionDigits: 0 })
+
+        // Calculate net P/L for all executed trades shown in the grid.
+        const netPnL = (ordersRowsCache || []).reduce((total, row) => {
+            const pnl = Number(row['PnL']);
+            return Number.isFinite(pnl) ? total + pnl : total;
+        }, 0);
+
+        cashCurrentEl.textContent = Number.isFinite(netPnL)
+            ? netPnL.toLocaleString('en-IN', {
+                maximumFractionDigits: 2,
+                minimumFractionDigits: 2
+            })
             : '--';
 
-        if (Number.isFinite(currentCash) && Number.isFinite(dayStartCash) && dayStartCash > 0) {
-            const changePct = ((currentCash - dayStartCash) / dayStartCash) * 100;
-            cashChangeEl.textContent = `${changePct.toFixed(2)}%`;
-            cashChangeEl.className = changePct > 0 ? 'profit' : (changePct < 0 ? 'loss' : '');
+        if (Number.isFinite(netPnL) && Number.isFinite(dayStartCash) && dayStartCash > 0) {
+            const pnlPct = (netPnL / dayStartCash) * 100;
+
+            cashChangeEl.textContent = `${pnlPct.toFixed(2)}%`;
+            cashChangeEl.className =
+                pnlPct > 0 ? 'profit' : (pnlPct < 0 ? 'loss' : '');
         } else {
             cashChangeEl.textContent = '--';
             cashChangeEl.className = '';
         }
     }
+
+
+
 
     function scheduleOrdersRefresh() {
         if (ordersRefreshTimer) clearTimeout(ordersRefreshTimer);
