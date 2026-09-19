@@ -1,6 +1,20 @@
 .env
 venv
+.venv
 __pycache__/
+.vscode
+.opencode
+.github
+
+# Runtime data (logs, tokens, instrument dumps, paper trades)
+data/
+
+# Machine-local config; example is tracked, variants are not
+config/appconfig.json
+config/appconfig.*.json
+!config/appconfig.example.json
+
+# Legacy root-level names (pre appconfig consolidation)
 config.json
 access_token.json
 trading_symbols.json
@@ -10,13 +24,6 @@ mstock_instrument_list.json
 mstock_instrument_list_reduced.json
 PaperTrading.txt
 day_cash.json
-appconfig.json
 constants.json
 logs
 z_JSON._Temp.txt
-.github
-.venv
-.vscode
-.opencode
-
-

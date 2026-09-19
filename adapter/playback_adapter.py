@@ -165,7 +165,7 @@ class PlaybackAdapter(BrokerInterface):
         try:
             if broker == "KITE":
                 row = find_matching_row_in_csv(
-                    os.path.join(base_dir, _KITE_CSV_FILE), "tradingsymbol", symbol
+                    _KITE_CSV_FILE, "tradingsymbol", symbol
                 )
                 if row:
                     return {
@@ -181,7 +181,7 @@ class PlaybackAdapter(BrokerInterface):
                 # The reduced file carries {"meta": ..., "instruments": [...]};
                 # the full master file is a plain top-level array.
                 reduced = find_matching_object(
-                    os.path.join(base_dir, _MSTOCK_REDUCED_FILE),
+                    _MSTOCK_REDUCED_FILE,
                     "name",
                     symbol,
                     prefix=INSTRUMENTS_SECTION_PREFIX,
@@ -196,7 +196,7 @@ class PlaybackAdapter(BrokerInterface):
                         "exchange": reduced.get("exch_seg") or default_exchange,
                     }
                 item = find_matching_object(
-                    os.path.join(base_dir, _MSTOCK_FULL_FILE), "name", symbol
+                    _MSTOCK_FULL_FILE, "name", symbol
                 )
                 if item:
                     return {
@@ -786,7 +786,7 @@ class PlaybackAdapter(BrokerInterface):
         underlying = self._underlying()
 
         base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        persisted_meta = read_instrument_meta(os.path.join(base_dir, _MSTOCK_REDUCED_FILE))
+        persisted_meta = read_instrument_meta(_MSTOCK_REDUCED_FILE)
         if persisted_meta.get("underlying") == underlying and persisted_meta.get("near_month_future_token"):
             return persisted_meta
 
