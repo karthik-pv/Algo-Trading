@@ -81,7 +81,7 @@ class BrokerInterface(ABC):
     def get_instrument_meta(self):
         """
         Instrument-file-derived constants (replaces the old derived
-        keys in constants.json). Brokers compute/persist this from
+        keys in appconfig.json). Brokers compute/persist this from
         their instrument master; shape:
         {
             "underlying": "SENSEX",
@@ -92,19 +92,19 @@ class BrokerInterface(ABC):
             "strike_interval": 100,
             "generated_on": "2026-09-16",
         }
-        Default implementation derives what it can from constants.json
+        Default implementation derives what it can from appconfig.json
         (UNDERLYING) with safe fallbacks.
         """
         from utils import fetch_from_json, get_exchange_for_underlying
 
-        underlying = str(fetch_from_json("constants.json", "UNDERLYING") or "").upper()
+        underlying = str(fetch_from_json("appconfig.json", "UNDERLYING") or "").upper()
         return {
             "underlying": underlying,
             "exchange": get_exchange_for_underlying(underlying) or "",
             "near_month_future_token": None,
             "near_option_expiry": None,
             "expire_together": False,
-            "strike_interval": 100 if underlying == "SENSEX" else 50,
+            "strike_interval": 100,
             "generated_on": None,
         }
 

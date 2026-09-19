@@ -38,9 +38,9 @@ def instr_det_attrib_mgmt(instrument_details):
         if csv_lot_size and csv_lot_size > 1:
             instrument_details["lot_size"] = csv_lot_size
         elif str(instrument_details.get("tradingsymbol", "")).startswith("CRUDEOILM"):
-            instrument_details["lot_size"] = int(fetch_from_json("constants.json" , "LOT_SIZE_CRUDEOILM"))
+            instrument_details["lot_size"] = int(fetch_from_json("appconfig.json" , "LOT_SIZE_CRUDEOILM"))
         elif str(instrument_details.get("tradingsymbol", "")).startswith("CRUDEOIL"):
-            instrument_details["lot_size"] = int(fetch_from_json("constants.json" , "LOT_SIZE_CRUDEOIL"))
+            instrument_details["lot_size"] = int(fetch_from_json("appconfig.json" , "LOT_SIZE_CRUDEOIL"))
     return instrument_details
 
 def orders_attribute_mgmt(orders):

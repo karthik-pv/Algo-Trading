@@ -10,7 +10,7 @@ import holidays
 from loguru import logger
 
 from interface.broker_interface import BrokerInterface
-from utils import fetch_from_json, load_json_with_retry, get_exchange_for_underlying
+from utils import fetch_from_json, load_json_with_retry, get_exchange_for_underlying, resolve_data_path
 
 india_holidays = holidays.India()
 
@@ -41,10 +41,7 @@ class SimulatorAdapter(BrokerInterface):
     @staticmethod
     def _load_settings():
         try:
-            simulation_json_path = os.path.join(
-                os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                "simulation.json",
-            )
+            simulation_json_path = resolve_data_path("simulation.json")
             return load_json_with_retry(simulation_json_path)
         except (OSError, json.JSONDecodeError) as error:
             logger.warning(f"Failed to load simulation.json, using simulator defaults: {error}")
@@ -56,7 +53,7 @@ class SimulatorAdapter(BrokerInterface):
         return str(int(digest[:12], 16))
 
     def _underlying_config(self):
-        underlying = str(fetch_from_json("constants.json", "UNDERLYING") or "NIFTY").upper()
+        underlying = str(fetch_from_json("appconfig.json", "UNDERLYING") or "NIFTY").upper()
         defaults = {
             "NIFTY": {"INITIAL_PRICE": 25000, "MIN_PRICE": 24800, "MAX_PRICE": 25200, "VOLATILITY_POINTS": 12},
             "SENSEX": {"INITIAL_PRICE": 82000, "MIN_PRICE": 81500, "MAX_PRICE": 82500, "VOLATILITY_POINTS": 30},
@@ -107,7 +104,7 @@ class SimulatorAdapter(BrokerInterface):
             "near_month_future_token": near_month_future_token,
             "near_option_expiry": near_option_expiry.isoformat(),
             "expire_together": False,
-            "strike_interval": 100 if underlying == "SENSEX" else 50,
+            "strike_interval": 100,
             "generated_on": date.today().isoformat(),
         }
 

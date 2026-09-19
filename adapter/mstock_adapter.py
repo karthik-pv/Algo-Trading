@@ -30,6 +30,7 @@ from utils import (
     clear_json_cache,
     read_instrument_meta,
     get_exchange_for_underlying,
+    resolve_data_path,
     INSTRUMENTS_SECTION_PREFIX,
 )
 from core.mstock_connector import MStockSingleton
@@ -38,6 +39,7 @@ from core.trade_logic import Trader_Singleton
 from adapter.mstock_utils import (
     position_attribute_mgmt, fund_summary_attribute_mgmt, order_attribute_mgmt,
     instr_det_attrib_mgmt, normalize_contract_symbol, write_orders_workbook,
+    format_lakhs,
 )
 from loguru import logger
 
@@ -57,15 +59,31 @@ class MStockAdapter(BrokerInterface):
         self._csv_loaded = False           # flag to check if CSV has been read
 
 
-        self._underlying = fetch_from_json("constants.json" , "UNDERLYING")
-        self._ORDER_FREEZE_LIMIT = fetch_from_json("constants.json", f"{'NIFTY' if self._underlying == 'NIFTY' else 'SENSEX'}_ORDER_FREEZE_LIMIT")
+        self._underlying = fetch_from_json("appconfig.json" , "UNDERLYING")
 
-        self._MSTOCK_INSTRUMENT_FILE = "mstock_instrument_list_reduced.json"
+        self._MSTOCK_INSTRUMENT_FILE = resolve_data_path("mstock_instrument_list_reduced.json")
 
         # Instrument-file-derived meta (replaces the old derived keys in
-        # constants.json). Populated at startup by download_instrument_list
+        # appconfig.json). Populated at startup by download_instrument_list
         # or read from the reduced instrument file's meta block.
         self._instrument_meta = None
+
+    def _get_order_freeze_limit(self):
+        # Fetched per order so ORDER_FREEZE_LIMIT edits apply without a restart.
+        key = "NIFTY_ORDER_FREEZE_LIMIT" if str(self._underlying) == "NIFTY" else "SENSEX_ORDER_FREEZE_LIMIT"
+        value = int(fetch_from_json("appconfig.json", key) or 0)
+        if value <= 0:
+            logger.warning(f"{key} missing or invalid in appconfig.json; using 1 to avoid split-order division errors")
+            return 1
+        return value
+
+    def _fallback_ltp(self, tradingsymbol):
+        # Fetched per call so *_FALLBACK_LTP edits apply without a restart.
+        # (The old code referenced non-existent Trader attributes here and
+        # crashed instead of returning the configured fallback.)
+        symbol = str(tradingsymbol).upper()
+        key = "SENSEX_FALLBACK_LTP" if "SENSEX" in symbol else "NIFTY_FALLBACK_LTP"
+        return float(fetch_from_json("appconfig.json", key) or 0)
 
     def get_instrument_meta(self):
         if self._instrument_meta is None:
@@ -73,6 +91,9 @@ class MStockAdapter(BrokerInterface):
             # (e.g. constants page actions before any download ran).
             self._instrument_meta = read_instrument_meta(self._MSTOCK_INSTRUMENT_FILE) or None
         if self._instrument_meta:
+            # Persisted meta may predate the fixed 100-point strike grid;
+            # always enforce it so a stale file cannot bring back 50.
+            self._instrument_meta["strike_interval"] = 100
             return self._instrument_meta
         return super().get_instrument_meta()
 
@@ -371,7 +392,7 @@ class MStockAdapter(BrokerInterface):
             }
         conn.request('GET', '/openapi/typeb/instruments/OpenAPIScripMaster', headers=headers)
         instrument_data = json.loads(conn.getresponse().read().decode("utf-8"))
-        filename = "../"+ self._MSTOCK_INSTRUMENT_FILE
+        filename = self._MSTOCK_INSTRUMENT_FILE
         with open(filename, 'w', encoding='utf-8') as f:
             json.dump(instrument_data, f, ensure_ascii=False, indent=4)
         return
@@ -423,25 +444,15 @@ class MStockAdapter(BrokerInterface):
             except Exception as e:
                 logger.error(f"Fetch Instrument Quote failed for {tradingsymbol}: {e}")
                 # Handle fallback for Nifty / Sensex
-                if "NIFTY" in tradingsymbol.upper():
-                    logger.warning(f"Returning fallback LTP {self._trader._NIFTY_FALLBACK_LTP} for NIFTY.")
-                    return self._trader._NIFTY_FALLBACK_LTP
-                elif "SENSEX" in tradingsymbol.upper():
-                    logger.warning(f"Returning fallback LTP {self._trader._SENSEX_FALLBACK_LTP} for SENSEX.")
-                    return self._trader._SENSEX_FALLBACK_LTP
-                else:
-                    logger.warning("Returning default fallback LTP {self._trader._NIFTY_FALLBACK_LTP}.")
-                    return self._trader._NIFTY_FALLBACK_LTP
+                fallback = self._fallback_ltp(tradingsymbol)
+                logger.warning(f"Returning fallback LTP {fallback} for {tradingsymbol}.")
+                return fallback
 
         except Exception as e:
             logger.error(f"Error getting LTP for {tradingsymbol}: {e}")
             # Same fallback logic for outer exception too
-            if "NIFTY" in tradingsymbol.upper():
-                return self._trader._NIFTY_FALLBACK_LTP
-            elif "SENSEX" in tradingsymbol.upper():
-                return self._trader._SENSEX_FALLBACK_LTP
-            else:
-                return self._trader._NIFTY_FALLBACK_LTP
+            return self._fallback_ltp(tradingsymbol)
+
     def get_quote(self , tradingsymbol):
         logger.info(f"Getting Quote for {tradingsymbol} from M.Stock...")
         try:
@@ -469,15 +480,9 @@ class MStockAdapter(BrokerInterface):
         except Exception as e:
             logger.error(f"Fetch Instrument Quote failed for {tradingsymbol}: {e}")
             # Handle fallback for Nifty / Sensex
-            if "NIFTY" in tradingsymbol.upper():
-                logger.warning(f"Returning fallback LTP {self._trader._NIFTY_FALLBACK_LTP} for NIFTY.")
-                return [self._trader._NIFTY_FALLBACK_LTP,self._trader._NIFTY_FALLBACK_LTP]
-            elif "SENSEX" in tradingsymbol.upper():
-                logger.warning(f"Returning fallback LTP {self._trader._SENSEX_FALLBACK_LTP} for SENSEX.")
-                return [self._trader._SENSEX_FALLBACK_LTP,self._trader._SENSEX_FALLBACK_LTP]
-            else:
-                logger.warning("Returning fallback LTP {self._trader._NIFTY_FALLBACK_LTP} for NIFTY.")
-                return [self._trader._NIFTY_FALLBACK_LTP,self._trader._NIFTY_FALLBACK_LTP]
+            fallback = self._fallback_ltp(tradingsymbol)
+            logger.warning(f"Returning fallback LTP {fallback} for {tradingsymbol}.")
+            return [fallback, fallback]
 
 
     def get_quotes_batch(self, symbols):
@@ -744,7 +749,11 @@ class MStockAdapter(BrokerInterface):
                 # Optional: trigger logout or UI popup
                 if "invalid session" in error_msg.lower():
                     logger.critical("Session expired. User must log in again.")
-                    self._trader.on_session_expired()   # <-- your logout / popup hook
+                    # The trader may not implement the hook; never let the
+                    # expiry handler itself crash the caller.
+                    session_hook = getattr(self._trader, "on_session_expired", None)
+                    if callable(session_hook):
+                        session_hook()
 
                 return None  # ✅ graceful exit
         
@@ -1146,9 +1155,9 @@ class MStockAdapter(BrokerInterface):
 
             quantity = int(quantity) * int(lotsize)
 
-            full_legs = quantity // int(self._ORDER_FREEZE_LIMIT)
-            remainder = quantity % int(self._ORDER_FREEZE_LIMIT)
-            legs = [int(self._ORDER_FREEZE_LIMIT)] * full_legs
+            full_legs = quantity // int(self._get_order_freeze_limit())
+            remainder = quantity % int(self._get_order_freeze_limit())
+            legs = [int(self._get_order_freeze_limit())] * full_legs
             
             logger.info("Mimicking Iceberg Order if the Order Freeze Limit is execeeded")
             logger.debug(f"Quantity: {quantity} full_legs:{full_legs} remainder{remainder} and legs {legs} ")
@@ -1322,9 +1331,9 @@ class MStockAdapter(BrokerInterface):
 
                 quantity = int(quantity) * int(lotsize)
 
-                full_legs = quantity // int(self._ORDER_FREEZE_LIMIT)
-                remainder = quantity % int(self._ORDER_FREEZE_LIMIT)
-                legs = [int(self._ORDER_FREEZE_LIMIT)] * full_legs
+                full_legs = quantity // int(self._get_order_freeze_limit())
+                remainder = quantity % int(self._get_order_freeze_limit())
+                legs = [int(self._get_order_freeze_limit())] * full_legs
                 
                 logger.info("Mimicking Iceberg Order if the Order Freeze Limit is execeeded")
                 logger.debug(f"Quantity: {quantity} full_legs:{full_legs} remainder{remainder} and legs {legs} ")
@@ -1599,6 +1608,65 @@ class MStockAdapter(BrokerInterface):
         c.save()
         return tmp_pdf_path
 
+    @staticmethod
+    def _extract_trade_date(pdf_path):
+        """
+        Resolve the trade date printed on the contract note.
+
+        The TRADE DATE field is repeated on the leading pages (cover
+        block, settlement summary) and combined notes also reference
+        the previous day, so every occurrence is parsed and the latest
+        one wins: the trades table always belongs to the most recent
+        trade date printed on the note. Falls back to today only when
+        nothing matches, which is logged loudly.
+        """
+        import pymupdf
+
+        month = r"[A-Za-z]{3,9}"
+        day = r"\d{1,2}"
+        year = r"\d{4}"
+        patterns = [
+            # "TRADE DATE Sep 18 2026" / "TRADE DATE: September 18, 2026"
+            rf"TRADE DATE\s*:?\s*({month})\s+({day}),?\s+({year})",
+            # "TRADE DATE 18 Sep 2026" / "TRADE DATE: 18-Sep-2026"
+            rf"TRADE DATE\s*:?\s*({day})\s*[-\s]\s*({month})\s*[-\s]\s*({year})",
+        ]
+        formats = ["%b %d %Y", "%B %d %Y", "%d %b %Y", "%d %B %Y"]
+
+        document = pymupdf.open(pdf_path)
+        try:
+            text = "\n".join(page.get_text() for page in document[:3])
+        finally:
+            document.close()
+
+        parsed_dates = []
+        for pattern in patterns:
+            for match in re.finditer(pattern, text, re.IGNORECASE):
+                value = " ".join(part for part in match.groups() if part)
+                for fmt in formats:
+                    try:
+                        parsed_dates.append(
+                            datetime.datetime.strptime(value, fmt).date()
+                        )
+                        break
+                    except ValueError:
+                        continue
+
+        if parsed_dates:
+            trade_date = max(parsed_dates)
+            if len(set(parsed_dates)) > 1:
+                logger.info(
+                    "Contract note shows multiple trade dates "
+                    f"{sorted(set(parsed_dates))}; using {trade_date}"
+                )
+            return trade_date
+
+        logger.warning(
+            "No TRADE DATE found on the contract note leading pages; "
+            "falling back to today's date"
+        )
+        return datetime.datetime.now().date()
+
     def convert_mstock_contract_note_data(self, pdf_path: str):
         """
         Converts mStock contract note PDF into FIFO-paired trade rows.
@@ -1672,24 +1740,8 @@ class MStockAdapter(BrokerInterface):
                 "scanned, encrypted or use an unsupported layout."
             )
 
-        trade_date = datetime.datetime.now().date()
-        try:
-            import pymupdf
-
-            document = pymupdf.open(pdf_path)
-            text = "\n".join(page.get_text() for page in document[:2])
-            document.close()
-            date_match = re.search(
-                r"TRADE DATE\s+([A-Z][a-z]{2}\s+\d{1,2}\s+\d{4})",
-                text,
-                re.IGNORECASE,
-            )
-            if date_match:
-                trade_date = datetime.datetime.strptime(
-                    date_match.group(1), "%b %d %Y"
-                ).date()
-        except (ImportError, ValueError):
-            pass
+        trade_date = self._extract_trade_date(pdf_path)
+        logger.info(f"Contract-note trade date resolved as {trade_date}")
 
         trade_records = []
         for trade in raw_trades:
@@ -1728,10 +1780,13 @@ class MStockAdapter(BrokerInterface):
                 )
                 if same_order:
                     total_quantity = previous["quantity"] + trade["quantity"]
-                    previous["price"] = (
-                        (previous["price"] * previous["quantity"])
-                        + (trade["price"] * trade["quantity"])
-                    ) / total_quantity
+                    previous["price"] = round(
+                        (
+                            (previous["price"] * previous["quantity"])
+                            + (trade["price"] * trade["quantity"])
+                        ) / total_quantity,
+                        2,
+                    )
                     previous["quantity"] = total_quantity
                     continue
             clubbed_records.append(trade.copy())
@@ -1756,8 +1811,11 @@ class MStockAdapter(BrokerInterface):
 
             sequence_id = f"{trade['datetime']:%y%m%d}_{sequence}"
             time_var = f"t{sequence_id}"
+            # VBA parity: bare ints (Hour(dt) etc.) — zero-padded values
+            # like 09 produce leading-zero literals Pine rejects.
+            note_dt = trade["datetime"]
             timeline_script.append(
-                f"{time_var}=timestamp('Asia/Kolkata',{trade['datetime']:%Y,%m,%d,%H,%M,%S})"
+                f"{time_var}=timestamp('Asia/Kolkata',{note_dt.year},{note_dt.month},{note_dt.day},{note_dt.hour},{note_dt.minute},{note_dt.second})"
             )
 
             if trade["type"] == "BUY":
@@ -1789,24 +1847,51 @@ class MStockAdapter(BrokerInterface):
 
                 if matched_quantity:
                     average_buy = total_buy_cost / matched_quantity
-                    pnl_rate_value = trade["price"] - average_buy
-                    pnl_value = pnl_rate_value * matched_quantity
-                    cumulative_pnl += pnl_value
+                    # VBA parity: pnlRate is rounded to 2 decimals BEFORE
+                    # the pnl multiplication, pct uses the ROUNDED pnl and
+                    # PnL_RT accumulates the rounded pnl.
+                    pnl_rate_value = round(trade["price"] - average_buy, 2)
+                    pnl = round(pnl_rate_value * matched_quantity)
+                    cumulative_pnl += pnl
                     elapsed_seconds = int(
                         (trade["datetime"] - first_buy_time).total_seconds()
                     )
                     duration = f"{elapsed_seconds // 60:02d}:{elapsed_seconds % 60:02d}"
-                    pnl_rate = round(pnl_rate_value, 2)
-                    pnl = round(pnl_value)
+                    pnl_rate = pnl_rate_value
                     purchase_value = average_buy * matched_quantity
-                    pnl_pct = round((pnl_value / purchase_value) * 100, 2) if purchase_value else 0
-                    pnl_rt = round(cumulative_pnl)
+                    pnl_pct = round((pnl / purchase_value) * 100, 2) if purchase_value else 0
+                    pnl_rt = cumulative_pnl
 
                     sell_time_var = time_var
                     for match_number, (buy, matched) in enumerate(matched_buys, start=1):
-                        pine_id = f"{sequence_id}_{match_number}"
+                        # VBA computes duration/pnl/pct against THE matched
+                        # buy; with one sell filled across several buys each
+                        # zone label carries its own match's values.
+                        pair_purchase_value = buy["price"] * matched
+                        pair_pnl = round(
+                            (trade["price"] - buy["price"]) * matched
+                        )
+                        pair_pct = (
+                            round((pair_pnl / pair_purchase_value) * 100, 2)
+                            if pair_purchase_value else 0
+                        )
+                        pair_seconds = int(
+                            (trade["datetime"] - buy["datetime"]).total_seconds()
+                        )
+                        pair_duration = (
+                            f"{pair_seconds // 60:02d}:{pair_seconds % 60:02d}"
+                        )
+                        # VBA names the boxes/labels after the sell's
+                        # timeline var (bz_t260918_5); the _N suffix only
+                        # appears when one sell was filled across several
+                        # buys, which the VBA never had to name.
+                        pine_id = (
+                            f"t{sequence_id}"
+                            if match_number == 1
+                            else f"t{sequence_id}_{match_number}"
+                        )
                         top_color = "color.new(color.green,0)" if buy["option_type"] == "CE" else "color.new(color.red,0)"
-                        bottom_color = "color.new(color.green,0)" if pnl_value >= 0 else "color.new(color.red,0)"
+                        bottom_color = "color.new(color.green,0)" if pnl >= 0 else "color.new(color.red,0)"
                         mid_time = f"({buy['time_var']}+{sell_time_var})/2"
                         mid_y = "(high+low)/2"
                         order_zone_script.append(
@@ -1816,10 +1901,10 @@ class MStockAdapter(BrokerInterface):
                             f"if barstate.islast\n    var pbz_{pine_id} = box.new({buy['time_var']},{mid_y},{sell_time_var},low,xloc=xloc.bar_time,bgcolor={bottom_color},border_width=0)"
                         )
                         order_label_script.append(
-                            f"if barstate.islast\n    var l_{pine_id} = label.new({mid_time},(high+{mid_y})/2,text='{matched:g}  {duration}  {pnl_rate:.1f}',xloc=xloc.bar_time,style=label.style_label_center,color=color.new(color.black,15),textcolor=color.white,size=size.normal,textalign=text.align_center,text_font_family=font.family_monospace)"
+                            f"if barstate.islast\n    var l_{pine_id} = label.new({mid_time},(high+{mid_y})/2,text='{matched:g}  {pair_duration}  {round(trade['price'] - buy['price'], 1):.1f}',xloc=xloc.bar_time,style=label.style_label_center,color=color.new(color.black,15),textcolor=color.white,size=size.normal,textalign=text.align_center,text_font_family=font.family_monospace)"
                         )
                         pnl_label_script.append(
-                            f"if barstate.islast\n    var pl_{pine_id} = label.new({mid_time},(low+{mid_y})/2,text='{purchase_value / 100000:.1f}L  {pnl:.0f}  {pnl_pct:.2f}%',xloc=xloc.bar_time,style=label.style_label_center,color=color.new(color.black,15),textcolor=color.white,size=size.normal,textalign=text.align_center,text_font_family=font.family_monospace)"
+                            f"if barstate.islast\n    var pl_{pine_id} = label.new({mid_time},(low+{mid_y})/2,text='{format_lakhs(pair_purchase_value)}  {pair_pnl:,.0f}  {pair_pct:.2f}%',xloc=xloc.bar_time,style=label.style_label_center,color=color.new(color.black,15),textcolor=color.white,size=size.normal,textalign=text.align_center,text_font_family=font.family_monospace)"
                         )
 
             output_rows.append({
@@ -1828,11 +1913,11 @@ class MStockAdapter(BrokerInterface):
                 "TRAN": trade["type"],
                 "CONT": trade["instrument"],
                 "Product": "MIS",
-                "Qty.": f"{trade['quantity']:g}/{trade['quantity']:g}",
-                "RATE": round(trade["price"], 1),
+                "Qty.": int(trade["quantity"]),
+                "RATE": trade["price"],
                 "STATUS": "COMPLETE",
                 "Duration": duration,
-                "PurValue": f"{(average_buy * matched_quantity) / 100000:.1f}L" if trade["type"] == "SELL" and matched_quantity else "",
+                "PurValue": format_lakhs(average_buy * matched_quantity) if trade["type"] == "SELL" and matched_quantity else "",
                 "PnL_Rate": pnl_rate,
                 "PnL": pnl,
                 "PnL%": pnl_pct,
@@ -1840,17 +1925,19 @@ class MStockAdapter(BrokerInterface):
             })
             sequence += 1
 
+        # Section order and headers mirror the VBA final-output cell:
+        # TIMELINE, ORDER ZONES, ORDER LABELS, PNL ZONES, PNL LABELS.
         pine_script = "\n".join(
             [
                 "// === TIMELINE ===",
                 *timeline_script,
                 "// === ORDER ZONES ===",
                 *order_zone_script,
-                "// === P&L ZONES ===",
-                *pnl_zone_script,
                 "// === ORDER LABELS ===",
                 *order_label_script,
-                "// === P&L LABELS ===",
+                "// === PNL ZONES ===",
+                *pnl_zone_script,
+                "// === PNL LABELS ===",
                 *pnl_label_script,
             ]
         )
@@ -2117,7 +2204,7 @@ class MStockAdapter(BrokerInterface):
             response_body = response.read().decode("utf-8")
             response_json = json.loads(response_body)
             
-            file_path = "mstock_instrument_list.json"
+            file_path = resolve_data_path("mstock_instrument_list.json")
             with open(file_path, 'w') as f:
                 json.dump(response_json, f, separators=(",", ":"))
 
@@ -2336,15 +2423,8 @@ class MStockAdapter(BrokerInterface):
 
             used_fallback_ltp = fut_ltp is None
             if used_fallback_ltp:
-                if "NIFTY" in str(FUT_TOKEN).upper():
-                    logger.warning(f"Returning fallback LTP = {self._trader._NIFTY_FALLBACK_LTP} for NIFTY.")
-                    fut_ltp = self._trader._NIFTY_FALLBACK_LTP
-                elif "SENSEX" in str(FUT_TOKEN).upper():
-                    logger.warning(f"Returning fallback LTP = {self._trader._SENSEX_FALLBACK_LTP} for SENSEX.")
-                    fut_ltp = self._trader._SENSEX_FALLBACK_LTP
-                else:
-                    logger.warning(f"Returning default fallback LTP = {self._trader._NIFTY_FALLBACK_LTP}.")
-                    fut_ltp = self._trader._NIFTY_FALLBACK_LTP
+                fut_ltp = self._fallback_ltp(FUT_TOKEN)
+                logger.warning(f"Returning fallback LTP = {fut_ltp} for {FUT_TOKEN}.")
 
             self._trader._NEAR_MONTH_FUTURE_LTP = fut_ltp
             self._trader._near_month_future_quote_cache = {
@@ -2389,7 +2469,7 @@ class MStockAdapter(BrokerInterface):
                 return True
 
             if instruments is None:
-                with open("mstock_instrument_list.json", "r") as f:
+                with open(resolve_data_path("mstock_instrument_list.json"), "r") as f:
                     data = json.load(f)
             else:
                 data = instruments
@@ -2433,9 +2513,9 @@ class MStockAdapter(BrokerInterface):
                         filtered.append(inst)
 
             # Write reduced output with the derived meta persisted in the
-            # same file (replaces the old constants.json derived keys).
+            # same file (replaces the old appconfig.json derived keys).
             output = {"meta": meta, "instruments": filtered}
-            with open("mstock_instrument_list_reduced.json", "w") as f:
+            with open(resolve_data_path("mstock_instrument_list_reduced.json"), "w") as f:
                 json.dump(output, f, indent=2)
 
             logger.info(
@@ -2452,7 +2532,7 @@ class MStockAdapter(BrokerInterface):
         """
         Derive the instrument meta (exchange, near-month future token,
         near option expiry, expire-together flag, strike interval) from
-        the instrument master file. Nothing is written to constants.json
+        the instrument master file. Nothing is written to appconfig.json
         anymore; the meta is persisted in the reduced instrument file by
         reduce_instrument_list and exposed via get_instrument_meta().
 
@@ -2460,6 +2540,7 @@ class MStockAdapter(BrokerInterface):
         master list (so the caller avoids re-parsing the 40MB+ file) and
         `meta` is None when derivation failed.
         """
+        json_instrument_file = resolve_data_path(json_instrument_file)
         logger.debug(f"Instrument meta to be computed for {json_instrument_file} and underlying {underlying}")
 
         # --- 1️⃣ Load instrument data from JSON ---
@@ -2511,7 +2592,7 @@ class MStockAdapter(BrokerInterface):
         ].copy()
 
         near_option_expiry = None
-        strike_interval = 100 if underlying == "SENSEX" else 50
+        strike_interval = 100
 
         if not opt_df.empty:
             opt_df["expiry"] = pd.to_datetime(opt_df["expiry"], errors="coerce")
@@ -2519,24 +2600,6 @@ class MStockAdapter(BrokerInterface):
             if not future_opts.empty:
                 near_option_expiry_ts = future_opts.sort_values("expiry")["expiry"].dropna().iloc[0]
                 near_option_expiry = near_option_expiry_ts.date()
-
-                # --- 4️⃣ Derive the strike grid step from real strikes ---
-                # Modal difference between consecutive strikes of the near
-                # expiry (SENSEX=100, NIFTY=50); robust against odd rows.
-                near_expiry_opts = future_opts[future_opts["expiry"] == near_option_expiry_ts]
-                try:
-                    strikes = sorted(
-                        {
-                            int(float(s))
-                            for s in near_expiry_opts["strike"].dropna()
-                            if str(s).strip() not in ("", "0")
-                        }
-                    )
-                    diffs = [b - a for a, b in zip(strikes, strikes[1:]) if b > a]
-                    if diffs:
-                        strike_interval = max(set(diffs), key=diffs.count)
-                except Exception as e:
-                    logger.warning(f"Strike interval derivation failed ({e}); using {strike_interval}")
 
         # --- 5️⃣ Determine if future and option expire together ---
         expire_together = False

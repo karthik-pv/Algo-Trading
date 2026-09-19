@@ -16,10 +16,54 @@ import requests
 
 _JSON_CACHE = {}
 
+# Project layout: hand-edited settings live in config/, everything the
+# app generates or persists at runtime lives in data/. All path
+# resolution funnels through resolve_data_path() so callers can keep
+# passing bare filenames.
+_BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+CONFIG_DIR = os.path.join(_BASE_DIR, "config")
+DATA_DIR = os.path.join(_BASE_DIR, "data")
+
+_CONFIG_FILES = {
+    "appconfig.json",
+    "simulation.json",
+    "Playback.json",
+}
+
+_DATA_FILES = {
+    "access_token.json",
+    "day_cash.json",
+    "last_known_prices.json",
+    "kite_instruments.csv",
+    "mstock_instrument_list.json",
+    "mstock_instrument_list_reduced.json",
+    "PaperTrading.txt",
+    "PlaybackPrice.csv",
+}
+
+
+def resolve_data_path(filename):
+    """
+    Resolve a bare config/data filename to its absolute location:
+    known config files -> config/, known runtime data files -> data/.
+
+    Absolute paths and paths that already include a directory are
+    returned unchanged. Unknown bare names stay in the project root
+    (same behavior as before the config/data split).
+    """
+    name = str(filename)
+    if os.path.isabs(name) or os.path.dirname(name):
+        return name
+    if name in _CONFIG_FILES:
+        return os.path.join(CONFIG_DIR, name)
+    if name in _DATA_FILES:
+        return os.path.join(DATA_DIR, name)
+    return os.path.join(_BASE_DIR, name)
+
+
 def get_access_token_from_json():
     logger.info("Fetching access token from JSON file.")
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    token_file_path = os.path.join(current_dir, "access_token.json")
+    token_file_path = resolve_data_path("access_token.json")
     with open(token_file_path, "r") as f:
         data = json.load(f)
     return data.get("access_token")
@@ -52,8 +96,7 @@ def fetch_from_json(file, attribute):
 
     if file not in _JSON_CACHE:
         logger.info(f"Fetching {attribute} from {file}.")
-        current_dir = os.path.dirname(os.path.abspath(__file__))
-        token_file_path = os.path.join(current_dir, file)
+        token_file_path = resolve_data_path(file)
 
         logger.debug(f"Loading {file} into memory cache")
 
@@ -66,16 +109,19 @@ def fetch_from_json(file, attribute):
 
 def clear_json_cache(file):
     global _JSON_CACHE, _LIMIT_MARGIN_CONFIG_CACHE
-    if file in _JSON_CACHE:
-        del _JSON_CACHE[file]
-    # Keep the tiered limit-margin config in sync with constants.json
-    # so runtime edits (constants UI save) take effect immediately.
-    if str(file).endswith("constants.json"):
+    # Cache keys are bare filenames; callers may pass resolved absolute
+    # paths, so match on the basename.
+    key = os.path.basename(str(file))
+    if key in _JSON_CACHE:
+        del _JSON_CACHE[key]
+    # Keep the tiered limit-margin config in sync with appconfig.json
+    # so runtime edits (config UI save) take effect immediately.
+    if key.endswith("appconfig.json"):
         _LIMIT_MARGIN_CONFIG_CACHE = None
 
 
 # Exchange is fully determined by the underlying; the single shared map
-# replaces the old instrument-derived EXCHANGE constant in constants.json.
+# replaces the old instrument-derived EXCHANGE constant.
 UNDERLYING_TO_EXCHANGE = {
     "NIFTY": "NFO",
     "SENSEX": "BFO",
@@ -86,6 +132,26 @@ UNDERLYING_TO_EXCHANGE = {
 
 def get_exchange_for_underlying(underlying) -> Optional[str]:
     return UNDERLYING_TO_EXCHANGE.get(str(underlying or "").strip().upper())
+
+
+# Longest-first so CRUDEOILM wins over CRUDEOIL when matching prefixes.
+_UNDERLYING_PREFIXES = sorted(
+    UNDERLYING_TO_EXCHANGE.keys(), key=len, reverse=True
+)
+
+
+def get_underlying_for_symbol(symbol) -> Optional[str]:
+    """
+    Map an instrument symbol (e.g. CRUDEOILM26SEP10300CE,
+    SENSEX2691774400PE, NIFTY26SEPFUT) to its underlying by
+    longest-prefix match. Returns None when no known underlying
+    prefix matches.
+    """
+    text = str(symbol or "").strip().upper()
+    for prefix in _UNDERLYING_PREFIXES:
+        if text.startswith(prefix):
+            return prefix
+    return None
 
 
 # Instrument files that carry a meta block use this shape:
@@ -99,6 +165,7 @@ def read_instrument_meta(filepath: str) -> Dict:
     {"meta": ..., "instruments": [...]}. Returns {} for legacy
     array-shaped files (no meta) or read errors.
     """
+    filepath = resolve_data_path(filepath)
     try:
         with open(filepath, "r", encoding="utf-8") as instrument_file:
             data = json.load(instrument_file)
@@ -117,9 +184,9 @@ def _to_float(value, default=None):
 
 
 # Memoized tiered limit-margin config. compute_limit_margin() runs on
-# every websocket tick (lot sizing for each contract), so the constants
+# every websocket tick (lot sizing for each contract), so the config
 # must be read (and logged) once, not per call. Reset via
-# clear_json_cache("constants.json") whenever constants.json changes.
+# clear_json_cache("appconfig.json") whenever appconfig.json changes.
 _LIMIT_MARGIN_CONFIG_CACHE = None
 
 
@@ -132,22 +199,22 @@ def _load_limit_margin_config():
         # Missing tiers fall back to the standard market-protection
         # percentages (5/3/2/1) so behavior never degrades.
         "pct_lt_10": _to_float(
-            fetch_from_json("constants.json", "LIMIT_MARGIN_PCT_LT_10"), default=5.0
+            fetch_from_json("appconfig.json", "LIMIT_MARGIN_PCT_LT_10"), default=5.0
         ),
         "pct_10_100": _to_float(
-            fetch_from_json("constants.json", "LIMIT_MARGIN_PCT_10_100"), default=3.0
+            fetch_from_json("appconfig.json", "LIMIT_MARGIN_PCT_10_100"), default=3.0
         ),
         "pct_100_500": _to_float(
-            fetch_from_json("constants.json", "LIMIT_MARGIN_PCT_100_500"), default=2.0
+            fetch_from_json("appconfig.json", "LIMIT_MARGIN_PCT_100_500"), default=2.0
         ),
         "pct_gt_500": _to_float(
-            fetch_from_json("constants.json", "LIMIT_MARGIN_PCT_GT_500"), default=1.0
+            fetch_from_json("appconfig.json", "LIMIT_MARGIN_PCT_GT_500"), default=1.0
         ),
         "min_pts": _to_float(
-            fetch_from_json("constants.json", "LIMIT_MARGIN_MIN_PTS"), default=0.05
+            fetch_from_json("appconfig.json", "LIMIT_MARGIN_MIN_PTS"), default=0.05
         ) or 0.05,
         "max_pts": _to_float(
-            fetch_from_json("constants.json", "LIMIT_MARGIN_MAX_PTS"), default=3.0
+            fetch_from_json("appconfig.json", "LIMIT_MARGIN_MAX_PTS"), default=3.0
         ),
     }
     if config["max_pts"] is None:
@@ -248,6 +315,7 @@ def find_matching_object(
     for a top-level array, or "instruments.item" for the wrapped
     {"meta": ..., "instruments": [...]} instrument-file shape.
     """
+    filepath = resolve_data_path(filepath)
     logger.info(f"Searching for object in {filepath} where {attribute_name} == {attribute_value}")
     try:
         file_stat = os.stat(filepath)
@@ -284,6 +352,7 @@ def find_matching_object(
 
 
 def find_matching_row_in_csv(filepath: str, column_name: str, value_to_match: Any) -> Optional[Dict]:
+    filepath = resolve_data_path(filepath)
     logger.info(f"Searching for row in {filepath} where {column_name} == {value_to_match}")
     try:
         with open(filepath, mode='r', newline='', encoding='utf-8') as csvfile:
@@ -311,6 +380,8 @@ def write_to_json(data_to_write: dict, file_path: str) -> bool:
     }
     logger.debug(f"Data to write is {safe_data} file path is  {file_path}")
     try:
+        file_path = resolve_data_path(file_path)
+        os.makedirs(os.path.dirname(file_path), exist_ok=True)
         try:
             with open(file_path, 'r') as f:
                 existing_data = json.load(f)
@@ -386,17 +457,17 @@ def _active_market_session():
 
     NSE/BSE segments close 15:30; MCX follows its own long session
     (see _mcx_session). The session is picked from the active
-    UNDERLYING in constants.json (exchange derived via the shared
+    UNDERLYING in appconfig.json (exchange derived via the shared
     UNDERLYING_TO_EXCHANGE map), so switching underlying needs no
     manual time changes.
 
-    An explicit MARKET_CLOSE_TIME in settings.json overrides the
+    An explicit MARKET_CLOSE_TIME in appconfig.json overrides the
     session end - an emergency correction valve if exchange timings
     ever change unexpectedly. It is NOT for extending PAPER trading
     past real hours: LIVE and PAPER are designed to run during market
     hours only (use PLAYBACK/SIMULATION for off-hours testing).
     """
-    underlying = str(fetch_from_json("constants.json", "UNDERLYING") or "").upper()
+    underlying = str(fetch_from_json("appconfig.json", "UNDERLYING") or "").upper()
     exchange = get_exchange_for_underlying(underlying) or "NFO"
 
     if exchange == "MCX":
@@ -404,7 +475,7 @@ def _active_market_session():
     else:
         session = _MARKET_SESSIONS.get(exchange, (9, 15, 15, 30))
 
-    raw = fetch_from_json("settings.json", "MARKET_CLOSE_TIME")
+    raw = fetch_from_json("appconfig.json", "MARKET_CLOSE_TIME")
     try:
         hour_s, minute_s = str(raw).strip().split(":")
         hour, minute = int(hour_s), int(minute_s)
@@ -482,8 +553,8 @@ import shutil
 from datetime import datetime, timedelta
 
 
-def backup_old_logs(base_path="logs"):
-    logs_path = os.path.abspath(base_path)
+def backup_old_logs(base_path=None):
+    logs_path = os.path.abspath(base_path or os.path.join(DATA_DIR, "logs"))
     backup_path = os.path.join(logs_path, "0_backup")
 
     # Ensure backup folder exists
@@ -521,9 +592,7 @@ def backup_old_logs(base_path="logs"):
             print(f"Already exists in backup, skipping: {item}")
 
 
-DAY_CASH_FILE = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "day_cash.json"
-)
+DAY_CASH_FILE = resolve_data_path("day_cash.json")
 
 
 def load_day_cash():

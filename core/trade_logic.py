@@ -21,25 +21,15 @@ from core.trade_utils import calculate_accurate_average_buy_price_and_update_pos
 from core.shared_state import latest_tradingview_data
 
 
-from utils import fetch_from_json , find_matching_object , is_market_open , write_to_json , compute_limit_margin , get_exchange_for_underlying
+from utils import fetch_from_json , find_matching_object , is_market_open , write_to_json , compute_limit_margin , get_exchange_for_underlying , get_underlying_for_symbol , resolve_data_path
 import time
 
-PNT_STOP_LOSS = float(fetch_from_json("settings.json", "PTS_LOSS"))
-PNT_BOOK_PROFIT = float(fetch_from_json("settings.json", "PTS_PROFIT"))
-PCT_BOOK_PROFIT = float(fetch_from_json("settings.json", "PCT_BOOK_PROFIT"))
-PCT_STOP_LOSS = float(fetch_from_json("settings.json", "PCT_STOP_LOSS"))
-PTS_PROFIT_INTRA_FACTOR = float(fetch_from_json("settings.json", "PTS_PROFIT_INTRA_FACTOR"))
-PTS_PROFIT_SCALPING_FACTOR = float(fetch_from_json("settings.json", "PTS_PROFIT_SCALPING_FACTOR"))
-PTS_PROFIT_ULTRA_SCALPING_FACTOR = float(fetch_from_json("settings.json", "PTS_PROFIT_ULTRA_SCALPING_FACTOR"))
-
-PCT_PROFIT_INTRA_FACTOR = float(fetch_from_json("settings.json", "PCT_PROFIT_INTRA_FACTOR") or 10)
-PCT_PROFIT_SCALPING_FACTOR = float(fetch_from_json("settings.json", "PCT_PROFIT_SCALPING_FACTOR") or 4)
-PCT_PROFIT_ULTRA_SCALPING_FACTOR = float(fetch_from_json("settings.json", "PCT_PROFIT_ULTRA_SCALPING_FACTOR") or 1)
-
-STOP_LOSS_INTRA = fetch_from_json("settings.json", "STOP_LOSS_INTRA")
-STOP_LOSS_SCALPING = fetch_from_json("settings.json", "STOP_LOSS_SCALPING")
-STOP_LOSS_ULTRA_SCALPING = fetch_from_json("settings.json", "STOP_LOSS_ULTRA_SCALPING")
-POSITION_PNL_LOG_FREQ = fetch_from_json("settings.json", "POSITION_PNL_LOG_FREQ")
+# NOTE: Trading thresholds (PCT/PTS book-profit, stop loss, strategy
+# factors, log frequency) are intentionally NOT cached in module
+# globals. They are fetched via fetch_from_json("appconfig.json", ...)
+# at the point of decision, so a config save (which clears the JSON
+# cache) applies them live without an app restart. Only MODE, BROKER
+# and UNDERLYING are captured at import time and require a restart.
 
 
 class Trader_Singleton:
@@ -57,17 +47,13 @@ class Trader_Singleton:
     _trading_watcher_thread_running = False
     _stop_event = threading.Event()
     _tick_counter = 0
-    _comparison_function = fetch_from_json("settings.json" , "COMPARISON_FUNCTION")
+    # MODE, BROKER and UNDERLYING are captured at import time on purpose:
+    # they define the running adapter/session and require an app restart.
     _use_max_margin = True
-    _mode = fetch_from_json("settings.json" , "MODE")
-    _broker_string = fetch_from_json("constants.json" , "BROKER")
-    _exchange = get_exchange_for_underlying(fetch_from_json("constants.json" , "UNDERLYING"))
-    _underlying = fetch_from_json("constants.json" , "UNDERLYING")
-
-    _CASH_BALANCE_PAPER_TRADING = float(fetch_from_json("settings.json" , "CASH_BALANCE_PAPER_TRADING") or 100000)
-
-    _NIFTY_FALLBACK_LTP = float(fetch_from_json("constants.json" , "NIFTY_FALLBACK_LTP"))
-    _SENSEX_FALLBACK_LTP = float(fetch_from_json("constants.json" , "SENSEX_FALLBACK_LTP"))
+    _mode = fetch_from_json("appconfig.json" , "MODE")
+    _broker_string = fetch_from_json("appconfig.json" , "BROKER")
+    _exchange = get_exchange_for_underlying(fetch_from_json("appconfig.json" , "UNDERLYING"))
+    _underlying = fetch_from_json("appconfig.json" , "UNDERLYING")
 
 
     _near_month_future_ltp = 0.0
@@ -77,8 +63,6 @@ class Trader_Singleton:
     _near_month_future_quote_cache = {}
     _order_strategy_mapping = {}
     _order_sell_mode_mapping = {}
-
-    _cash_balance_margin_pct = fetch_from_json("settings.json" , "MARGIN_USAGE_PCT")
 
     _positions_to_subscribe = []
     
@@ -104,7 +88,6 @@ class Trader_Singleton:
     # and are flushed as a single file write per minute.
     _pending_tick_price_updates = {}
     _last_price_flush_ts = 0.0
-    _position_pnl_log_freq = POSITION_PNL_LOG_FREQ
     _last_position_pnl_log_ts = 0.0
     _last_freq_log_ts = {}
     _voice_announcement_enabled = True
@@ -113,7 +96,7 @@ class Trader_Singleton:
     # Paper trading store
     # ---------------------------------------------------------
     _paper_trade_lock = threading.Lock()
-    _PAPER_TRADE_FILENAME = "PaperTrading.txt"
+    _PAPER_TRADE_FILENAME = resolve_data_path("PaperTrading.txt")
     _paper_realized_pnl = 0.0
 
     # Serializes weekly-option table builds: websocket reconnects
@@ -131,7 +114,7 @@ class Trader_Singleton:
     # as a data-driven fallback when every live source fails (fresher
     # than the static NIFTY/SENSEX fallback constants).
     # ---------------------------------------------------------
-    _LAST_KNOWN_PRICES_FILE = "last_known_prices.json"
+    _LAST_KNOWN_PRICES_FILE = resolve_data_path("last_known_prices.json")
     _LAST_KNOWN_PRICE_MAX_AGE_DAYS = 7
 
     # Standard PaperTrading.txt columns. Shared by write_paper_trade()
@@ -144,10 +127,9 @@ class Trader_Singleton:
     ]
 
     # Cash used when a live fund-summary fetch fails, so lot sizing does
-    # not silently run on an arbitrary in-code number.
-    _FALLBACK_CASH_BALANCE = float(
-        fetch_from_json("settings.json", "FALLBACK_CASH_BALANCE") or 10000
-    )
+    # not silently run on an arbitrary in-code number. Fetched per use
+    # (see _refresh_fund_summary_after_position_update) so config edits
+    # apply without a restart.
 
     def __new__(cls):
         if cls._instance is None:
@@ -220,7 +202,8 @@ class Trader_Singleton:
         if price <= 0 or safe_lot_size <= 0:
             return 1
 
-        margin_pct = float(self._cash_balance_margin_pct or 1)
+        # Fetched per call so MARGIN_USAGE_PCT edits apply without a restart.
+        margin_pct = float(fetch_from_json("appconfig.json", "MARGIN_USAGE_PCT") or 1)
 
         # PAPER mode always sizes from the configured paper trading
         # cash balance, independent of the live broker's funds. Realized
@@ -256,7 +239,8 @@ class Trader_Singleton:
 
 
     def _should_log_with_frequency(self, channel: str = "default") -> bool:
-        freq_raw = str(self._position_pnl_log_freq or "TICK").strip().upper()
+        # Fetched per call so POSITION_PNL_LOG_FREQ edits apply without a restart.
+        freq_raw = str(fetch_from_json("appconfig.json", "POSITION_PNL_LOG_FREQ") or "TICK").strip().upper()
 
         if freq_raw == "TICK":
             return True
@@ -265,9 +249,8 @@ class Trader_Singleton:
             interval_seconds = int(float(freq_raw))
         except (TypeError, ValueError):
             logger.warning(
-                f"Invalid POSITION_PNL_LOG_FREQ '{self._position_pnl_log_freq}'. Falling back to TICK logging."
+                f"Invalid POSITION_PNL_LOG_FREQ '{freq_raw}'. Falling back to TICK logging."
             )
-            self._position_pnl_log_freq = "TICK"
             return True
 
         if interval_seconds <= 0:
@@ -299,7 +282,7 @@ class Trader_Singleton:
         self._five_weekly_option_contracts[token]["expiry"] = data["expiry"]
         self._five_weekly_option_contracts[token]["ltp"] = price
         self._five_weekly_option_contracts[token]["lotsize"] = data["lot_size"]
-        logger.debug(f" Cash Balance {self._fund_summary.get('cash_balance', 0)} and Cash Balance Margin Pct {self._cash_balance_margin_pct} and Price {price} and Lot Size {data['lot_size']}")
+        logger.debug(f" Cash Balance {self._fund_summary.get('cash_balance', 0)} and Cash Balance Margin Pct {fetch_from_json('appconfig.json', 'MARGIN_USAGE_PCT')} and Price {price} and Lot Size {data['lot_size']}")
         self._five_weekly_option_contracts[token]["lots"] = self._calculate_option_lots(price, data["lot_size"])
         logger.debug(f"Calculated lots is   {self._five_weekly_option_contracts[token]['lots']}")
         logger.info(f" Determining Lot size {int(data["lot_size"])}")
@@ -626,12 +609,12 @@ class Trader_Singleton:
 
             self._fund_summary = {}
             self._fund_summary["cash_balance"] = float(
-                self._FALLBACK_CASH_BALANCE
+                fetch_from_json("appconfig.json", "FALLBACK_CASH_BALANCE") or 10000
             )
 
             logger.warning(
                 f"Fund summary unavailable. Using configured fallback "
-                f"cash balance of {self._FALLBACK_CASH_BALANCE} for lot "
+                f"cash balance of {self._fund_summary['cash_balance']} for lot "
                 f"sizing. Verify broker connectivity."
             )
 
@@ -741,11 +724,11 @@ class Trader_Singleton:
                 "pct_pl": pct_pl,
                 "total_pl": total_pl,
                 "order_strategy": self._order_strategy_mapping.get(
-                    instrument_token,
+                    token,
                     "ULTRA_SCALPING"
                 ),
                 "sell_mode": self._order_sell_mode_mapping.get(
-                    instrument_token,
+                    token,
                     "T"
                 )
             })
@@ -911,11 +894,11 @@ class Trader_Singleton:
                     "pct_pl": pct_pl,
                     "total_pl": total_pl,
                     "order_strategy": self._order_strategy_mapping.get(
-                        instrument_token,
+                        token,
                         "ULTRA_SCALPING"
                     ),
                     "sell_mode": self._order_sell_mode_mapping.get(
-                        instrument_token,
+                        token,
                         "T"
                     ),
                     "buy_price_status": "TEMPORARY",
@@ -965,7 +948,7 @@ class Trader_Singleton:
         # and refresh_table()). The mode is re-read fresh because this
         # is a destructive operation and MODE can flip at runtime.
         # =========================================================
-        if str(fetch_from_json("settings.json", "MODE") or "").upper() == "PAPER":
+        if str(fetch_from_json("appconfig.json", "MODE") or "").upper() == "PAPER":
             self.refresh_paper_positions()
             return
 
@@ -1143,11 +1126,11 @@ class Trader_Singleton:
                 "pct_pl": pct_pl,
                 "total_pl": total_pl,
                 "order_strategy": self._order_strategy_mapping.get(
-                    position["instrument_token"],
+                    token,
                     "ULTRA_SCALPING"
                 ),
                 "sell_mode": self._order_sell_mode_mapping.get(
-                    position["instrument_token"],
+                    token,
                     "T"
                 )
             })
@@ -1302,7 +1285,7 @@ class Trader_Singleton:
                 
                 # For now just running the check for the Stop Loss..As we would be resorting to book profit undeterministically
                 # where in As soon as Buy Order is raised Sell Order is also raised with Sell Price = LTP + x (Limit Order)
-                # Refactor this change where this could be driven by the settings.json parameters
+                # Refactor this change where this could be driven by the appconfig.json parameters
                 # Ultra Scalping is determined by 15s MACD2 Swing Set Up where in we are capturing 1s MACD2  + 5s Stochastic Swing
 
                 # This trigger check is only applicable when Sell Type = T. For other cases U and D system raises Sell Order immediately after Buy Order is executed
@@ -1371,19 +1354,26 @@ class Trader_Singleton:
         # that is the question 
         if log_enabled:
             logger.debug(f"Deciding to sell or not: Buy Price = {buy_price}, Current Price = {current_price} and Order Strategy Type is {order_strategy_type}")
+
+        # Fetched per call so config edits apply without a restart.
+        comparison_function = fetch_from_json("appconfig.json", "COMPARISON_FUNCTION") or []
+        PCT_BOOK_PROFIT = float(fetch_from_json("appconfig.json", "PCT_BOOK_PROFIT") or 0)
+        PCT_STOP_LOSS = float(fetch_from_json("appconfig.json", "PCT_STOP_LOSS") or 0)
+        PNT_BOOK_PROFIT = float(fetch_from_json("appconfig.json", "PTS_PROFIT") or 0)
+        PNT_STOP_LOSS = float(fetch_from_json("appconfig.json", "PTS_LOSS") or 0)
         PROFIT_FACTOR = 1
 
         if order_strategy_type == "INTRA":
-            PROFIT_FACTOR = PTS_PROFIT_INTRA_FACTOR
+            PROFIT_FACTOR = float(fetch_from_json("appconfig.json", "PTS_PROFIT_INTRA_FACTOR") or 1)
         elif order_strategy_type == "SCALPING":
-            PROFIT_FACTOR = PTS_PROFIT_SCALPING_FACTOR
+            PROFIT_FACTOR = float(fetch_from_json("appconfig.json", "PTS_PROFIT_SCALPING_FACTOR") or 1)
         elif order_strategy_type == "ULTRA_SCALPING":
-            PROFIT_FACTOR = PTS_PROFIT_ULTRA_SCALPING_FACTOR
+            PROFIT_FACTOR = float(fetch_from_json("appconfig.json", "PTS_PROFIT_ULTRA_SCALPING_FACTOR") or 1)
         
         if log_enabled:
-            logger.debug(f"Profit factor is {PROFIT_FACTOR} and Compare Function is {self._comparison_function}")
+            logger.debug(f"Profit factor is {PROFIT_FACTOR} and Compare Function is {comparison_function}")
         
-        if "PCT" in self._comparison_function:
+        if "PCT" in comparison_function:
             diff = self.calculate_pctg_difference(buy_price,current_price)
             if log_enabled:
                 logger.debug(f"In PCT Mode and Diff is {diff}")
@@ -1398,7 +1388,7 @@ class Trader_Singleton:
                         logger.debug(f"Returning True for Booking Loss {abs(diff)} is greater than Stop Loss Pct {PCT_STOP_LOSS}")
                     return True
             return False
-        if "PNT" in self._comparison_function:
+        if "PNT" in comparison_function:
             diff = self.calculate_point_difference(buy_price,current_price)
             if log_enabled:
                 logger.debug(f"In PNT Mode and Diff is {diff}")
@@ -1423,14 +1413,18 @@ class Trader_Singleton:
 
         # PCT thresholds are scaled per strategy: TP% = PCT_BOOK_PROFIT * factor and
         # SL% = PCT_STOP_LOSS * factor. Unknown strategy types default to factor 1.
+        # Fetched per call so config edits apply without a restart.
         if order_strategy_type == "INTRA":
-            PCT_FACTOR = PCT_PROFIT_INTRA_FACTOR
+            PCT_FACTOR = float(fetch_from_json("appconfig.json", "PCT_PROFIT_INTRA_FACTOR") or 10)
         elif order_strategy_type == "SCALPING":
-            PCT_FACTOR = PCT_PROFIT_SCALPING_FACTOR
+            PCT_FACTOR = float(fetch_from_json("appconfig.json", "PCT_PROFIT_SCALPING_FACTOR") or 4)
         elif order_strategy_type == "ULTRA_SCALPING":
-            PCT_FACTOR = PCT_PROFIT_ULTRA_SCALPING_FACTOR
+            PCT_FACTOR = float(fetch_from_json("appconfig.json", "PCT_PROFIT_ULTRA_SCALPING_FACTOR") or 1)
         else:
             PCT_FACTOR = 1
+
+        PCT_BOOK_PROFIT = float(fetch_from_json("appconfig.json", "PCT_BOOK_PROFIT") or 0)
+        PCT_STOP_LOSS = float(fetch_from_json("appconfig.json", "PCT_STOP_LOSS") or 0)
 
         EFFECTIVE_SL_PCT = PCT_STOP_LOSS
         BOOK_PROFIT_THRESHOLD_PCT = PCT_BOOK_PROFIT * PCT_FACTOR
@@ -1732,7 +1726,7 @@ class Trader_Singleton:
 
         try:
             factor = int(
-                fetch_from_json("constants.json", factor_key) or 0
+                fetch_from_json("appconfig.json", factor_key) or 0
             )
         except (TypeError, ValueError, KeyError):
             factor = 0
@@ -1960,8 +1954,7 @@ class Trader_Singleton:
             # takes effect on the next refresh-options-table click.
             instrument_meta = self._broker.get_instrument_meta()
 
-            # Strike grid step (points), derived from the real strike
-            # grid of the near expiry (SENSEX=100, NIFTY=50).
+            # Strike grid step (points) for the Buy grid (fixed 100).
             strike_interval = int(instrument_meta.get("strike_interval") or 100)
             logger.info(f"Using strike interval {strike_interval}")
 
@@ -2092,7 +2085,7 @@ class Trader_Singleton:
                         "Near-month SENSEX future price unavailable. "
                         "Using SENSEX fallback."
                     )
-                    price = self._SENSEX_FALLBACK_LTP
+                    price = float(fetch_from_json("appconfig.json", "SENSEX_FALLBACK_LTP") or 0)
                     open_price = price
 
                 elif self._underlying == "NIFTY":
@@ -2100,7 +2093,7 @@ class Trader_Singleton:
                         "Near-month NIFTY future price unavailable. "
                         "Using NIFTY fallback."
                     )
-                    price = self._NIFTY_FALLBACK_LTP
+                    price = float(fetch_from_json("appconfig.json", "NIFTY_FALLBACK_LTP") or 0)
                     open_price = price
 
                 else:
@@ -2160,14 +2153,14 @@ class Trader_Singleton:
                     snapped_base = int((playback_base_strike // strike_interval) * strike_interval)
                     if playback_symbol.endswith("CE"):
                         try:
-                            call_factor = int(fetch_from_json("constants.json", "WOC_CALL_FACTOR") or 0)
+                            call_factor = int(fetch_from_json("appconfig.json", "WOC_CALL_FACTOR") or 0)
                         except (TypeError, ValueError):
                             call_factor = 0
                         playback_ce_base = playback_base_strike - (call_factor - 2) * strike_interval
                         playback_pe_base = snapped_base
                     else:
                         try:
-                            put_factor = int(fetch_from_json("constants.json", "WOC_PUT_FACTOR") or 0)
+                            put_factor = int(fetch_from_json("appconfig.json", "WOC_PUT_FACTOR") or 0)
                         except (TypeError, ValueError):
                             put_factor = 0
                         playback_pe_base = playback_base_strike - (put_factor - 2) * strike_interval
@@ -2450,6 +2443,12 @@ class Trader_Singleton:
             
             pending_price_updates = {}
 
+            # Rebuild from scratch: drop contracts from the previous
+            # factor/window so a changed WOC factor cannot leave stale
+            # rows in the grid. The dict is repopulated below from
+            # all_contracts, which always reflects the current factor.
+            self._five_weekly_option_contracts.clear()
+
             for token, (cp, level, data) in all_contracts.items():
 
                 price = prices.get(token)
@@ -2550,7 +2549,7 @@ class Trader_Singleton:
     #     logger.info("Setting up weekly option contract subscriptions...")
     #     try:
 
-    #         near_month_symbol = fetch_from_json("constants.json" , "NEAR_MONTH_FUTURE_TOKEN")
+    #         near_month_symbol = fetch_from_json("appconfig.json" , "NEAR_MONTH_FUTURE_TOKEN")
 
     #         near_month_data = self._broker.get_instrument_details(near_month_symbol)
     #         near_month_token = str(near_month_data["instrument_token"])
@@ -2704,7 +2703,7 @@ class Trader_Singleton:
     # def setup_woc_subscriptions(self):
     #     logger.info("Setting up weekly option contract subscriptions...")
     #     try:    
-    #         near_month_symbol = fetch_from_json("constants.json" , "NEAR_MONTH_FUTURE_TOKEN")
+    #         near_month_symbol = fetch_from_json("appconfig.json" , "NEAR_MONTH_FUTURE_TOKEN")
     #         near_month_token = self._broker.get_instrument_details(near_month_symbol)["instrument_token"]
 
     #         self._broker.subscribe_to_all([near_month_token])
@@ -3133,12 +3132,131 @@ class Trader_Singleton:
     def on_start(self):
         logger.info("Trader on_start initialization...")
         if self._mode == "PAPER":
+            # PaperTrading.txt is a single global log: it keeps rows from
+            # every underlying ever paper-traded. Starting a session for
+            # a new underlying must purge the previous underlying's rows
+            # first, otherwise they flow into the Orders tab and the
+            # position grid with wrong lot sizes/tokens (and can break
+            # the grid rendering).
+            self.clear_paper_trades_for_other_underlyings()
             # PAPER mode: the position grid comes from the paper trade
             # log, NOT from live broker REST calls. refresh_open_pos_
             # buy_price() would overwrite/clear the paper positions.
             self.refresh_paper_positions()
         else:
             self.refresh_open_pos_buy_price()
+
+    def clear_paper_trades_for_other_underlyings(self):
+        """
+        PAPER-mode startup cleanup: rewrite PaperTrading.txt keeping only
+        rows that belong to the current session underlying (rows with an
+        unclassifiable instrument are dropped as well). The original file
+        is backed up alongside the log before anything is removed.
+        """
+
+        filename = self._PAPER_TRADE_FILENAME
+        current_underlying = str(self._underlying or "").strip().upper()
+
+        if not current_underlying:
+            logger.warning(
+                "No UNDERLYING configured; skipping paper trade cleanup"
+            )
+            return
+
+        if not os.path.exists(filename):
+            return
+
+        with self._paper_trade_lock:
+
+            try:
+                with open(filename, "r", encoding="utf-8") as f:
+                    lines = f.readlines()
+            except Exception as e:
+                logger.warning(
+                    f"Could not read {filename} for underlying "
+                    f"cleanup: {e}"
+                )
+                return
+
+            if not lines:
+                return
+
+            # Mirror fetch_paper_trades(): optional header line, then
+            # fixed-column data rows. Instrument is column 3 (index 2).
+            first_fields = lines[0].rstrip("\n").split("\t")
+            header_is_present = first_fields[0].strip() == "Time"
+
+            if header_is_present:
+                header_line = lines[0]
+                data_lines = lines[1:]
+            else:
+                header_line = None
+                data_lines = lines
+
+            kept_lines = []
+            removed_count = 0
+
+            for line in data_lines:
+
+                if not line.strip():
+                    continue
+
+                fields = line.split("\t")
+                symbol = fields[2].strip() if len(fields) > 2 else ""
+
+                row_underlying = get_underlying_for_symbol(symbol)
+
+                if row_underlying == current_underlying:
+                    kept_lines.append(line)
+                else:
+                    removed_count += 1
+                    logger.info(
+                        f"Removing paper trade row for other/"
+                        f"unrecognized underlying "
+                        f"(row underlying: {row_underlying}): "
+                        f"{symbol or '<blank>'}"
+                    )
+
+            if not removed_count:
+                return
+
+            backup_path = (
+                f"{os.path.splitext(filename)[0]}_backup_"
+                f"{datetime.datetime.now():%Y%m%d_%H%M%S}.txt"
+            )
+
+            try:
+                with open(backup_path, "w", encoding="utf-8") as f:
+                    f.writelines(lines)
+                logger.info(
+                    f"Paper trade log backed up to {backup_path}"
+                )
+            except Exception as e:
+                logger.error(
+                    f"Could not back up {filename}; aborting cleanup "
+                    f"so no data is lost: {e}"
+                )
+                return
+
+            try:
+                with open(filename, "w", encoding="utf-8") as f:
+                    if header_line is not None:
+                        f.write(header_line)
+                    f.writelines(kept_lines)
+            except Exception as e:
+                logger.error(
+                    f"Could not rewrite {filename} during underlying "
+                    f"cleanup: {e}"
+                )
+                return
+
+            logger.info(
+                f"Paper trade cleanup for {current_underlying}: "
+                f"removed {removed_count} row(s) from "
+                f"{len(data_lines)} total row(s)"
+            )
+
+            return
 
     
 
@@ -3150,7 +3268,7 @@ class Trader_Singleton:
    #                '1M': {'PVT': 0.61, 'PVTPoiseFlag': 1, 'PVTTrendFlag': 1, 'PVTCrossOverIndex': 5, 'PVTCrossUnderIndex': 7, 'Trend_1226': 1, 'X_1226': 1, 'Y_1226': 6, 'MACD_1226': 87.8, 'Signal_1226': 87.36, 'Hist_1226': 0.44, 'Trend_2452': 1, 'X_2452': 44, 'Y_2452': 74, 'MACD_2452': 144.72, 'Signal_2452': 138.74, 'Hist_2452': 5.98, 'ZCross': 0, 'K': 36.27, 'KTrendFlag': 1, 'StochPoiseFlag': 1, 'KCrossoverIndex': 1, 'KCrossUnderIndex': 13, 'EMA9': 103828, 'EMA21': 103752, 'EMA50': 103598, 'EMA100': 103391, 'EMA200': 103061, 'VWAP': 102242.58, 'VOC': 21.48, 'VOCTrendFlag': 1, 'VOCCrossOverIndex': 1, 'VOCCrossUnderIndex': 3}, '5M': {'PVT': 0.24, 'PVTPoiseFlag': 1, 'PVTTrendFlag': 1, 'PVTCrossOverIndex': 34, 'PVTCrossUnderIndex': 40, 'Trend_1226': 1, 'X_1226': 4, 'Y_1226': 12, 'MACD_1226': 274.3, 'Signal_1226': 253.67, 'Hist_1226': 20.63, 'Trend_2452': 1, 'X_2452': 33, 'Y_2452': 36, 'MACD_2452': 405.67, 'Signal_2452': 374.73, 'Hist_2452': 30.95, 'ZCross': 0, 'K': 69.72, 'KTrendFlag': 1, 'StochPoiseFlag': 1, 'KCrossoverIndex': 7, 'KCrossUnderIndex': 16, 'EMA9': 103643, 'EMA21': 103392, 'EMA50': 102953, 'EMA100': 102571, 'EMA200': 102302, 'VWAP': 102240.71, 'VOC': -7.05, 'VOCTrendFlag': 1, 'VOCCrossOverIndex': 45, 'VOCCrossUnderIndex': 10}, '30M': {'PVT': 1, 'PVTPoiseFlag': 1, 'PVTTrendFlag': 1, 'PVTCrossOverIndex': 9, 'PVTCrossUnderIndex': 13, 'Trend_1226': 1, 'X_1226': 20, 'Y_1226': 30, 'MACD_1226': 382.46, 'Signal_1226': 191.07, 'Hist_1226': 191.38, 'Trend_2452': 1, 'X_2452': 10, 'Y_2452': 12, 'MACD_2452': 213.28, 'Signal_2452': 72.33, 'Hist_2452': 140.94, 'ZCross': 0, 'K': 97.07, 'KTrendFlag': 1, 'StochPoiseFlag': 1, 'KCrossoverIndex': 7, 'KCrossUnderIndex': 11, 'EMA9': 102959, 'EMA21': 102497, 'EMA50': 102232, 'EMA100': 102199, 'EMA200': 102691, 'VWAP': 102239.26, 'VOC': 16.28, 'VOCTrendFlag': -1, 'VOCCrossOverIndex': 8, 'VOCCrossUnderIndex': 10}, '2H': {'PVT': 0.25, 'PVTPoiseFlag': 1, 'PVTTrendFlag': 1, 'PVTCrossOverIndex': 2, 'PVTCrossUnderIndex': 6, 'Trend_1226': 1, 'X_1226': 2, 'Y_1226': 6, 'MACD_1226': 39.07, 'Signal_1226': -87.12, 'Hist_1226': 126.19, 'Trend_2452': 1, 'X_2452': 24, 'Y_2452': 26, 'MACD_2452': -554.26, 'Signal_2452': -697.93, 'Hist_2452': 143.68, 'ZCross': 0, 'K': 51.58, 'KTrendFlag': 1, 'StochPoiseFlag': 1, 'KCrossoverIndex': 2, 'KCrossUnderIndex': 16, 'EMA9': 102320, 'EMA21': 102195, 'EMA50': 102697, 'EMA100': 104320, 'EMA200': 106715, 'VWAP': 102236.68, 'VOC': -6.56, 'VOCTrendFlag': 1, 'VOCCrossOverIndex': 25, 'VOCCrossUnderIndex': 20}, 'D': {'PVT': -0.57, 'PVTPoiseFlag': 1, 'PVTTrendFlag': -1, 'PVTCrossOverIndex': 40, 'PVTCrossUnderIndex': 31, 'Trend_1226': -1, 'X_1226': 15, 'Y_1226': 7, 'MACD_1226': -2783.24, 'Signal_1226': -2130.73, 'Hist_1226': -652.51, 'Trend_2452': -1, 'X_2452': 39, 'Y_2452': 29, 'MACD_2452': -2627.45, 'Signal_2452': -1943.24, 'Hist_2452': -684.21, 'ZCross': 0, 'K': 4.31, 'KTrendFlag': -1, 'StochPoiseFlag': -1, 'KCrossoverIndex': 20, 'KCrossUnderIndex': 10, 'EMA9': 104564, 'EMA21': 107442, 'EMA50': 110461, 'EMA100': 111285, 'EMA200': 108040, 'VWAP': 102771.11, 'VOC': -3.22, 'VOCTrendFlag': -1, 'VOCCrossOverIndex': 6, 'VOCCrossUnderIndex': 1}, 'W': {'PVT': -0.5, 'PVTPoiseFlag': -1, 'PVTTrendFlag': -1, 'PVTCrossOverIndex': 28, 'PVTCrossUnderIndex': 4, 'Trend_1226': -1, 'X_1226': 26, 'Y_1226': 11, 'MACD_1226': 2937.8, 'Signal_1226': 4649.85, 'Hist_1226': -1712.05, 'Trend_2452': -1, 'X_2452': 25, 'Y_2452': 9, 'MACD_2452': 9634.24, 'Signal_2452': 10667.07, 'Hist_2452': -1032.83, 'ZCross': 0, 'K': 13.96, 'KTrendFlag': -1, 'StochPoiseFlag': -1, 'KCrossoverIndex': 4, 'KCrossUnderIndex': 3, 'EMA9': 111835, 'EMA21': 110478, 'EMA50': 100727, 'EMA100': 84918, 'EMA200': 65364, 'VWAP': 105734.63, 'VOC': 2.56, 'VOCTrendFlag': 1, 'VOCCrossOverIndex': 1, 'VOCCrossUnderIndex': 2}}}
 
     def _is_tv_validation_required(self):
-        val = fetch_from_json("settings.json", "TV_DATA_Validation_REQUIRED")
+        val = fetch_from_json("appconfig.json", "TV_DATA_Validation_REQUIRED")
         if isinstance(val, str):
             return val.strip().upper() in ("TRUE", "1", "YES", "Y", "ON")
         return bool(val)
@@ -3801,12 +3919,12 @@ class Trader_Singleton:
 
     def _get_paper_initial_cash(self):
         try:
-            value = fetch_from_json("settings.json", "CASH_BALANCE_PAPER_TRADING")
+            value = fetch_from_json("appconfig.json", "CASH_BALANCE_PAPER_TRADING")
             if value is not None:
                 return float(value)
         except (TypeError, ValueError):
             pass
-        return float(self._CASH_BALANCE_PAPER_TRADING or 0)
+        return 100000.0
 
     def _calculate_paper_invested(self):
         invested = 0.0
@@ -3997,6 +4115,11 @@ class Trader_Singleton:
                     self._order_strategy_mapping.get(
                         active_token,
                         "ULTRA_SCALPING"
+                    ),
+                "sell_mode":
+                    self._order_sell_mode_mapping.get(
+                        active_token,
+                        "T"
                     )
             }
 
@@ -4329,7 +4452,7 @@ class Trader_Singleton:
                 logger.debug(f"LTP fetched from the position : {ltp}")
 
                 # Get current mode
-                self._mode = fetch_from_json("settings.json", "MODE")
+                self._mode = fetch_from_json("appconfig.json", "MODE")
                 logger.debug(f"Current trading mode: {self._mode}")
 
                 # =========================================================
@@ -4451,15 +4574,17 @@ class Trader_Singleton:
             logger.debug(f"Received buy order from client: {order_details}")
             try:
                 target_profit = 0
+                # Fetched per order so config edits apply without a restart.
+                pnt_book_profit = float(fetch_from_json("appconfig.json", "PTS_PROFIT") or 0)
                 if order_details["strategy"].upper() == "INTRA":
-                    target_profit = PTS_PROFIT_INTRA_FACTOR* PNT_BOOK_PROFIT         
+                    target_profit = float(fetch_from_json("appconfig.json", "PTS_PROFIT_INTRA_FACTOR") or 1) * pnt_book_profit
                 elif order_details["strategy"].upper() == "SCALPING":
-                    target_profit = PTS_PROFIT_SCALPING_FACTOR* PNT_BOOK_PROFIT
+                    target_profit = float(fetch_from_json("appconfig.json", "PTS_PROFIT_SCALPING_FACTOR") or 1) * pnt_book_profit
                 elif order_details["strategy"].upper() == "ULTRASCALPING":
-                    target_profit = PTS_PROFIT_ULTRA_SCALPING_FACTOR* PNT_BOOK_PROFIT
+                    target_profit = float(fetch_from_json("appconfig.json", "PTS_PROFIT_ULTRA_SCALPING_FACTOR") or 1) * pnt_book_profit
 
                 # Trading mode is PAPER, LIVE, SIMULATION, or PLAYBACK.
-                self._mode = fetch_from_json("settings.json" , "MODE")
+                self._mode = fetch_from_json("appconfig.json" , "MODE")
                 sell_mode = order_details.get("SELL_MODE", "T")
                 self._order_sell_mode_mapping[order_details["token"]] = sell_mode
                 logger.debug(f"Mode set is {self._mode} ; Strategy set is {order_details['strategy']}  Sell Mode is {sell_mode} ")

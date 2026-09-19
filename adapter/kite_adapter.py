@@ -6,7 +6,7 @@ import threading
 from pprint import pprint
 from loguru import logger
 
-from utils import get_trading_symbols_from_json , find_matching_row_in_csv , fetch_from_json , compute_limit_margin , round_to_tick , get_exchange_for_underlying
+from utils import get_trading_symbols_from_json , find_matching_row_in_csv , fetch_from_json , compute_limit_margin , round_to_tick , get_exchange_for_underlying , resolve_data_path
 from core.kite_connector import KiteSingleton
 from interface.broker_interface import BrokerInterface
 from core.trade_logic import Trader_Singleton
@@ -30,9 +30,7 @@ class KiteAdapter(BrokerInterface):
         self._trader = Trader_Singleton()
         self.kite_instance = KiteSingleton()
         self.kite = self.kite_instance.get_kite()
-        self._underlying = fetch_from_json("constants.json" , "UNDERLYING")
-
-        self._ORDER_FREEZE_LIMIT = fetch_from_json("constants.json", f"{'NIFTY' if self._underlying == 'NIFTY' else 'SENSEX'}_ORDER_FREEZE_LIMIT")
+        self._underlying = fetch_from_json("appconfig.json" , "UNDERLYING")
 
         self._instrument_cache = {}       # stores processed instruments keyed by tradingsymbol
         self._instrument_data_loaded = {}  # raw data loaded from CSV once
@@ -40,12 +38,29 @@ class KiteAdapter(BrokerInterface):
         self._csv_load_lock = threading.Lock()  # guards CSV load (background preload + lazy load)
 
         # Instrument-file-derived meta (replaces the old derived keys in
-        # constants.json). Computed in memory at startup from the CSV by
+        # appconfig.json). Computed in memory at startup from the CSV by
         # download_instrument_list / compute_instrument_meta.
         self._instrument_meta = None
 
+    def _get_order_freeze_limit(self):
+        # Fetched per order so ORDER_FREEZE_LIMIT edits apply without a restart.
+        key = "NIFTY_ORDER_FREEZE_LIMIT" if str(self._underlying) == "NIFTY" else "SENSEX_ORDER_FREEZE_LIMIT"
+        value = int(fetch_from_json("appconfig.json", key) or 0)
+        if value <= 0:
+            logger.warning(f"{key} missing or invalid in appconfig.json; using 1 to avoid split-order division errors")
+            return 1
+        return value
+
+    def _fallback_ltp(self, tradingsymbol):
+        # Fetched per call so *_FALLBACK_LTP edits apply without a restart.
+        # (The old code referenced non-existent Trader attributes here and
+        # crashed instead of returning the configured fallback.)
+        symbol = str(tradingsymbol).upper()
+        key = "SENSEX_FALLBACK_LTP" if "SENSEX" in symbol else "NIFTY_FALLBACK_LTP"
+        return float(fetch_from_json("appconfig.json", key) or 0)
+
     def get_instrument_meta(self):
-        if self._instrument_meta is None and os.path.exists("kite_instruments.csv"):
+        if self._instrument_meta is None and os.path.exists(resolve_data_path("kite_instruments.csv")):
             # Lazily derive from the CSV (e.g. a call before the startup
             # download ran). The CSV is small; parsing it here is cheap.
             try:
@@ -60,6 +75,7 @@ class KiteAdapter(BrokerInterface):
     def _load_instruments_from_csv(self, csv_path="kite_instruments.csv"):
         """Loads all instrument data from CSV into memory once."""
         logger.info("Loading instrument data from CSV into memory...")
+        csv_path = resolve_data_path(csv_path)
         try:
             with open(csv_path, mode="r", encoding="utf-8") as f:
                 reader = csv.DictReader(f)
@@ -351,12 +367,12 @@ class KiteAdapter(BrokerInterface):
                 #if Not reset the quantity to max order freeze limit so that quantity could be executed as normal order
                 #If it can be converted intio more than 2 legs that it takes the iceberg route
 
-                if quantity > int(self._ORDER_FREEZE_LIMIT):
-                    if quantity // int(self._ORDER_FREEZE_LIMIT) == 1:
-                        logger.info(f"Quantity {quantity} is more thae than Order Freeze Limit {self._ORDER_FREEZE_LIMIT} but not big enough for 2 iceberg legs. So restricting it Order freeze limit (normal order)")
-                        quantity = self._ORDER_FREEZE_LIMIT
+                if quantity > int(self._get_order_freeze_limit()):
+                    if quantity // int(self._get_order_freeze_limit()) == 1:
+                        logger.info(f"Quantity {quantity} is more thae than Order Freeze Limit {self._get_order_freeze_limit()} but not big enough for 2 iceberg legs. So restricting it Order freeze limit (normal order)")
+                        quantity = self._get_order_freeze_limit()
 
-                if int(quantity) <= int(self._ORDER_FREEZE_LIMIT):
+                if int(quantity) <= int(self._get_order_freeze_limit()):
                     logger.debug(f"Quantity - {int(quantity)}. Executing for Normal Order")
                     order_id = self.kite.place_order(
                         tradingsymbol=trading_symbol, 
@@ -372,10 +388,10 @@ class KiteAdapter(BrokerInterface):
                     logger.debug(f"Quantity - {int(quantity)}. Executing as an Iceberg Order")
                     order_type = self.kite.ORDER_TYPE_LIMIT # Iceberg order cannot be of type Market
                     
-                    iceberg_legs = quantity // int(self._ORDER_FREEZE_LIMIT) # This will be 2 or more
+                    iceberg_legs = quantity // int(self._get_order_freeze_limit()) # This will be 2 or more
                     
                     price = round_to_tick(float(ltp) + compute_limit_margin(ltp), tick, up=True) 
-                    logger.debug(f"Arrived iceberg legs - {iceberg_legs} with iceberg quantity {self._ORDER_FREEZE_LIMIT}")
+                    logger.debug(f"Arrived iceberg legs - {iceberg_legs} with iceberg quantity {self._get_order_freeze_limit()}")
                     order_id = self.kite.place_order(
                         tradingsymbol=trading_symbol, 
                         exchange = exchange,
@@ -386,7 +402,7 @@ class KiteAdapter(BrokerInterface):
                         variety="iceberg", 
                         price = price,
                         iceberg_legs=iceberg_legs,
-                        iceberg_quantity= self._ORDER_FREEZE_LIMIT
+                        iceberg_quantity= self._get_order_freeze_limit()
                     )
                     logger.info("Kite buy order placed successfully")
 
@@ -454,12 +470,12 @@ class KiteAdapter(BrokerInterface):
                 #if Not reset the quantity to max order freeze limit so that quantity could be executed as normal order
                 #If it can be converted intio more than 2 legs that it takes the iceberg route
 
-                if quantity > int(self._ORDER_FREEZE_LIMIT):
-                    if quantity // int(self._ORDER_FREEZE_LIMIT) == 1:
-                        logger.info(f"Quantity {quantity} is more than than Order Freeze Limit {self._ORDER_FREEZE_LIMIT} but not big enough for 2 iceberg legs. So restricting it Order freeze limit (normal order)")
-                        quantity = self._ORDER_FREEZE_LIMIT
+                if quantity > int(self._get_order_freeze_limit()):
+                    if quantity // int(self._get_order_freeze_limit()) == 1:
+                        logger.info(f"Quantity {quantity} is more than than Order Freeze Limit {self._get_order_freeze_limit()} but not big enough for 2 iceberg legs. So restricting it Order freeze limit (normal order)")
+                        quantity = self._get_order_freeze_limit()
 
-                if int(quantity) <= int(self._ORDER_FREEZE_LIMIT):
+                if int(quantity) <= int(self._get_order_freeze_limit()):
                     logger.debug(f"Quantity - {int(quantity)}. ")
                     logger.debug(
                         "Placing SELL Normal order",
@@ -490,10 +506,10 @@ class KiteAdapter(BrokerInterface):
                     logger.debug(f"Quantity - {int(quantity)}. Executing as an Iceberg Order")
                     order_type = self.kite.ORDER_TYPE_LIMIT # Iceberg order cannot be of type Market
                     
-                    iceberg_legs = quantity // int(self._ORDER_FREEZE_LIMIT) # This will be 2 or more
+                    iceberg_legs = quantity // int(self._get_order_freeze_limit()) # This will be 2 or more
                     
                     price = round_to_tick(float(ltp) - compute_limit_margin(ltp), tick, up=False) 
-                    logger.debug(f"Arrived iceberg legs - {iceberg_legs} with iceberg quantity {self._ORDER_FREEZE_LIMIT}")
+                    logger.debug(f"Arrived iceberg legs - {iceberg_legs} with iceberg quantity {self._get_order_freeze_limit()}")
                     logger.debug(
                         "Placing SELL ICEBERG order",
                         extra={
@@ -506,7 +522,7 @@ class KiteAdapter(BrokerInterface):
                             "variety": "iceberg",
                             "price": price,
                             "iceberg_legs": iceberg_legs,
-                            "iceberg_quantity": self._ORDER_FREEZE_LIMIT,
+                            "iceberg_quantity": self._get_order_freeze_limit(),
                             "ltp": ltp
                         }
                     )                    
@@ -520,7 +536,7 @@ class KiteAdapter(BrokerInterface):
                         variety="iceberg", 
                         price = price,
                         iceberg_legs=iceberg_legs,
-                        iceberg_quantity= self._ORDER_FREEZE_LIMIT
+                        iceberg_quantity= self._get_order_freeze_limit()
                     )
 
             logger.info(f"Kite Sell order placed successfully. Order ID: {order_id}")
@@ -631,8 +647,8 @@ class KiteAdapter(BrokerInterface):
 
     def download_instrument_list(self,exchange,underlying):
         
-        filename = "kite_instruments.csv"
-        token_file = "access_token.json"
+        filename = resolve_data_path("kite_instruments.csv")
+        token_file = resolve_data_path("access_token.json")
 
         # ✅ Check if instruments already downloaded today
         try:
@@ -667,7 +683,7 @@ class KiteAdapter(BrokerInterface):
             if not mcx_instruments:
                 logger.error("No instruments fetched. Cannot proceed to save.")
             else:
-                filename = 'kite_instruments.csv'
+                filename = resolve_data_path('kite_instruments.csv')
                 headers = mcx_instruments[0].keys()
                 with open(filename, 'w', newline='') as csvfile:
                     writer = csv.DictWriter(csvfile, fieldnames=headers)
@@ -689,9 +705,10 @@ class KiteAdapter(BrokerInterface):
         """
         Derive the instrument meta (exchange, near-month future token,
         near option expiry, expire-together flag, strike interval) from
-        the instrument CSV. Nothing is written to constants.json anymore;
+        the instrument CSV. Nothing is written to appconfig.json anymore;
         the meta lives in memory and is exposed via get_instrument_meta().
         """
+        csv_file = resolve_data_path(csv_file)
         logger.debug(f"Instrument meta to be computed for {csv_file} and for underlying {underlying}")
         if not underlying:
             logger.debug("No underlying supplied; skipping instrument meta computation.")
@@ -735,7 +752,7 @@ class KiteAdapter(BrokerInterface):
         ].copy()
 
         near_option_expiry = None
-        strike_interval = 100 if underlying == "SENSEX" else 50
+        strike_interval = 100
         expire_together = False  # default
 
         if not opt_df.empty:
@@ -745,22 +762,6 @@ class KiteAdapter(BrokerInterface):
             if not future_opts.empty:
                 near_option_expiry_ts = future_opts.sort_values('expiry')['expiry'].iloc[0]
                 near_option_expiry = near_option_expiry_ts.date()
-
-                # --- 3️⃣ Derive the strike grid step from real strikes ---
-                near_expiry_opts = future_opts[future_opts['expiry'] == near_option_expiry_ts]
-                try:
-                    strikes = sorted(
-                        {
-                            int(float(s))
-                            for s in near_expiry_opts['strike'].dropna()
-                            if float(s) > 0
-                        }
-                    )
-                    diffs = [b - a for a, b in zip(strikes, strikes[1:]) if b > a]
-                    if diffs:
-                        strike_interval = max(set(diffs), key=diffs.count)
-                except Exception as e:
-                    logger.warning(f"Strike interval derivation failed ({e}); using {strike_interval}")
 
                 # --- 4️⃣ Determine if near future and near option expire together ---
                 if near_option_expiry is not None:
@@ -822,40 +823,14 @@ class KiteAdapter(BrokerInterface):
 
             logger.error(f"Fetch Instrument Quote failed for {tradingsymbol}: {e}")
 
-            if "NIFTY" in tradingsymbol.upper():
+            if tradingsymbol.endswith(("CE", "PE")):
+                logger.warning(f"Returning fallback option LTP 100 for {tradingsymbol}.")
+                return [100, 100]
 
-                if tradingsymbol.endswith(("CE", "PE")):
-                    logger.warning(f"Returning fallback option LTP 100 for {tradingsymbol}.")
-                    return [100, 100]
+            fallback = self._fallback_ltp(tradingsymbol)
+            logger.warning(f"Returning fallback LTP {fallback} for {tradingsymbol}.")
+            return [fallback, fallback]
 
-                logger.warning(
-                    f"Returning fallback LTP {self._trader._NIFTY_FALLBACK_LTP} for NIFTY."
-                )
-                return [
-                    self._trader._NIFTY_FALLBACK_LTP,
-                    self._trader._NIFTY_FALLBACK_LTP,
-                ]
-
-            elif "SENSEX" in tradingsymbol.upper():
-
-                logger.warning(
-                    f"Returning fallback LTP {self._trader._SENSEX_FALLBACK_LTP} for SENSEX."
-                )
-                return [
-                    self._trader._SENSEX_FALLBACK_LTP,
-                    self._trader._SENSEX_FALLBACK_LTP,
-                ]
-
-            else:
-
-                logger.warning(
-                    f"Returning fallback LTP {self._trader._NIFTY_FALLBACK_LTP}."
-                )
-                return [
-                    self._trader._NIFTY_FALLBACK_LTP,
-                    self._trader._NIFTY_FALLBACK_LTP,
-                ]
-            
     # def get_quotes_batch(self, symbols):
 
     #     try:

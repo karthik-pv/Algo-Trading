@@ -254,7 +254,7 @@ class MStockSingleton:
     #     # }
         
     #     #MSTOCK_SENSEX
-    #     exchange = fetch_from_json("constants.json", "EXCHANGE")
+    #     exchange = fetch_from_json("appconfig.json", "EXCHANGE")
 
     #     exchange_type = 3 if exchange == "BFO" else 2
 
@@ -351,9 +351,9 @@ class MStockSingleton:
         if isinstance(instruments, list):
 
             # Exchange is derived from the configured underlying (the
-            # old constants.json EXCHANGE key no longer exists).
+            # old appconfig.json EXCHANGE key no longer exists).
             exchange = get_exchange_for_underlying(
-                fetch_from_json("constants.json", "UNDERLYING")
+                fetch_from_json("appconfig.json", "UNDERLYING")
             )
 
             if exchange == "BFO":

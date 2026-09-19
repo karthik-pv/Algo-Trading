@@ -8,9 +8,9 @@ instrument_list.json
 kite_instruments.csv
 mstock_instrument_list.json
 mstock_instrument_list_reduced.json
-mstock_orders.csv
 PaperTrading.txt
 day_cash.json
+appconfig.json
 constants.json
 logs
 z_JSON._Temp.txt

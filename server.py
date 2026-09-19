@@ -20,7 +20,7 @@ from adapter.simulator_adapter import SimulatorAdapter
 from adapter.playback_adapter import PlaybackAdapter
 from core.trading_view_handler import trading_view_handle_func
 
-from utils import is_market_open, fetch_from_json, load_json_with_retry, backup_old_logs, resolve_day_start_cash, check_internet_connectivity, clear_json_cache, UNDERLYING_TO_EXCHANGE
+from utils import is_market_open, fetch_from_json, load_json_with_retry, backup_old_logs, resolve_day_start_cash, check_internet_connectivity, clear_json_cache, UNDERLYING_TO_EXCHANGE, resolve_data_path, DATA_DIR
 
 from adapter.mstock_utils import save_orders_to_xlsx, build_orders_export,write_orders_workbook
 
@@ -61,7 +61,7 @@ logger.remove()
 
 # Create folder name in mm_dd format
 folder_name = datetime.now().strftime("%m_%d")
-log_dir = os.path.join("logs", folder_name)
+log_dir = os.path.join(DATA_DIR, "logs", folder_name)
 os.makedirs(log_dir, exist_ok=True)
 
 session_time = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -132,9 +132,9 @@ CORS(app)
 BROKER_MAP = {"KITE": KiteAdapter, "MSTOCK": MStockAdapter, "SIMULATOR": SimulatorAdapter, "PLAYBACK": PlaybackAdapter}
 
 try:
-    CURRENT_BROKER = fetch_from_json("constants.json" , "BROKER")
-    UNDERLYING = fetch_from_json("constants.json" , "UNDERLYING")
-    CURRENT_MODE = str(fetch_from_json("settings.json", "MODE") or "ALERT").upper()
+    CURRENT_BROKER = fetch_from_json("appconfig.json" , "BROKER")
+    UNDERLYING = fetch_from_json("appconfig.json" , "UNDERLYING")
+    CURRENT_MODE = str(fetch_from_json("appconfig.json", "MODE") or "ALERT").upper()
     VALID_MODES = {"LIVE", "PAPER", "SIMULATION", "PLAYBACK"}
 
     if CURRENT_MODE not in VALID_MODES:
@@ -157,9 +157,7 @@ try:
     PLAYBACK_CONFIG = {}
 
     if CURRENT_MODE == "SIMULATION":
-        simulation_json_path = os.path.join(
-            os.path.dirname(os.path.abspath(__file__)), "simulation.json"
-        )
+        simulation_json_path = resolve_data_path("simulation.json")
         SIMULATION_CONFIG = load_json_with_retry(simulation_json_path)
 
     if CURRENT_MODE == "SIMULATION" and SIMULATION_CONFIG.get("REQUIRE_MARKET_CLOSED", True) and is_market_open():
@@ -169,17 +167,14 @@ try:
         CURRENT_BROKER = "SIMULATOR"
 
     if CURRENT_MODE == "PLAYBACK":
-        playback_json_path = os.path.join(
-            os.path.dirname(os.path.abspath(__file__)), "Playback.json"
-        )
+        playback_json_path = resolve_data_path("Playback.json")
         PLAYBACK_CONFIG = load_json_with_retry(playback_json_path)
 
         if not str(PLAYBACK_CONFIG.get("INSTRUMENT") or "").strip():
             raise RuntimeError("Playback.json must define INSTRUMENT (option tradingsymbol)")
 
-        playback_price_file = os.path.join(
-            os.path.dirname(os.path.abspath(__file__)),
-            str(PLAYBACK_CONFIG.get("PLAYBACK_PRICE_FILE", "PlaybackPrice.csv")),
+        playback_price_file = resolve_data_path(
+            str(PLAYBACK_CONFIG.get("PLAYBACK_PRICE_FILE", "PlaybackPrice.csv"))
         )
         if not os.path.exists(playback_price_file):
             raise RuntimeError(f"Playback price file not found: {playback_price_file}")
@@ -208,76 +203,124 @@ trader = Trader_Singleton()
 
 shutdown_event = threading.Event()
 
-SETTINGS_FILE = "settings.json"
-CONSTANTS_FILE = "constants.json"
+APPCONFIG_FILE = resolve_data_path("appconfig.json")
 
-# Default settings (used if file missing)
-DEFAULT_SETTINGS = {
-    "mode": "PAPER",
-    "pctMargin": 50,
-    "volReduction": 10,
-    "defaultLot": 1,
-    "tolerancePts": 5,
-    "optionPct": False,
-    "optionPts": False,
-    "optionEma": True,
-    "pctProfit": 1.0,
-    "pctLoss": 0.5,
-    "ptsProfit": 20,
-    "ptsLoss": 10,
-    "emaPeriod": 9
+# Default appconfig (used if the file is missing); mirrors
+# appconfig.example.json.
+APPCONFIG_DEFAULTS = {
+    "MODE": "LIVE",
+    "MARGIN_USAGE_PCT": 0.9,
+    "COMPARISON_FUNCTION": ["PCT"],
+    "PCT_BOOK_PROFIT": "3",
+    "PCT_STOP_LOSS": "3",
+    "PCT_PROFIT_INTRA_FACTOR": "4",
+    "PCT_PROFIT_SCALPING_FACTOR": "2",
+    "PCT_PROFIT_ULTRA_SCALPING_FACTOR": "1",
+    "PTS_PROFIT": "1",
+    "PTS_LOSS": "5",
+    "PTS_PROFIT_INTRA_FACTOR": "10",
+    "PTS_PROFIT_SCALPING_FACTOR": "4",
+    "PTS_PROFIT_ULTRA_SCALPING_FACTOR": "2.5",
+    "INTRA_EMA": "1mEMA50",
+    "SCALPING_EMA": "1mEMA9",
+    "ULTRA_SCALPING_EMA": "15sEMA9",
+    "EMA_TOLERANCE_PTS": "5",
+    "STOP_LOSS_INTRA": "1M_MACD",
+    "STOP_LOSS_SCALPING": "15S_MACD",
+    "STOP_LOSS_ULTRA_SCALPING": "5S_MACD",
+    "ENTRY_CHECK_INTRA": "1M_MACD",
+    "ENTRY_CHECK_SCALPING": "15S_MACD",
+    "ENTRY_CHECK_ULTRA_SCALPING": "15S_MACD",
+    "POSITION_PNL_LOG_FREQ": "60",
+    "CASH_BALANCE_PAPER_TRADING": "100000",
+    "FALLBACK_CASH_BALANCE": "10000",
+    "TV_DATA_Validation_REQUIRED": False,
+    "UNDERLYING": "NIFTY",
+    "BROKER": "MSTOCK",
+    "NIFTY_ORDER_FREEZE_LIMIT": "1755",
+    "SENSEX_ORDER_FREEZE_LIMIT": "500",
+    "LIMIT_MARGIN_PCT_LT_10": "5",
+    "LIMIT_MARGIN_PCT_10_100": "3",
+    "LIMIT_MARGIN_PCT_100_500": "2",
+    "LIMIT_MARGIN_PCT_GT_500": "1",
+    "LIMIT_MARGIN_MIN_PTS": "0.05",
+    "LIMIT_MARGIN_MAX_PTS": "3.0",
+    "LOT_SIZE_CRUDEOIL": "100",
+    "LOT_SIZE_CRUDEOILM": "10",
+    "NIFTY_FALLBACK_LTP": "24000",
+    "SENSEX_FALLBACK_LTP": "85600",
+    "WOC_CALL_FACTOR": 8,
+    "WOC_PUT_FACTOR": -8
 }
 
+@app.route("/appconfig")
+def appconfig_page():
+    """Render the unified app config HTML page."""
+    return render_template("appconfig.html")
+
+
 @app.route("/settings")
-def settings_page():
-    """Render the settings HTML page."""
-    return render_template("settings.html")
+@app.route("/constants")
+def legacy_config_redirect():
+    # Old /settings and /constants pages were merged into /appconfig;
+    # redirect so existing bookmarks keep working.
+    return redirect("/appconfig")
 
 
 
-
-@app.route("/load_settings")
-def load_settings():
-    """Load settings.json and return as JSON."""
-    if not os.path.exists(SETTINGS_FILE):
+@app.route("/load_appconfig")
+def load_appconfig():
+    """Load appconfig.json and return as JSON."""
+    if not os.path.exists(APPCONFIG_FILE):
         # Create file with defaults if missing
-        with open(SETTINGS_FILE, "w") as f:
-            json.dump(DEFAULT_SETTINGS, f, indent=4)
-        return jsonify(DEFAULT_SETTINGS)
+        logger.warning("appconfig.json missing. Creating it with defaults.")
+        with open(APPCONFIG_FILE, "w") as f:
+            json.dump(APPCONFIG_DEFAULTS, f, indent=4)
+        return jsonify(APPCONFIG_DEFAULTS)
 
     try:
-        with open(SETTINGS_FILE, "r") as f:
-            settings = json.load(f)
-        return jsonify(settings)
+        with open(APPCONFIG_FILE, "r") as f:
+            config = json.load(f)
+        logger.info("Appconfig loaded from disk")
+        return jsonify(config)
     except Exception as e:
-        print("Error reading settings:", e)
-        return jsonify(DEFAULT_SETTINGS), 500
+        logger.exception(f"Error reading appconfig: {e}")
+        return jsonify(APPCONFIG_DEFAULTS), 500
 
-@app.route("/save_settings", methods=["POST"])
-def save_settings():
-    """Save settings.json and return as JSON."""
+@app.route("/save_appconfig", methods=["POST"])
+def save_appconfig():
+    """Save appconfig.json and return as JSON."""
     try:
         data = request.get_json()
-        # Merge into the existing settings instead of replacing the file,
-        # so keys that are not part of the settings form (STOP_LOSS_*,
-        # ENTRY_CHECK_*, POSITION_PNL_LOG_FREQ, cash balances, etc.)
-        # survive a save from the UI.
+        # Merge into the existing config instead of replacing the file,
+        # so keys that are not part of the config form (e.g. runtime-only
+        # or hand-edited keys) survive a save from the UI.
         try:
-            with open(SETTINGS_FILE, "r") as f:
-                settings = json.load(f)
+            with open(APPCONFIG_FILE, "r") as f:
+                old_config = json.load(f)
         except Exception:
-            settings = {}
+            old_config = {}
+        config = dict(old_config)
         if isinstance(data, dict):
-            settings.update(data)
-        with open(SETTINGS_FILE, "w") as f:
-            json.dump(settings, f, indent=4)
-        # settings.json is cached by fetch_from_json(); clear it so
+            config.update(data)
+        with open(APPCONFIG_FILE, "w") as f:
+            json.dump(config, f, indent=4)
+        # appconfig.json is cached by fetch_from_json(); clear it so
         # runtime re-reads (e.g. MODE in the order handlers) see the
         # new values instead of the stale import-time cache.
-        clear_json_cache(SETTINGS_FILE)
+        clear_json_cache(APPCONFIG_FILE)
+        # Rebuild the Trade/Buy option grid when a WOC strike factor
+        # (or the underlying) changed, so the new strikes show up
+        # immediately instead of only after a restart. The setup is
+        # lock-guarded and emits 'update_weekly_options' when done.
+        woc_keys = ("WOC_CALL_FACTOR", "WOC_PUT_FACTOR", "UNDERLYING")
+        if any(str(old_config.get(k)) != str(config.get(k)) for k in woc_keys):
+            logger.info("WOC factor/underlying changed; rebuilding the options grid in background.")
+            threading.Thread(target=trader.setup_woc_subscriptions, daemon=True).start()
+        logger.info("Appconfig saved and cache cleared")
         return jsonify({"status": "success"})
     except Exception as e:
-        print("Error saving settings:", e)
+        logger.exception(f"Error saving appconfig: {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
@@ -287,66 +330,25 @@ def update_sell_mode():
         data = request.json
         new_mode = data.get("mode")
 
-        with open("settings.json", "r") as f:
-            settings = json.load(f)
+        with open(APPCONFIG_FILE, "r") as f:
+            config = json.load(f)
 
         # Store under a dedicated SELL_MODE key. Writing to "MODE" would
         # clobber the trading mode (PAPER/LIVE/SIMULATION/PLAYBACK) that
         # startup and the order handlers rely on.
-        settings["SELL_MODE"] = new_mode
+        config["SELL_MODE"] = new_mode
 
-        with open("settings.json", "w") as f:
-            json.dump(settings, f, indent=4)
+        with open(APPCONFIG_FILE, "w") as f:
+            json.dump(config, f, indent=4)
 
         # Keep the fetch_from_json cache in sync so the new MODE is
         # picked up by the next order instead of a restart.
-        clear_json_cache("settings.json")
+        clear_json_cache(APPCONFIG_FILE)
 
         return jsonify({"success": True})
 
     except Exception as e:
         return jsonify({"success": False, "error": str(e)})
-
-
-@app.route("/constants")
-def constants():
-    return render_template("constants.html")
-
-
-@app.route("/load", methods=["GET"])
-def load_constants():
-    if not os.path.exists(CONSTANTS_FILE):
-        return jsonify({"error": "constants.json not found"}), 404
-    with open(CONSTANTS_FILE, "r") as f:
-        data = json.load(f)
-    return jsonify(data)
-
-@app.route("/save", methods=["POST"])
-def save_constants():
-    data = request.get_json()
-    if not data:
-        return jsonify({"error": "No data received"}), 400
-    try:
-        # Merge the posted form values into the existing constants so
-        # any key not currently shown on the UI page survives a save
-        # instead of being wiped by a full-file replacement.
-        existing = {}
-        if os.path.exists(CONSTANTS_FILE):
-            try:
-                with open(CONSTANTS_FILE, "r") as f:
-                    existing = json.load(f) or {}
-            except (OSError, json.JSONDecodeError):
-                existing = {}
-        merged = {**existing, **data}
-        with open(CONSTANTS_FILE, "w") as f:
-            json.dump(merged, f, indent=4)
-        # constants.json is cached by fetch_from_json(); clear it so
-        # runtime re-reads (e.g. WOC factors in setup_woc_) see the
-        # new values without an app restart.
-        clear_json_cache(CONSTANTS_FILE)
-        return jsonify({"message": "Saved successfully"})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
 
     
 
@@ -466,10 +468,10 @@ def import_executed_trades_route():
     - receives trade_date from orders.html
     - loads all orders via MStockAdapter.fetch_all_orders()
     - filters orders by date
-    - calls adapter.save_orders_to_csv()
+    - calls adapter.save_orders_to_xlsx()
     """
     try:
-        paper_mode = str(fetch_from_json("settings.json", "MODE") or "").upper() == "PAPER"
+        paper_mode = str(fetch_from_json("appconfig.json", "MODE") or "").upper() == "PAPER"
 
         if not paper_mode and CURRENT_BROKER == "KITE":
             return import_executed_trades_kite_route()
@@ -685,7 +687,7 @@ def _refresh_fund_summary_background():
 @app.route("/fund_summary")
 def get_fund_summary():
     logger.info("Fetching fund summary")
-    current_mode = str(fetch_from_json("settings.json", "MODE") or "").upper()
+    current_mode = str(fetch_from_json("appconfig.json", "MODE") or "").upper()
     if current_mode == "PAPER":
         fund_summary = trader.get_paper_fund_summary()
         logger.log("DATA", f"Paper Fund Summary: {fund_summary}")
@@ -718,7 +720,7 @@ def get_fund_summary():
 @app.route("/day_cash")
 def get_day_cash():
     logger.info("Fetching day-start cash")
-    current_mode = str(fetch_from_json("settings.json", "MODE") or "").upper()
+    current_mode = str(fetch_from_json("appconfig.json", "MODE") or "").upper()
     if current_mode == "PAPER":
         paper_summary = trader.get_paper_fund_summary()
         return jsonify({
@@ -954,7 +956,7 @@ def get_executed_trades():
     try:
         payload = request.get_json(silent=True) or {}
         trade_date = payload.get("trade_date")
-        current_mode = str(fetch_from_json("settings.json", "MODE") or CURRENT_MODE or "").upper()
+        current_mode = str(fetch_from_json("appconfig.json", "MODE") or CURRENT_MODE or "").upper()
 
         # In playback mode the orders carry playback-clock timestamps and
         # the price file can span more than one replayed day, so the

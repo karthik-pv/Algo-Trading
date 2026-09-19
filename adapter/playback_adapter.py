@@ -19,12 +19,13 @@ from utils import (
     load_json_with_retry,
     read_instrument_meta,
     get_exchange_for_underlying,
+    resolve_data_path,
     INSTRUMENTS_SECTION_PREFIX,
 )
 
-_MSTOCK_REDUCED_FILE = "mstock_instrument_list_reduced.json"
-_MSTOCK_FULL_FILE = "mstock_instrument_list.json"
-_KITE_CSV_FILE = "kite_instruments.csv"
+_MSTOCK_REDUCED_FILE = resolve_data_path("mstock_instrument_list_reduced.json")
+_MSTOCK_FULL_FILE = resolve_data_path("mstock_instrument_list.json")
+_KITE_CSV_FILE = resolve_data_path("kite_instruments.csv")
 
 # Sub-ticks emitted per CSV row (one second of recorded data).
 _OHLC_FIELDS = ("open", "high", "low", "close")
@@ -103,10 +104,7 @@ class PlaybackAdapter(BrokerInterface):
     # ------------------------------------------------------------------
     @staticmethod
     def _load_config():
-        playback_json_path = os.path.join(
-            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-            "Playback.json",
-        )
+        playback_json_path = resolve_data_path("Playback.json")
         try:
             return load_json_with_retry(playback_json_path)
         except (OSError, json.JSONDecodeError) as error:
@@ -114,10 +112,7 @@ class PlaybackAdapter(BrokerInterface):
 
     @staticmethod
     def _load_price_file(file_name):
-        path = os.path.join(
-            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-            str(file_name),
-        )
+        path = resolve_data_path(str(file_name))
         if not os.path.exists(path):
             raise RuntimeError(f"Playback price file not found: {path}")
 
@@ -163,7 +158,7 @@ class PlaybackAdapter(BrokerInterface):
         symbol = str(tradingsymbol)
         if symbol in self._lookup_misses:
             return None
-        broker = str(fetch_from_json("constants.json", "BROKER") or "MSTOCK").upper()
+        broker = str(fetch_from_json("appconfig.json", "BROKER") or "MSTOCK").upper()
         base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         default_exchange = get_exchange_for_underlying(self._underlying()) or "NFO"
 
@@ -229,14 +224,14 @@ class PlaybackAdapter(BrokerInterface):
         if "FUT" in text:
             fallback_key = "SENSEX_FALLBACK_LTP" if self._underlying() == "SENSEX" else "NIFTY_FALLBACK_LTP"
             try:
-                return float(fetch_from_json("constants.json", fallback_key))
+                return float(fetch_from_json("appconfig.json", fallback_key))
             except (TypeError, ValueError):
                 return 25000.0
         return 100.0
 
     @staticmethod
     def _underlying():
-        return str(fetch_from_json("constants.json", "UNDERLYING") or "NIFTY").upper()
+        return str(fetch_from_json("appconfig.json", "UNDERLYING") or "NIFTY").upper()
 
     @staticmethod
     def _parse_strike_from_symbol(symbol):
@@ -251,7 +246,7 @@ class PlaybackAdapter(BrokerInterface):
         if not match:
             return None
         digits = match.group(1)
-        underlying = str(fetch_from_json("constants.json", "UNDERLYING") or "NIFTY").upper()
+        underlying = str(fetch_from_json("appconfig.json", "UNDERLYING") or "NIFTY").upper()
         width = 6 if underlying == "SENSEX" else (5 if underlying == "NIFTY" else 4)
         if len(digits) <= width:
             return None
@@ -819,7 +814,7 @@ class PlaybackAdapter(BrokerInterface):
             ),
             "near_option_expiry": near_option_expiry.isoformat(),
             "expire_together": False,
-            "strike_interval": 100 if underlying == "SENSEX" else 50,
+            "strike_interval": 100,
             "generated_on": self._current_playback_time.date().isoformat(),
         }
 
