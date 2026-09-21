@@ -31,6 +31,7 @@ from utils import (
     read_instrument_meta,
     get_exchange_for_underlying,
     resolve_data_path,
+    is_market_open,
     INSTRUMENTS_SECTION_PREFIX,
 )
 from core.mstock_connector import MStockSingleton
@@ -39,12 +40,77 @@ from core.trade_logic import Trader_Singleton
 from adapter.mstock_utils import (
     position_attribute_mgmt, fund_summary_attribute_mgmt, order_attribute_mgmt,
     instr_det_attrib_mgmt, normalize_contract_symbol, write_orders_workbook,
-    format_lakhs,
+    format_lakhs, apply_trade_charges,
 )
 from loguru import logger
 
 
 _SSL_CONTEXT = ssl.create_default_context()
+
+
+def _sanitise_closed_market_quote(response):
+    """
+    Rewrite bogus LTP/OHLC values in a quote response when the market
+    is closed.
+
+    Outside market hours the last traded price of an instrument IS its
+    previous close. M.Stock's quote endpoint has been observed serving
+    garbage LTP/open/high/low for the near-month future token in that
+    state (e.g. ltp 25500 / open 24700 / high 25649 alongside the true
+    close 23378.5). Trusting that LTP centres the option chain on a
+    phantom ATM strike (NIFTY 25500 instead of ~23400) and the grid
+    then shows deep-OTM contracts at ~0.50.
+
+    When the market is closed and a positive close is present, every
+    OHLC field is normalised to the close: no trades can have happened,
+    so close is the last traded price. Market-open responses pass
+    through untouched.
+    """
+    try:
+        if is_market_open():
+            return response
+
+        data = response.get("data") if isinstance(response, dict) else None
+        fetched = data.get("fetched") if isinstance(data, dict) else None
+        if not fetched:
+            return response
+
+        for quote in fetched:
+            if not isinstance(quote, dict):
+                continue
+
+            try:
+                close_val = float(quote.get("close") or quote.get("prevClose") or 0)
+            except (TypeError, ValueError):
+                continue
+
+            if close_val <= 0:
+                continue
+
+            try:
+                ltp_val = float(quote.get("ltp") or 0)
+            except (TypeError, ValueError):
+                ltp_val = 0.0
+
+            if ltp_val > 0 and abs(ltp_val - close_val) / close_val < 0.001:
+                continue
+
+            logger.warning(
+                f"Closed-market quote sanitised for token "
+                f"{quote.get('symbolToken', '?')}: ltp={ltp_val} "
+                f"open={quote.get('open')} high={quote.get('high')} "
+                f"low={quote.get('low')} -> close={close_val}"
+            )
+
+            quote["ltp"] = close_val
+            quote["open"] = close_val
+            quote["high"] = close_val
+            quote["low"] = close_val
+
+        return response
+    except Exception as e:
+        logger.warning(f"Closed-market quote sanitisation skipped: {e}")
+        return response
 
 
 class MStockAdapter(BrokerInterface):
@@ -73,8 +139,9 @@ class MStockAdapter(BrokerInterface):
         key = "NIFTY_ORDER_FREEZE_LIMIT" if str(self._underlying) == "NIFTY" else "SENSEX_ORDER_FREEZE_LIMIT"
         value = int(fetch_from_json("appconfig.json", key) or 0)
         if value <= 0:
-            logger.warning(f"{key} missing or invalid in appconfig.json; using 1 to avoid split-order division errors")
-            return 1
+            default = 1800 if str(self._underlying) == "NIFTY" else 1000
+            logger.warning(f"{key} missing or invalid in appconfig.json; using exchange default {default}")
+            return default
         return value
 
     def _fallback_ltp(self, tradingsymbol):
@@ -178,64 +245,62 @@ class MStockAdapter(BrokerInterface):
     def cancel_order(self, order_id):
         logger.info(f"Cancelling order: {order_id}")
 
-        try:
-            conn = http.client.HTTPSConnection("api.mstock.trade", context=_SSL_CONTEXT)
+        # MStock throttles order-management requests (429) and often
+        # answers rapid-fire cancels with a transient IA500 "try again"
+        # (500). One retry after a short pause recovers most of those.
+        for attempt in (1, 2):
+            try:
+                conn = http.client.HTTPSConnection("api.mstock.trade", context=_SSL_CONTEXT)
 
-            headers = {
-                "X-Mirae-Version": "1",
-                "X-PrivateKey": self.mstock_instance._api_key,
-                "Authorization": f"Bearer {self.mstock_instance._access_token}",
-                "Content-Type": "application/json"
-            }
-            # payload = {
-            #     "data": {
-            #         "cancelall": "true"
-            #     }
-            # }
-            endpoint = f"/openapi/typeb/orders/regular/{order_id}"
-            # logger.debug(f"Cancel payload: {payload}")
+                headers = {
+                    "X-Mirae-Version": "1",
+                    "X-PrivateKey": self.mstock_instance._api_key,
+                    "Authorization": f"Bearer {self.mstock_instance._access_token}",
+                    "Content-Type": "application/json"
+                }
+                # MStock (Mirae OpenAPI) mirrors Kite's REST design: cancelling
+                # a regular order is a DELETE on the order resource. POST here
+                # returns 405 Method Not Allowed.
+                endpoint = f"/openapi/typeb/orders/regular/{order_id}"
+                conn.request("DELETE", endpoint, body="{}", headers=headers)
 
-            #conn.request("DELETE", endpoint, json.dumps(payload), headers)
+                response = conn.getresponse()
+                raw = response.read().decode("utf-8")
+                conn.close()
 
-            # endpoint = "/openapi/typea/orders/cancelall"
-            # EMPTY JSON BODY (required)
-            # payload = "{}"
-            # conn.request("POST", endpoint,payload, headers)
-            conn.request("POST", endpoint,body = "{}", headers=headers)
+                logger.debug(f"Cancel HTTP status: {response.status}")
+                logger.debug(f"Cancel raw response: {raw}")
 
-            response = conn.getresponse()
-            raw = response.read().decode("utf-8")
-            conn.close()
-
-            logger.debug(f"Cancel HTTP status: {response.status}")
-            logger.debug(f"Cancel raw response: {raw}")
-
-            # Treat empty response as success
-            if response.status in (200, 202, 204):
-                logger.info(f"Order {order_id} cancelled successfully.")
-                return True
-
-            # Parse response JSON
-            if raw.strip():
-                try:
-                    res = json.loads(raw)
-                    status = str(res.get("status", "")).lower()
-                    if status in ["success", "true", "ok"]:
-                        logger.info(f"Order {order_id} cancelled successfully.")
-                        return True
-                    else:
-                        logger.error(f"Cancel failed: {res}")
-                        return False
-                except Exception:
-                    # Unexpected body - treat as success per m.Stock inconsistency
-                    logger.warning(f"Non-JSON cancel response, treating as success.")
+                # Treat empty response as success
+                if response.status in (200, 202, 204):
+                    logger.info(f"Order {order_id} cancelled successfully.")
                     return True
 
-            return False
+                # Parse response JSON
+                if raw.strip():
+                    try:
+                        res = json.loads(raw)
+                        status = str(res.get("status", "")).lower()
+                        if status in ["success", "true", "ok"]:
+                            logger.info(f"Order {order_id} cancelled successfully.")
+                            return True
+                        else:
+                            logger.error(f"Cancel failed (HTTP {response.status}): {res}")
+                    except Exception:
+                        # Unexpected body - treat as success per m.Stock inconsistency
+                        logger.warning(f"Non-JSON cancel response, treating as success.")
+                        return True
+                else:
+                    logger.error(f"Cancel failed for {order_id}: HTTP {response.status}, empty body")
 
-        except Exception as e:
-            logger.error(f"Cancel order error for {order_id}: {e}")
-            return False
+            except Exception as e:
+                logger.error(f"Cancel order error for {order_id} (attempt {attempt}): {e}")
+
+            if attempt == 1:
+                logger.info(f"Retrying cancel for {order_id} after a short pause...")
+                time.sleep(1.0)
+
+        return False
 
 
     def fetch_all_pending_orders(self):
@@ -255,10 +320,14 @@ class MStockAdapter(BrokerInterface):
             # Apply your existing transformation logic
             orders = order_attribute_mgmt(data)
 
-            # Filter using your rule: status O-Pending
+            # MStock reports live orders under several status labels
+            # ("O-Pending" at the exchange, "Pending" at the OMS, plus
+            # casing variants) - match them all, case-insensitively, or
+            # genuinely open orders vanish from the pending grid.
+            pending_statuses = {"pending", "o-pending", "open", "validated"}
             pending_orders = [
                 o for o in orders
-                if str(o.get("order_status", 0)) == "O-Pending" 
+                if str(o.get("order_status", "")).strip().lower() in pending_statuses
             ]
 
             logger.info(f"Total orders: {len(orders)}, Pending: {len(pending_orders)}")
@@ -272,24 +341,51 @@ class MStockAdapter(BrokerInterface):
     def cancel_all_pending_orders(self):
         logger.info("Cancelling ALL pending orders...")
 
+        # MStock throttles order requests: firing cancels back-to-back
+        # (10/sec) draws 429s and transient IA500 500s. Pace each call
+        # and retry the failures across passes until none are left or
+        # the retry budget runs out.
+        PACE_SECONDS = 0.3
+        MAX_PASSES = 3
+
         pending_orders = self.fetch_all_pending_orders()
         logger.info(f"Pending orders found: {len(pending_orders)}")
 
+        failed = [
+            order for order in pending_orders if order.get("order_id")
+        ]
         cancelled = 0
 
-        for order in pending_orders:
-            order_id = order["order_id"]
+        for pass_number in range(1, MAX_PASSES + 1):
+            still_failed = []
 
-            if not order_id:
-                logger.error(f"Skipping—order has no order_id: {order}")
-                continue
+            for order in failed:
+                order_id = order["order_id"]
 
-            success = self.cancel_order(order_id)
+                success = self.cancel_order(order_id)
+                if success:
+                    cancelled += 1
+                else:
+                    still_failed.append(order)
 
-            if success:
-                cancelled += 1
+                time.sleep(PACE_SECONDS)
 
-        logger.info(f"Cancelled {cancelled}/{len(pending_orders)} pending orders.")
+            if not still_failed:
+                break
+
+            if pass_number < MAX_PASSES:
+                logger.info(
+                    f"Cancel pass {pass_number}: {len(still_failed)} order(s) "
+                    f"still pending; retrying after a pause..."
+                )
+                time.sleep(1.5)
+
+            failed = still_failed
+
+        logger.info(
+            f"Cancelled {cancelled}/{len(pending_orders)} pending orders "
+            f"in {pass_number} pass(es)."
+        )
 
         return cancelled
 
@@ -563,6 +659,8 @@ class MStockAdapter(BrokerInterface):
                     f"M.Stock batch quote failed: {response_data}"
                 )
                 return {}
+
+            response_data = _sanitise_closed_market_quote(response_data)
 
             fetched = response_data.get("data", {}).get("fetched", [])
 
@@ -838,7 +936,7 @@ class MStockAdapter(BrokerInterface):
             logger.error("Instrument quote failed: {}", response)
         else:
             logger.debug("Instrument quote response: {}", response)
-        return response
+        return _sanitise_closed_market_quote(response)
     
     #Fetch all available option expiries for a given underlying (e.g. 'NIFTY')
     def fetch_expiries(self , underlying):
@@ -929,7 +1027,7 @@ class MStockAdapter(BrokerInterface):
             f"Balance at sell: {balance_at_sell}"
         )
 
-    def sell_units(self, trading_symbol, instrument_token , quantity , exchange , ltp):
+    def sell_units(self, trading_symbol, instrument_token , quantity , exchange , ltp, position_key=""):
         try:
             logger.info(f"Selling units: {quantity} of {trading_symbol} ({instrument_token}) via M.Stock...")
             conn = http.client.HTTPSConnection("api.mstock.trade", context=_SSL_CONTEXT)
@@ -960,6 +1058,22 @@ class MStockAdapter(BrokerInterface):
             trading_symbol_for_transaction = data["name"] or data.get("tradingsymbol", trading_symbol)
             #instrument_token = ["instrument_token"]
             lotsize = data["lotsize"]
+
+            # Exit with the same product the position is held in - a
+            # CARRYFORWARD sell against a MARGIN long is rejected by the
+            # RMS as a fresh short (span requirement).
+            sell_product = ""
+            leg = self._trader._position_data.get(str(position_key or ""))
+            if leg and leg.get("producttype"):
+                sell_product = str(leg["producttype"]).upper()
+            if not sell_product:
+                for leg in self._trader._position_data.values():
+                    if str(leg.get("instrument_token")) == str(instrument_token) and leg.get("producttype"):
+                        sell_product = str(leg["producttype"]).upper()
+                        break
+            if not sell_product:
+                sell_product = "CARRYFORWARD"
+
             json_data = { 
                 'variety': 'NORMAL',
                 'tradingsymbol': trading_symbol_for_transaction,
@@ -968,7 +1082,7 @@ class MStockAdapter(BrokerInterface):
                 'transactiontype': 'SELL',
                 'ordertype': 'MARKET',
                 'quantity': str(int(quantity) * int(lotsize)),
-                'producttype': 'CARRYFORWARD',
+                'producttype': sell_product,
                 'price': "0.00",
                 'triggerprice': '0.00',
                 'squareoff': '0.00',
@@ -1021,7 +1135,7 @@ class MStockAdapter(BrokerInterface):
                 logger.error(f"Error parsing SELL response: {parse_err}")
                 raise
 
-            self._trader.frontend_data_socket.emit('sell_order_result',{"success": True, "tradingsymbol": trading_symbol , "lots": quantity})
+            self._trader.frontend_data_socket.emit('sell_order_result',{"success": True, "tradingsymbol": trading_symbol , "lots": quantity, "position_key": position_key})
             #self._trader.frontend_data_socket.emit('status_message', {"message": "Refreshing position now..."})
             logger.info("Refreshing open positions and buy prices after SELL...This would update the fund summar / cash balance as well")
             self._trader.refresh_open_pos_buy_price()
@@ -1032,6 +1146,22 @@ class MStockAdapter(BrokerInterface):
         except Exception as e:
             logger.error(f"Error selling units {e}")
             raise
+    def place_exit_limit(self, trading_symbol, instrument_token, quantity, exchange, price):
+        """Place a SELL LIMIT exit order. quantity is in LOTS.
+
+        Used by the U/D immediate exit at buy time (via sell_units_temp)
+        and to re-place a partial leg's exit after a manual partial sell.
+        """
+        return self.sell_units_temp(
+            trading_symbol,
+            instrument_token,
+            quantity,
+            exchange,
+            ltp=price,
+            limit_market="LIMIT",
+            price=price
+        )
+
     def sell_units_temp(self, trading_symbol, instrument_token , quantity , exchange , ltp,limit_market="MARKET",price=0):
         try:
             logger.info(f"Selling units: {quantity} of {trading_symbol} ({instrument_token} {limit_market} {price} ) via M.Stock...")
@@ -1063,6 +1193,18 @@ class MStockAdapter(BrokerInterface):
             trading_symbol_for_transaction = data["name"] or data.get("tradingsymbol", trading_symbol)
             #instrument_token = ["instrument_token"]
             lotsize = data["lotsize"]
+
+            # Exit with the same product the position is held in - a
+            # CARRYFORWARD exit against a MARGIN long is rejected by the
+            # RMS as a fresh short (span requirement).
+            sell_product = ""
+            for leg in self._trader._position_data.values():
+                if str(leg.get("instrument_token")) == str(instrument_token) and leg.get("producttype"):
+                    sell_product = str(leg["producttype"]).upper()
+                    break
+            if not sell_product:
+                sell_product = "CARRYFORWARD"
+
             json_data = { 
                 'variety': 'NORMAL',
                 'tradingsymbol': trading_symbol_for_transaction,
@@ -1071,7 +1213,7 @@ class MStockAdapter(BrokerInterface):
                 'transactiontype': 'SELL',
                 'ordertype': limit_market,
                 'quantity': str(int(quantity) * int(lotsize)),
-                'producttype': 'CARRYFORWARD',
+                'producttype': sell_product,
                 'price': str(price),
                 'triggerprice': '0.00',
                 'squareoff': '0.00',
@@ -1126,7 +1268,7 @@ class MStockAdapter(BrokerInterface):
             logger.error(f"Error selling units {e}")
             raise
 
-    def buy_units(self, trading_symbol = None, instrument_token = None, quantity = 0, exchange="",ltp=0,mode="",sell_mode="",target_profit=0):
+    def buy_units(self, trading_symbol = None, instrument_token = None, quantity = 0, exchange="",ltp=0,mode="",sell_mode="",target_profit=0,strategy=""):
         try:
             logger.info(f"Buying units: {quantity} of {trading_symbol} ({instrument_token}) via M.Stock...Current LTP: {ltp}...Mode is {mode}. Sell Mode is {sell_mode}, target_profit is {target_profit}")
             buy_quantity = quantity
@@ -1155,9 +1297,12 @@ class MStockAdapter(BrokerInterface):
 
             quantity = int(quantity) * int(lotsize)
 
-            full_legs = quantity // int(self._get_order_freeze_limit())
-            remainder = quantity % int(self._get_order_freeze_limit())
-            legs = [int(self._get_order_freeze_limit())] * full_legs
+            # Split into legs that are whole multiples of the lot size,
+            # otherwise the exchange rejects the leg (MA200).
+            leg_quantity = max(1, int(self._get_order_freeze_limit()) // int(lotsize)) * int(lotsize)
+            full_legs = quantity // leg_quantity
+            remainder = quantity % leg_quantity
+            legs = [leg_quantity] * full_legs
             
             logger.info("Mimicking Iceberg Order if the Order Freeze Limit is execeeded")
             logger.debug(f"Quantity: {quantity} full_legs:{full_legs} remainder{remainder} and legs {legs} ")
@@ -1251,8 +1396,10 @@ class MStockAdapter(BrokerInterface):
                             quantity=int(qty) // int(lotsize),
                             lotsize=lotsize,
                             executed_buy_price=ltp,
-                            exchange=exchange
-                        )                        
+                            exchange=exchange,
+                            strategy=strategy,
+                            sell_mode=sell_mode or "T"
+                        )
                         # Checking what time advantage we get by placing sell order immediately after buy order even before position / order refresh happens
 
                         # self._trader.frontend_data_socket.emit('buy_order_result',{"success": True, "tradingsymbol": trading_symbol , "Quantity": quantity})
@@ -1300,7 +1447,7 @@ class MStockAdapter(BrokerInterface):
             logger.error(f"Error buying units {e}")
             raise
 
-    def buy_sell_units(self, trading_symbol = None, instrument_token = None, quantity = 0, exchange="",ltp=0,mode="",sell_mode="",target_profit=0):
+    def buy_sell_units(self, trading_symbol = None, instrument_token = None, quantity = 0, exchange="",ltp=0,mode="",sell_mode="",target_profit=0,strategy=""):
         try:
             logger.info(f"Buying/Selling units: {quantity} of {trading_symbol} ({instrument_token}) via M.Stock...Current LTP: {ltp}...Mode is {mode}. Sell Mode is {sell_mode}, target_profit is {target_profit}")
             
@@ -1331,9 +1478,12 @@ class MStockAdapter(BrokerInterface):
 
                 quantity = int(quantity) * int(lotsize)
 
-                full_legs = quantity // int(self._get_order_freeze_limit())
-                remainder = quantity % int(self._get_order_freeze_limit())
-                legs = [int(self._get_order_freeze_limit())] * full_legs
+                # Split into legs that are whole multiples of the lot size,
+                # otherwise the exchange rejects the leg (MA200).
+                leg_quantity = max(1, int(self._get_order_freeze_limit()) // int(lotsize)) * int(lotsize)
+                full_legs = quantity // leg_quantity
+                remainder = quantity % leg_quantity
+                legs = [leg_quantity] * full_legs
                 
                 logger.info("Mimicking Iceberg Order if the Order Freeze Limit is execeeded")
                 logger.debug(f"Quantity: {quantity} full_legs:{full_legs} remainder{remainder} and legs {legs} ")
@@ -1907,7 +2057,7 @@ class MStockAdapter(BrokerInterface):
                             f"if barstate.islast\n    var pl_{pine_id} = label.new({mid_time},(low+{mid_y})/2,text='{format_lakhs(pair_purchase_value)}  {pair_pnl:,.0f}  {pair_pct:.2f}%',xloc=xloc.bar_time,style=label.style_label_center,color=color.new(color.black,15),textcolor=color.white,size=size.normal,textalign=text.align_center,text_font_family=font.family_monospace)"
                         )
 
-            output_rows.append({
+            output_rows.append(apply_trade_charges({
                 "ORDERDATE": trade["datetime"].strftime("%m/%d/%Y"),
                 "ORDERTIME": trade["datetime"].strftime("%H:%M:%S"),
                 "TRAN": trade["type"],
@@ -1922,7 +2072,7 @@ class MStockAdapter(BrokerInterface):
                 "PnL": pnl,
                 "PnL%": pnl_pct,
                 "PnL_RT": pnl_rt,
-            })
+            }))
             sequence += 1
 
         # Section order and headers mirror the VBA final-output cell:

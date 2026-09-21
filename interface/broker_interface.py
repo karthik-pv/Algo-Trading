@@ -1,4 +1,7 @@
 from abc import ABC, abstractmethod
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class BrokerInterface(ABC):
@@ -43,11 +46,37 @@ class BrokerInterface(ABC):
         pass
 
     @abstractmethod
-    def sell_units(self, trading_symbol, instrument_token ,quantity ,exchange ,ltp):
+    def sell_units(self, trading_symbol, instrument_token ,quantity ,exchange ,ltp, position_key=""):
         pass
 
+    def place_exit_limit(self, trading_symbol, instrument_token, quantity, exchange, price):
+        """
+        Place a SELL LIMIT exit order (Sell Types U/D).
+
+        quantity is in LOTS. Used at buy time (U/D immediate exits) and
+        to re-place a partial leg's exit after a manual partial sell.
+        Default no-op for brokers/adapters that do not support resting
+        exit orders (simulator, playback).
+        """
+        logger.warning(
+            f"place_exit_limit not supported by {type(self).__name__}; "
+            f"skipping exit for {trading_symbol}"
+        )
+        return None
+
+    def cancel_all_pending_orders(self):
+        """
+        Cancel every pending/open order at the broker. Returns the
+        number of orders cancelled. Default no-op (simulator, playback).
+        """
+        logger.warning(
+            f"cancel_all_pending_orders not supported by "
+            f"{type(self).__name__}; nothing cancelled."
+        )
+        return 0
+
     @abstractmethod
-    def buy_units(self , trading_symbol , instrument_token , quantity , exchange ,ltp):
+    def buy_units(self , trading_symbol , instrument_token , quantity , exchange ,ltp, mode="", sell_mode="", target_profit=0, strategy=""):
         pass
 
     @abstractmethod

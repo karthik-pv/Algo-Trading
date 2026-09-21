@@ -572,6 +572,10 @@ class PlaybackAdapter(BrokerInterface):
         logger.debug(f"Playback has no pending orders; nothing to cancel for {order_id}")
         return False
 
+    def cancel_all_pending_orders(self):
+        logger.debug("Playback executes orders instantly; no pending orders to cancel")
+        return 0
+
     def manual_refresh_positions(self):
         logger.info("Refreshing open positions in playback...")
         if self._trader:
@@ -721,6 +725,7 @@ class PlaybackAdapter(BrokerInterface):
         mode="",
         sell_mode="",
         target_profit=0,
+        strategy="",
     ):
         return self._execute("BUY", trading_symbol, instrument_token, quantity, exchange, ltp)
 
@@ -734,6 +739,7 @@ class PlaybackAdapter(BrokerInterface):
         mode="",
         sell_mode="",
         target_profit=0,
+        strategy="",
     ):
         return self.buy_units(
             trading_symbol,
@@ -744,9 +750,10 @@ class PlaybackAdapter(BrokerInterface):
             mode,
             sell_mode,
             target_profit,
+            strategy,
         )
 
-    def sell_units(self, trading_symbol, instrument_token, quantity, exchange, ltp):
+    def sell_units(self, trading_symbol, instrument_token, quantity, exchange, ltp, position_key=""):
         return self._execute("SELL", trading_symbol, instrument_token, quantity, exchange, ltp)
 
     # ------------------------------------------------------------------

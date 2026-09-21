@@ -64,8 +64,8 @@
     }
 
     #cashBeginValue {
-        color: #9e9e9e;
-        font-weight: 600;
+        color: #fff;
+        font-weight: 700;
     }
 
     .cash-summary .cash-arrow {
@@ -98,6 +98,17 @@
         color: #ef5350;
         background: rgba(239, 83, 80, 0.12);
         border-color: rgba(239, 83, 80, 0.45);
+    }
+
+    .charges-summary .cash-caption {
+        color: #aaa;
+        font-weight: 500;
+    }
+
+    #totalBrokerageValue,
+    #totalOtherChargesValue {
+        color: #fff;
+        font-weight: 700;
     }
 
     .orders-header-right {
@@ -218,12 +229,8 @@
     #ordersTable thead th.sort-active::after { content: '\25B2'; font-size: 0.7em; margin-left: 3px; }
     #ordersTable thead th.sort-active.sort-desc::after { content: '\25BC'; }
 
-    #ordersTable .pnl-dark-green { background: #00B050 !important; color: #fff; font-weight: 700; }
-    #ordersTable .pnl-light-green { background: #92D050 !important; color: #006100; font-weight: 700; }
-    #ordersTable .pnl-pale-green { background: #1b4d1f !important; color: #97d49a; }
-    #ordersTable .pnl-dark-red { background: #d32f2f !important; color: #fff; font-weight: 700; }
-    #ordersTable .pnl-light-red { background: #ff8a80 !important; color: #9C0006; font-weight: 700; }
-    #ordersTable .pnl-pale-red { background: #4d1b1b !important; color: #d49a9a; }
+    #ordersTable .pnl-pos { background: #92D050 !important; color: #000000; font-weight: 700; }
+    #ordersTable .pnl-neg { background: #FF6666 !important; color: #000000; font-weight: 700; }
 </style>
 {% endblock %}
 
@@ -234,18 +241,26 @@
     <div id="ordersGridWrapper">
         <div class="orders-header">
             <div class="toggle-buttons">
-                <label id="cashSummaryLabel" class="expiry-label cash-summary" style="display: none;" title="Cash: start of day &#8594; current, with day change %">
+                <label id="cashSummaryLabel" class="expiry-label cash-summary" style="display: none;" title="Opening balance of the day (broker start-of-day figure where known) &#8594; Net P/L from the trades shown, with return %">
                     <!-- <span class="cash-caption">Cash</span>
                     <span id="cashBeginValue">--</span>
                     <span class="cash-arrow">&#8594;</span>
                     <span id="cashCurrentValue">--</span>
                     <span id="cashChangePct">--</span> -->
-                    <span class="cash-caption">Day Start</span>
+                    <span class="cash-caption">Open Balance</span>
                     <span id="cashBeginValue">--</span>
                     <span class="cash-arrow">&#8594;</span>
                     <span class="cash-caption">Net P/L</span>
                     <span id="cashCurrentValue">--</span>
                     <span id="cashChangePct">--</span>                    
+                </label>
+                <label id="brokerageSummaryLabel" class="expiry-label charges-summary" style="display: none;" title="Brokerage charged across the trades shown (flat per executed order)">
+                    <span class="cash-caption">Brokerage</span>
+                    <span id="totalBrokerageValue">--</span>
+                </label>
+                <label id="otherChargesSummaryLabel" class="expiry-label charges-summary" style="display: none;" title="STT + exchange transaction + SEBI + GST + stamp duty across the trades shown">
+                    <span class="cash-caption">Other Chgs</span>
+                    <span id="totalOtherChargesValue">--</span>
                 </label>
             </div>
             <div class="orders-header-right">
@@ -274,10 +289,12 @@
                         <th data-sort-key="PnL">PnL</th>
                         <th data-sort-key="PnL%">PnL%</th>
                         <th data-sort-key="PnL_RT">PnL_RT</th>
+                        <th data-sort-key="Brokerage">Brokerage</th>
+                        <th data-sort-key="Other Charges">Other Chgs</th>
                     </tr>
                 </thead>
                 <tbody id="ordersTableBody">
-                    <tr><td colspan="13" class="no-options">No trades for the selected date.</td></tr>
+                    <tr><td colspan="15" class="no-options">No trades for the selected date.</td></tr>
                 </tbody>
             </table>
         </div>
@@ -309,7 +326,8 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // --- STATE VARIABLES ---
     let ordersRowsCache = [];
-    let ordersSort = { key: null, direction: 1 };
+    // Default: newest order first (descending Order Time).
+    let ordersSort = { key: 'ORDERTIME', direction: -1 };
     // Grid data source: 'broker' (live trades for the selected date) or
     // 'upload' (contract-note rows). Refresh / date change resets this.
     let ordersSource = 'broker';
@@ -341,7 +359,6 @@ document.addEventListener('DOMContentLoaded', function() {
         uploadedOrdersMeta = null;
         if (ordersRefreshBtn) ordersRefreshBtn.disabled = true;
         const tradeDate = getSelectedTradeDate();
-        const isToday = tradeDate === getTodayTradeDate();
         try {
             const tradesPromise = fetch('/get_executed_trades', {
                 method: 'POST',
@@ -353,7 +370,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 .then(response => response.json())
                 .catch(() => null);
             */
-            const dayCashPromise = fetch('/day_cash')
+            const dayCashPromise = fetch(`/day_cash?trade_date=${encodeURIComponent(tradeDate)}`)
                 .then(response => response.json())
                 .catch(() => null);
 
@@ -375,19 +392,19 @@ document.addEventListener('DOMContentLoaded', function() {
                 : NaN;
 
             ordersRowsCache = data.rows || [];
-            // Show the cash summary box only for today's view (live cash
-            // start-of-day values are meaningless for a past date) and
-            // only when there are trades to display.
+            // Show the cash summary box whenever there are trades to
+            // display; a missing opening balance (dates before tracking
+            // began) simply renders as '--'.
             if (cashSummaryLabel) {
                 cashSummaryLabel.style.display =
-                    (ordersRowsCache.length > 0 && isToday) ? '' : 'none';
+                    ordersRowsCache.length > 0 ? '' : 'none';
             }
             renderOrders(ordersRowsCache);
             //renderOrdersCashSummary(currentCash, dayStartCash);
             renderOrdersCashSummary(dayStartCash);
         } catch (error) {
             console.error("Could not load trades:", error);
-            ordersTableBody.innerHTML = `<tr><td colspan="13" class="no-options">Failed to load trades: ${error.message || 'Unknown error'}</td></tr>`;
+            ordersTableBody.innerHTML = `<tr><td colspan="15" class="no-options">Failed to load trades: ${error.message || 'Unknown error'}</td></tr>`;
             if (ordersCountLabel) ordersCountLabel.textContent = '';
             if (cashSummaryLabel) cashSummaryLabel.style.display = 'none';
         } finally {
@@ -412,7 +429,7 @@ document.addEventListener('DOMContentLoaded', function() {
         return `${prefix} ${match[1]}`;
     }
 
-    const ORDERS_NUMERIC_SORT_COLUMNS = ['ORDERDATE', 'Qty.', 'RATE', 'Duration', 'PurValue', 'PnL_Rate', 'PnL', 'PnL%', 'PnL_RT'];
+    const ORDERS_NUMERIC_SORT_COLUMNS = ['ORDERDATE', 'ORDERTIME', 'Qty.', 'RATE', 'Duration', 'PurValue', 'PnL_Rate', 'PnL', 'PnL%', 'PnL_RT', 'Brokerage', 'Other Charges'];
 
     function getOrdersSortValue(row, column) {
         if (column === 'Type') {
@@ -427,6 +444,17 @@ document.addEventListener('DOMContentLoaded', function() {
             if (parts.length !== 3) return '';
             const parsed = Date.UTC(Number(parts[2]), Number(parts[0]) - 1, Number(parts[1]));
             return Number.isNaN(parsed) ? '' : parsed;
+        }
+        if (column === 'ORDERTIME') {
+            // Composite day + second-of-day so multi-day grids
+            // (playback) order correctly by time.
+            const day = getOrdersSortValue(row, 'ORDERDATE');
+            const timeParts = String(raw || '').split(':');
+            const secondsOfDay = timeParts.length === 3
+                ? Number(timeParts[0]) * 3600 + Number(timeParts[1]) * 60 + Number(timeParts[2])
+                : 0;
+            if (day === '' || Number.isNaN(Number(day))) return secondsOfDay;
+            return Number(day) + secondsOfDay * 1000;
         }
         if (column === 'Duration') {
             const parts = String(raw).split(':');
@@ -487,14 +515,16 @@ document.addEventListener('DOMContentLoaded', function() {
         updateOrdersSortIndicators();
 
         if (!rows || rows.length === 0) {
-            ordersTableBody.innerHTML = `<tr><td colspan="13" class="no-options">No trades for the selected date.</td></tr>`;
+            ordersTableBody.innerHTML = `<tr><td colspan="15" class="no-options">No trades for the selected date.</td></tr>`;
             if (ordersCountLabel) ordersCountLabel.textContent = '';
+            updateChargesTotals(rows);
             return;
         }
 
         const columns = [
             'ORDERDATE', 'ORDERTIME', 'TRAN', 'CONT', 'Type', 'Qty.', 'RATE',
-            'Duration', 'PurValue', 'PnL_Rate', 'PnL', 'PnL%', 'PnL_RT'
+            'Duration', 'PurValue', 'PnL_Rate', 'PnL', 'PnL%', 'PnL_RT',
+            'Brokerage', 'Other Charges'
         ];
 
         sortOrdersRows(rows).forEach(row => {
@@ -539,17 +569,19 @@ document.addEventListener('DOMContentLoaded', function() {
                         displayValue = pnlPercent.toFixed(1);
                     }
                 }
+                if (column === 'Brokerage' || column === 'Other Charges') {
+                    const chargeValue = Number(value);
+                    if (value !== '' && value !== null && value !== undefined && !Number.isNaN(chargeValue)) {
+                        displayValue = chargeValue.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                    }
+                }
                 td.textContent = displayValue;
 
                 if (column === 'PnL%') {
-                    const pnlPercent = Number(value);
-                    if (value !== '' && value !== null && value !== undefined && !Number.isNaN(pnlPercent)) {
-                        if (pnlPercent > 10) td.classList.add('pnl-dark-green');
-                        else if (pnlPercent > 5) td.classList.add('pnl-light-green');
-                        else if (pnlPercent > 0) td.classList.add('pnl-pale-green');
-                        else if (pnlPercent < -10) td.classList.add('pnl-dark-red');
-                        else if (pnlPercent < -5) td.classList.add('pnl-light-red');
-                        else if (pnlPercent < 0) td.classList.add('pnl-pale-red');
+                    const pnlCellValue = Number(value);
+                    if (value !== '' && value !== null && value !== undefined && !Number.isNaN(pnlCellValue)) {
+                        if (pnlCellValue > 0) td.classList.add('pnl-pos');
+                        else if (pnlCellValue < 0) td.classList.add('pnl-neg');
                     }
                 }
 
@@ -565,6 +597,29 @@ document.addEventListener('DOMContentLoaded', function() {
                 : '';
             ordersCountLabel.textContent = `${rows.length} trade${rows.length === 1 ? '' : 's'}${sourceSuffix}`;
         }
+
+        updateChargesTotals(rows);
+    }
+
+    function updateChargesTotals(rows) {
+        const brokerageLabel = document.getElementById('brokerageSummaryLabel');
+        const otherChargesLabel = document.getElementById('otherChargesSummaryLabel');
+        if (!brokerageLabel || !otherChargesLabel) return;
+
+        const hasRows = rows && rows.length > 0;
+        brokerageLabel.style.display = hasRows ? '' : 'none';
+        otherChargesLabel.style.display = hasRows ? '' : 'none';
+        if (!hasRows) return;
+
+        const sumColumn = (key) => (rows || []).reduce((total, row) => {
+            const value = Number(row[key]);
+            return Number.isFinite(value) ? total + value : total;
+        }, 0);
+
+        const formatRupees = (value) => '\u20B9' + value.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+        document.getElementById('totalBrokerageValue').textContent = formatRupees(sumColumn('Brokerage'));
+        document.getElementById('totalOtherChargesValue').textContent = formatRupees(sumColumn('Other Charges'));
     }
 
     // function renderOrdersCashSummary(currentCash, dayStartCash) {

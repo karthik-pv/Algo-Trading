@@ -474,6 +474,100 @@
             </div>
         </section>
 
+        <!-- ============ CHARGES ============ -->
+        <section class="card span-2">
+            <div class="card-rail">
+                <span class="card-title" title="Broker and statutory charges applied to the Orders grid. Percentages apply on premium turnover (Qty &times; Rate); SEBI fees are per crore of turnover. Any rate can be overridden per broker with a &lt;KEY&gt;_&lt;BROKER&gt; key (e.g. OPTIONS_STT_SELL_PCT_KITE); suffixed keys win over the base value.">Charges</span>
+            </div>
+            <div class="card-body">
+                <div class="field-row">
+                    <div class="field">
+                        <div class="field-caption">
+                            <label class="field-label" for="BROKERAGE_PER_ORDER">Brokerage / Order (&#8377;)</label>
+                            <span class="key-hint">BROKERAGE_PER_ORDER</span>
+                        </div>
+                        <div class="input-wrap">
+                            <input type="number" step="0.01" min="0" id="BROKERAGE_PER_ORDER" name="BROKERAGE_PER_ORDER" placeholder="20" />
+                        </div>
+                    </div>
+                    <div class="field only-kite">
+                        <div class="field-caption">
+                            <label class="field-label" for="BROKERAGE_PER_ORDER_KITE">Kite Brokerage / Order (&#8377;)</label>
+                            <span class="key-hint">BROKERAGE_PER_ORDER_KITE</span>
+                        </div>
+                        <div class="input-wrap">
+                            <input type="number" step="0.01" min="0" id="BROKERAGE_PER_ORDER_KITE" name="BROKERAGE_PER_ORDER_KITE" placeholder="20" />
+                        </div>
+                    </div>
+                    <div class="field">
+                        <div class="field-caption">
+                            <label class="field-label" for="OPTIONS_STT_SELL_PCT">STT Sell (%)</label>
+                            <span class="key-hint">OPTIONS_STT_SELL_PCT</span>
+                        </div>
+                        <div class="input-wrap">
+                            <input type="number" step="0.00001" min="0" id="OPTIONS_STT_SELL_PCT" name="OPTIONS_STT_SELL_PCT" placeholder="0.15" />
+                        </div>
+                    </div>
+                    <div class="field only-kite">
+                        <div class="field-caption">
+                            <label class="field-label" for="OPTIONS_STT_SELL_PCT_KITE">Kite STT Sell (%)</label>
+                            <span class="key-hint">OPTIONS_STT_SELL_PCT_KITE</span>
+                        </div>
+                        <div class="input-wrap">
+                            <input type="number" step="0.00001" min="0" id="OPTIONS_STT_SELL_PCT_KITE" name="OPTIONS_STT_SELL_PCT_KITE" placeholder="0.1" />
+                        </div>
+                    </div>
+                    <div class="field">
+                        <div class="field-caption">
+                            <label class="field-label" for="TXN_CHARGES_NSE_PCT">Transaction NSE (%)</label>
+                            <span class="key-hint">TXN_CHARGES_NSE_PCT</span>
+                        </div>
+                        <div class="input-wrap">
+                            <input type="number" step="0.00001" min="0" id="TXN_CHARGES_NSE_PCT" name="TXN_CHARGES_NSE_PCT" placeholder="0.03553" />
+                        </div>
+                    </div>
+                    <div class="field">
+                        <div class="field-caption">
+                            <label class="field-label" for="TXN_CHARGES_BSE_PCT">Transaction BSE (%)</label>
+                            <span class="key-hint">TXN_CHARGES_BSE_PCT</span>
+                        </div>
+                        <div class="input-wrap">
+                            <input type="number" step="0.00001" min="0" id="TXN_CHARGES_BSE_PCT" name="TXN_CHARGES_BSE_PCT" placeholder="0.0325" />
+                        </div>
+                    </div>
+                </div>
+                <div class="field-row">
+                    <div class="field">
+                        <div class="field-caption">
+                            <label class="field-label" for="SEBI_CHARGES_PER_CRORE">SEBI (&#8377;/crore)</label>
+                            <span class="key-hint">SEBI_CHARGES_PER_CRORE</span>
+                        </div>
+                        <div class="input-wrap">
+                            <input type="number" step="0.01" min="0" id="SEBI_CHARGES_PER_CRORE" name="SEBI_CHARGES_PER_CRORE" placeholder="10" />
+                        </div>
+                    </div>
+                    <div class="field">
+                        <div class="field-caption">
+                            <label class="field-label" for="GST_PCT">GST (%)</label>
+                            <span class="key-hint">GST_PCT</span>
+                        </div>
+                        <div class="input-wrap">
+                            <input type="number" step="0.01" min="0" id="GST_PCT" name="GST_PCT" placeholder="18" />
+                        </div>
+                    </div>
+                    <div class="field">
+                        <div class="field-caption">
+                            <label class="field-label" for="STAMP_DUTY_BUY_PCT">Stamp Duty Buy (%)</label>
+                            <span class="key-hint">STAMP_DUTY_BUY_PCT</span>
+                        </div>
+                        <div class="input-wrap">
+                            <input type="number" step="0.00001" min="0" id="STAMP_DUTY_BUY_PCT" name="STAMP_DUTY_BUY_PCT" placeholder="0.003" />
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
         <!-- ============ PROFIT / LOSS ============ -->
         <section class="card span-2">
             <div class="card-rail">
@@ -791,6 +885,11 @@
 {% block scripts %}
 <script>
 document.addEventListener('DOMContentLoaded', () => {
+    // Keep a socket alive on this page too: the server shuts down when
+    // its LAST browser client disconnects, so sitting here with the
+    // trade tab closed must not stop the app.
+    const socket = io('http://localhost:5001', { transports: ['websocket'] });
+
     const form = document.getElementById('settingsForm');
     const statusMsg = document.getElementById('statusMsg');
     const saveBtn = document.getElementById('saveBtn');

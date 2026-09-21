@@ -36,7 +36,16 @@ class SimulatorAdapter(BrokerInterface):
         self._random = random.Random(settings.get("RANDOM_SEED", 42))
         self._tick_interval = max(0.05, float(settings.get("TICK_INTERVAL_SECONDS", 1)))
         self._slippage = float(settings.get("SLIPPAGE_POINTS", 0))
-        self._cash = float(settings.get("INITIAL_CASH", 100000))
+        self._initial_cash = float(settings.get("INITIAL_CASH", 100000))
+        self._cash = self._initial_cash
+
+    def fetch_day_start_cash(self):
+        """Opening balance of the simulation: the configured INITIAL_CASH.
+
+        Immutable (unlike self._cash which trades deplete) so the
+        Orders tab's Opening Balance stays correct all session.
+        """
+        return self._initial_cash
 
     @staticmethod
     def _load_settings():
@@ -151,6 +160,10 @@ class SimulatorAdapter(BrokerInterface):
     def cancel_order(self, order_id):
         logger.debug(f"Simulation has no pending orders; nothing to cancel for {order_id}")
         return False
+
+    def cancel_all_pending_orders(self):
+        logger.debug("Simulation executes orders instantly; no pending orders to cancel")
+        return 0
 
     def manual_refresh_positions(self):
         logger.info("Refreshing open positions in simulator...")
@@ -283,6 +296,7 @@ class SimulatorAdapter(BrokerInterface):
         mode="",
         sell_mode="",
         target_profit=0,
+        strategy="",
     ):
         return self._execute("BUY", trading_symbol, instrument_token, quantity, exchange, ltp)
 
@@ -296,6 +310,7 @@ class SimulatorAdapter(BrokerInterface):
         mode="",
         sell_mode="",
         target_profit=0,
+        strategy="",
     ):
         return self.buy_units(
             trading_symbol,
@@ -306,9 +321,10 @@ class SimulatorAdapter(BrokerInterface):
             mode,
             sell_mode,
             target_profit,
+            strategy,
         )
 
-    def sell_units(self, trading_symbol, instrument_token, quantity, exchange, ltp):
+    def sell_units(self, trading_symbol, instrument_token, quantity, exchange, ltp, position_key=""):
         return self._execute("SELL", trading_symbol, instrument_token, quantity, exchange, ltp)
 
     def unsubscribe_from_all(self, instruments):

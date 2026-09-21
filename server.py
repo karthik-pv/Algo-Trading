@@ -22,7 +22,7 @@ from adapter.simulator_adapter import SimulatorAdapter
 from adapter.playback_adapter import PlaybackAdapter
 from core.trading_view_handler import trading_view_handle_func
 
-from utils import is_market_open, fetch_from_json, load_json_with_retry, backup_old_logs, resolve_day_start_cash, check_internet_connectivity, clear_json_cache, UNDERLYING_TO_EXCHANGE, resolve_data_path, DATA_DIR
+from utils import is_market_open, fetch_from_json, load_json_with_retry, backup_old_logs, resolve_day_start_cash, check_internet_connectivity, clear_json_cache, UNDERLYING_TO_EXCHANGE, resolve_data_path, DATA_DIR, _flatten_config
 
 from adapter.mstock_utils import save_orders_to_xlsx, build_orders_export,write_orders_workbook
 
@@ -378,7 +378,10 @@ def load_appconfig():
         with open(APPCONFIG_FILE, "r") as f:
             config = json.load(f)
         logger.info("Appconfig loaded from disk")
-        return jsonify(config)
+        # The config UI works on a flat {key: value} map (the same shape
+        # /save_appconfig receives); expand the grouped file accordingly
+        # so applyConfig() can populate the inputs.
+        return jsonify(_flatten_config(config))
     except Exception as e:
         logger.exception(f"Error reading appconfig: {e}")
         return jsonify(APPCONFIG_DEFAULTS), 500
@@ -410,8 +413,18 @@ def save_appconfig():
         # immediately instead of only after a restart. The setup is
         # lock-guarded and emits 'update_weekly_options' when done.
         woc_keys = ("WOC_CALL_FACTOR", "WOC_PUT_FACTOR", "UNDERLYING")
-        if any(str(old_config.get(k)) != str(config.get(k)) for k in woc_keys):
+        old_flat = _flatten_config(old_config)
+        new_flat = _flatten_config(config)
+        if any(str(old_flat.get(k)) != str(new_flat.get(k)) for k in woc_keys):
             logger.info("WOC factor/underlying changed; rebuilding the options grid in background.")
+            try:
+                if trader.frontend_data_socket:
+                    trader.frontend_data_socket.emit('status_message', {
+                        "success": True,
+                        "message": "WOC factors changed - option chain is rebuilding, the trade grid will refresh in a few seconds..."
+                    })
+            except Exception:
+                pass
             threading.Thread(target=trader.setup_woc_subscriptions, daemon=True).start()
         logger.info("Appconfig saved and cache cleared")
         return jsonify({"status": "success"})

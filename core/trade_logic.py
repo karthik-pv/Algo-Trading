@@ -108,6 +108,12 @@ class Trader_Singleton:
     _sell_in_flight = {}
     _SELL_IN_FLIGHT_TIMEOUT_SECS = 10
 
+    # Browser-close shutdown: connected frontend socket ids. When the
+    # LAST one disconnects (browser/app window closed), the app shuts
+    # itself down so the server/log console windows close with it.
+    _browser_sids = set()
+    _BROWSER_EXIT_GRACE_SECONDS = 10
+
     # ---------------------------------------------------------
     # Persisted last-known real prices. Written whenever a websocket
     # tick or REST quote resolves the near-month future price, read
@@ -123,7 +129,7 @@ class Trader_Singleton:
     _PAPER_TRADE_HEADERS = [
         "Time", "Type", "Instrument", "Token", "Product",
         "Qty.", "Avg. price", "Status", "Duration",
-        "PnL Rate", "PnL %", "PnL"
+        "PnL Rate", "PnL %", "PnL", "Strategy", "SellType"
     ]
 
     # Cash used when a live fund-summary fetch fails, so lot sizing does
@@ -138,6 +144,10 @@ class Trader_Singleton:
 
     def set_broker(self, broker):
         self._broker = broker
+        # The broker label shown by the UI must reflect the ADAPTER that
+        # actually runs (SIMULATION -> SIMULATOR, PLAYBACK -> PLAYBACK),
+        # not the raw appconfig BROKER value the class attribute carries.
+        self._broker_string = broker.__class__.__name__.replace("Adapter", "").upper()
 
 
     def get_price_with_fallback(self, token, symbol):
@@ -183,14 +193,93 @@ class Trader_Singleton:
         return prices
     
     def _get_position_key(self, token_or_symbol, is_token=True):
-        """Helper to find the instrument token (the master key) from either token or trading symbol."""
+        """Resolve an instrument token from either a leg key, a token or a trading symbol."""
+        raw = str(token_or_symbol)
+
+        # A composite leg key ("token:STRATEGY:MODE") carries its token
+        # as the prefix before the first colon.
+        if is_token and ":" in raw:
+            return raw.split(":", 1)[0]
+
         if is_token:
-            return str(token_or_symbol)
-        
-        for token, data in self._position_data.items():
+            return raw
+
+        for key, data in self._position_data.items():
             if data.get("tradingsymbol") == token_or_symbol:
-                return token
+                return str(key).split(":", 1)[0]
         return None
+
+    @staticmethod
+    def _normalise_strategy(value):
+        """
+        Canonical strategy label for position legs and the radio grid.
+
+        The buy widget sends the raw radio value ('UltraScalping'), while
+        the grid matches 'ULTRA_SCALPING' (with underscore). Anything
+        unrecognised falls back to ULTRA_SCALPING, matching the default
+        used everywhere a strategy lookup misses.
+        """
+        text = str(
+            value or ""
+        ).strip().upper().replace("-", "_").replace(" ", "_")
+
+        if text == "ULTRA_SCALPING" or text == "ULTRASCALPING":
+            return "ULTRA_SCALPING"
+        if text == "SCALPING":
+            return "SCALPING"
+        if text == "INTRA":
+            return "INTRA"
+        return "ULTRA_SCALPING"
+
+    def _position_key(self, token, strategy, sell_mode):
+        """Composite identity for a position leg: token:STRATEGY:MODE.
+
+        Same token+strategy+sellmode buys merge into one leg; a different
+        strategy or sell type opens a separate leg (and a separate grid row).
+        """
+        return (
+            f"{str(token)}:"
+            f"{self._normalise_strategy(strategy)}:"
+            f"{str(sell_mode or 'T').strip().upper()}"
+        )
+
+    def _legs_for_token(self, token):
+        """All leg keys in _position_data that belong to an instrument token."""
+        prefix = f"{str(token)}:"
+        return [key for key in self._position_data if str(key).startswith(prefix)]
+
+    def _parse_position_key(self, key):
+        """Split a composite leg key into (token, strategy, sell_mode)."""
+        parts = str(key).split(":")
+        if len(parts) == 3:
+            return parts[0], parts[1], parts[2]
+        return str(key), "ULTRA_SCALPING", "T"
+
+    def _update_leg_pl(self, key):
+        """Recalculate P/L fields of one leg from its average_price/latest_price."""
+        position = self._position_data.get(key)
+        if not position:
+            return
+
+        buy_price = position.get('average_price', 0)
+        latest = position.get('latest_price', 0)
+        net_qty = position.get('net_quantity', 0)
+        lotsize = position.get('lotsize', 0)
+
+        try:
+            buy_price = float(buy_price or 0)
+            latest = float(latest or 0)
+        except (TypeError, ValueError):
+            return
+
+        if buy_price <= 0:
+            return
+
+        pts_pl = self.calculate_point_difference(buy_price, latest)
+        pct_pl = self.calculate_pctg_difference(buy_price, latest)
+        position['pts_pl'] = pts_pl
+        position['pct_pl'] = pct_pl
+        position['total_pl'] = pts_pl * net_qty * lotsize
     
     def _calculate_option_lots(self, price: float, lot_size: Any) -> int:
         """Return a no-zero lot count for option rows, even when broker cash balance is unavailable."""
@@ -267,7 +356,7 @@ class Trader_Singleton:
     def _should_log_position_pnl(self) -> bool:
         return self._should_log_with_frequency("position_pnl")
 
-    def weekly_options_initialize(self , token , data , call_or_put , price , level , prev_close):
+    def weekly_options_initialize(self , token , data , call_or_put , price , level , prev_close, strike=None):
         
         if price <= 0:
             logger.warning(f"Invalid price {price} for {data['tradingsymbol']}. Skipping.")
@@ -285,10 +374,12 @@ class Trader_Singleton:
         logger.debug(f" Cash Balance {self._fund_summary.get('cash_balance', 0)} and Cash Balance Margin Pct {fetch_from_json('appconfig.json', 'MARGIN_USAGE_PCT')} and Price {price} and Lot Size {data['lot_size']}")
         self._five_weekly_option_contracts[token]["lots"] = self._calculate_option_lots(price, data["lot_size"])
         logger.debug(f"Calculated lots is   {self._five_weekly_option_contracts[token]['lots']}")
-        logger.info(f" Determining Lot size {int(data["lot_size"])}")
         self._five_weekly_option_contracts[token]["call_or_put"] = call_or_put
         self._five_weekly_option_contracts[token]["level"] = level
         self._five_weekly_option_contracts[token]["prev_close"] = prev_close
+        # Authoritative strike from the WOC window so the frontend grid
+        # never has to parse it out of the tradingsymbol.
+        self._five_weekly_option_contracts[token]["strike"] = strike
 
         payload = {
                     'token': token,
@@ -322,39 +413,131 @@ class Trader_Singleton:
        
 
     
+    def _target_profit_points(self, strategy_type):
+        """Strategy-scaled book-profit target in points (strategy factor x PTS_PROFIT)."""
+        pnt_book_profit = float(fetch_from_json("appconfig.json", "PTS_PROFIT") or 0)
+        strategy_type = self._normalise_strategy(strategy_type)
+        if strategy_type == "INTRA":
+            return float(fetch_from_json("appconfig.json", "PTS_PROFIT_INTRA_FACTOR") or 1) * pnt_book_profit
+        if strategy_type == "SCALPING":
+            return float(fetch_from_json("appconfig.json", "PTS_PROFIT_SCALPING_FACTOR") or 1) * pnt_book_profit
+        if strategy_type == "ULTRA_SCALPING":
+            return float(fetch_from_json("appconfig.json", "PTS_PROFIT_ULTRA_SCALPING_FACTOR") or 1) * pnt_book_profit
+        return 0.0
+
+    def _effective_book_profit_pct(self, strategy_type):
+        """Strategy-scaled book-profit threshold in percent (PCT_BOOK_PROFIT x strategy factor)."""
+        pct_book_profit = float(fetch_from_json("appconfig.json", "PCT_BOOK_PROFIT") or 0)
+        strategy_type = self._normalise_strategy(strategy_type)
+        if strategy_type == "INTRA":
+            factor = float(fetch_from_json("appconfig.json", "PCT_PROFIT_INTRA_FACTOR") or 1)
+        elif strategy_type == "SCALPING":
+            factor = float(fetch_from_json("appconfig.json", "PCT_PROFIT_SCALPING_FACTOR") or 1)
+        elif strategy_type == "ULTRA_SCALPING":
+            factor = float(fetch_from_json("appconfig.json", "PCT_PROFIT_ULTRA_SCALPING_FACTOR") or 1)
+        else:
+            factor = 1
+        return pct_book_profit * factor
+
+    def _cancel_pending_exit_orders(self, tradingsymbol):
+        """
+        Cancel resting SELL exit orders for an instrument.
+
+        U/D legs keep a broker-side exit limit from buy time. When the
+        SL safety net (or a manual sell) exits the position, that limit
+        must be cancelled first - otherwise a later fill would leave
+        the account net short. Returns the number of cancelled orders.
+        """
+        try:
+            pending = self._broker.fetch_all_pending_orders() or []
+        except Exception as e:
+            logger.error(
+                f"Could not fetch pending orders to cancel the exit for "
+                f"{tradingsymbol}: {e}"
+            )
+            return 0
+
+        symbol_upper = str(tradingsymbol).upper()
+        cancelled = 0
+        for order in pending:
+            if str(order.get("tradingsymbol", "") or "").upper() != symbol_upper:
+                continue
+            if str(order.get("transaction_type", "") or "").upper() != "SELL":
+                continue
+            order_id = order.get("order_id")
+            if not order_id:
+                continue
+            try:
+                if self._broker.cancel_order(order_id):
+                    cancelled += 1
+                    logger.info(
+                        f"Cancelled pending exit order {order_id} "
+                        f"for {tradingsymbol}"
+                    )
+                else:
+                    logger.warning(
+                        f"Broker did not confirm the cancel of pending "
+                        f"exit order {order_id} for {tradingsymbol}"
+                    )
+            except Exception as e:
+                logger.error(
+                    f"Failed to cancel pending exit order {order_id} "
+                    f"for {tradingsymbol}: {e}"
+                )
+
+        if cancelled:
+            logger.info(
+                f"Cancelled {cancelled} pending exit order(s) "
+                f"for {tradingsymbol}"
+            )
+        return cancelled
+
     def position_data_update(self, token_or_symbol, attribute_name, updated_value, is_token=True):
-        #logger.info(f"Updating position {token_or_symbol}: Setting '{attribute_name}' to {updated_value}")
-        key_token = self._get_position_key(token_or_symbol, is_token)
-        
-        if key_token is None:
-            logger.warning(f"Could not find position for {token_or_symbol}. Skipping update.")
-            return
-            
-        if key_token not in self._position_data:
-            self._position_data[key_token] = {}
-            
-        self._position_data[key_token][attribute_name] = updated_value
-        
-        if attribute_name == 'latest_price':
-            position = self._position_data[key_token]
-            buy_price = position.get('average_price', 0)
-            net_qty = position.get('net_quantity', 0)
-            lotsize = position.get('lotsize', 0)
-            
-            
-            if buy_price > 0:
-                # Recalculate and store the new P/L values
-                pts_pl = self.calculate_point_difference(buy_price, updated_value)
-                pct_pl = self.calculate_pctg_difference(buy_price, updated_value)
-                total_pl = pts_pl * net_qty * lotsize
+        """Update an attribute on position leg(s).
+
+        token_or_symbol may be:
+          - a composite leg key ("token:STRATEGY:MODE") - that leg only
+          - an instrument token - every leg of that instrument (ticks)
+          - a tradingsymbol (is_token=False) - resolved to a token first
+
+        Missing legs are NOT created implicitly; an update with no open
+        leg is a no-op (logged) so stale UI calls cannot seed empty rows.
+        """
+        raw = str(token_or_symbol)
+
+        if is_token and ":" in raw:
+            # Exact composite leg key (position-grid radio updates).
+            if raw not in self._position_data:
+                logger.warning(
+                    f"Position leg {raw} not found. Skipping {attribute_name} update."
+                )
+                return
+            keys = [raw]
+        else:
+            token = self._get_position_key(token_or_symbol, is_token)
+            if token is None:
+                logger.warning(f"Could not find position for {token_or_symbol}. Skipping update.")
+                return
+            keys = self._legs_for_token(token)
+            if not keys:
+                logger.warning(
+                    f"No open legs for token {token}. Skipping {attribute_name} update."
+                )
+                return
+
+        for key in keys:
+            position = self._position_data.setdefault(key, {})
+            position[attribute_name] = updated_value
+
+            if attribute_name == 'latest_price':
+                self._update_leg_pl(key)
                 if self._should_log_position_pnl():
-                    logger.debug(f" For {token_or_symbol} : Buy Price {buy_price} , LTP {updated_value} , PTS : {pts_pl}, PCT {pct_pl:.2f}% and Total P/L {total_pl}. Position Grid Updated.")
-                
-                position['pts_pl'] = pts_pl
-                position['pct_pl'] = pct_pl
-                position['total_pl'] = total_pl
-        
-        #logger.debug(f"Updated {key_token}:{attribute_name} to {updated_value}")
+                    logger.debug(
+                        f" For {key} : Buy Price {position.get('average_price')} , "
+                        f"LTP {updated_value} , PTS : {position.get('pts_pl')}, "
+                        f"PCT {position.get('pct_pl'):.2f}% and "
+                        f"Total P/L {position.get('total_pl')}. Position Grid Updated."
+                    )
 
     def update_fund_summary(self, fund_summary: Dict[str, Any]):
         logger.info("Updating fund summary...")
@@ -625,7 +808,9 @@ class Trader_Singleton:
     quantity,
     lotsize,
     executed_buy_price,
-    exchange
+    exchange,
+    strategy="",
+    sell_mode="T"
     ):
         """
         Immediately create/update the position grid after a successful BUY.
@@ -635,10 +820,26 @@ class Trader_Singleton:
         refresh_open_pos_buy_price() using the broker positions + orders.
 
         The temporary BUY price shown in the grid is the current live LTP.
+
+        Positions are per-leg (token:STRATEGY:MODE): a BUY with a different
+        strategy or sell type opens a separate leg instead of merging.
         """
 
         try:
             token = str(instrument_token)
+
+            # ---------------------------------------------------------
+            # 0. Resolve the leg identity for this BUY.
+            # ---------------------------------------------------------
+            strategy = self._normalise_strategy(
+                strategy
+                or self._order_strategy_mapping.get(token, "ULTRA_SCALPING")
+            )
+            sell_mode = str(
+                sell_mode
+                or self._order_sell_mode_mapping.get(token, "T")
+            ).strip().upper()
+            leg_key = self._position_key(token, strategy, sell_mode)
 
             # ---------------------------------------------------------
             # 1. Get the latest LTP already available in memory.
@@ -655,11 +856,11 @@ class Trader_Singleton:
             lotsize = int(lotsize)
 
             # ---------------------------------------------------------
-            # 2. If the position already exists, add this BUY to it.
+            # 2. If the same leg already exists, add this BUY to it.
             # ---------------------------------------------------------
-            if token in self._position_data:
+            existing = self._position_data.get(leg_key)
 
-                existing = self._position_data[token]
+            if existing:
 
                 old_qty = int(
                     existing.get("net_quantity", 0) or 0
@@ -703,15 +904,12 @@ class Trader_Singleton:
             total_pl = pts_pl * net_qty * lotsize
 
             # ---------------------------------------------------------
-            # 4. Update the existing position structure.
+            # 4. Update the leg's position structure.
             #
             # IMPORTANT:
             # No buy_price_status / status column is added.
             # ---------------------------------------------------------
-            if token not in self._position_data:
-                self._position_data[token] = {}
-
-            self._position_data[token].update({
+            self._position_data[leg_key] = {
                 "tradingsymbol": trading_symbol,
                 "average_price": avg_price,
                 "net_quantity": net_qty,
@@ -723,15 +921,10 @@ class Trader_Singleton:
                 "pts_pl": pts_pl,
                 "pct_pl": pct_pl,
                 "total_pl": total_pl,
-                "order_strategy": self._order_strategy_mapping.get(
-                    token,
-                    "ULTRA_SCALPING"
-                ),
-                "sell_mode": self._order_sell_mode_mapping.get(
-                    token,
-                    "T"
-                )
-            })
+                "order_strategy": strategy,
+                "sell_mode": sell_mode,
+                "override_book_profit_pct": self._effective_book_profit_pct(strategy)
+            }
 
             # ---------------------------------------------------------
             # 5. Immediately send the position to the grid.
@@ -745,13 +938,14 @@ class Trader_Singleton:
                 self.frontend_data_socket.emit(
                     'temporary_buy_price',
                     {
-                        'token': str(instrument_token)
+                        'token': str(instrument_token),
+                        'position_key': leg_key
                     }
                 )
 
             logger.info(
                 f"TEMP BUY GRID UPDATE: "
-                f"{trading_symbol} | "
+                f"{trading_symbol} [{leg_key}] | "
                 f"Qty={net_qty} | "
                 f"Temporary Buy={avg_price:.2f} | "
                 f"LTP={latest_ltp:.2f}"
@@ -774,7 +968,9 @@ class Trader_Singleton:
         quantity,
         exchange,
         ltp,
-        lotsize=1
+        lotsize=1,
+        strategy="",
+        sell_mode="T"
     ):
         """
         Immediately show a newly executed BUY in the position grid.
@@ -786,6 +982,9 @@ class Trader_Singleton:
         - This method is intentionally broker/underlying neutral.
         - It does NOT call the broker.
         - It does NOT change the existing refresh workflow.
+
+        Positions are per-leg (token:STRATEGY:MODE): a BUY with a different
+        strategy or sell type opens a separate leg instead of merging.
         """
 
         try:
@@ -809,10 +1008,23 @@ class Trader_Singleton:
                 return
 
             # ---------------------------------------------------------
-            # If this instrument already exists, preserve the existing
-            # position and add the newly bought quantity.
+            # Resolve the leg identity for this BUY.
             # ---------------------------------------------------------
-            existing = self._position_data.get(token)
+            strategy = self._normalise_strategy(
+                strategy
+                or self._order_strategy_mapping.get(token, "ULTRA_SCALPING")
+            )
+            sell_mode = str(
+                sell_mode
+                or self._order_sell_mode_mapping.get(token, "T")
+            ).strip().upper()
+            leg_key = self._position_key(token, strategy, sell_mode)
+
+            # ---------------------------------------------------------
+            # If this same leg already exists, preserve it and add the
+            # newly bought quantity.
+            # ---------------------------------------------------------
+            existing = self._position_data.get(leg_key)
 
             if existing:
                 old_qty = int(existing.get("net_quantity", 0) or 0)
@@ -837,7 +1049,7 @@ class Trader_Singleton:
                 net_qty = new_qty
 
             else:
-                # Brand-new position.
+                # Brand-new leg.
                 temporary_avg_price = temporary_buy_price
                 net_qty = quantity
 
@@ -858,51 +1070,29 @@ class Trader_Singleton:
             total_pl = pts_pl * net_qty
 
             # ---------------------------------------------------------
-            # Store the provisional position.
+            # Store the provisional leg.
             #
             # buy_price_status is the important new field.
             # Frontend will later use this to show the BUY Price cell
             # in yellow.
             # ---------------------------------------------------------
-            if existing:
-                existing.update({
-                    "tradingsymbol": trading_symbol,
-                    "average_price": temporary_avg_price,
-                    "net_quantity": net_qty,
-                    "latest_price": temporary_buy_price,
-                    "instrument_token": instrument_token,
-                    "exchange": exchange,
-                    "lotsize": lotsize,
-                    "lots": net_qty,
-                    "pts_pl": pts_pl,
-                    "pct_pl": pct_pl,
-                    "total_pl": total_pl,
-                    "buy_price_status": "TEMPORARY",
-                })
-
-            else:
-                self._position_data[token] = {
-                    "tradingsymbol": trading_symbol,
-                    "average_price": temporary_avg_price,
-                    "net_quantity": net_qty,
-                    "latest_price": temporary_buy_price,
-                    "instrument_token": instrument_token,
-                    "exchange": exchange,
-                    "lotsize": lotsize,
-                    "lots": net_qty,
-                    "pts_pl": pts_pl,
-                    "pct_pl": pct_pl,
-                    "total_pl": total_pl,
-                    "order_strategy": self._order_strategy_mapping.get(
-                        token,
-                        "ULTRA_SCALPING"
-                    ),
-                    "sell_mode": self._order_sell_mode_mapping.get(
-                        token,
-                        "T"
-                    ),
-                    "buy_price_status": "TEMPORARY",
-                }
+            self._position_data[leg_key] = {
+                "tradingsymbol": trading_symbol,
+                "average_price": temporary_avg_price,
+                "net_quantity": net_qty,
+                "latest_price": temporary_buy_price,
+                "instrument_token": instrument_token,
+                "exchange": exchange,
+                "lotsize": lotsize,
+                "lots": net_qty,
+                "pts_pl": pts_pl,
+                "pct_pl": pct_pl,
+                "total_pl": total_pl,
+                "order_strategy": strategy,
+                "sell_mode": sell_mode,
+                "buy_price_status": "TEMPORARY",
+                "override_book_profit_pct": self._effective_book_profit_pct(strategy)
+            }
 
             # ---------------------------------------------------------
             # Immediately send the provisional position to the grid.
@@ -915,7 +1105,7 @@ class Trader_Singleton:
 
             logger.info(
                 f"TEMP BUY GRID: "
-                f"{trading_symbol} | "
+                f"{trading_symbol} [{leg_key}] | "
                 f"Qty={net_qty} | "
                 f"Temporary Buy={temporary_avg_price:.2f} | "
                 f"LTP={temporary_buy_price:.2f}"
@@ -1069,74 +1259,140 @@ class Trader_Singleton:
             positions_from_broker = []
 
         # =========================================================
-        # 4. REMOVE POSITIONS THAT NO LONGER EXIST
+        # 4. RECONCILE THE STRATEGY-LEG LEDGER WITH BROKER NET
+        #
+        # The broker reports one NET position per tradingsymbol and
+        # cannot see strategy/sell-type legs. The internal ledger
+        # (keyed token:STRATEGY:MODE) stays the source of per-leg
+        # identity and average prices; the broker net is used to:
+        #   - drop every leg of tokens the broker no longer holds
+        #   - FIFO-reduce legs (oldest first) when the net shrank
+        #   - top up a default leg when the net grew (external buys)
         # =========================================================
-        new_position_tokens = {
+        broker_tokens = {
             str(pos["instrument_token"]) for pos in positions
         }
 
-        tokens_to_remove = [
-            token
-            for token in self._position_data
-            if token not in new_position_tokens
+        stale_keys = [
+            key for key in self._position_data
+            if self._parse_position_key(key)[0] not in broker_tokens
         ]
 
-        for token in tokens_to_remove:
-            del self._position_data[token]
+        for key in stale_keys:
+            del self._position_data[key]
 
-        # =========================================================
-        # 5. UPDATE POSITION DATA WITH ACCURATE BUY PRICE
-        # =========================================================
         for position in positions:
             token = str(position["instrument_token"])
 
             logger.debug(f"POS CHECK {position}")
 
-            if token not in self._position_data:
-                self._position_data[token] = {}
-
             avg_price = position["average_price"]
             net_qty = int(position["quantity"])
             lotsize = int(position["lotsize"])
 
-            # Calculate initial P/L values.
-            # Live LTP updates will recalculate these afterwards.
-            pts_pl = self.calculate_point_difference(
-                avg_price,
-                avg_price
+            leg_keys = self._legs_for_token(token)
+            held_qty = sum(
+                int(self._position_data[k].get("net_quantity", 0) or 0)
+                for k in leg_keys
             )
 
-            pct_pl = self.calculate_pctg_difference(
-                avg_price,
-                avg_price
-            )
-
-            total_pl = pts_pl * net_qty
-
-            self._position_data[token].update({
-                "tradingsymbol": position["tradingsymbol"],
-                "average_price": avg_price,
-                "net_quantity": net_qty,
-                "latest_price": avg_price,
-                "instrument_token": position["instrument_token"],
-                "exchange": position["exchange"],
-                "lotsize": lotsize,
-                "lots": net_qty,
-                "pts_pl": pts_pl,
-                "pct_pl": pct_pl,
-                "total_pl": total_pl,
-                "order_strategy": self._order_strategy_mapping.get(
-                    token,
-                    "ULTRA_SCALPING"
-                ),
-                "sell_mode": self._order_sell_mode_mapping.get(
-                    token,
-                    "T"
+            if held_qty > net_qty:
+                # FIFO reduction: shrink the oldest legs first.
+                excess = held_qty - net_qty
+                for key in leg_keys:
+                    if excess <= 0:
+                        break
+                    leg = self._position_data[key]
+                    leg_qty = int(leg.get("net_quantity", 0) or 0)
+                    if leg_qty <= excess:
+                        del self._position_data[key]
+                        excess -= leg_qty
+                    else:
+                        leg["net_quantity"] = leg_qty - excess
+                        leg["lots"] = leg["net_quantity"]
+                        excess = 0
+                leg_keys = self._legs_for_token(token)
+                held_qty = sum(
+                    int(self._position_data[k].get("net_quantity", 0) or 0)
+                    for k in leg_keys
                 )
-            })
+
+            residual_qty = net_qty - held_qty
+
+            if residual_qty > 0:
+                # Broker holds more than the ledger knows (external buy
+                # or first refresh after startup). Book the residual on
+                # the leg matching the strategy/sell type selected at
+                # buy time, using the accurate netted average price of
+                # the whole broker position.
+                default_strategy = str(
+                    self._order_strategy_mapping.get(token, "ULTRA_SCALPING")
+                ).upper()
+                default_sell_mode = str(
+                    self._order_sell_mode_mapping.get(token, "T")
+                ).upper()
+                default_key = self._position_key(
+                    token, default_strategy, default_sell_mode
+                )
+
+                held_value = sum(
+                    float(self._position_data[k].get("average_price", 0) or 0)
+                    * int(self._position_data[k].get("net_quantity", 0) or 0)
+                    for k in leg_keys
+                )
+                residual_value = float(avg_price) * net_qty - held_value
+                residual_avg = (
+                    residual_value / residual_qty
+                    if residual_value > 0
+                    else float(avg_price)
+                )
+
+                leg = self._position_data.setdefault(default_key, {})
+                old_qty = int(leg.get("net_quantity", 0) or 0)
+                old_avg = float(leg.get("average_price", 0) or 0)
+                new_qty = old_qty + residual_qty
+                leg["average_price"] = (
+                    ((old_avg * old_qty) + (residual_avg * residual_qty)) / new_qty
+                    if new_qty > 0
+                    else residual_avg
+                )
+                leg["net_quantity"] = new_qty
+                leg_keys = self._legs_for_token(token)
+
+            # Fill in broker-derived attributes on every leg of this
+            # token without touching per-leg identity or averages.
+            contract = self._five_weekly_option_contracts.get(token)
+            for key in leg_keys:
+                leg = self._position_data[key]
+                leg["tradingsymbol"] = position["tradingsymbol"]
+                leg["instrument_token"] = position["instrument_token"]
+                leg["exchange"] = position["exchange"]
+                leg["lotsize"] = lotsize
+                leg["lots"] = int(leg.get("net_quantity", 0) or 0)
+                leg["producttype"] = str(
+                    position.get("producttype")
+                    or leg.get("producttype")
+                    or "CARRYFORWARD"
+                ).upper()
+                if contract and contract.get("level"):
+                    leg["level"] = contract["level"]
+                if not leg.get("latest_price"):
+                    leg["latest_price"] = float(avg_price)
+                if not leg.get("order_strategy"):
+                    leg["order_strategy"] = self._parse_position_key(key)[1]
+                if not leg.get("sell_mode"):
+                    leg["sell_mode"] = self._parse_position_key(key)[2]
+                # Per-position BK% override: seeded with the strategy
+                # default, preserved across refreshes once the user
+                # edits it in the grid.
+                leg.setdefault(
+                    "override_book_profit_pct",
+                    self._effective_book_profit_pct(leg["order_strategy"])
+                )
+                self._update_leg_pl(key)
 
         # =========================================================
-        # 6. FINAL POSITION GRID UPDATE
+        # 5. FINAL POSITION GRID UPDATE
         # =========================================================
         try:
             if not self.frontend_data_socket:
@@ -1150,11 +1406,12 @@ class Trader_Singleton:
             # The grid has now been rendered with the authoritative
             # BUY price. Tell the frontend to remove the temporary
             # yellow BUY-price indication.
-            for token in self._position_data:
+            for key in self._position_data:
                 self.frontend_data_socket.emit(
                     'authoritative_buy_price',
                     {
-                        'token': str(token)
+                        'token': self._parse_position_key(key)[0],
+                        'position_key': str(key)
                     }
                 )
 
@@ -1193,7 +1450,12 @@ class Trader_Singleton:
     def get_relevant_instruments_to_track(self):
         logger.info("Compiling list of relevant instruments to track: 1) Positions, 2) 5 Weekly Options and 3) Near Month Future")
         """Returns a list of instrument tokens currently in the _position_data."""
-        instruments = list(self._position_data.keys())
+        # Position keys are composite legs ("token:STRATEGY:MODE"); the
+        # broker websocket needs the raw instrument tokens only.
+        instruments = list({
+            self._parse_position_key(key)[0]
+            for key in self._position_data
+        })
         instruments.extend(self._five_weekly_option_contracts.keys())
         instruments.extend(self._near_month_data.keys())
         logger.info(f"Subscribing to {len(instruments)} instruments.")
@@ -1250,7 +1512,11 @@ class Trader_Singleton:
         market_closed_logged = False
 
         while not self._stop_event.is_set():
-            if not is_market_open():
+            # LIVE only: no point watching when the market is shut -
+            # the broker takes no orders. PAPER / SIMULATION / PLAYBACK
+            # watch 24/7 so exits can be tested anytime (the sim/playback
+            # tick engines also run around the clock).
+            if not is_market_open() and self._mode == "LIVE":
                 if not market_closed_logged:
                     logger.info("Market closed. Stop-loss watcher idling until market open...")
                     market_closed_logged = True
@@ -1275,6 +1541,14 @@ class Trader_Singleton:
                 instrument_token = data.get("instrument_token")
                 order_strategy_type = data.get("order_strategy" , "DEFAULT")
                 sell_type = data.get("sell_mode" , "T")
+
+                # Position keys are composite legs; skip malformed or
+                # incomplete entries so one bad row cannot kill the
+                # watcher thread.
+                if not tradingsymbol or not instrument_token or not qty:
+                    if should_log_eval:
+                        logger.debug(f"Skipping incomplete position record for {token}")
+                    continue
                 
 
                 match = re.search(r'(CE|PE)$', tradingsymbol.upper())
@@ -1291,10 +1565,11 @@ class Trader_Singleton:
                 # This trigger check is only applicable when Sell Type = T. For other cases U and D system raises Sell Order immediately after Buy Order is executed
 
                 #sell = self.to_sell_or_not_to_sell(buy_price , ltp , order_strategy_type,contract_type, should_log_eval)
-                # Profit trigger only applies to Sell Type T. U/D positions
-                # book profit via the broker-side limit order raised at buy
-                # time; the monitor only runs the SL safety net for them.
-                sell = self.to_sell_or_not_to_sell_SL(buy_price , ltp , order_strategy_type,contract_type, should_log_eval, check_profit=(sell_type == "T"))
+                sell = self._watcher_sell_decision(
+                    buy_price, ltp, order_strategy_type, contract_type,
+                    sell_type, should_log_eval,
+                    override_book_profit_pct=data.get("override_book_profit_pct")
+                )
                 
                 if should_log_eval:
                     logger.debug(f"Decision To Sell {tradingsymbol} - {sell}")
@@ -1305,8 +1580,23 @@ class Trader_Singleton:
                 
                 if self._mode in ("LIVE", "SIMULATION", "PLAYBACK"):
                     if sell:
+                        # U/D legs hold a resting exit limit at the
+                        # broker; cancel it first or a later fill would
+                        # leave the account net short.
+                        if sell_type in ("U", "D"):
+                            self._cancel_pending_exit_orders(tradingsymbol)
+
                         logger.info(f"Placing SELL order for {tradingsymbol} {instrument_token} : {qty} lots at LTP {ltp}")
-                        broker.sell_units(tradingsymbol,instrument_token,qty,exchange,ltp)
+                        try:
+                            broker.sell_units(tradingsymbol,instrument_token,qty,exchange,ltp, position_key=str(token))
+                        except Exception as sell_error:
+                            # A failed auto-sell must not kill the
+                            # watcher thread; the next cycle retries.
+                            logger.error(
+                                f"Auto-sell failed for {tradingsymbol} "
+                                f"[{token}]: {sell_error}",
+                                exc_info=True
+                            )
                     else:
                         if should_log_eval:
                             logger.debug(f"No SELL action taken for {tradingsymbol} at LTP {ltp}")
@@ -1333,8 +1623,12 @@ class Trader_Singleton:
                                 lot_size=data.get("lotsize", 1),
                                 buy_time=self.get_open_position_buy_time(
                                     instrument_token,
-                                    tradingsymbol=tradingsymbol
-                                )
+                                    tradingsymbol=tradingsymbol,
+                                    strategy=order_strategy_type,
+                                    sell_type=sell_type
+                                ),
+                                strategy=order_strategy_type,
+                                sell_type=sell_type
                             )
 
                             # Recalculate paper positions so the sold
@@ -1349,6 +1643,49 @@ class Trader_Singleton:
                 self._stop_event.wait(timeout=2)
 
     # ---------------------- DECISION MAKER ----------------------------
+
+    def _watcher_sell_decision(self, buy_price, ltp, order_strategy_type, contract_type, sell_type, log_enabled=True, override_book_profit_pct=None):
+        """
+        The watcher's per-leg exit decision.
+
+        Sell Type T is watcher-managed (profit + SL) in every mode.
+        Sell Types U/D hold a broker-side resting exit limit (LIVE) or
+        a strategy-scaled POINTS target (PAPER / SIMULATION / PLAYBACK),
+        but the watcher additionally market-books profit the moment the
+        strategy-scaled PCT threshold is crossed - cancelling the
+        resting exit first - together with the SL safety net.
+        A per-position BK% override (positions grid) replaces the
+        strategy-scaled profit threshold wherever it applies.
+        """
+        if sell_type in ("U", "D") and self._mode != "LIVE":
+            target_points = self._target_profit_points(order_strategy_type)
+            try:
+                profit_hit = (
+                    target_points > 0
+                    and float(buy_price) > 0
+                    and float(ltp) >= float(buy_price) + target_points
+                )
+            except (TypeError, ValueError):
+                profit_hit = False
+
+            if profit_hit and log_enabled:
+                logger.debug(
+                    f"U/D profit target reached: LTP {ltp} >= "
+                    f"{buy_price} + {target_points} pts"
+                )
+
+            sl_hit = self.to_sell_or_not_to_sell_SL(
+                buy_price, ltp, order_strategy_type, contract_type,
+                log_enabled, check_profit=True,
+                override_book_profit_pct=override_book_profit_pct
+            )
+            return profit_hit or sl_hit
+
+        return self.to_sell_or_not_to_sell_SL(
+            buy_price, ltp, order_strategy_type, contract_type,
+            log_enabled, check_profit=True,
+            override_book_profit_pct=override_book_profit_pct
+        )
 
     def to_sell_or_not_to_sell(self,buy_price , current_price , order_strategy_type, log_enabled=True):
         # that is the question 
@@ -1406,7 +1743,7 @@ class Trader_Singleton:
             return False
         
     #BADD
-    def to_sell_or_not_to_sell_SL(self,buy_price , current_price , order_strategy_type,contract_type, log_enabled=True, check_profit=True):
+    def to_sell_or_not_to_sell_SL(self,buy_price , current_price , order_strategy_type,contract_type, log_enabled=True, check_profit=True, override_book_profit_pct=None):
         # that is the question 
         if log_enabled:
             logger.debug(f"Deciding to sell or not for Stop Loss: Buy Price = {buy_price}, Current Price = {current_price} and Order Strategy Type is {order_strategy_type}")
@@ -1427,7 +1764,13 @@ class Trader_Singleton:
         PCT_STOP_LOSS = float(fetch_from_json("appconfig.json", "PCT_STOP_LOSS") or 0)
 
         EFFECTIVE_SL_PCT = PCT_STOP_LOSS
-        BOOK_PROFIT_THRESHOLD_PCT = PCT_BOOK_PROFIT * PCT_FACTOR
+        # A per-position override (BK% box on the positions grid) replaces
+        # the strategy-scaled book-profit threshold; 0 disables profit
+        # booking for that leg. The stop-loss threshold is unaffected.
+        if override_book_profit_pct is not None:
+            BOOK_PROFIT_THRESHOLD_PCT = max(0.0, float(override_book_profit_pct))
+        else:
+            BOOK_PROFIT_THRESHOLD_PCT = PCT_BOOK_PROFIT * PCT_FACTOR
         STOP_LOSS_THRESHOLD_PCT = EFFECTIVE_SL_PCT * PCT_FACTOR
 
         if log_enabled:
@@ -1578,7 +1921,11 @@ class Trader_Singleton:
         # A value of 0 disables profit booking. Skipped entirely when
         # check_profit is False (U/D sell modes - their profit is
         # handled by the broker-side limit order).
-        if check_profit and PCT_BOOK_PROFIT > 0 and current_price > buy_price:
+        tp_enabled = (
+            PCT_BOOK_PROFIT > 0 if override_book_profit_pct is None
+            else BOOK_PROFIT_THRESHOLD_PCT > 0
+        )
+        if check_profit and tp_enabled and current_price > buy_price:
             profit_diff = self.calculate_pctg_difference(buy_price, current_price)
             if log_enabled:
                 logger.debug(
@@ -2171,21 +2518,25 @@ class Trader_Singleton:
                         f"(CE base {playback_ce_base}, PE base {playback_pe_base})"
                     )
 
-            contracts_ce = self.get_5_woc(
+            woc_ce = self.get_5_woc(
                 price,
                 "CE",
                 strike_interval=strike_interval,
                 underlying=self._underlying,
                 base_strike=playback_ce_base
-            )["symbols"]
+            )
+            contracts_ce = woc_ce["symbols"]
+            strikes_ce = woc_ce["strikes"]
 
-            contracts_pe = self.get_5_woc(
+            woc_pe = self.get_5_woc(
                 price,
                 "PE",
                 strike_interval=strike_interval,
                 underlying=self._underlying,
                 base_strike=playback_pe_base
-            )["symbols"]
+            )
+            contracts_pe = woc_pe["symbols"]
+            strikes_pe = woc_pe["strikes"]
 
             all_contracts = {}
 
@@ -2240,7 +2591,7 @@ class Trader_Singleton:
 
                 tokens_to_subscribe.append(token)
 
-                all_contracts[token] = ("CE", key, data)
+                all_contracts[token] = ("CE", key, data, strikes_ce.get(key))
 
 
             for key, value in contracts_pe.items():
@@ -2259,7 +2610,7 @@ class Trader_Singleton:
 
                 tokens_to_subscribe.append(token)
 
-                all_contracts[token] = ("PE", key, data)
+                all_contracts[token] = ("PE", key, data, strikes_pe.get(key))
 
 
             # ------------------------------------------------
@@ -2273,7 +2624,7 @@ class Trader_Singleton:
                 and playback_symbol.endswith(("CE", "PE"))
                 and not any(
                     str(contract_data["tradingsymbol"]).upper() == playback_symbol
-                    for _cp, _level, contract_data in all_contracts.values()
+                    for _cp, _level, contract_data, _strike in all_contracts.values()
                 )
             ):
                 logger.info(
@@ -2287,7 +2638,8 @@ class Trader_Singleton:
                         all_contracts[playback_token] = (
                             "CE" if playback_symbol.endswith("CE") else "PE",
                             "PLAYBACK",
-                            playback_data
+                            playback_data,
+                            playback_base_strike
                         )
                 else:
                     logger.error(
@@ -2449,7 +2801,30 @@ class Trader_Singleton:
             # all_contracts, which always reflects the current factor.
             self._five_weekly_option_contracts.clear()
 
-            for token, (cp, level, data) in all_contracts.items():
+            # Mirror the frontend's grid sort (ATM first, OTMs deepest
+            # first, ITMs shallowest first) so the positional row index
+            # here matches the row order the user actually sees - the
+            # window can shift (OTM3/ITM3...) with the WOC factor.
+            def _woc_row_sort_key(level_name):
+                if level_name == "ATM":
+                    return 0
+                match = re.match(r"^(OTM|ITM)(\d+)$", str(level_name or ""))
+                if not match:
+                    return 999999
+                number = int(match.group(2))
+                return -number if match.group(1) == "OTM" else number
+
+            side_contracts = {}
+            for token, (cp, level, data, strike) in all_contracts.items():
+                side_contracts.setdefault(cp, []).append((level, token))
+
+            row_position = {}
+            for cp, items in side_contracts.items():
+                items.sort(key=lambda item: _woc_row_sort_key(item[0]))
+                for idx, (_level, _token) in enumerate(items):
+                    row_position[_token] = idx
+
+            for token, (cp, level, data, strike) in all_contracts.items():
 
                 price = prices.get(token)
 
@@ -2523,10 +2898,32 @@ class Trader_Singleton:
                     cp,
                     price,
                     level=level,
-                    prev_close=prev_close
+                    prev_close=prev_close,
+                    strike=strike
                 )
 
-                self._order_strategy_mapping[token] = "ULTRA_SCALPING"
+                # Positional defaults mirroring the buy-grid rows (the
+                # display window can shift, so level NAMES may be any
+                # OTMx/ITMx - the row's position within each option type
+                # is the reference):
+                #   row 1 (top) -> INTRA + T
+                #   row 2       -> SCALPING + D
+                #   row 3 (mid) -> ULTRA_SCALPING + U
+                #   rows 4/5    -> ULTRA_SCALPING + T
+                # Used when a leg is created without a frontend buy
+                # event (SIM/LIVE residual legs, fast-update fallback).
+                side_index = row_position.get(token, 999999)
+                if side_index == 0:
+                    level_strategy, level_sell_mode = "INTRA", "T"
+                elif side_index == 1:
+                    level_strategy, level_sell_mode = "SCALPING", "D"
+                elif side_index == 2:
+                    level_strategy, level_sell_mode = "ULTRA_SCALPING", "U"
+                else:
+                    level_strategy, level_sell_mode = "ULTRA_SCALPING", "T"
+
+                self._order_strategy_mapping[token] = level_strategy
+                self._order_sell_mode_mapping[token] = level_sell_mode
 
 
             self.save_last_known_prices(pending_price_updates)
@@ -2856,7 +3253,11 @@ class Trader_Singleton:
                 if close_val > 0 and token not in self._prev_close_prices:
                     self._prev_close_prices[token] = close_val
 
-            if token in self._position_data:
+            leg_keys = self._legs_for_token(token)
+
+            if leg_keys:
+                # Fan the tick out to every strategy/sell-type leg of
+                # this instrument; each leg keeps its own P/L.
                 self.position_data_update(
                     token,
                     "latest_price",
@@ -2864,26 +3265,23 @@ class Trader_Singleton:
                     is_token=True
                 )
 
-                position_info = self._position_data[token]
+                for leg_key in leg_keys:
+                    position_info = self._position_data[leg_key]
 
-                payload = {
-                    'token': token,
-                    'name': tradingsymbol,
-                    'ltp': price,
-                    'pts_pl': position_info.get('pts_pl'),
-                    'pct_pl': position_info.get('pct_pl'),
-                    'total_pl': position_info.get('total_pl')
-                }
+                    payload = {
+                        'token': token,
+                        'position_key': str(leg_key),
+                        'name': tradingsymbol,
+                        'ltp': price,
+                        'pts_pl': position_info.get('pts_pl'),
+                        'pct_pl': position_info.get('pct_pl'),
+                        'total_pl': position_info.get('total_pl')
+                    }
 
-                # logger.info(
-                #     f"MSTOCK EMIT price-updated-position | "
-                #     f"token={token} | ltp={price}"
-                # )
-
-                self.frontend_data_socket.emit(
-                    'price-updated-position',
-                    payload
-                )
+                    self.frontend_data_socket.emit(
+                        'price-updated-position',
+                        payload
+                    )
 
             if token in self._five_weekly_option_contracts:
                 self.update_weekly_options(
@@ -3423,20 +3821,29 @@ class Trader_Singleton:
             return []
         
 
-    def get_open_position_buy_time(self, token, tradingsymbol=None):
+    def get_open_position_buy_time(self, token, tradingsymbol=None, strategy=None, sell_type=None):
         """
-        Find the latest BUY time for a position from the paper trade log.
+        Find the latest BUY time for a position leg from the paper trade log.
 
-        Matches by tradingsymbol first (robust when the position token
-        was re-bound to the active broker's token space), falling back
-        to the token recorded in the trade file.
+        Matches by tradingsymbol (+ strategy/sell type when the trade
+        rows carry them) so per-leg durations are computed from the
+        correct BUY row, falling back to symbol-then-token matching.
         """
         trades = self.fetch_paper_trades()
 
         token = str(token)
         symbol = str(tradingsymbol).strip().upper() if tradingsymbol else None
+        strategy = str(strategy).strip().upper() if strategy else None
+        sell_type = str(sell_type).strip().upper() if sell_type else None
 
-        def _latest_buy_time(match_symbol=None, match_token=None):
+        def _row_strategy(trade):
+            return str(trade.get("Strategy", "") or "").strip().upper()
+
+        def _row_sell_type(trade):
+            return str(trade.get("SellType", "") or "").strip().upper()
+
+        def _latest_buy_time(match_symbol=None, match_token=None,
+                             match_strategy=None, match_sell_type=None):
             for trade in reversed(trades):
                 if match_symbol is not None:
                     if str(trade.get("Instrument", "")).strip().upper() != match_symbol:
@@ -3446,6 +3853,10 @@ class Trader_Singleton:
                         continue
                 if trade.get("Type", "").upper() != "BUY":
                     continue
+                if match_strategy is not None and _row_strategy(trade) != match_strategy:
+                    continue
+                if match_sell_type is not None and _row_sell_type(trade) != match_sell_type:
+                    continue
                 buy_time = trade.get("Time")
                 if buy_time:
                     return buy_time
@@ -3453,7 +3864,15 @@ class Trader_Singleton:
 
         buy_time = None
         if symbol:
-            buy_time = _latest_buy_time(match_symbol=symbol)
+            # Most specific first: symbol + strategy + sell type.
+            if strategy or sell_type:
+                buy_time = _latest_buy_time(
+                    match_symbol=symbol,
+                    match_strategy=strategy,
+                    match_sell_type=sell_type
+                )
+            if buy_time is None:
+                buy_time = _latest_buy_time(match_symbol=symbol)
         if buy_time is None:
             buy_time = _latest_buy_time(match_token=token)
 
@@ -3475,15 +3894,21 @@ class Trader_Singleton:
         product="MIS",
         buy_price=None,
         lot_size=1,
-        buy_time=None
+        buy_time=None,
+        strategy="",
+        sell_type="T"
     ):
         """
         Append one row to the paper trade file.
 
         Shared by the buy/sell socket handlers and the auto-sell watcher
-        so every writer produces the identical 12-column format that
+        so every writer produces the identical 14-column format that
         fetch_paper_trades() parses. Repairs a missing header line so
         legacy header-less files become readable again.
+
+        Strategy/SellType tag each row with its position leg
+        (token:STRATEGY:MODE) so paper position aggregation can keep
+        legs separate and sells close the correct leg.
         """
 
         filename = self._PAPER_TRADE_FILENAME
@@ -3504,6 +3929,8 @@ class Trader_Singleton:
         WIDTH_PNL_RATE   = 12
         WIDTH_PNL_PCT    = 12
         WIDTH_PNL        = 16
+        WIDTH_STRATEGY   = 16
+        WIDTH_SELL_TYPE  = 10
 
         headers = [
             "Time".ljust(WIDTH_TIME),
@@ -3517,10 +3944,20 @@ class Trader_Singleton:
             "Duration".rjust(WIDTH_DURATION),
             "PnL Rate".rjust(WIDTH_PNL_RATE),
             "PnL %".rjust(WIDTH_PNL_PCT),
-            "PnL".rjust(WIDTH_PNL)
+            "PnL".rjust(WIDTH_PNL),
+            "Strategy".ljust(WIDTH_STRATEGY),
+            "SellType".ljust(WIDTH_SELL_TYPE)
         ]
 
         header_line = "\t".join(headers)
+
+        # ---------------------------------------------------------
+        # Normalize leg tags so every writer records the same
+        # canonical values the aggregator matches on.
+        # ---------------------------------------------------------
+
+        strategy = self._normalise_strategy(strategy)
+        sell_type = str(sell_type or "T").strip().upper()
 
         # ---------------------------------------------------------
         # Default PnL values (BUY rows keep these blank)
@@ -3612,7 +4049,9 @@ class Trader_Singleton:
             duration.rjust(WIDTH_DURATION),
             pnl_rate.rjust(WIDTH_PNL_RATE),
             pnl_pct.rjust(WIDTH_PNL_PCT),
-            pnl.rjust(WIDTH_PNL)
+            pnl.rjust(WIDTH_PNL),
+            strategy.ljust(WIDTH_STRATEGY),
+            sell_type.ljust(WIDTH_SELL_TYPE)
         ]
 
         # ---------------------------------------------------------
@@ -3628,7 +4067,16 @@ class Trader_Singleton:
                 try:
                     with open(filename, "r", encoding="utf-8") as f:
                         first_line = f.readline()
-                    if first_line.split("\t")[0].strip() == "Time":
+                    first_fields = first_line.rstrip("\n").split("\t")
+                    # Repair when the header line is missing OR when it
+                    # predates the current column set (e.g. legacy
+                    # 12-column headers without Strategy/SellType):
+                    # rows written in the new 14-column format would
+                    # otherwise be skipped on read.
+                    if (
+                        first_fields[0].strip() == "Time"
+                        and len(first_fields) == len(self._PAPER_TRADE_HEADERS)
+                    ):
                         needs_header = False
                 except Exception as e:
                     logger.warning(f"Could not inspect {filename}: {e}")
@@ -3712,12 +4160,14 @@ class Trader_Singleton:
                 values = line.split("\t")
 
                 # -----------------------------------------------------
-                # Legacy 8-column rows (old inline writers): pad the
-                # Duration/PnL columns so they still parse.
+                # Legacy rows written by older formats (8-column inline
+                # writers, or the previous 12-column standard before
+                # Strategy/SellType were added): pad the missing
+                # trailing columns so they still parse.
                 # -----------------------------------------------------
 
-                if len(values) == 8 and len(headers) == len(self._PAPER_TRADE_HEADERS):
-                    values = values + ["", "", "", ""]
+                if len(values) < len(headers):
+                    values = values + [""] * (len(headers) - len(values))
 
                 # -----------------------------------------------------
                 # Make sure the row has the same number of columns
@@ -3742,6 +4192,17 @@ class Trader_Singleton:
 
                 for header, value in zip(headers, values):
                     trade[header] = value.strip()
+
+                # -----------------------------------------------------
+                # Default leg tags for rows written before the
+                # Strategy/SellType columns existed.
+                # -----------------------------------------------------
+
+                if not trade.get("Strategy"):
+                    trade["Strategy"] = "ULTRA_SCALPING"
+
+                if not trade.get("SellType"):
+                    trade["SellType"] = "T"
 
                 # -----------------------------------------------------
                 # Only COMPLETE transactions
@@ -3863,11 +4324,15 @@ class Trader_Singleton:
 
     def calculate_paper_positions(self):
         """
-        Aggregate paper trades into net positions keyed by tradingsymbol.
+        Aggregate paper trades into net positions keyed by
+        (tradingsymbol, strategy, sell type).
 
-        Keying by symbol (not token) keeps accounting correct when the
-        same instrument was recorded under different broker/exchange
-        token spaces (e.g. after switching BROKER or UNDERLYING).
+        Keying by symbol keeps accounting correct when the same
+        instrument was recorded under different broker/exchange token
+        spaces (e.g. after switching BROKER or UNDERLYING); adding
+        strategy/sell type to the key keeps each position leg separate
+        so same-contract trades with different strategies show as
+        distinct rows. Sells reduce the matching leg first.
         """
 
         trades = self.fetch_paper_trades()
@@ -3893,17 +4358,24 @@ class Trader_Singleton:
             if not symbol:
                 continue
 
-            if symbol not in positions:
-                positions[symbol] = {
+            strategy = self._normalise_strategy(trade.get("Strategy"))
+            sell_type = str(trade.get("SellType", "") or "").strip().upper() or "T"
+
+            position_key = f"{symbol}|{strategy}|{sell_type}"
+
+            if position_key not in positions:
+                positions[position_key] = {
                     "tradingsymbol": symbol,
                     "instrument_token": token,
+                    "strategy": strategy,
+                    "sell_type": sell_type,
                     "buy_quantity": 0,
                     "sell_quantity": 0,
                     "buy_value": 0.0,
                     "sell_value": 0.0,
                 }
 
-            position = positions[symbol]
+            position = positions[position_key]
 
             if transaction_type == "BUY":
 
@@ -4004,8 +4476,9 @@ class Trader_Singleton:
 
         new_position_data = {}
 
-        for symbol, position in paper_positions.items():
+        for position_key, position in paper_positions.items():
 
+            symbol = position["tradingsymbol"]
             net_quantity = (
                 position["buy_quantity"]
                 - position["sell_quantity"]
@@ -4013,6 +4486,8 @@ class Trader_Singleton:
 
             logger.debug(
                 f"Symbol={symbol} "
+                f"Strategy={position.get('strategy')} "
+                f"SellType={position.get('sell_type')} "
                 f"BUY={position['buy_quantity']} "
                 f"SELL={position['sell_quantity']} "
                 f"NET={net_quantity}"
@@ -4099,7 +4574,15 @@ class Trader_Singleton:
             # write_paper_trade().
             total_pl = pts_pl * net_quantity * lotsize
 
-            new_position_data[active_token] = {
+            # Composite leg key so same-contract trades with different
+            # strategies/sell types stay separate rows in the grid.
+            leg_key = self._position_key(
+                active_token,
+                position.get("strategy"),
+                position.get("sell_type")
+            )
+
+            new_position_data[leg_key] = {
                 "tradingsymbol": position["tradingsymbol"],
                 "average_price": average_buy_price,
                 "net_quantity": net_quantity,
@@ -4111,17 +4594,32 @@ class Trader_Singleton:
                 "pts_pl": pts_pl,
                 "pct_pl": pct_pl,
                 "total_pl": total_pl,
-                "order_strategy":
-                    self._order_strategy_mapping.get(
-                        active_token,
-                        "ULTRA_SCALPING"
-                    ),
-                "sell_mode":
-                    self._order_sell_mode_mapping.get(
-                        active_token,
-                        "T"
-                    )
+                "order_strategy": str(
+                    position.get("strategy") or "ULTRA_SCALPING"
+                ).upper(),
+                "sell_mode": str(
+                    position.get("sell_type") or "T"
+                ).upper()
             }
+
+            contract = self._five_weekly_option_contracts.get(
+                str(active_token)
+            )
+            if contract and contract.get("level"):
+                new_position_data[leg_key]["level"] = contract["level"]
+
+            # Paper rebuilds the whole dict every refresh - carry the
+            # user's per-position BK% override across rebuilds, seeded
+            # with the strategy default on first appearance.
+            previous_leg = self._position_data.get(leg_key, {})
+            new_position_data[leg_key]["override_book_profit_pct"] = (
+                previous_leg.get(
+                    "override_book_profit_pct",
+                    self._effective_book_profit_pct(
+                        new_position_data[leg_key]["order_strategy"]
+                    )
+                )
+            )
 
         self._position_data = new_position_data
 
@@ -4143,12 +4641,33 @@ class Trader_Singleton:
 
     # In your Trader_Singleton class
 
+    def _shutdown_if_no_browser(self):
+        """
+        Browser/app window closed and no frontend client reconnected
+        within the grace window: stop the application so the console
+        windows (server + logs) close along with it.
+        """
+        if self._browser_sids:
+            return
+
+        logger.info(
+            "App window closed - no browser clients remain. "
+            "Shutting down the application."
+        )
+        try:
+            self._stop_event.set()
+        except Exception:
+            pass
+        time.sleep(0.5)
+        os._exit(0)
+
     def register_socket_handlers(self):
         logger.info("Registering socket event handlers...")
 
         @self.frontend_data_socket.on('connect')
         def handle_connect():
-            logger.info(f"MSTOCK SOCKET CONNECTED | sid={request.sid}")
+            self._browser_sids.add(request.sid)
+            logger.info(f"MSTOCK SOCKET CONNECTED | sid={request.sid} | browser clients={len(self._browser_sids)}")
             logger.debug(self._near_month_data)
             payload = {
                     "broker" : self._broker_string ,
@@ -4236,8 +4755,19 @@ class Trader_Singleton:
 
         @self.frontend_data_socket.on('disconnect')
         def handle_disconnect():
+            self._browser_sids.discard(request.sid)
             logger.info("Client disconnected.")
-            logger.info(f"MSTOCK SOCKET DISCONNECTED | sid={request.sid}")
+            logger.info(
+                f"MSTOCK SOCKET DISCONNECTED | sid={request.sid} | "
+                f"browser clients={len(self._browser_sids)}"
+            )
+            if not self._browser_sids:
+                # Last window gone: allow brief reconnects (page
+                # refresh / tab switch) before shutting down.
+                threading.Timer(
+                    self._BROWSER_EXIT_GRACE_SECONDS,
+                    self._shutdown_if_no_browser
+                ).start()
 
         @self.frontend_data_socket.on('voice_announcement_toggle')
         def handle_voice_announcement_toggle(payload):
@@ -4392,8 +4922,48 @@ class Trader_Singleton:
         @self.frontend_data_socket.on("order_strategy_data_updated_positions")
         def handle_order_strategy_type_positions(order_strategy_details):
             logger.debug(f"Received updated order strategy type for positions {order_strategy_details}")
-            self.position_data_update(order_strategy_details["instrument_token"] , "order_strategy" , order_strategy_details["strategy_type"])
+
+            position_key = str(order_strategy_details.get("position_key") or "")
+
+            if position_key and ":" in position_key:
+                # Per-leg strategy switch: only this leg's TP/SL
+                # thresholds change.
+                self.position_data_update(
+                    position_key,
+                    "order_strategy",
+                    order_strategy_details["strategy_type"]
+                )
+                # The BK% box follows the strategy: reset the per-position
+                # override to the new strategy's default.
+                leg = self._position_data.get(position_key)
+                if leg is not None:
+                    leg["override_book_profit_pct"] = self._effective_book_profit_pct(
+                        order_strategy_details["strategy_type"]
+                    )
+            else:
+                # Legacy payload without a leg key: apply to every open
+                # leg of the instrument.
+                self.position_data_update(
+                    order_strategy_details["instrument_token"],
+                    "order_strategy",
+                    order_strategy_details["strategy_type"]
+                )
+                for key in self._legs_for_token(
+                    str(order_strategy_details.get("instrument_token", ""))
+                ):
+                    self._position_data[key]["override_book_profit_pct"] = (
+                        self._effective_book_profit_pct(
+                            order_strategy_details["strategy_type"]
+                        )
+                    )
+
             logger.debug(f"Updated positions data: {self._position_data}")
+
+            if self.frontend_data_socket:
+                self.frontend_data_socket.emit(
+                    'update_open_positions',
+                    self._position_data
+                )
 
         @self.frontend_data_socket.on("order_strategy_data_updated_orders")
         def handle_order_strategy_type_orders(order_strategy_details):
@@ -4401,54 +4971,130 @@ class Trader_Singleton:
             token = str(order_strategy_details["instrument_token"])
             self._order_strategy_mapping[token] = order_strategy_details["strategy_type"]
 
-            # Propagate to any OPEN position so the TP/SL monitor picks up
-            # the new strategy's PCT thresholds mid-trade. Without this the
-            # position keeps the strategy stamped at buy time and a strategy
-            # switch would only apply to future buys.
-            position = self._position_data.get(token)
-            if position is not None:
-                position["order_strategy"] = order_strategy_details["strategy_type"]
-                logger.info(
-                    f"Strategy switched mid-trade for {position.get('tradingsymbol', token)}: "
-                    f"now {order_strategy_details['strategy_type']} (TP/SL thresholds recalculated)"
-                )
-                if self.frontend_data_socket:
-                    self.frontend_data_socket.emit(
-                        'update_open_positions',
-                        self._position_data
-                    )
+            # NOTE: this mapping is only the DEFAULT strategy for the
+            # NEXT buy of this instrument. Open legs keep the strategy
+            # stamped at buy time; per-leg switches happen through
+            # 'order_strategy_data_updated_positions' (position-row radio).
 
             logger.debug(f"Updated Order Strategy Mapping: {self._order_strategy_mapping}")
 
+        @self.frontend_data_socket.on("position_sell_mode_updated")
+        def handle_position_sell_mode_updated(sell_mode_details):
+            logger.debug(f"Received updated sell mode for positions {sell_mode_details}")
+            position_key = str(sell_mode_details.get("position_key") or "")
+            new_mode = str(sell_mode_details.get("sell_mode") or "T").strip().upper()
+
+            if position_key and ":" in position_key and position_key in self._position_data:
+                # Sell mode is part of the leg identity - re-key the leg
+                # so the key and the entry's sell_mode stay consistent
+                # across reconciliations.
+                token, strategy, current_mode = self._parse_position_key(position_key)
+                if current_mode != new_mode:
+                    new_key = self._position_key(token, strategy, new_mode)
+                    leg = self._position_data.pop(position_key)
+                    leg["sell_mode"] = new_mode
+                    self._position_data[new_key] = leg
+                    logger.info(
+                        f"Leg {position_key} re-keyed to {new_key} "
+                        f"(sell mode switched mid-trade)"
+                    )
+            else:
+                # Legacy payload without a leg key: apply to every open
+                # leg of the instrument.
+                for key in self._legs_for_token(
+                    str(sell_mode_details.get("instrument_token", ""))
+                ):
+                    self._position_data[key]["sell_mode"] = new_mode
+
+            if self.frontend_data_socket:
+                self.frontend_data_socket.emit(
+                    'update_open_positions',
+                    self._position_data
+                )
+
+        @self.frontend_data_socket.on("position_book_profit_updated")
+        def handle_position_book_profit_updated(bp_details):
+            logger.debug(f"Received updated book-profit override for positions {bp_details}")
+            position_key = str(bp_details.get("position_key") or "")
+            try:
+                new_pct = max(0.0, float(bp_details.get("book_profit_pct")))
+            except (TypeError, ValueError):
+                logger.warning(f"Invalid book-profit override received: {bp_details}")
+                return
+
+            if position_key and ":" in position_key and position_key in self._position_data:
+                self._position_data[position_key]["override_book_profit_pct"] = new_pct
+                logger.info(f"Book-profit override for {position_key} set to {new_pct}%")
+            else:
+                # Legacy payload without a leg key: apply to every open
+                # leg of the instrument.
+                legs = self._legs_for_token(
+                    str(bp_details.get("instrument_token", ""))
+                )
+                for key in legs:
+                    self._position_data[key]["override_book_profit_pct"] = new_pct
+                logger.info(
+                    f"Book-profit override for {len(legs)} leg(s) of token "
+                    f"{bp_details.get('instrument_token')} set to {new_pct}%"
+                )
+
+            if self.frontend_data_socket:
+                self.frontend_data_socket.emit(
+                    'update_open_positions',
+                    self._position_data
+                )
+
         @self.frontend_data_socket.on('place_sell_order')
         def handle_sell_order(order_details):
-            """Handles a sell order request from the frontend."""
+            """Handles a sell order request from the frontend (one position leg)."""
             logger.debug(f"Available positions: {self._position_data}")
             logger.debug(f"Received sell order from client: {order_details}")
 
             token = str(order_details.get("token", ""))
+            position_key = str(order_details.get("position_key") or "")
+
+            # Resolve the exact leg to sell. Falls back to the token's
+            # only leg when the frontend has not sent a leg key.
+            if position_key not in self._position_data:
+                legs = self._legs_for_token(token)
+                if len(legs) == 1:
+                    position_key = legs[0]
+                else:
+                    self.frontend_data_socket.emit(
+                        'sell_order_result',
+                        {
+                            "success": False,
+                            "tradingsymbol": order_details.get("tradingsymbol", "?"),
+                            "position_key": order_details.get("position_key", ""),
+                            "error": f"No matching open position leg for {order_details.get('tradingsymbol', token)}; refresh the grid.",
+                        },
+                    )
+                    return
+
             now = time.time()
             with self._sell_order_lock:
-                last_ts = self._sell_in_flight.get(token)
+                last_ts = self._sell_in_flight.get(position_key)
                 if last_ts is not None and (now - last_ts) < self._SELL_IN_FLIGHT_TIMEOUT_SECS:
                     logger.warning(
-                        f"Duplicate sell request ignored for token {token} "
-                        f"({order_details.get('tradingsymbol', '?')}); another sell for this token is already in progress."
+                        f"Duplicate sell request ignored for {position_key} "
+                        f"({order_details.get('tradingsymbol', '?')}); another sell for this position is already in progress."
                     )
                     self.frontend_data_socket.emit(
                         'sell_order_result',
                         {
                             "success": False,
                             "tradingsymbol": order_details.get("tradingsymbol", "?"),
+                            "position_key": position_key,
                             "error": "Duplicate sell request ignored - a sell for this position is already in progress.",
                         },
                     )
                     return
-                self._sell_in_flight[token] = now
+                self._sell_in_flight[position_key] = now
 
             try:
                 #ltp = self._five_weekly_option_contracts[order_details["token"]]["ltp"]
-                ltp = self._position_data[order_details["token"]]["latest_price"]
+                ltp = self._position_data[position_key]["latest_price"]
+                position = self._position_data.get(position_key)
                 logger.debug(f"LTP fetched from the position : {ltp}")
 
                 # Get current mode
@@ -4460,11 +5106,10 @@ class Trader_Singleton:
                 # =========================================================
                 if self._mode not in ("LIVE", "SIMULATION", "PLAYBACK"):
 
-                    position = self._position_data.get(order_details["token"])
                     if not position:
                         raise Exception(
-                            f"No open paper position for token "
-                            f"{order_details['token']}"
+                            f"No open paper position for leg "
+                            f"{position_key}"
                         )
 
                     held_lots = int(position.get("net_quantity", 0) or 0)
@@ -4482,9 +5127,13 @@ class Trader_Singleton:
 
                     buy_price = position["average_price"]
                     lot_size = position["lotsize"]
+                    leg_strategy = position.get("order_strategy", "ULTRA_SCALPING")
+                    leg_sell_mode = position.get("sell_mode", "T")
                     buy_time = self.get_open_position_buy_time(
-                        order_details["token"],
-                        tradingsymbol=order_details["tradingsymbol"]
+                        position_key.split(":", 1)[0],
+                        tradingsymbol=order_details["tradingsymbol"],
+                        strategy=leg_strategy,
+                        sell_type=leg_sell_mode
                     )
 
                     self.write_paper_trade(
@@ -4496,11 +5145,14 @@ class Trader_Singleton:
                         product="MIS",
                         buy_price=buy_price,
                         lot_size=lot_size,
-                        buy_time=buy_time
+                        buy_time=buy_time,
+                        strategy=leg_strategy,
+                        sell_type=leg_sell_mode
                     )
                     logger.info(
                         f"Paper SELL recorded for "
                         f"{order_details['tradingsymbol']} "
+                        f"[{position_key}] "
                         f"({sell_lots} lots) @ {ltp}"
                     )
 
@@ -4513,6 +5165,7 @@ class Trader_Singleton:
                             "success": True,
                             "tradingsymbol": order_details["tradingsymbol"],
                             "lots": sell_lots,
+                            "position_key": position_key,
                             "paper": True
                         }
                     )
@@ -4521,23 +5174,100 @@ class Trader_Singleton:
                 # =========================================================
                 else:                    
 
-                    result = self._broker.sell_units(order_details["tradingsymbol"] , order_details["token"] , order_details["lots"] , self._exchange , ltp)
+                    leg_sell_mode = str(
+                        (position or {}).get("sell_mode", "T") or "T"
+                    ).upper()
+                    leg_strategy = (position or {}).get(
+                        "order_strategy", "ULTRA_SCALPING"
+                    )
+
+                    # U/D legs hold a resting exit limit at the broker;
+                    # cancel it before the manual sell (full or partial)
+                    # or a later fill would leave the account net short.
+                    if leg_sell_mode in ("U", "D"):
+                        self._cancel_pending_exit_orders(
+                            order_details["tradingsymbol"]
+                        )
+
+                    result = self._broker.sell_units(order_details["tradingsymbol"] , order_details["token"] , order_details["lots"] , self._exchange , ltp, position_key=position_key)
 
                     logger.info(f"Sell order successful for {order_details['tradingsymbol']} ({order_details['lots']} lots)")
+
+                    # Partial manual sell on a U/D leg: re-place the exit
+                    # for the remaining lots so the leg keeps its target.
+                    if leg_sell_mode in ("U", "D") and position:
+                        remaining_lots = (
+                            int(position.get("net_quantity", 0) or 0)
+                            - int(order_details["lots"])
+                        )
+                        if remaining_lots > 0:
+                            target_points = self._target_profit_points(leg_strategy)
+                            if target_points > 0:
+                                exit_price = (
+                                    float(position.get("average_price", 0) or 0)
+                                    + target_points
+                                )
+                                logger.info(
+                                    f"Re-placing {leg_sell_mode}-mode exit for "
+                                    f"remaining {remaining_lots} lots of "
+                                    f"{order_details['tradingsymbol']} "
+                                    f"at {exit_price:.2f}"
+                                )
+                                self._broker.place_exit_limit(
+                                    order_details["tradingsymbol"],
+                                    order_details["token"],
+                                    remaining_lots,
+                                    self._exchange,
+                                    exit_price
+                                )
+                            else:
+                                logger.warning(
+                                    f"No target points configured for strategy "
+                                    f"{leg_strategy}; the remaining "
+                                    f"{remaining_lots} lots will be managed by "
+                                    f"the stop-loss watcher only."
+                                )
                     #self.frontend_data_socket.emit('sell_order_result',{"success": True, "tradingsymbol": order_details["tradingsymbol"], "lots": order_details["lots"]})
             except Exception as e:
                 logger.error(f"Error placing sell order: {e}", exc_info=False)
                 self.frontend_data_socket.emit(
                     'sell_order_result',
-                    {"success": False, "tradingsymbol": order_details.get("tradingsymbol", "?"), "error": str(e)}
+                    {"success": False, "tradingsymbol": order_details.get("tradingsymbol", "?"), "position_key": position_key, "error": str(e)}
                 )
             finally:
                 with self._sell_order_lock:
-                    self._sell_in_flight.pop(token, None)
+                    self._sell_in_flight.pop(position_key, None)
 
         @self.frontend_data_socket.on('request_pending_orders')
         def send_pending():
             self.frontend_data_socket.emit('update_pending_orders', self._broker.fetch_all_pending_orders())                     
+
+        @self.frontend_data_socket.on('cancel_all_pending_orders')
+        def handle_cancel_all_pending_orders():
+            """Cancel every pending order at the broker (Cancel All button)."""
+            try:
+                cancelled = self._broker.cancel_all_pending_orders()
+                logger.info(f"Cancel All: {cancelled} pending order(s) cancelled")
+
+                self.frontend_data_socket.emit(
+                    'status_message',
+                    {"success": True, "message": f"Cancelled {cancelled} pending order(s)"}
+                )
+            except Exception as e:
+                logger.error(f"Cancel All pending orders failed: {e}", exc_info=True)
+                self.frontend_data_socket.emit(
+                    'status_message',
+                    {"success": False, "message": f"Cancel All failed: {e}"}
+                )
+
+            # Re-fetch and re-render the grid either way so the button
+            # re-enables and the rows reflect reality.
+            try:
+                pending_orders = self._broker.fetch_all_pending_orders()
+                self.frontend_data_socket.emit('update_pending_orders', pending_orders)
+            except Exception as e:
+                logger.error(f"Cancel All: could not refresh pending orders: {e}")
+                self.frontend_data_socket.emit('update_pending_orders', [])
 
         @self.frontend_data_socket.on('cancel_pending_order')
         def cancel_pending_order_handler(data):
@@ -4573,21 +5303,21 @@ class Trader_Singleton:
         def handle_buy_order(order_details):
             logger.debug(f"Received buy order from client: {order_details}")
             try:
-                target_profit = 0
-                # Fetched per order so config edits apply without a restart.
-                pnt_book_profit = float(fetch_from_json("appconfig.json", "PTS_PROFIT") or 0)
-                if order_details["strategy"].upper() == "INTRA":
-                    target_profit = float(fetch_from_json("appconfig.json", "PTS_PROFIT_INTRA_FACTOR") or 1) * pnt_book_profit
-                elif order_details["strategy"].upper() == "SCALPING":
-                    target_profit = float(fetch_from_json("appconfig.json", "PTS_PROFIT_SCALPING_FACTOR") or 1) * pnt_book_profit
-                elif order_details["strategy"].upper() == "ULTRASCALPING":
-                    target_profit = float(fetch_from_json("appconfig.json", "PTS_PROFIT_ULTRA_SCALPING_FACTOR") or 1) * pnt_book_profit
-
                 # Trading mode is PAPER, LIVE, SIMULATION, or PLAYBACK.
                 self._mode = fetch_from_json("appconfig.json" , "MODE")
                 sell_mode = order_details.get("SELL_MODE", "T")
+                # The buy widget sends the raw radio value
+                # ('UltraScalping'); normalise it before it reaches the
+                # leg key, the paper file or the strategy mapping.
+                strategy = self._normalise_strategy(
+                    order_details.get("strategy", "")
+                )
+                # Strategy-scaled book-profit target in points; shared
+                # with the exit re-placement on partial manual sells.
+                target_profit = self._target_profit_points(strategy)
                 self._order_sell_mode_mapping[order_details["token"]] = sell_mode
-                logger.debug(f"Mode set is {self._mode} ; Strategy set is {order_details['strategy']}  Sell Mode is {sell_mode} ")
+                self._order_strategy_mapping[order_details["token"]] = strategy
+                logger.debug(f"Mode set is {self._mode} ; Strategy set is {strategy}  Sell Mode is {sell_mode} ")
 
                 # TradingView entry validation (TV_DATA_Validation_REQUIRED).
                 # Applies to every mode; sells are not affected.
@@ -4610,13 +5340,15 @@ class Trader_Singleton:
                 ltp = self._five_weekly_option_contracts[order_details["token"]]["ltp"]
 
                 if self._mode not in ("LIVE", "SIMULATION", "PLAYBACK"):
-                    self.write_paper_trade(transaction_type="BUY",tradingsymbol=order_details["tradingsymbol"],token=order_details["token"],qty=order_details["lots"],ltp=ltp,product="MIS")
+                    self.write_paper_trade(transaction_type="BUY",tradingsymbol=order_details["tradingsymbol"],token=order_details["token"],qty=order_details["lots"],ltp=ltp,product="MIS",strategy=strategy,sell_type=sell_mode)
                     logger.info(
                             f"Paper BUY recorded: "
                             f"{order_details['tradingsymbol']} "
                             f"Token={order_details['token']} "
                             f"Qty={order_details['lots']} "
-                            f"Price={ltp}"
+                            f"Price={ltp} "
+                            f"Strategy={strategy} "
+                            f"SellMode={sell_mode}"
                         )
 
                     logger.info("Calling refresh_paper_positions() after BUY...")                    
@@ -4625,10 +5357,10 @@ class Trader_Singleton:
                 else:
                     if sell_mode == "U":
                         logger.info(f"Placing Buy-Sell order as Sell Mode is set to {sell_mode} ")
-                        self._broker.buy_sell_units(order_details["tradingsymbol"] , order_details["token"] , order_details["lots"] , self._exchange , ltp,self._mode,sell_mode,target_profit)
+                        self._broker.buy_sell_units(order_details["tradingsymbol"] , order_details["token"] , order_details["lots"] , self._exchange , ltp,self._mode,sell_mode,target_profit,strategy)
                     else: # Sell Mode is 'T' or 'D'
                         logger.info("Placing Buy order")
-                        self._broker.buy_units(order_details["tradingsymbol"] , order_details["token"] , order_details["lots"] , self._exchange , ltp,self._mode,sell_mode,target_profit)
+                        self._broker.buy_units(order_details["tradingsymbol"] , order_details["token"] , order_details["lots"] , self._exchange , ltp,self._mode,sell_mode,target_profit,strategy)
                     # ✅ Once order completes, tell frontend to refresh fund summary
                     #self.frontend_data_socket.emit('refresh_fund_summary')
                     # ✅ Notify frontend of success
@@ -4695,7 +5427,8 @@ class Trader_Singleton:
                                     ltp,
                                     self._mode,
                                     sell_mode,
-                                    target_profit
+                                    target_profit,
+                                    strategy
                                 )
 
                                 self.frontend_data_socket.emit('buy_order_result', {
@@ -4742,6 +5475,13 @@ class Trader_Singleton:
                         })
 
                         return
+
+                    self.frontend_data_socket.emit('buy_order_result', {
+                        "success": False,
+                        "tradingsymbol": order_details.get("tradingsymbol", ""),
+                        "lots": order_details.get("lots", 0),
+                        "error": str(e)
+                    })
 
                         
 

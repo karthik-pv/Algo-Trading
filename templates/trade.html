@@ -228,6 +228,7 @@
     /* --- COMMON & SHARED STYLES --- */
     .option-table { width: 100%; border-collapse: collapse; }
     .option-table th, .option-table td { border: 1px solid #444; padding: 6px 8px; text-align: center; vertical-align: middle; }
+.leg-code-cell { font-weight: 700; letter-spacing: 0.5px; color: #ffd75e; }
     .option-table th { background-color: #383838; font-weight: 600; color: #ccc; }
     .no-options { text-align: center; color: #888; margin: 0; padding: 6px; border: 1px dashed #555; border-radius: 8px; background-color: #333; }
     .flash { animation: price-flash 0.7s ease-out; }
@@ -236,6 +237,13 @@
         width: 60px; padding: 0.5rem; background-color: #1a1a1a;
         border: 1px solid #555; color: white; border-radius: 4px;
         font-size: 0.9rem; text-align: center; box-sizing: border-box;
+    }
+    /* Sell grid: half-width Lots(O) box so the StraSell column stays in view */
+    #sell-widget-container .lots-override-input { width: 30px; padding-left: 0.1rem; padding-right: 0.1rem; }
+    .bp-override-input {
+        width: 54px; padding: 0.4rem; background-color: #1a1a1a;
+        border: 1px solid #555; color: #ffd75e; border-radius: 4px;
+        font-size: 0.85rem; text-align: center; box-sizing: border-box;
     }
 
     /* --- MEDIA QUERIES --- */
@@ -278,6 +286,11 @@
         gap: 0.75rem;
         min-height: 1.4rem;
         margin: 0.1rem 0;
+        width: 100%;          /* left edge aligns with the grids */
+        /* Mode box lines up with the Broker box: widget border 1px
+           + widget padding 10px + toggle-container padding 12px */
+        padding-left: 23px;
+        box-sizing: border-box;
     }
 
     .status-bar-left {
@@ -289,17 +302,18 @@
         min-width: 0;
     }
 
-    /* Mode label (LIVE / PAPER / SIMULATION / PLAYBACK) in the status bar */
+    /* Mode label (LIVE / PAPER / SIMULATION / PLAYBACK) in the status bar.
+       Same height/format as the Broker / Underlying / Expiry labels. */
     .mode-label {
         display: inline-flex;
         align-items: center;
         gap: 0.35rem;
-        padding: 0.25rem 0.6rem;
+        padding: 5px 10px;
         border-radius: 4px;
-        border: 1px solid #888;
+        border: 1px solid #c8c8c8;
         background-color: hsl(0, 1%, 26%);
         color: #fff;
-        font-size: 0.72rem;
+        font-size: 0.8rem;
         font-weight: 700;
         letter-spacing: 0.06em;
         text-transform: uppercase;
@@ -478,6 +492,22 @@
         font-weight: 700;
     }
 
+    /* Sell All / Cancel All sit right next to the Mode box, at the same
+       height as the Broker / Underlying / Expiry labels. Scoped here so
+       the table-row Sell buttons keep their size. */
+    .status-bar-actions .sell-button {
+        padding: 5px 10px;
+        font-size: 0.8rem;
+        font-weight: 700;
+    }
+
+    .status-bar-actions {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        flex: 0 0 auto;
+    }
+
 </style>
 {% endblock %}
 
@@ -493,6 +523,7 @@
                     <th>P/L</th>
                     <th>%</th>
                     <th>PTS</th>
+                    <th>BK%</th>
                     <th>Levels</th>
                     <th>XE</th>
                     <th>SPrice</th>
@@ -500,12 +531,13 @@
                     <th>MPrice</th>
                     <th>Lots</th>
                     <th>Lots(O)</th>
-                    <th>Type</th>
+                    <th>StraSell</th>
+                    <th>Strategy Type</th>
                     <th>Sell Type</th>
                 </tr>
             </thead>
             <tbody id="positionsTableBody">
-                <tr><td colspan="13" class="no-options">Loading open positions...</td></tr>
+                <tr><td colspan="15" class="no-options">Loading open positions...</td></tr>
             </tbody>
         </table>
     </div>
@@ -519,14 +551,15 @@
                     <th>Strike Price</th> 
                     <th>Market Price</th> 
                     <th>ChgO</th> 
-                    <th>Lots</th> 
+                    <th>Lots</th>
                     <th>Lots(O)</th>
+                    <th>StraSell</th>
                     <th>Strategy Type</th>
                     <th>Sell Type</th>
                 </tr>
             </thead>
             <tbody id="optionsTableBody">
-                <tr><td colspan="7" class="no-options">Waiting for data from server...</td></tr>
+                <tr><td colspan="8" class="no-options">Waiting for data from server...</td></tr>
             </tbody>
         </table>        
         <div class="toggle-container">
@@ -591,6 +624,10 @@
         <!-- Left zone: trading mode label + playback controls (same line as order status) -->
         <div id="statusBarLeft" class="status-bar-left">
             <span id="modeLabel" class="mode-label" data-mode="" title="Current trading mode">--</span>
+            <div class="status-bar-actions">
+                <button id="sellAllBtn" class="sell-button" disabled title="Sell every open position leg">Sell All</button>
+                <button id="cancelAllBtn" class="sell-button cancel-btn" disabled title="Cancel every pending order">Cancel All</button>
+            </div>
             <div id="playbackControls" class="playback-controls" style="display: none;">
                 <input type="datetime-local" id="playbackStartInput" step="1"
                        title="Playback start date &amp; time (seconds included)">
@@ -608,7 +645,31 @@
         </div>
         <div id="orderStatusLabel" role="status" aria-live="polite"></div>
     </div>
-      
+    <!-- === PENDING ORDERS GRID (position-grid format, pending-order semantics) === -->
+    <div class="widget-container" id="pending-widget-container">
+        <table class="option-table">
+            <thead>
+                <tr>
+                    <th class="center">Action</th>
+                    <th>Levels</th>
+                    <th>XE</th>
+                    <th>SPrice</th>
+                    <th>Order Type</th>
+                    <th>Limit Price</th>
+                    <th>BPrice</th>
+                    <th>MPrice</th>
+                    <th>Lots</th>
+                    <th>Qty(O)</th>
+                    <th>Strategy Type</th>
+                    <th>Sell Type</th>
+                </tr>
+            </thead>
+            <tbody id="pendingOrdersBody">
+                <tr><td colspan="12" class="no-options">No pending orders</td></tr>
+            </tbody>
+        </table>
+    </div>
+
     </div>
 </main>
 {% endblock %}
@@ -640,6 +701,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const announcementToggleEl = document.getElementById('announcementToggle');
     const availableBalanceEl = document.getElementById('availableBalanceValue');
     const positionsTableBody = document.getElementById('positionsTableBody');
+    const pendingOrdersBody = document.getElementById('pendingOrdersBody');
 
 
     // --- STATE VARIABLES ---
@@ -650,6 +712,98 @@ document.addEventListener('DOMContentLoaded', function() {
     let temporaryBuyPriceTokens = new Set();
     // Trading symbols with a sell request in flight (duplicate click guard)
     const pendingSellSymbols = new Set();
+
+    // ---------------------------------------------------------------
+    // Position legs are keyed "token:STRATEGY:MODE" by the backend so
+    // same-contract trades with different strategies/sell types stay
+    // separate rows. DOM ids cannot contain ':' reliably in
+    // querySelector, so every row/cell id uses the sanitized key.
+    // ---------------------------------------------------------------
+    function positionDomId(positionKey) {
+        return String(positionKey).replace(/:/g, '_');
+    }
+
+    // Strike / option-type resolution shared by the position grid and
+    // the pending orders grid: prefer the backend contract table, parse
+    // the tradingsymbol only as a fallback.
+    function resolveStrikeAndType(contract, tradingsymbol) {
+        let strikePrice = contract.strike || contract.strike_price || "";
+        let optionType = contract.call_or_put || "";
+
+        if (tradingsymbol) {
+            const upperSymbol = String(tradingsymbol).toUpperCase();
+            if (!optionType) {
+                if (upperSymbol.endsWith("CE")) optionType = "CE";
+                else if (upperSymbol.endsWith("PE")) optionType = "PE";
+            }
+
+            if (!strikePrice) {
+                const symbolBody = upperSymbol.replace(/(CE|PE)$/, "");
+                // 1) Dash/space separated: NIFTY-04Nov2025-25600-PE
+                // 2) Month-name format: CRUDEOILM25NOV5600
+                // 3) Numeric expiry code (MStock/Kite index weeklies):
+                //    NIFTY2692225700 -> 25700 (anchored to 5 digits so
+                //    the expiry code digits are not swallowed).
+                const m = symbolBody.match(/(\d+(?:\.\d+)?)[-\s]$/)
+                    || symbolBody.match(/[A-Z]{3}(\d+(?:\.\d+)?)$/)
+                    || symbolBody.match(/(\d{5})$/);
+                if (m) strikePrice = m[1].replace(/\.00$/, '');
+            }
+        }
+        return { strikePrice, optionType };
+    }
+
+    // Derive ATM/OTMx/ITMx for positions whose contract is not in the
+    // current 5-weekly window (e.g. external buys picked up from the
+    // broker). Moneyness is computed against the window's ATM strike.
+    function computeLevelFromWindow(strikePrice, optionType) {
+        if (!strikePrice || !optionType) return '';
+        const strike = Number(strikePrice);
+        if (!isFinite(strike) || strike <= 0) return '';
+        let atmStrike = null;
+        const windowStrikes = [];
+        for (const tk in allContracts) {
+            const c = allContracts[tk] || {};
+            const s = Number(c.strike);
+            if (s > 0) windowStrikes.push(s);
+            if (c.level === 'ATM' && s > 0) atmStrike = s;
+        }
+        if (!atmStrike) return '';
+        const uniq = [...new Set(windowStrikes)].sort((a, b) => a - b);
+        let step = 0;
+        for (let i = 1; i < uniq.length; i++) {
+            const d = uniq[i] - uniq[i - 1];
+            if (d > 0 && (step === 0 || d < step)) step = d;
+        }
+        if (!step) return '';
+        const steps = Math.round((strike - atmStrike) / step);
+        if (steps === 0) return 'ATM';
+        const n = Math.abs(steps);
+        if (optionType === 'CE') return steps > 0 ? `OTM${n}` : `ITM${n}`;
+        return steps > 0 ? `ITM${n}` : `OTM${n}`;
+    }
+
+    // Tokens whose Buy Grid strategy radio the user set manually.
+    // Manual choice wins over the level auto-strategy so grid
+    // re-renders (chain refresh / ATM drift) don't wipe it. The set
+    // is persisted so the preference also survives a page reload.
+    const MANUAL_STRATEGY_TOKENS_KEY = 'manuallySetStrategyTokens';
+    function loadManualStrategyTokens() {
+        try {
+            const raw = localStorage.getItem(MANUAL_STRATEGY_TOKENS_KEY);
+            return new Set(raw ? JSON.parse(raw) : []);
+        } catch (error) {
+            return new Set();
+        }
+    }
+    function saveManualStrategyTokens() {
+        try {
+            localStorage.setItem(MANUAL_STRATEGY_TOKENS_KEY, JSON.stringify([...manuallySetStrategyTokens]));
+        } catch (error) {
+            // Storage unavailable - manual choices just won't persist.
+        }
+    }
+    const manuallySetStrategyTokens = loadManualStrategyTokens();
 
     // TradingView entry validation state (TV_DATA_Validation_REQUIRED).
     // Fail-safe defaults: assume validation is ON and both sides blocked
@@ -675,11 +829,28 @@ document.addEventListener('DOMContentLoaded', function() {
         socket.emit('voice_announcement_toggle', {
             enabled: announcementToggleEl ? announcementToggleEl.checked : true
         });
+
+        // Pending orders are NOT pushed in setup_data - request them
+        // explicitly (resting U/D exit limits show here).
+        socket.emit('request_pending_orders');
     });
 
+    // Periodic refresh so resting U/D exit orders reflect fills/cancels
+    // without a manual reload.
+    setInterval(() => {
+        if (socket.connected) {
+            socket.emit('request_pending_orders');
+        }
+    }, 15000);
+
     if (announcementToggleEl) {
-        announcementToggleEl.checked = true;
+        // Restore the persisted preference (defaults to ON until the
+        // user ever toggles it) instead of forcing it back to ON on
+        // every page load / return from another tab.
+        const savedAnnouncementPref = localStorage.getItem('announcementToggleEnabled');
+        announcementToggleEl.checked = savedAnnouncementPref === null ? true : savedAnnouncementPref === 'true';
         announcementToggleEl.addEventListener('change', () => {
+            localStorage.setItem('announcementToggleEnabled', String(announcementToggleEl.checked));
             socket.emit('voice_announcement_toggle', {
                 enabled: announcementToggleEl.checked
             });
@@ -771,10 +942,39 @@ document.addEventListener('DOMContentLoaded', function() {
 
 
 
+    // Status toasts auto-hide within seconds; if one arrives while this
+    // tab is in the background (e.g. saving from the config tab) hold it
+    // and show it the moment the user comes back.
+    let pendingStatusMessage = null;
+    document.addEventListener('visibilitychange', () => {
+        if (!document.hidden && pendingStatusMessage) {
+            showInlineStatus(pendingStatusMessage.message, pendingStatusMessage.type, 6000);
+            pendingStatusMessage = null;
+        }
+    });
+
     socket.on('update_weekly_options', (contracts) => {
+        // A real rebuild (contract set changed after initial load) is
+        // worth announcing; plain reconnects re-send identical data.
+        const chainChanged = Object.keys(allContracts).length > 0 &&
+            JSON.stringify(allContracts) !== JSON.stringify(contracts);
         allContracts = contracts;
         
-        populateOptionsTable(allContracts, 'CE'); // Default view
+        populateOptionsTable(allContracts, callBtn.classList.contains('active-toggle') ? 'CE' : 'PE');
+        // The positions grid may have rendered before the contract
+        // window arrived (setup_data precedes this event on some
+        // paths); re-render so Level/strike columns resolve.
+        if (Object.keys(openPositions).length > 0 && positionsTableBody) {
+            populatePositionsTable(openPositions);
+        }
+        if (chainChanged) {
+            const message = 'Option chain updated - new WOC factors applied';
+            if (document.hidden) {
+                pendingStatusMessage = { message: message, type: 'success' };
+            } else {
+                showInlineStatus(message, 'success', 6000);
+            }
+        }
     });
 
     socket.on('update_open_positions', (positions) => {
@@ -798,11 +998,12 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 
     socket.on('temporary_buy_price', (data) => {
-        const token = String(data.token);
+        const key = data.position_key ? String(data.position_key) : String(data.token);
+        const domId = positionDomId(key);
 
-        temporaryBuyPriceTokens.add(token);
+        temporaryBuyPriceTokens.add(domId);
 
-        const buyPriceCell = document.getElementById(`buy-price-${token}`);
+        const buyPriceCell = document.getElementById(`buy-price-${domId}`);
 
         if (buyPriceCell) {
             buyPriceCell.classList.add('temporary-buy-price');
@@ -810,11 +1011,12 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 
     socket.on('authoritative_buy_price', (data) => {
-        const token = String(data.token);
+        const key = data.position_key ? String(data.position_key) : String(data.token);
+        const domId = positionDomId(key);
 
-        temporaryBuyPriceTokens.delete(token);
+        temporaryBuyPriceTokens.delete(domId);
 
-        const buyPriceCell = document.getElementById(`buy-price-${token}`);
+        const buyPriceCell = document.getElementById(`buy-price-${domId}`);
 
         if (buyPriceCell) {
             buyPriceCell.classList.remove('temporary-buy-price');
@@ -883,19 +1085,22 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 
     socket.on('price-updated-position', (tick) => {
-        const token = String(tick.token);
+        // Backend fans ticks out per position leg; fall back to the
+        // raw token for legacy payloads.
+        const key = tick.position_key ? String(tick.position_key) : String(tick.token);
+        const domId = positionDomId(key);
         const ltp = Number(tick.ltp);
         if (!Number.isFinite(ltp)) return;
          // Update Sell Widget Data & UI
-         if (openPositions[token]) { // Update internal data first
-            openPositions[token].latest_price = ltp;
+         if (openPositions[key]) { // Update internal data first
+            openPositions[key].latest_price = ltp;
             if (tick.pts_pl !== undefined) { // Only update if P/L data exists
-                openPositions[token].pts_pl = tick.pts_pl;
-                openPositions[token].pct_pl = tick.pct_pl;
-                openPositions[token].total_pl = tick.total_pl;
+                openPositions[key].pts_pl = tick.pts_pl;
+                openPositions[key].pct_pl = tick.pct_pl;
+                openPositions[key].total_pl = tick.total_pl;
             }
         }
-        const marketPriceCell = document.getElementById(`market-price-${token}`);
+        const marketPriceCell = document.getElementById(`market-price-${domId}`);
         if (marketPriceCell) { // Check if the row exists in the sell table
             marketPriceCell.textContent = ltp.toFixed(2); // Always update LTP
             marketPriceCell.classList.add('flash');
@@ -904,9 +1109,9 @@ document.addEventListener('DOMContentLoaded', function() {
             // Update P/L Cells ONLY if P/L data is present in the tick
             if (tick.pts_pl !== undefined) {
                 const plClass = tick.pts_pl >= 0 ? 'profit' : 'loss';
-                const totalPlCell = document.getElementById(`total-pl-${token}`);
-                const pctCell = document.getElementById(`pct-${token}`);
-                const ptsCell = document.getElementById(`pts-${token}`);
+                const totalPlCell = document.getElementById(`total-pl-${domId}`);
+                const pctCell = document.getElementById(`pct-${domId}`);
+                const ptsCell = document.getElementById(`pts-${domId}`);
 
                 if (totalPlCell) totalPlCell.textContent = `${(tick.total_pl || 0).toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
                 if (ptsCell) ptsCell.textContent = (tick.pts_pl || 0).toFixed(2);
@@ -950,12 +1155,50 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
+    // Display-only 2-letter leg code (e.g. "UU", "SD", "IT"):
+    // strategy letter + sell-mode letter, purely for readability.
+    function strategyCodeLetter(strategy) {
+        const s = String(strategy || '').toUpperCase();
+        if (s.startsWith('ULTRA')) return 'U';
+        if (s.startsWith('SCALP')) return 'S';
+        if (s.startsWith('INTRA')) return 'I';
+        return '';
+    }
+
+    function legCode(strategy, sellMode) {
+        const strat = strategyCodeLetter(strategy);
+        const sell = String(sellMode || '').toUpperCase();
+        return (strat && sell && 'UDT'.includes(sell)) ? strat + sell : '--';
+    }
+
+    function updateBuyCodeCell(token) {
+        const cell = document.getElementById(`code-${token}`);
+        if (!cell) return;
+        const stratRadio = optionsTableBody.querySelector(`input[name="type-${token}"]:checked`);
+        const sellRadio = optionsTableBody.querySelector(`input[name="sellmode-${token}"]:checked`);
+        cell.textContent = legCode(
+            stratRadio ? stratRadio.value : '',
+            sellRadio ? sellRadio.value : ''
+        );
+    }
+
+    function updatePositionCodeCell(domId) {
+        const cell = document.getElementById(`pos-code-${domId}`);
+        if (!cell || !positionsTableBody) return;
+        const stratRadio = positionsTableBody.querySelector(`input[name="sell-type-${domId}"]:checked`);
+        const sellRadio = positionsTableBody.querySelector(`input[name="sellmode-pos-${domId}"]:checked`);
+        cell.textContent = legCode(
+            stratRadio ? stratRadio.value : '',
+            sellRadio ? sellRadio.value : ''
+        );
+    }
+
     // --- TABLE POPULATION & LISTENERS ---
     function populateOptionsTable(contracts, optionType) {
         optionsTableBody.innerHTML = '';
         const filteredContracts = Object.entries(contracts).filter(([token, contract]) => contract.call_or_put === optionType);
         if (filteredContracts.length === 0) {
-            optionsTableBody.innerHTML = `<tr><td colspan="7" class="no-options">No ${optionType === 'CE' ? 'call' : 'put'} options found.</td></tr>`;
+            optionsTableBody.innerHTML = `<tr><td colspan="8" class="no-options">No ${optionType === 'CE' ? 'call' : 'put'} options found.</td></tr>`;
             return;
         }
 
@@ -1037,6 +1280,7 @@ filteredContracts.sort(([, a], [, b]) => {
             } else { expiryValueEl.textContent = '--'; }
         } else { expiryValueEl.textContent = '--'; }
 
+        let displayRowIndex = 0;
         for (const [token, contract] of filteredContracts) {
             //const regex = /(?:NIFTY|SENSEX)\d{2}[A-Z]\d{2}(\d{5})(?=CE|PE$)|CRUDEOILM?\d{2}[A-Z]{3}(\d{4,5})(?=CE|PE$)/i;
             //const match = contract.name.match(regex);
@@ -1061,62 +1305,45 @@ filteredContracts.sort(([, a], [, b]) => {
                 row.classList.add('atm-row');
             }
 
-            // Auto strategy based on Level
+            // Auto strategy / sell mode by ROW POSITION (the display
+            // window can shift, so level names may be any OTMx/ITMx -
+            // the row's position in the sorted grid is the reference):
+            //   row 1 (top) -> INTRA + T
+            //   row 2       -> SCALPING + D
+            //   row 3 (mid) -> ULTRA_SCALPING + U
+            //   rows 4/5    -> ULTRA_SCALPING + T (as before)
             let autoStrategy = '';
-            //ULTRA_SCALPING, SCALPING, INTRA
-
-            if (contract.level === 'ATM') autoStrategy = 'INTRA';
-            else if (contract.level === 'OTM1') autoStrategy = 'INTRA';
-            else if (contract.level === 'OTM2') autoStrategy = 'INTRA';
-            else if (contract.level === 'ITM1') autoStrategy = 'INTRA';
-            else if (contract.level === 'ITM2') autoStrategy = 'INTRA';
-
-
-            //if (contract.level === 'ATM') autoStrategy = 'SCALPING';
-            //else if (contract.level === 'OTM1') autoStrategy = 'SCALPING';
-            //else if (contract.level === 'OTM2') autoStrategy = 'SCALPING';
-            //else if (contract.level === 'ITM1') autoStrategy = 'SCALPING';
-            //else if (contract.level === 'ITM2') autoStrategy = 'SCALPING';
-
-            // if (contract.level === 'ATM') autoStrategy = 'ULTRA_SCALPING';
-            // else if (contract.level === 'OTM1') autoStrategy = 'ULTRA_SCALPING';
-            // else if (contract.level === 'OTM2') autoStrategy = 'ULTRA_SCALPING';
-            // else if (contract.level === 'ITM1') autoStrategy = 'ULTRA_SCALPING';
-            // else if (contract.level === 'ITM2') autoStrategy = 'ULTRA_SCALPING';
+            let autoSellMode = 'T';
+            if (displayRowIndex === 0) {
+                autoStrategy = 'INTRA';
+                autoSellMode = 'T';
+            } else if (displayRowIndex === 1) {
+                autoStrategy = 'SCALPING';
+                autoSellMode = 'D';
+            } else if (displayRowIndex === 2) {
+                autoStrategy = 'ULTRA_SCALPING';
+                autoSellMode = 'U';
+            } else {
+                autoStrategy = 'ULTRA_SCALPING';
+                autoSellMode = 'T';
+            }
 
 
-            // Final strategy (auto overrides saved mapping)
-            const currentStrategy = autoStrategy || orderStrategyMapping[token] || 'SCALPING';
+            // Final strategy: manual choice > row auto-choice > saved mapping
+            const currentStrategy = manuallySetStrategyTokens.has(String(token))
+                ? (orderStrategyMapping[token] || 'ULTRA_SCALPING')
+                : (autoStrategy || orderStrategyMapping[token] || 'ULTRA_SCALPING');
 
             // Radio check state
             const isIntraChecked = currentStrategy === 'INTRA' ? 'checked' : '';
             const isScalpingChecked = currentStrategy === 'SCALPING' ? 'checked' : '';
             const isUltraChecked = currentStrategy === 'ULTRA_SCALPING' ? 'checked' : '';
 
-            
 
-
-            
-            //alert ("Strategy for " + contract.level + " set to " + currentStrategy);
-
-
-            // --- Sell Mode Auto Selection Based on Level ---
-            let sellUChecked = '';
-            let sellDChecked = '';    
-            let sellTChecked = 'checked';
-
-            // sellUChecked = 'checked';
-            if (contract.level === 'ATM') 
-                sellTChecked = 'checked';
-            else if (contract.level === 'OTM1') 
-                sellTChecked = 'checked';
-                //sellDChecked = 'checked';
-            else if (contract.level === 'OTM2') 
-                sellTChecked = 'checked';
-            else if (contract.level === 'ITM1')
-                sellTChecked = 'checked';
-            else if (contract.level === 'ITM2')
-                sellTChecked = 'checked';
+            // Sell Mode radio state from the row's auto selection.
+            const sellUChecked = autoSellMode === 'U' ? 'checked' : '';
+            const sellDChecked = autoSellMode === 'D' ? 'checked' : '';
+            const sellTChecked = autoSellMode === 'T' ? 'checked' : '';
             
 
 
@@ -1131,18 +1358,20 @@ filteredContracts.sort(([, a], [, b]) => {
                 <td id="chgO-${token}">${chgO}</td>
                 <td id="lots-${token}">${contract.lots || 0}</td>
                 <td><input type="number" class="lots-override-input" id="override-lots-${token}" placeholder="${contract.lots || 0}" value="${contract.lots || 0}"></td>
+                <td id="code-${token}" class="leg-code-cell">${legCode(currentStrategy, autoSellMode)}</td>
                 <td class="type-cell">
-                    <label><input type="radio" name="type-${token}" value="Intra" ${isIntraChecked}> I</label>
-                    <label><input type="radio" name="type-${token}" value="Scalping" ${isScalpingChecked}> S</label>
                     <label><input type="radio" name="type-${token}" value="UltraScalping" ${isUltraChecked}> U</label>
+                    <label><input type="radio" name="type-${token}" value="Scalping" ${isScalpingChecked}> S</label>
+                    <label><input type="radio" name="type-${token}" value="Intra" ${isIntraChecked}> I</label>
                 </td>
                 <td class="type-cell">
-                    <label><input type="radio" name="sellmode-${token}" value="T" ${sellTChecked}> T</label>
                     <label><input type="radio" name="sellmode-${token}" value="U" ${sellUChecked}> U</label>
                     <label><input type="radio" name="sellmode-${token}" value="D" ${sellDChecked}> D</label>
+                    <label><input type="radio" name="sellmode-${token}" value="T" ${sellTChecked}> T</label>
                 </td>
             `;
             optionsTableBody.appendChild(row);
+            displayRowIndex++;
         }
         addBuyButtonListeners();
         // Re-apply TradingView buy validation: this table rebuild creates
@@ -1184,7 +1413,11 @@ filteredContracts.sort(([, a], [, b]) => {
                 const token = this.dataset.token;
                 const overrideInput = document.getElementById(`override-lots-${token}`);
                 const lotsToBuy = (overrideInput && overrideInput.value > 0) ? overrideInput.value : this.dataset.lots;
-                const strategyType =  document.querySelector(`input[name="type-${token}"]:checked`)?.value;
+                // Send the canonical strategy label (ULTRA_SCALPING /
+                // SCALPING / INTRA), not the raw radio value
+                // ('UltraScalping' would corrupt the position leg key).
+                const rawStrategy = document.querySelector(`input[name="type-${token}"]:checked`)?.value || 'UltraScalping';
+                const strategyType = mapValueToStrategy(rawStrategy);
                 const sellMode = document.querySelector(`input[name="sellmode-${token}"]:checked`)?.value || 'T';
                 const orderDetails = { token: token, tradingsymbol: this.dataset.tradingsymbol, lots: lotsToBuy,strategy:strategyType,SELL_MODE: sellMode };
                 socket.emit('place_buy_order', orderDetails);
@@ -1241,7 +1474,12 @@ filteredContracts.sort(([, a], [, b]) => {
         if (success && /refresh(ed|ing) position/i.test(message)) {
             return;
         }
-        
+
+        if (document.hidden) {
+            pendingStatusMessage = { message: message, type: success ? 'success' : 'error' };
+            return;
+        }
+
         if (success) {
             showInlineStatus(message, 'success');
         } else {
@@ -1255,18 +1493,199 @@ filteredContracts.sort(([, a], [, b]) => {
         } else {
             showInlineStatus(`Buy order failed for ${result.tradingsymbol}: ${result.error}`, 'error');
         }
+        // A resting BUY limit changes the order book.
+        socket.emit('request_pending_orders');
     });
 
     socket.on('sell_order_result', function (result) {
-    pendingSellSymbols.delete(result.tradingsymbol);
-    const sellBtn = positionsTableBody && positionsTableBody.querySelector(`.sell-button[data-tradingsymbol="${result.tradingsymbol}"]`);
+    const resultKey = result.position_key
+        ? positionDomId(result.position_key)
+        : result.tradingsymbol;
+    pendingSellSymbols.delete(resultKey);
+    const sellBtn = positionsTableBody && positionsTableBody.querySelector(`.sell-button[data-sellkey="${resultKey}"]`);
     if (sellBtn) { sellBtn.disabled = false; sellBtn.textContent = 'Sell'; }
     if (result.success) {
         showTransactionSuccess(`Sell order successful for ${result.tradingsymbol} (${result.lots} lots)`);
     } else {
         showInlineStatus(`Sell order failed for ${result.tradingsymbol}: ${result.error}`, 'error');
     }
+    // The sell just placed (or the U/D exit) changes the order book.
+    socket.emit('request_pending_orders');
     });
+
+    // --- PENDING ORDERS GRID ---
+    // Position-grid format, pending-order semantics.
+    //
+    // RELEVANT: Levels/XE/SPrice (from the contract table, or parsed
+    // from the symbol), Order Type, Limit Price (the resting price -
+    // the U/D exit target), BPrice (the joined leg's buy price),
+    // MPrice (live market, shows distance to fill), Lots/Qty, and the
+    // leg's Strategy/Sell Type when the order belongs to a position.
+    //
+    // DROPPED: P/L, %, PTS (nothing is realized while an order rests)
+    // and Symbol / Order ID / Order Status (per request; the cancel
+    // button still carries the order id internally).
+    //
+    // Orphan orders (never filled, e.g. stale market buys) have no leg:
+    // Strategy/Sell Type/BPrice show '--' and Levels/MPrice show '--'
+    // when the strike is outside the current contract window.
+    socket.on('update_pending_orders', function(orders) {
+        if (!pendingOrdersBody) return;
+        pendingOrdersBody.innerHTML = "";
+
+        const hasOrders = orders && orders.length > 0;
+        if (cancelAllBtn) {
+            // Re-enabled on every backend render; also resets the
+            // "Cancelling All.." state once the cancel batch completes.
+            cancelAllBtn.disabled = !hasOrders;
+            cancelAllBtn.textContent = 'Cancel All';
+        }
+
+        if (!hasOrders) {
+            pendingOrdersBody.innerHTML =
+                `<tr><td colspan="12" class="no-options">No pending orders</td></tr>`;
+            return;
+        }
+
+        orders.forEach(order => {
+            const row = document.createElement("tr");
+
+            const symbol = order.tradingsymbol || '';
+            const token = String(order.token || '');
+            const contract = allContracts[token] || {};
+            const { strikePrice, optionType } = resolveStrikeAndType(contract, symbol);
+            const level = contract.level || '';
+
+            // Join the order to its position leg (U/D exits belong to a
+            // leg; stale/unfilled buys have none).
+            let leg = null;
+            for (const key in openPositions) {
+                const p = openPositions[key];
+                if (String(p.instrument_token) === token
+                    || (symbol && p.tradingsymbol === symbol)) {
+                    leg = p;
+                    break;
+                }
+            }
+
+            const isBuy = String(order.transaction_type || '').toUpperCase() === 'BUY';
+            const isMcx = order.exchange === 'MCX';
+            const qtyUnits = Number(order.quantity) || 0;
+            const lotSize = Number(contract.lotsize || (leg ? leg.lotsize : 0) || 0);
+            const lots = (isMcx || lotSize <= 1) ? qtyUnits : qtyUnits / lotSize;
+
+            const limitPrice = Number(order.price);
+            const hasLimit = Number.isFinite(limitPrice) && limitPrice > 0;
+            const marketPrice = Number(
+                leg ? (leg.latest_price ?? leg.average_price) : contract.ltp
+            );
+
+            // BPrice: a resting BUY's limit IS its buy price; a SELL exit
+            // shows the buy price of the position it is exiting. Market
+            // orders have no limit (price 0) until they fill.
+            const bPrice = isBuy
+                ? (hasLimit ? limitPrice : (Number(order.average_price) || 0))
+                : (leg ? Number(leg.average_price) : NaN);
+            const strategyLabel = leg ? (leg.order_strategy || '--') : '--';
+            const sellTypeLabel = (!isBuy && leg) ? (leg.sell_mode || 'T') : '--';
+            const orderType = order.order_type || '--';
+
+            row.innerHTML = `
+                <td class="center">
+                    <button class="sell-button cancel-btn" data-orderid="${order.order_id}">Cancel</button>
+                </td>
+                <td>${level || '--'}</td>
+                <td>${optionType || '--'}</td>
+                <td>${strikePrice || '--'}</td>
+                <td>${orderType}</td>
+                <td>${hasLimit ? limitPrice.toFixed(2) : '--'}</td>
+                <td>${Number.isFinite(bPrice) && bPrice > 0 ? bPrice.toFixed(2) : '--'}</td>
+                <td>${Number.isFinite(marketPrice) && marketPrice > 0 ? marketPrice.toFixed(2) : '--'}</td>
+                <td>${Number.isFinite(lots) ? lots : '--'}</td>
+                <td>${qtyUnits || '--'}</td>
+                <td>${strategyLabel}</td>
+                <td>${sellTypeLabel}</td>
+            `;
+            pendingOrdersBody.appendChild(row);
+        });
+
+        addCancelOrderListeners();
+    });
+
+    function addCancelOrderListeners() {
+        if (!pendingOrdersBody) return;
+        pendingOrdersBody.querySelectorAll('.cancel-btn').forEach(btn => {
+            btn.addEventListener('click', function() {
+                const orderId = this.dataset.orderid;
+                this.disabled = true;
+                this.textContent = 'Cancelling..';
+                socket.emit('cancel_pending_order', { order_id: orderId });
+            });
+        });
+    }
+
+    // --- SELL ALL (position grid) / CANCEL ALL (pending grid) ---
+    // Single-click actions living in the status-bar row. Sell All emits
+    // the same per-leg payload as the row Sell buttons; Cancel All hits
+    // the backend bulk-cancel endpoint.
+    const sellAllBtn = document.getElementById('sellAllBtn');
+    const cancelAllBtn = document.getElementById('cancelAllBtn');
+
+    if (sellAllBtn) {
+        sellAllBtn.addEventListener('click', function() {
+            if (this.disabled) return;
+            const legKeys = Object.keys(openPositions);
+            if (!legKeys.length) return;
+
+            this.disabled = true;
+            this.textContent = 'Selling All..';
+
+            legKeys.forEach(key => {
+                const pos = openPositions[key];
+                if (!pos) return;
+                const sellKey = positionDomId(key);
+                if (pendingSellSymbols.has(sellKey)) return;   // already selling
+                const lotsToSell = pos.lots || pos.net_quantity || 0;
+                if (!lotsToSell) return;
+
+                pendingSellSymbols.add(sellKey);
+                const rowBtn = positionsTableBody && positionsTableBody.querySelector(`.sell-button[data-sellkey="${sellKey}"]`);
+                if (rowBtn) { rowBtn.disabled = true; rowBtn.textContent = 'Selling..'; }
+                // Same payload as the per-row Sell button - the backend
+                // handles U/D exit cancellation, paper/live routing etc.
+                socket.emit('place_sell_order', {
+                    token: key.split(':')[0],
+                    tradingsymbol: pos.tradingsymbol,
+                    lots: lotsToSell,
+                    position_key: key
+                });
+            });
+
+            // Rows re-enable individually via sell_order_result; this
+            // fallback restores the button even if some legs error out.
+            setTimeout(() => {
+                sellAllBtn.disabled = !Object.keys(openPositions).length;
+                sellAllBtn.textContent = 'Sell All';
+            }, 6000);
+        });
+    }
+
+    if (cancelAllBtn) {
+        cancelAllBtn.addEventListener('click', function() {
+            if (this.disabled) return;
+
+            this.disabled = true;
+            this.textContent = 'Cancelling All..';
+            socket.emit('cancel_all_pending_orders');
+
+            // The backend re-emits update_pending_orders on completion;
+            // fallback in case that never arrives.
+            setTimeout(() => {
+                this.disabled = !pendingOrdersBody || pendingOrdersBody.querySelectorAll('.cancel-btn').length === 0;
+                this.textContent = 'Cancel All';
+            }, 8000);
+        });
+    }
 
 
     function populatePositionsTable(positions) {
@@ -1275,83 +1694,75 @@ filteredContracts.sort(([, a], [, b]) => {
         
         if (!positions || Object.keys(positions).length === 0) {
             positionsTableBody.innerHTML = `<tr><td colspan="13" class="no-options">No open positions found.</td></tr>`;
+            if (sellAllBtn) { sellAllBtn.disabled = true; sellAllBtn.textContent = 'Sell All'; }
             return;
         }
-        for (const token in positions) {
+        if (sellAllBtn) sellAllBtn.disabled = false;
+        for (const positionKey in positions) {
         
-            const pos = positions[token];
+            const pos = positions[positionKey];
+            // Position keys are composite legs ("token:STRATEGY:MODE").
+            const token = String(positionKey).split(':')[0];
+            const domId = positionDomId(positionKey);
             const contract = allContracts[String(token)] || {};
             
             const plClass = (pos.pts_pl || 0) >= 0 ? 'profit' : 'loss';
             const row = document.createElement('tr');
-            row.id = `row-sell-${token}`;
-            const currentStrategy = pos.order_strategy || 'SCALPING';
+            row.id = `row-sell-${domId}`;
+            const currentStrategy = pos.order_strategy || 'ULTRA_SCALPING';
             const isIntraChecked = currentStrategy === 'INTRA' ? 'checked' : '';
             const isScalpingChecked = currentStrategy === 'SCALPING' ? 'checked' : '';
             const isUltraChecked = currentStrategy === 'ULTRA_SCALPING' ? 'checked' : '';
 
-            //'NIFTY-04Nov2025-25600-PE
-            //CRUDEOILM25NOV5600CE    
-            // let strikePrice = "";
+            // Reflect the actual sell mode recorded by the backend
+            // (defaults to 'T', matching the backend fallback).
+            const posSellMode = (pos.sell_mode || 'T').toUpperCase();
+            const posSellTChecked = posSellMode === 'T' ? 'checked' : '';
+            const posSellUChecked = posSellMode === 'U' ? 'checked' : '';
+            const posSellDChecked = posSellMode === 'D' ? 'checked' : '';
 
-            // if (pos.tradingsymbol) {
-            //     const match = pos.tradingsymbol.match(/(\d+)(?=CE|PE)/i);
-            //     if (match) {
-            //         strikePrice = match[1].slice(-5); // last 5 digits = strike
-            //     }
-            // }
+            const { strikePrice, optionType } = resolveStrikeAndType(contract, pos.tradingsymbol);
 
-            let strikePrice = contract.strike || contract.strike_price || "";
-            let optionType = contract.call_or_put || "";
-
-            if (pos.tradingsymbol) {
-                const match = pos.tradingsymbol.match(/(?:-|\s)(\d+(?:\.\d+)?)[-\s](CE|PE)$/i)
-                    || pos.tradingsymbol.match(/(\d+)(CE|PE)$/i);
-
-                if (match) {
-                    strikePrice = match[1].replace(/\.00$/, '');
-                    optionType = match[2].toUpperCase();
-                }
-            }
-
-            const level = pos.level || contract.level || '';
-            const sellPending = pendingSellSymbols.has(pos.tradingsymbol);
+            const level = pos.level || contract.level || computeLevelFromWindow(strikePrice, optionType);
+            const sellPending = pendingSellSymbols.has(domId);
 
             
 
 
-
             row.innerHTML = `
                 <td class="center">
-                    <button class="sell-button" data-token="${token}" data-tradingsymbol="${pos.tradingsymbol}" data-lots="${pos.lots || 0}" data-quantity="${pos.net_quantity || 0}" data-lotsize="${pos.lotsize || ''}" ${sellPending ? 'disabled' : ''}>${sellPending ? 'Selling..' : 'Sell'}</button>
+                    <button class="sell-button" data-token="${token}" data-tradingsymbol="${pos.tradingsymbol}" data-positionkey="${positionKey}" data-sellkey="${domId}" data-lots="${pos.lots || 0}" data-quantity="${pos.net_quantity || 0}" data-lotsize="${pos.lotsize || ''}" ${sellPending ? 'disabled' : ''}>${sellPending ? 'Selling..' : 'Sell'}</button>
                 </td>                        
-                <td id="total-pl-${token}" class="${plClass}">${(pos.total_pl || 0).toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
-                <td id="pct-${token}" class="${plClass}">${(pos.pct_pl || 0).toFixed(2)}</td>
-                <td id="pts-${token}" class="${plClass}">${(pos.pts_pl || 0).toFixed(2)}</td>
+                <td id="total-pl-${domId}" class="${plClass}">${(pos.total_pl || 0).toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+                <td id="pct-${domId}" class="${plClass}">${(pos.pct_pl || 0).toFixed(2)}</td>
+                <td id="pts-${domId}" class="${plClass}">${(pos.pts_pl || 0).toFixed(2)}</td>
+                <td><input type="number" class="bp-override-input" id="bp-override-${domId}" step="0.5" min="0" placeholder="%" value="${pos.override_book_profit_pct ?? ''}"></td>
                 <td>${level}</td>
                 <td>${optionType || ''}</td>
                 <td>${strikePrice || ''}</td>
-                <td id="buy-price-${token}" class="${temporaryBuyPriceTokens.has(token) ? 'temporary-buy-price' : ''}">
+                <td id="buy-price-${domId}" class="${temporaryBuyPriceTokens.has(domId) ? 'temporary-buy-price' : ''}">
                     ${(pos.average_price || 0).toFixed(2)}
                 </td>
-                <td id="market-price-${token}">${(pos.latest_price || pos.average_price).toFixed(2)}</td>
+                <td id="market-price-${domId}">${(pos.latest_price || pos.average_price).toFixed(2)}</td>
                 <td>${pos.lots || 0}</td>
-                <td><input type="number" class="lots-override-input" id="override-lots-sell-${token}" placeholder="${pos.lots || 0}"></td>
+                <td><input type="number" class="lots-override-input" id="override-lots-sell-${domId}" placeholder="${pos.lots || 0}"></td>
+                <td id="pos-code-${domId}" class="leg-code-cell">${legCode(currentStrategy, posSellMode)}</td>
                 <td class="type-cell">
-                    <label><input type="radio" name="sell-type-${token}" value="Intra" ${isIntraChecked}> I</label>
-                    <label><input type="radio" name="sell-type-${token}" value="Scalping" ${isScalpingChecked}> S</label>
-                    <label><input type="radio" name="sell-type-${token}" value="UltraScalping" ${isUltraChecked}> U</label>
+                    <label><input type="radio" name="sell-type-${domId}" value="UltraScalping" ${isUltraChecked}> U</label>
+                    <label><input type="radio" name="sell-type-${domId}" value="Scalping" ${isScalpingChecked}> S</label>
+                    <label><input type="radio" name="sell-type-${domId}" value="Intra" ${isIntraChecked}> I</label>
                 </td>
                 <td class="type-cell">
-                    <label><input type="radio" name="sellmode-pos-${token}" value="T"> T</label>
-                    <label><input type="radio" name="sellmode-pos-${token}" value="U"> U</label>
-                    <label><input type="radio" name="sellmode-pos-${token}" value="D" checked> D</label>
+                    <label><input type="radio" name="sellmode-pos-${domId}" value="U" ${posSellUChecked}> U</label>
+                    <label><input type="radio" name="sellmode-pos-${domId}" value="D" ${posSellDChecked}> D</label>
+                    <label><input type="radio" name="sellmode-pos-${domId}" value="T" ${posSellTChecked}> T</label>
                 </td>
             `;
         positionsTableBody.appendChild(row);
         }
         addSellButtonListeners();
         addStrategyRadioListeners();
+        addBookProfitInputListeners();
     }
 
     function addSellButtonListeners() {
@@ -1360,22 +1771,24 @@ filteredContracts.sort(([, a], [, b]) => {
             button.addEventListener('click', function() {
                 const token = this.dataset.token;
                 const symbol = this.dataset.tradingsymbol;
-                if (pendingSellSymbols.has(symbol)) return;
-                const overrideInput = document.getElementById(`override-lots-sell-${token}`);
+                const positionKey = this.dataset.positionkey;
+                const sellKey = this.dataset.sellkey;
+                if (pendingSellSymbols.has(sellKey)) return;
+                const overrideInput = document.getElementById(`override-lots-sell-${sellKey}`);
                 const lotsToSell = (overrideInput && overrideInput.value > 0) ? overrideInput.value : this.dataset.lots;
                 const lotSize = parseInt(this.dataset.lotsize || 0);
                 const displayQuantity = (lotSize > 0) ? (lotsToSell) : this.dataset.quantity;
-                pendingSellSymbols.add(symbol);
+                pendingSellSymbols.add(sellKey);
                 this.disabled = true;
                 this.textContent = 'Selling..';
                 setTimeout(() => {
-                    if (pendingSellSymbols.delete(symbol)) {
-                        const btn = positionsTableBody && positionsTableBody.querySelector(`.sell-button[data-tradingsymbol="${symbol}"]`);
+                    if (pendingSellSymbols.delete(sellKey)) {
+                        const btn = positionsTableBody && positionsTableBody.querySelector(`.sell-button[data-sellkey="${sellKey}"]`);
                         if (btn) { btn.disabled = false; btn.textContent = 'Sell'; }
                     }
                 }, 10000);
                 // if (confirm(`Are you sure you want to sell ${displayQuantity} shares (${lotsToSell} lots) of ${this.dataset.tradingsymbol}?`)) {
-                socket.emit('place_sell_order', { token: token, tradingsymbol: symbol, lots: lotsToSell });
+                socket.emit('place_sell_order', { token: token, tradingsymbol: symbol, lots: lotsToSell, position_key: positionKey });
                     // alert(`Sell order for ${lotsToSell} lots sent!`);
                 // }
             });
@@ -1383,15 +1796,46 @@ filteredContracts.sort(([, a], [, b]) => {
     }
 
     // --- STRATEGY RADIO LISTENERS ---
+    function addBookProfitInputListeners() {
+        if (!positionsTableBody) return;
+        positionsTableBody.querySelectorAll('.bp-override-input').forEach(input => {
+            input.removeEventListener('change', handleBookProfitInputChange);
+            input.addEventListener('change', handleBookProfitInputChange);
+        });
+    }
+
+    function handleBookProfitInputChange(event) {
+        // Recover the position key from the row's sell button; a cleared
+        // / invalid entry means 0 = no auto profit-booking for this leg.
+        const row = event.target.closest('tr');
+        const sellBtn = row ? row.querySelector('.sell-button[data-positionkey]') : null;
+        if (!sellBtn) return;
+        const raw = parseFloat(event.target.value);
+        const bp = isFinite(raw) && raw > 0 ? raw : 0;
+        socket.emit('position_book_profit_updated', {
+            position_key: sellBtn.dataset.positionkey || '',
+            instrument_token: sellBtn.dataset.token || '',
+            book_profit_pct: bp
+        });
+    }
+
     function addStrategyRadioListeners() {
         optionsTableBody.querySelectorAll('input[type="radio"][name^="type-"]').forEach(radio => {
             radio.removeEventListener('change', handleBuyRadioChange);
             radio.addEventListener('change', handleBuyRadioChange);
         });
+        optionsTableBody.querySelectorAll('input[type="radio"][name^="sellmode-"]').forEach(radio => {
+            radio.removeEventListener('change', handleBuySellModeRadioChange);
+            radio.addEventListener('change', handleBuySellModeRadioChange);
+        });
         if (positionsTableBody) {
             positionsTableBody.querySelectorAll('input[type="radio"][name^="sell-type-"]').forEach(radio => {
                 radio.removeEventListener('change', handleSellRadioChange);
                 radio.addEventListener('change', handleSellRadioChange);
+            });
+            positionsTableBody.querySelectorAll('input[type="radio"][name^="sellmode-pos-"]').forEach(radio => {
+                radio.removeEventListener('change', handleSellModeRadioChange);
+                radio.addEventListener('change', handleSellModeRadioChange);
             });
         }
     }
@@ -1408,21 +1852,64 @@ filteredContracts.sort(([, a], [, b]) => {
             const payload = { "tradingsymbol": tradingsymbol, "instrument_token": token, "strategy_type": strategyType };
             console.log('Emitting order strategy update:', payload);
             socket.emit('order_strategy_data_updated_orders', payload);
+            // Remember the manual choice locally so table re-renders
+            // (chain refresh / ATM drift) keep the radio as selected.
+            orderStrategyMapping[token] = strategyType;
+            manuallySetStrategyTokens.add(token);
+            saveManualStrategyTokens();
+            updateBuyCodeCell(token);
         }
     }
 
     function handleSellRadioChange(event) {
          if (event.target.checked) {
-            const token = event.target.name.replace('sell-type-', '');
-            const row = document.getElementById(`row-sell-${token}`);
+            // Radio names carry the sanitized position-leg key
+            // (":" replaced with "_"); rebuild the composite key so the
+            // backend updates only this leg's strategy.
+            const domId = event.target.name.replace('sell-type-', '');
+            const row = document.getElementById(`row-sell-${domId}`);
             if (!row) return;
             const sellButton = row.querySelector('.sell-button');
             const tradingsymbol = sellButton ? sellButton.dataset.tradingsymbol : '';
+            const positionKey = sellButton ? sellButton.dataset.positionkey : '';
+            const token = positionKey ? positionKey.split(':')[0] : domId.split('_')[0];
             const selectedValue = event.target.value;
             let strategyType = mapValueToStrategy(selectedValue);
             const payload = { "tradingsymbol": tradingsymbol, "instrument_token": token, "strategy_type": strategyType };
+            if (positionKey) payload["position_key"] = positionKey;
             console.log('Emitting position strategy update:', payload);
             socket.emit('order_strategy_data_updated_positions', payload);
+            updatePositionCodeCell(domId);
+        }
+    }
+
+    function handleSellModeRadioChange(event) {
+         if (event.target.checked) {
+            // Per-leg Sell Type switch: the leg key comes from the
+            // sanitized radio name; the backend updates that leg's
+            // sell_mode so the TP/SL watcher applies the right mode.
+            const domId = event.target.name.replace('sellmode-pos-', '');
+            const row = document.getElementById(`row-sell-${domId}`);
+            if (!row) return;
+            const sellButton = row.querySelector('.sell-button');
+            const tradingsymbol = sellButton ? sellButton.dataset.tradingsymbol : '';
+            const positionKey = sellButton ? sellButton.dataset.positionkey : '';
+            const token = positionKey ? positionKey.split(':')[0] : domId.split('_')[0];
+            const payload = {
+                "tradingsymbol": tradingsymbol,
+                "instrument_token": token,
+                "sell_mode": event.target.value
+            };
+            if (positionKey) payload["position_key"] = positionKey;
+            console.log('Emitting position sell mode update:', payload);
+            socket.emit('position_sell_mode_updated', payload);
+            updatePositionCodeCell(domId);
+        }
+    }
+
+    function handleBuySellModeRadioChange(event) {
+        if (event.target.checked) {
+            updateBuyCodeCell(event.target.name.replace('sellmode-', ''));
         }
     }
 

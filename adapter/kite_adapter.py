@@ -3,6 +3,7 @@ from datetime import datetime
 import calendar
 import csv
 import threading
+import time
 from pprint import pprint
 from loguru import logger
 
@@ -47,8 +48,9 @@ class KiteAdapter(BrokerInterface):
         key = "NIFTY_ORDER_FREEZE_LIMIT" if str(self._underlying) == "NIFTY" else "SENSEX_ORDER_FREEZE_LIMIT"
         value = int(fetch_from_json("appconfig.json", key) or 0)
         if value <= 0:
-            logger.warning(f"{key} missing or invalid in appconfig.json; using 1 to avoid split-order division errors")
-            return 1
+            default = 1800 if str(self._underlying) == "NIFTY" else 1000
+            logger.warning(f"{key} missing or invalid in appconfig.json; using exchange default {default}")
+            return default
         return value
 
     def _fallback_ltp(self, tradingsymbol):
@@ -246,7 +248,22 @@ class KiteAdapter(BrokerInterface):
         except Exception as e:
             logger.error(f"Kite fund summary error : {e}")
         return
-    
+
+    def fetch_day_start_cash(self):
+        logger.info("Fetching start-of-day cash (opening_balance) from Kite...")
+        try:
+            margins = self.kite.margins() or {}
+            opening_balance = (
+                margins.get("equity", {}).get("available", {}) or {}
+            ).get("opening_balance")
+            if opening_balance is None:
+                logger.warning("opening_balance not present in Kite margins response")
+                return None
+            return float(opening_balance)
+        except Exception as e:
+            logger.error(f"Kite day-start cash error : {e}")
+        return
+
     def fetch_instrument_quote(self , exchange , instrument):
         try:
             formatted_instrument = f"{exchange}:{instrument}"
@@ -318,7 +335,7 @@ class KiteAdapter(BrokerInterface):
             return f"{underlying}{yy}{month_char}{dd_str}{strike}{call_or_put}"
     
     #self._broker.buy_units(order_details["tradingsymbol"] , order_details["token"] , order_details["lots"] , self._exchange , ltp,self._mode,sell_mode,target_profit)
-    def buy_units(self, trading_symbol, instrument_token, quantity , exchange , ltp,mode="",sell_mode="",target_profit=0):
+    def buy_units(self, trading_symbol, instrument_token, quantity , exchange , ltp,mode="",sell_mode="",target_profit=0,strategy=""):
         logger.info(f"Buying units: {quantity} of {trading_symbol} ({instrument_token}) via KiteAPI...Current LTP: {ltp}...Mode is {mode}. Sell Mode is {sell_mode}, target_profit is {target_profit}")
         #logger.debug(f"Inside Buy Units trading symbol: {trading_symbol} instrument token: {instrument_token}, quantity: {quantity} lots, exchange: {exchange}, ltp: {ltp}" )
         # data = shared_state.latest_tradingview_data
@@ -348,7 +365,7 @@ class KiteAdapter(BrokerInterface):
                     product = self.kite.PRODUCT_MIS,
                     variety=self.kite.VARIETY_REGULAR, 
                     price = price
-            )
+                )
             else:
                 # order_type = self.kite.ORDER_TYPE_MARKET
                 # quantity = int(quantity) * int(lotsize)
@@ -404,36 +421,153 @@ class KiteAdapter(BrokerInterface):
                         iceberg_legs=iceberg_legs,
                         iceberg_quantity= self._get_order_freeze_limit()
                     )
-                    logger.info("Kite buy order placed successfully")
 
-                    # =========================================================
-                    # FAST POSITION GRID UPDATE
-                    # =========================================================
-                    # BUY has been successfully accepted by Kite.
-                    # Immediately show the current LTP as the temporary BUY price.
-                    # The authoritative BUY price will be calculated later by
-                    # refresh_open_pos_buy_price().
-                    self._trader.fast_update_position_after_buy(
-                        trading_symbol=trading_symbol,
-                        instrument_token=instrument_token,
-                        quantity=int(quantity) // int(lotsize),
-                        lotsize=lotsize,
-                        executed_buy_price=ltp,
-                        exchange=exchange
+            logger.info("Kite buy order placed successfully")
+
+            # =========================================================
+            # FAST POSITION GRID UPDATE (normal, iceberg and MCX paths)
+            # =========================================================
+            # BUY has been successfully accepted by Kite.
+            # Immediately show the current LTP as the temporary BUY price.
+            # The authoritative BUY price will be calculated later by
+            # refresh_open_pos_buy_price().
+            grid_qty = int(quantity) if exchange == "MCX" else int(quantity) // int(lotsize)
+            self._trader.fast_update_position_after_buy(
+                trading_symbol=trading_symbol,
+                instrument_token=instrument_token,
+                quantity=grid_qty,
+                lotsize=lotsize,
+                executed_buy_price=ltp,
+                exchange=exchange,
+                strategy=strategy,
+                sell_mode=sell_mode or "T"
+            )
+
+            # =========================================================
+            # EXIT ORDER FOR SELL TYPES U / D (mirrors the MStock flow)
+            #   U: SELL LIMIT at LTP + target immediately (no fill wait)
+            #   D: SELL LIMIT at executed buy price + target (fill-accurate)
+            # Sell Type T places nothing - the TP/SL watcher manages it.
+            # =========================================================
+            if mode == "LIVE" and sell_mode in ("U", "D"):
+                if target_profit <= 0:
+                    logger.warning(
+                        f"Sell Mode {sell_mode} with target_profit "
+                        f"{target_profit}; skipping the immediate exit "
+                        f"order (watcher will manage the position)."
                     )
+                else:
+                    if sell_mode == "D":
+                        buy_price = self.fetch_order_executed_price(order_id)
+                        if buy_price is None:
+                            buy_price = float(ltp)
+                            logger.warning(
+                                f"Executed price unavailable for order "
+                                f"{order_id}; using buy LTP {buy_price} "
+                                f"for the immediate sell"
+                            )
+                        exit_price = buy_price + target_profit
+                    else:  # U
+                        exit_price = float(ltp) + target_profit
 
-                    self._trader.frontend_data_socket.emit(
-                        'status_message',
-                        {"success": True, "message": "Order placed successfully"}
+                    self.place_exit_limit(
+                        trading_symbol,
+                        instrument_token,
+                        grid_qty,
+                        exchange,
+                        exit_price
                     )
+            elif mode == "LIVE" and sell_mode == "T":
+                logger.debug("Waiting for Trigger to raise the Sell order")
 
-                    return order_id
+            self._trader.frontend_data_socket.emit(
+                'status_message',
+                {"success": True, "message": "Order placed successfully"}
+            )
+
+            return order_id
         except Exception as e:
             logger.error(f"Error in kite buy order {e}")
             self._trader.frontend_data_socket.emit('status_message', {"success": False, "message": "Error placing order..."})
+
+    def buy_sell_units(self, trading_symbol, instrument_token, quantity, exchange, ltp, mode="", sell_mode="", target_profit=0, strategy=""):
+        """Sell Type U entry point: BUY + immediate SELL LIMIT at LTP + target.
+
+        Mirrors MStock's buy_sell_units - the exit is placed aggressively
+        before the fill price is known, so the order sits in the sell
+        queue while the premium is still spiking.
+        """
+        return self.buy_units(
+            trading_symbol,
+            instrument_token,
+            quantity,
+            exchange,
+            ltp,
+            mode=mode,
+            sell_mode="U",
+            target_profit=target_profit,
+            strategy=strategy
+        )
+
+    def place_exit_limit(self, trading_symbol, instrument_token, quantity, exchange, price):
+        """Place a SELL LIMIT exit order. quantity is in LOTS.
+
+        Used by the U/D immediate exit at buy time and to re-place a
+        partial leg's exit after a manual partial sell.
+        """
+        try:
+            instrument_details = self.get_instrument_details(trading_symbol)
+            lotsize = instrument_details["lot_size"]
+            tick = instrument_details.get("tick_size") or 0.05
+
+            # Mirror the buy-side quantity semantics: units for NFO/BFO,
+            # lots for MCX.
+            order_qty = int(quantity) if exchange == "MCX" else int(quantity) * int(lotsize)
+            limit_price = round_to_tick(float(price), tick, up=True)
+
+            order_id = self.kite.place_order(
+                tradingsymbol=trading_symbol,
+                exchange = exchange,
+                transaction_type=self.kite.TRANSACTION_TYPE_SELL,
+                quantity=str(order_qty),
+                order_type = self.kite.ORDER_TYPE_LIMIT,
+                product = self.kite.PRODUCT_MIS,
+                variety=self.kite.VARIETY_REGULAR,
+                price = limit_price
+            )
+            logger.info(
+                f"Kite SELL LIMIT exit placed at {limit_price} for "
+                f"{trading_symbol} ({quantity} lots)"
+            )
+            self._trader.frontend_data_socket.emit(
+                'sell_order_result',
+                {"success": True, "tradingsymbol": trading_symbol, "lots": int(quantity), "Sell Price": limit_price}
+            )
+            return order_id
+        except Exception as e:
+            logger.error(f"Kite place_exit_limit failed for {trading_symbol}: {e}")
+            return None
+
+    def fetch_order_executed_price(self, order_id):
+        """Fetch the executed average price of a completed Kite order."""
+        try:
+            history = self.kite.order_history(str(order_id))
+            status = str(history.get("status", "")).upper()
+            avg_price = history.get("average_price")
+            if status == "COMPLETE" and avg_price:
+                return float(avg_price)
+            logger.warning(
+                f"Kite order {order_id} not fully traded (status {status}); "
+                f"no executed price yet"
+            )
+            return None
+        except Exception as e:
+            logger.error(f"Kite fetch_order_executed_price error for {order_id}: {e}")
+            return None
+
     
 
-    def sell_units(self, trading_symbol, instrument_token , quantity, exchange , ltp):
+    def sell_units(self, trading_symbol, instrument_token , quantity, exchange , ltp, position_key=""):
         logger.debug(f"Inside sell units trading symbol: {trading_symbol} instrument token: {instrument_token} quantity: {quantity} exchange: {exchange} ltp: {ltp}" )
         original_quantity = quantity
         try:
@@ -541,12 +675,12 @@ class KiteAdapter(BrokerInterface):
 
             logger.info(f"Kite Sell order placed successfully. Order ID: {order_id}")
             self._trader.frontend_data_socket.emit('status_message',{"success": True, "message": "Order executed successfully"})
-            self._trader.frontend_data_socket.emit('sell_order_result',{"success": True, "tradingsymbol": trading_symbol , "lots": original_quantity})
+            self._trader.frontend_data_socket.emit('sell_order_result',{"success": True, "tradingsymbol": trading_symbol , "lots": original_quantity, "position_key": position_key})
             return order_id
         except Exception as e:
             logger.error(f"Kite sell_units error: {e}")
             self._trader.frontend_data_socket.emit('status_message', {"success": False, "message": "Error placing order..."})
-            self._trader.frontend_data_socket.emit('sell_order_result',{"success": False, "tradingsymbol": trading_symbol , "error": str(e)})
+            self._trader.frontend_data_socket.emit('sell_order_result',{"success": False, "tradingsymbol": trading_symbol , "position_key": position_key, "error": str(e)})
             return None
 
     def subscribe_to_all(self, instruments):
@@ -959,9 +1093,74 @@ class KiteAdapter(BrokerInterface):
             return {}
 
         
+    def cancel_order(self, order_id):
+        logger.info(f"Cancelling order: {order_id} via Kite...")
+        try:
+            self.kite.cancel_order(order_id)
+            logger.info(f"Order {order_id} cancelled successfully.")
+            return True
+        except Exception as e:
+            logger.error(f"Cancel order error for {order_id}: {e}")
+            return False
+
+    def cancel_all_pending_orders(self):
+        logger.info("Cancelling ALL pending orders via Kite...")
+        try:
+            pending_orders = self.fetch_all_pending_orders()
+            logger.info(f"Pending orders found: {len(pending_orders)}")
+
+            cancelled = 0
+            for order in pending_orders:
+                order_id = order.get("order_id")
+                if not order_id:
+                    logger.error(f"Skipping—order has no order_id: {order}")
+                    continue
+
+                if self.cancel_order(order_id):
+                    cancelled += 1
+
+                # Kite rate-limits order requests; pace the burst.
+                time.sleep(0.3)
+
+            logger.info(f"Cancelled {cancelled}/{len(pending_orders)} pending orders.")
+            return cancelled
+        except Exception as e:
+            logger.error(f"Cancel all pending orders error: {e}")
+            return 0
+
     def fetch_all_pending_orders(self):
         logger.info("Fetching pending orders from Kite API...")
-        # This was implemented in MStock when user wants to cancel an order for one or the other reason. We are not using this feature in MStock itself. So for now dont need to implement this in Kite. We can always implement this in future if we want to use the order cancellation feature.
-        return []
+        try:
+            orders = self.kite.orders() or []
+
+            terminal_statuses = ("COMPLETE", "REJECTED", "CANCELLED")
+            pending_orders = [
+                {
+                    "tradingsymbol": o.get("tradingsymbol"),
+                    "timestamp": o.get("order_timestamp"),
+                    "transaction_type": o.get("transaction_type"),
+                    "quantity": o.get("quantity"),
+                    "average_price": o.get("average_price"),
+                    # Resting LIMIT price (the U/D exit target); stays
+                    # the order's limit while pending, unlike
+                    # average_price which only fills in as the order
+                    # executes.
+                    "price": o.get("price"),
+                    "order_type": o.get("order_type"),
+                    "order_status": o.get("status"),
+                    "order_id": o.get("order_id"),
+                    # For the pending-grid joins (position leg + lot size).
+                    "token": str(o.get("instrument_token") or ""),
+                    "exchange": o.get("exchange"),
+                }
+                for o in orders
+                if str(o.get("status", "") or "").upper() not in terminal_statuses
+            ]
+
+            logger.info(f"Total orders: {len(orders)}, Pending: {len(pending_orders)}")
+            return pending_orders
+        except Exception as e:
+            logger.error(f"Error fetching pending orders: {e}")
+            return []
 
 
