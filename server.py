@@ -3,6 +3,7 @@ import threading
 import logging
 import asyncio
 import os
+import subprocess
 import time
 import pandas as pd
 
@@ -10,6 +11,7 @@ from flask import Flask, jsonify, request, Response, render_template, redirect
 from flask_cors import CORS
 from datetime import datetime
 from datetime import timedelta
+import pytz
 
 
 from core.trade_logic import Trader_Singleton
@@ -129,6 +131,17 @@ logger.info("Logger initialized successfully")
 app = Flask(__name__)
 CORS(app)
 
+@app.after_request
+def no_cache_html(response):
+    # App-mode browser windows have no working reload shortcut, so stale
+    # HTML would survive Ctrl+F5-less restarts. HTML pages are always
+    # revalidated; API/Excel responses are unaffected.
+    if response.mimetype == "text/html":
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+    return response
+
 BROKER_MAP = {"KITE": KiteAdapter, "MSTOCK": MStockAdapter, "SIMULATOR": SimulatorAdapter, "PLAYBACK": PlaybackAdapter}
 
 try:
@@ -205,52 +218,135 @@ shutdown_event = threading.Event()
 
 APPCONFIG_FILE = resolve_data_path("appconfig.json")
 
+# Logical groups for appconfig.json. The file on disk is nested by these
+# groups; the config UI posts a flat {key: value} map and the save route
+# places each key back into its group via this map (see
+# _unflatten_config). Keys not listed here (e.g. the runtime-written
+# SELL_MODE) are preserved at the top level.
+APPCONFIG_GROUPS = {
+    "session": ["MODE", "BROKER", "UNDERLYING"],
+    "gating": ["TV_DATA_Validation_REQUIRED", "MARGIN_USAGE_PCT"],
+    "trigger": ["COMPARISON_FUNCTION"],
+    "pct": [
+        "PCT_BOOK_PROFIT", "PCT_STOP_LOSS",
+        "PCT_PROFIT_INTRA_FACTOR", "PCT_PROFIT_SCALPING_FACTOR", "PCT_PROFIT_ULTRA_SCALPING_FACTOR",
+    ],
+    "pnt": [
+        "PTS_PROFIT", "PTS_LOSS",
+        "PTS_PROFIT_INTRA_FACTOR", "PTS_PROFIT_SCALPING_FACTOR", "PTS_PROFIT_ULTRA_SCALPING_FACTOR",
+    ],
+    "signals": ["INTRA_EMA", "SCALPING_EMA", "ULTRA_SCALPING_EMA", "EMA_TOLERANCE_PTS"],
+    "market": [
+        "NIFTY_ORDER_FREEZE_LIMIT", "SENSEX_ORDER_FREEZE_LIMIT",
+        "NIFTY_FALLBACK_LTP", "SENSEX_FALLBACK_LTP",
+        "LOT_SIZE_CRUDEOIL", "LOT_SIZE_CRUDEOILM",
+        "WOC_CALL_FACTOR", "WOC_PUT_FACTOR",
+    ],
+    "protection": [
+        "LIMIT_MARGIN_PCT_LT_10", "LIMIT_MARGIN_PCT_10_100",
+        "LIMIT_MARGIN_PCT_100_500", "LIMIT_MARGIN_PCT_GT_500",
+        "LIMIT_MARGIN_MIN_PTS", "LIMIT_MARGIN_MAX_PTS",
+    ],
+    "cash": ["CASH_BALANCE_PAPER_TRADING", "FALLBACK_CASH_BALANCE", "POSITION_PNL_LOG_FREQ"],
+    "charges": [
+        "BROKERAGE_PER_ORDER", "BROKERAGE_PER_ORDER_KITE",
+        "OPTIONS_STT_SELL_PCT", "OPTIONS_STT_SELL_PCT_KITE",
+        "TXN_CHARGES_NSE_PCT", "TXN_CHARGES_BSE_PCT",
+        "SEBI_CHARGES_PER_CRORE", "GST_PCT", "STAMP_DUTY_BUY_PCT",
+    ],
+}
+
+_KEY_TO_GROUP = {
+    key: group for group, keys in APPCONFIG_GROUPS.items() for key in keys
+}
+
+
+def _unflatten_config(flat_data, existing):
+    """
+    Merge a flat {key: value} map (e.g. posted by the config UI) into the
+    nested appconfig structure. Known keys land in their APPCONFIG_GROUPS
+    group (merged per-key so keys not on the UI form survive); unknown
+    keys are preserved at the top level.
+    """
+    groups = {
+        group: dict(existing.get(group, {}))
+        for group in APPCONFIG_GROUPS
+        if isinstance(existing.get(group), dict)
+    }
+    top = {k: v for k, v in existing.items() if not isinstance(v, dict)}
+
+    for key, value in flat_data.items():
+        group = _KEY_TO_GROUP.get(key)
+        if group:
+            groups.setdefault(group, {})[key] = value
+        else:
+            top[key] = value
+
+    result = dict(top)
+    result.update(groups)
+    return result
+
+
 # Default appconfig (used if the file is missing); mirrors
 # appconfig.example.json.
 APPCONFIG_DEFAULTS = {
-    "MODE": "LIVE",
-    "MARGIN_USAGE_PCT": 0.9,
-    "COMPARISON_FUNCTION": ["PCT"],
-    "PCT_BOOK_PROFIT": "3",
-    "PCT_STOP_LOSS": "3",
-    "PCT_PROFIT_INTRA_FACTOR": "4",
-    "PCT_PROFIT_SCALPING_FACTOR": "2",
-    "PCT_PROFIT_ULTRA_SCALPING_FACTOR": "1",
-    "PTS_PROFIT": "1",
-    "PTS_LOSS": "5",
-    "PTS_PROFIT_INTRA_FACTOR": "10",
-    "PTS_PROFIT_SCALPING_FACTOR": "4",
-    "PTS_PROFIT_ULTRA_SCALPING_FACTOR": "2.5",
-    "INTRA_EMA": "1mEMA50",
-    "SCALPING_EMA": "1mEMA9",
-    "ULTRA_SCALPING_EMA": "15sEMA9",
-    "EMA_TOLERANCE_PTS": "5",
-    "STOP_LOSS_INTRA": "1M_MACD",
-    "STOP_LOSS_SCALPING": "15S_MACD",
-    "STOP_LOSS_ULTRA_SCALPING": "5S_MACD",
-    "ENTRY_CHECK_INTRA": "1M_MACD",
-    "ENTRY_CHECK_SCALPING": "15S_MACD",
-    "ENTRY_CHECK_ULTRA_SCALPING": "15S_MACD",
-    "POSITION_PNL_LOG_FREQ": "60",
-    "CASH_BALANCE_PAPER_TRADING": "100000",
-    "FALLBACK_CASH_BALANCE": "10000",
-    "TV_DATA_Validation_REQUIRED": False,
-    "UNDERLYING": "NIFTY",
-    "BROKER": "MSTOCK",
-    "NIFTY_ORDER_FREEZE_LIMIT": "1755",
-    "SENSEX_ORDER_FREEZE_LIMIT": "500",
-    "LIMIT_MARGIN_PCT_LT_10": "5",
-    "LIMIT_MARGIN_PCT_10_100": "3",
-    "LIMIT_MARGIN_PCT_100_500": "2",
-    "LIMIT_MARGIN_PCT_GT_500": "1",
-    "LIMIT_MARGIN_MIN_PTS": "0.05",
-    "LIMIT_MARGIN_MAX_PTS": "3.0",
-    "LOT_SIZE_CRUDEOIL": "100",
-    "LOT_SIZE_CRUDEOILM": "10",
-    "NIFTY_FALLBACK_LTP": "24000",
-    "SENSEX_FALLBACK_LTP": "85600",
-    "WOC_CALL_FACTOR": 8,
-    "WOC_PUT_FACTOR": -8
+    "session": {"MODE": "LIVE", "BROKER": "MSTOCK", "UNDERLYING": "NIFTY"},
+    "gating": {"TV_DATA_Validation_REQUIRED": False, "MARGIN_USAGE_PCT": "0.9"},
+    "trigger": {"COMPARISON_FUNCTION": ["PCT"]},
+    "pct": {
+        "PCT_BOOK_PROFIT": "3",
+        "PCT_STOP_LOSS": "3",
+        "PCT_PROFIT_INTRA_FACTOR": "4",
+        "PCT_PROFIT_SCALPING_FACTOR": "2",
+        "PCT_PROFIT_ULTRA_SCALPING_FACTOR": "1"
+    },
+    "pnt": {
+        "PTS_PROFIT": "1",
+        "PTS_LOSS": "5",
+        "PTS_PROFIT_INTRA_FACTOR": "10",
+        "PTS_PROFIT_SCALPING_FACTOR": "4",
+        "PTS_PROFIT_ULTRA_SCALPING_FACTOR": "2.5"
+    },
+    "signals": {
+        "INTRA_EMA": "1mEMA50",
+        "SCALPING_EMA": "1mEMA9",
+        "ULTRA_SCALPING_EMA": "15sEMA9",
+        "EMA_TOLERANCE_PTS": "5"
+    },
+    "market": {
+        "NIFTY_ORDER_FREEZE_LIMIT": "1755",
+        "SENSEX_ORDER_FREEZE_LIMIT": "500",
+        "NIFTY_FALLBACK_LTP": "24000",
+        "SENSEX_FALLBACK_LTP": "85600",
+        "LOT_SIZE_CRUDEOIL": "100",
+        "LOT_SIZE_CRUDEOILM": "10",
+        "WOC_CALL_FACTOR": 8,
+        "WOC_PUT_FACTOR": -8
+    },
+    "protection": {
+        "LIMIT_MARGIN_PCT_LT_10": "5",
+        "LIMIT_MARGIN_PCT_10_100": "3",
+        "LIMIT_MARGIN_PCT_100_500": "2",
+        "LIMIT_MARGIN_PCT_GT_500": "1",
+        "LIMIT_MARGIN_MIN_PTS": "0.05",
+        "LIMIT_MARGIN_MAX_PTS": "3.0"
+    },
+    "cash": {
+        "CASH_BALANCE_PAPER_TRADING": "100000",
+        "FALLBACK_CASH_BALANCE": "10000",
+        "POSITION_PNL_LOG_FREQ": "60"
+    },
+    "charges": {
+        "BROKERAGE_PER_ORDER": "5",
+        "BROKERAGE_PER_ORDER_KITE": "20",
+        "OPTIONS_STT_SELL_PCT": "0.15",
+        "OPTIONS_STT_SELL_PCT_KITE": "0.1",
+        "TXN_CHARGES_NSE_PCT": "0.03553",
+        "TXN_CHARGES_BSE_PCT": "0.0325",
+        "SEBI_CHARGES_PER_CRORE": "10",
+        "GST_PCT": "18",
+        "STAMP_DUTY_BUY_PCT": "0.003"
+    }
 }
 
 @app.route("/appconfig")
@@ -302,7 +398,7 @@ def save_appconfig():
             old_config = {}
         config = dict(old_config)
         if isinstance(data, dict):
-            config.update(data)
+            config = _unflatten_config(data, config)
         with open(APPCONFIG_FILE, "w") as f:
             json.dump(config, f, indent=4)
         # appconfig.json is cached by fetch_from_json(); clear it so
@@ -719,9 +815,19 @@ def get_fund_summary():
 
 @app.route("/day_cash")
 def get_day_cash():
-    logger.info("Fetching day-start cash")
+    trade_date = request.args.get("trade_date")
+    logger.info(f"Fetching day-start cash for {trade_date or 'today'}")
     current_mode = str(fetch_from_json("appconfig.json", "MODE") or "").upper()
     if current_mode == "PAPER":
+        # Paper sessions carry no historical funds: the paper opening
+        # cash only exists for the live session (today).
+        if trade_date and trade_date != datetime.now(
+            pytz.timezone("Asia/Kolkata")
+        ).strftime("%Y-%m-%d"):
+            return jsonify({
+                "success": False,
+                "error": "Paper mode has no historical day-start cash"
+            })
         paper_summary = trader.get_paper_fund_summary()
         return jsonify({
             "success": True,
@@ -729,7 +835,7 @@ def get_day_cash():
             "source": "PAPER"
         })
     try:
-        cash_value, source = resolve_day_start_cash(broker)
+        cash_value, source = resolve_day_start_cash(broker, trade_date=trade_date)
     except Exception as e:
         logger.exception("Error resolving day-start cash")
         return jsonify({"success": False, "error": str(e)}), 500
@@ -806,6 +912,43 @@ def trading_view():
 def kite_login_callback():
     request_token = request.args["request_token"]
     
+
+
+def _open_app_window_when_ready():
+    """
+    Wait until the web server port answers, then open the app window
+    (Chrome/Edge in --app mode for a chrome-less window, default
+    browser as fallback). Runs in a daemon thread so it never blocks
+    startup.
+    """
+    import socket as _socket
+
+    deadline = time.time() + 90
+    while time.time() < deadline:
+        try:
+            with _socket.create_connection(("127.0.0.1", 5000), timeout=1):
+                break
+        except OSError:
+            time.sleep(0.5)
+    else:
+        logger.warning("Server port never came up; app window not opened.")
+        return
+
+    time.sleep(0.5)
+    for candidate in (
+        r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+        r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+        r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
+        r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
+    ):
+        if os.path.exists(candidate):
+            subprocess.Popen([candidate, "--app=http://127.0.0.1:5000"])
+            logger.info("App window opened.")
+            return
+
+    import webbrowser
+    webbrowser.open("http://127.0.0.1:5000")
+    logger.info("App window opened (default browser).")
 
 
 def run_flask_app():
@@ -1222,7 +1365,15 @@ if 1==1: #__name__ == "__main__":
             logger.warning(f"Could not resolve day-start cash at startup: {e}")
         
         trader.start_frontend_socket_server(app)
-        
+
+        # The app window (browser) is opened by the server itself once
+        # the port is live - the launcher no longer manages it.
+        threading.Thread(
+            target=_open_app_window_when_ready,
+            daemon=True,
+            name="browser-opener"
+        ).start()
+
         if CURRENT_BROKER == "MSTOCK":
             logger.info("FLASK: Launching Flask thread...")
             flask_thread = threading.Thread(target=run_flask_app, daemon=True)

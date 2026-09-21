@@ -91,6 +91,28 @@ def load_json_with_retry(file_path, retries=_JSON_READ_RETRIES, delay=_JSON_READ
             )
             sleep(delay)
 
+def _flatten_config(data):
+    """
+    Flatten a grouped (nested) config dict into a flat {key: value} map.
+
+    appconfig.json stores its keys nested under logical groups (session,
+    pct, pnt, ...). Keys are globally unique across groups, so expanding
+    each group into the flat view is lossless, and every
+    fetch_from_json(file, KEY) call site keeps working unchanged.
+    Top-level non-dict entries (e.g. the runtime-written SELL_MODE) are
+    kept as-is.
+    """
+    if not isinstance(data, dict):
+        return data
+    flat = {}
+    for key, value in data.items():
+        if isinstance(value, dict):
+            flat.update(value)
+        else:
+            flat[key] = value
+    return flat
+
+
 def fetch_from_json(file, attribute):
     global _JSON_CACHE
 
@@ -100,7 +122,7 @@ def fetch_from_json(file, attribute):
 
         logger.debug(f"Loading {file} into memory cache")
 
-        _JSON_CACHE[file] = load_json_with_retry(token_file_path)
+        _JSON_CACHE[file] = _flatten_config(load_json_with_retry(token_file_path))
     else:
         logger.trace(f"Fetching {attribute} from {file} (cached).")
 
@@ -595,18 +617,50 @@ def backup_old_logs(base_path=None):
 DAY_CASH_FILE = resolve_data_path("day_cash.json")
 
 
+def _migrate_day_cash_entries(data):
+    """
+    Normalize the day-cash payload into a per-date entries map.
+
+    The legacy file was a single-slot payload
+    ({"date": ..., "cash_balance": ...}) overwritten every day; the
+    v2 format keeps one entry per trade date
+    ({"version": 2, "entries": {"<date>": {...}}}).
+    """
+    if not isinstance(data, dict):
+        return {}
+    entries = data.get("entries")
+    if isinstance(entries, dict):
+        return {str(k): v for k, v in entries.items() if isinstance(v, dict)}
+    if data.get("date"):
+        try:
+            return {
+                str(data.get("date")): {
+                    "cash_balance": float(data.get("cash_balance")),
+                    "source": "persisted",
+                }
+            }
+        except (TypeError, ValueError):
+            return {}
+    return {}
+
+
 def load_day_cash():
     try:
         with open(DAY_CASH_FILE, "r", encoding="utf-8") as day_cash_file:
             data = json.load(day_cash_file)
-        return data if isinstance(data, dict) else {}
+        return _migrate_day_cash_entries(data)
     except (OSError, json.JSONDecodeError) as error:
         logger.warning(f"Could not load day cash file: {error}")
         return {}
 
 
-def save_day_cash(trade_date, cash_balance):
-    payload = {"date": trade_date, "cash_balance": float(cash_balance)}
+def save_day_cash(trade_date, cash_balance, source=None):
+    entries = load_day_cash()
+    entries[str(trade_date)] = {
+        "cash_balance": float(cash_balance),
+        "source": str(source or "persisted"),
+    }
+    payload = {"version": 2, "entries": entries}
     tmp_path = DAY_CASH_FILE + ".tmp"
     try:
         with open(tmp_path, "w", encoding="utf-8") as tmp_file:
@@ -617,9 +671,36 @@ def save_day_cash(trade_date, cash_balance):
         logger.error(f"Could not persist day-start cash: {error}")
 
 
-def resolve_day_start_cash(broker):
+def resolve_day_start_cash(broker, trade_date=None):
     tz = pytz.timezone("Asia/Kolkata")
     today = datetime.now(tz).strftime("%Y-%m-%d")
+    target_date = str(trade_date) if trade_date else today
+
+    if target_date != today:
+        # Broker fund APIs only describe the current day, so a
+        # historical opening balance can only come from what was
+        # persisted on that day.
+        persisted = load_day_cash()
+        entry = persisted.get(target_date)
+        if isinstance(entry, dict):
+            try:
+                persisted_value = float(entry.get("cash_balance"))
+                if math.isfinite(persisted_value):
+                    return persisted_value, "persisted"
+            except (TypeError, ValueError):
+                pass
+        return None, "unavailable"
+
+    def _persisted_today():
+        entry = load_day_cash().get(today)
+        if isinstance(entry, dict):
+            try:
+                persisted_value = float(entry.get("cash_balance"))
+                if math.isfinite(persisted_value):
+                    return persisted_value
+            except (TypeError, ValueError):
+                pass
+        return None
 
     fetcher = getattr(broker, "fetch_day_start_cash", None)
     broker_value = fetcher() if fetcher else None
@@ -629,16 +710,14 @@ def resolve_day_start_cash(broker):
         except (TypeError, ValueError):
             broker_value = None
     if broker_value is not None and math.isfinite(broker_value):
+        # Persist every broker-sourced figure so the date stays
+        # resolvable once it becomes historical.
+        save_day_cash(today, broker_value, source="broker")
         return broker_value, "broker"
 
-    persisted = load_day_cash()
-    if persisted.get("date") == today:
-        try:
-            persisted_value = float(persisted.get("cash_balance"))
-            if math.isfinite(persisted_value):
-                return persisted_value, "persisted"
-        except (TypeError, ValueError):
-            pass
+    persisted_value = _persisted_today()
+    if persisted_value is not None:
+        return persisted_value, "persisted"
 
     try:
         fund_summary = broker.fetch_fund_summary() or {}
@@ -652,7 +731,7 @@ def resolve_day_start_cash(broker):
         except (TypeError, ValueError):
             current_cash = None
     if current_cash is not None and math.isfinite(current_cash):
-        save_day_cash(today, current_cash)
+        save_day_cash(today, current_cash, source="captured")
         return current_cash, "captured"
 
     return None, "unavailable"
