@@ -82,10 +82,16 @@
             background: #2e7d32;
             border-color: #2e7d32;
         }
+
+        /* --- SINGLE-PAGE TAB PANELS (app.html) --- */
+        /* All tab panels live in one document; only the active one is shown.
+           Switching tabs is a CSS class toggle, never a page reload. */
+        .tab-panel { display: none; }
+        .tab-panel.active { display: block; }
     </style>
     {% block head_styles %}{% endblock %}
 </head>
-<body>
+<body data-active-tab="{{ active_tab|default('') }}">
 
     <nav class="app-tabbar" id="appTabbar">
         <button class="tab-scroll-btn" id="tabScrollLeft" type="button" title="Scroll tabs left">&#x276E;</button>

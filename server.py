@@ -351,8 +351,8 @@ APPCONFIG_DEFAULTS = {
 
 @app.route("/appconfig")
 def appconfig_page():
-    """Render the unified app config HTML page."""
-    return render_template("appconfig.html")
+    """Render the unified single-page app on the App Config tab."""
+    return render_template("app.html", active_tab="appconfig")
 
 
 @app.route("/settings")
@@ -976,13 +976,13 @@ def run_flask_app():
 # Default landing page: the consolidated Trade page.
 @app.route("/")
 def index():
-    logger.info("INDEX: Rendering trade page (default)")
-    return render_template("trade.html")
+    logger.info("INDEX: Rendering app page (default, trade tab)")
+    return render_template("app.html", active_tab="trade")
 
 @app.route("/trade")
 def trade_page():
     logger.info("TRADE PAGE: Request received")
-    page = render_template("trade.html")
+    page = render_template("app.html", active_tab="trade")
     logger.info("TRADE PAGE: Template rendered")
     return page
 
@@ -1002,7 +1002,7 @@ def dashboard():
 @app.route("/orders")
 def orders_page():
     logger.info("Rendering Orders page")
-    return render_template("orders.html")
+    return render_template("app.html", active_tab="orders")
 
 # Capitalized /Orders kept as a redirect for URLs used before the page
 # route was lowercased.

@@ -1,0 +1,4068 @@
+{% extends "base.html" %}
+
+{% block title %}TradeInvestAlgo{% endblock %}
+
+{% block head_styles %}
+<style>
+/* ===== CSS from trade.html ===== */
+/* --- GENERAL LAYOUT --- */
+    /* This is modified to stack the widgets vertically */
+    #panel-trade .main-content {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+
+        padding-top: 5px;      /* <-- Reduce space above Sell Positions */
+        padding-right: 0.25rem;
+        padding-bottom: 1rem;
+        padding-left: 0.25rem;
+
+        gap: 10px;             /* <-- Reduce space between Sell & Buy */
+
+        box-sizing: border-box;
+    }
+
+    /* --- STYLES FROM BUY WIDGET --- */
+    .widget-container {
+        position: relative; background-color: #2c2c2c; padding: 10px;
+        box-sizing: border-box;
+        border-radius: 12px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
+        border: 1px solid #444; transition: box-shadow 0.4s ease, border-color 0.4s ease;
+    }
+    #buy-widget-container {
+        width: 100%; max-width: none; border-color: #2e7d32;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6), 0 0 20px rgba(76, 175, 80, 0.25);
+    }
+    #buy-widget-container.put-view {
+        border-color: #c62828;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6), 0 0 20px rgba(211, 47, 47, 0.35);
+    }
+
+    #buy-widget-container h2 { text-align: center; margin-bottom: 0.5rem; color: #66bb6a; transition: color 0.4s ease; }
+    #buy-widget-container.put-view h2 { color: #ef5350; }
+    .summary-container { display: flex; justify-content: space-evenly; padding: 1rem 0; margin: 1rem 0; border-top: 1px solid #444; border-bottom: 1px solid #444; }
+    .summary-item { text-align: center; }
+    .summary-label { display: block; font-size: 0.8rem; color: #aaa; text-transform: uppercase; letter-spacing: 0.5px; }
+    .summary-value { display: block; font-size: 1.4rem; font-weight: 600; color: #ffffff; margin-top: 0.25rem; }
+    /* .header-info-container {
+        display: flex;
+        justify-content: space-between; /* Pushes info left, toggles right */
+        align-items: center;
+        flex-wrap: wrap; /* Allow wrapping on smaller screens */
+        padding: 0.5rem 0;
+        margin-bottom: 1.5rem;
+        border-bottom: 1px solid #444; /* Add a separator */
+    } */
+    .header-details {
+        display: flex;
+        flex-wrap: wrap; /* Allow details to wrap */
+        gap: 1.5rem; /* Space between BRO, EXC, UL etc. */
+        align-items: center;
+    }
+    .header-label {
+        font-size: 0.75rem; /* Smaller label font */
+        color: #999;       /* Dimmer label color */
+        text-transform: uppercase;
+        margin-right: 0.3rem; /* Space between label and value */
+    }
+    .header-value {
+        font-size: 0.9rem; /* Keep value font size slightly larger */
+        color: #eee;       /* Bright value color */
+        font-weight: 500;
+    }
+    .header-toggles {
+        display: flex;
+        border-radius: 7px;
+        overflow: hidden;
+    }
+    .toggle-button { background-color: transparent; color: #ccc; border: 1px solid #666; padding: 0.6rem 1.2rem; cursor: pointer; font-size: 0.9rem; font-weight: 500; transition: background-color 0.3s; }
+    .toggle-button.active-toggle { background-color: #2e7d32; color: white; }
+    #buy-widget-container.put-view .toggle-button.active-toggle { background-color: #c62828; }
+    .announcement-toggle-label {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        color: #ccc;
+        font-size: 0.85rem;
+        margin-right: 10px;
+        padding: 6px 8px;
+        border: 1px solid #666;
+        border-radius: 7px;
+        background-color: transparent;
+        user-select: none;
+    }
+    .announcement-toggle-label input[type="checkbox"] {
+        width: 14px;
+        height: 14px;
+        accent-color: #2e7d32;
+        cursor: pointer;
+    }
+    .buy-button { background-color: #28a745; color: white; border: none; padding: 0.6rem 1rem; border-radius: 5px; cursor: pointer; font-size: 0.9rem; font-weight: 500; transition: background-color 0.2s; }
+    .buy-button:disabled {background-color: #ccc; color: #666;cursor: not-allowed;opacity: 0.7;}    
+    .buy-button:hover { background-color: #218838; }
+    .buy-button.put-buy-button { background-color: #dc3545; }
+    .buy-button.put-buy-button:hover { background-color: #c82333; }
+    .expiry-label {
+        color: white;
+        min-width: auto;
+        white-space: nowrap;
+        flex: 0 0 auto;
+        font-size: 0.8rem;
+    }
+
+    .toggle-container {
+    width :100%;
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
+    justify-content: space-between; /* 👈 pushes label left, buttons right */
+    padding: 8px 12px;
+    }
+    .toggle-container > div:first-child {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    overflow: visible;
+    }
+
+    .toggle-container > div:last-child {
+        flex: 0 0 auto;
+        display: flex;
+        justify-content: flex-end;
+        gap: 8px;
+        white-space: nowrap;
+    }
+
+.expiry-label {
+    color: white;
+    vertical-align: middle;
+}
+
+.toggle-buttons {
+    display: flex;
+    align-items: center;
+    gap: 8px;                 /* separation between labels */
+}
+
+.toggle-buttons .expiry-label {
+    background-color: hsl(0, 1%, 26%);
+    padding: 5px 10px;
+    border-radius: 4px;
+    border: 1px solid #c8c8c8;
+    display: inline-flex;
+    align-items: center;
+    white-space: nowrap;
+}
+
+#nmf_pts.profit, #nmf_chgo.profit {
+    background-color: #00B050;
+    border-color: #00B050;
+    color: #fff;
+    font-weight: 700;
+}
+
+#nmf_pts.loss, #nmf_chgo.loss {
+    background-color: #d32f2f;
+    border-color: #d32f2f;
+    color: #fff;
+    font-weight: 700;
+}
+
+/*
+.toggle-buttons {
+    display: flex;
+    gap: 10px; 
+    color: black;
+}
+
+.toggle-button {
+    padding: 6px 12px;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    background-color: #eee;
+    color: black;
+} */
+
+.active-toggle {
+    background-color: #007bff;
+    color: black;
+}
+
+.type-cell {
+            white-space: nowrap;
+            text-align: center;
+    }
+    .type-cell label {
+        margin: 0 1px;
+        color: #ccc;
+        cursor: pointer;
+        font-size: 0.8rem; /* Slightly smaller font */
+        vertical-align: middle; /* Align labels vertically with radio buttons */
+    }
+    .type-cell input[type="radio"] {
+        margin-right: 1px; /* Reduced margin to the right of the radio button */
+        vertical-align: middle; /* Align radio buttons vertically */
+        transform: scale(0.9); /* Slightly smaller radio buttons */
+    }
+    .type-cell input[type="radio"] {
+    margin: 0 2px;
+    transform: scale(0.9); /* slightly smaller radios */
+    vertical-align: middle;
+    }
+
+    .atm-row {
+    background-color: hwb(0 29% 71%);   /* light gray */
+    color: hsl(0, 25%, 98%);
+    }
+    /* --- STYLES FROM SELL WIDGET --- */
+    #sell-widget-container { width: 100%; max-width: none; }
+    #sell-widget-container h2 { text-align: center; color: #ffffff; margin-bottom: 1.5rem; }
+    .profit { color: #66bb6a; font-weight: 500; }
+    .loss { color: #ef5350; font-weight: 500; }
+    .sell-button { background-color: #c62828; color: white; border: none; padding: 0.6rem 1rem; border-radius: 5px; cursor: pointer; font-size: 0.9rem; font-weight: 500; transition: background-color 0.2s; }
+    .sell-button:hover { background-color: #a12020; }
+    .sell-button:disabled {background-color: #ccc; color: #666;cursor: not-allowed;opacity: 0.7;}
+    
+    /* --- COMMON & SHARED STYLES --- */
+    .option-table { width: 100%; border-collapse: collapse; }
+    .option-table th, .option-table td { border: 1px solid #444; padding: 6px 8px; text-align: center; vertical-align: middle; }
+.leg-code-cell { font-weight: 700; letter-spacing: 0.5px; color: #ffd75e; }
+    .option-table th { background-color: #383838; font-weight: 600; color: #ccc; }
+    .no-options { text-align: center; color: #888; margin: 0; padding: 6px; border: 1px dashed #555; border-radius: 8px; background-color: #333; }
+    .flash { animation: price-flash 0.7s ease-out; }
+    @keyframes price-flash { from { background-color: rgba(76, 175, 80, 0.5); } to { background-color: transparent; } }
+    .lots-override-input {
+        width: 60px; padding: 0.5rem; background-color: #1a1a1a;
+        border: 1px solid #555; color: white; border-radius: 4px;
+        font-size: 0.9rem; text-align: center; box-sizing: border-box;
+    }
+    /* Sell grid: half-width Lots(O) box so the StraSell column stays in view */
+    #sell-widget-container .lots-override-input { width: 30px; padding-left: 0.1rem; padding-right: 0.1rem; }
+    .bp-override-input {
+        width: 54px; padding: 0.4rem; background-color: #1a1a1a;
+        border: 1px solid #555; color: #ffd75e; border-radius: 4px;
+        font-size: 0.85rem; text-align: center; box-sizing: border-box;
+    }
+
+    /* --- MEDIA QUERIES --- */
+    @media (max-width: 1200px) {
+        .widget-container { padding: 10px; }
+        .option-table th, .option-table td { padding: 0.5rem; font-size: 0.7rem; }
+    }
+    @media (max-width: 900px) {
+        #panel-trade .main-content { padding-top: 5px; }
+        .widget-container { padding: 8px; }
+        .widget-container h2 { font-size: 1.5rem; }
+        .option-table th, .option-table td { padding: 0.5rem; font-size: 0.75rem; }
+        .buy-button, .sell-button { padding: 0.5rem; font-size: 0.7rem; }
+        .summary-value { font-size: 1.1rem; }
+        .lots-override-input { padding: 0.3rem; }
+    }
+
+    .buy-options-header {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    margin-bottom: 0.5rem;
+    }
+
+    .buy-options-header h2 {
+        margin: 0;
+    }
+
+    .buy-options-header .toggle-buttons {
+        position: absolute;
+        right: 0;
+        display: flex;
+        gap: 8px;
+    }
+
+    .status-bar {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        min-height: 1.4rem;
+        margin: 0.1rem 0;
+        width: 100%;          /* left edge aligns with the grids */
+        /* Mode box lines up with the Broker box: widget border 1px
+           + widget padding 10px + toggle-container padding 12px */
+        padding-left: 23px;
+        box-sizing: border-box;
+    }
+
+    .status-bar-left {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        font-size: 0.78rem;
+        color: #bdbdbd;
+        min-width: 0;
+    }
+
+    /* Mode label (LIVE / PAPER / SIMULATION / PLAYBACK) in the status bar.
+       Same height/format as the Broker / Underlying / Expiry labels. */
+    .mode-label {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+        padding: 5px 10px;
+        border-radius: 4px;
+        border: 1px solid #c8c8c8;
+        background-color: hsl(0, 1%, 26%);
+        color: #fff;
+        font-size: 0.8rem;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        white-space: nowrap;
+        flex: 0 0 auto;
+    }
+    .mode-label::before {
+        content: "";
+        width: 0.5rem;
+        height: 0.5rem;
+        border-radius: 50%;
+        background-color: #9e9e9e;
+    }
+    /* LIVE: green box + blinking dot with expanding concentric pulse rings */
+    .mode-label[data-mode="LIVE"] {
+        position: relative;
+        border-color: #66bb6a;
+        background-color: #1b4622;
+    }
+    .mode-label[data-mode="LIVE"]::before {
+        background-color: #66bb6a;
+        animation: live-dot-blink 1.6s ease-in-out infinite;
+    }
+    .mode-label[data-mode="LIVE"]::after {
+        content: "";
+        position: absolute;
+        left: 0.6rem;
+        top: 50%;
+        width: 0.5rem;
+        height: 0.5rem;
+        border-radius: 50%;
+        transform: translateY(-50%);
+        pointer-events: none;
+        animation: live-pulse-rings 1.8s ease-out infinite;
+    }
+    @keyframes live-dot-blink {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.35; }
+    }
+    @keyframes live-pulse-rings {
+        0% {
+            box-shadow: 0 0 0 0 rgba(102, 187, 106, 0.75),
+                        0 0 0 0 rgba(102, 187, 106, 0.45);
+        }
+        70% {
+            box-shadow: 0 0 0 6px rgba(102, 187, 106, 0),
+                        0 0 0 6px rgba(102, 187, 106, 0.30);
+        }
+        100% {
+            box-shadow: 0 0 0 6px rgba(102, 187, 106, 0),
+                        0 0 0 14px rgba(102, 187, 106, 0);
+        }
+    }
+    .mode-label[data-mode="PAPER"] { border-color: #42a5f5; background-color: #14304a; }
+    .mode-label[data-mode="PAPER"]::before { background-color: #42a5f5; }
+    .mode-label[data-mode="SIMULATION"] { border-color: #ffb74d; background-color: #4a3413; }
+    .mode-label[data-mode="SIMULATION"]::before { background-color: #ffb74d; }
+    .mode-label[data-mode="PLAYBACK"] { border-color: #ba68c8; background-color: #3d1f47; }
+    .mode-label[data-mode="PLAYBACK"]::before { background-color: #ba68c8; }
+
+    /* Playback controls next to the mode label */
+    .playback-controls {
+        display: flex;
+        align-items: center;
+        gap: 0.4rem;
+        flex: 0 0 auto;
+    }
+    #playbackStartInput {
+        background-color: #1a1a1a;
+        border: 1px solid #555;
+        color: #fff;
+        padding: 0.25rem 0.45rem;
+        border-radius: 4px;
+        font-size: 0.75rem;
+        width: 205px;
+        color-scheme: dark;
+    }
+    .playback-btn {
+        background-color: transparent;
+        color: #ccc;
+        border: 1px solid #666;
+        border-radius: 4px;
+        padding: 0.22rem 0.5rem;
+        cursor: pointer;
+        font-size: 0.85rem;
+        line-height: 1;
+        transition: background-color 0.2s, color 0.2s;
+    }
+    .playback-btn:hover { background-color: #333; color: #fff; }
+    .playback-btn.playback-active { background-color: #2e7d32; color: #fff; border-color: #66bb6a; }
+    #playbackSpeedSelect {
+        background-color: #1a1a1a;
+        border: 1px solid #555;
+        color: #fff;
+        padding: 0.25rem 0.35rem;
+        border-radius: 4px;
+        font-size: 0.75rem;
+        cursor: pointer;
+        color-scheme: dark;
+    }
+
+    #orderStatusLabel {
+        margin-left: auto;
+        padding: 0;
+        font-size: 0.78rem;
+        white-space: normal;
+        flex-shrink: 0;
+    }
+
+    #orderStatusLabel.success,
+    #orderStatusLabel.error {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4rem;
+        padding: 0.35rem 0.7rem;
+        font-size: 0.78rem;
+        font-weight: 600;
+        letter-spacing: 0.01em;
+        border-radius: 6px;
+        color: #ffffff;
+        animation: statusSlideIn 0.3s ease;
+        transition: opacity 0.3s ease, transform 0.3s ease;
+    }
+
+    #orderStatusLabel.success {
+        background: linear-gradient(135deg, #1b5e20 0%, #2e7d32 45%, #43a047 100%);
+        border: 1px solid #66bb6a;
+        border-left: 4px solid #66bb6a;
+        box-shadow: 0 2px 10px rgba(46, 125, 50, 0.4);
+    }
+
+    #orderStatusLabel.error {
+        background: linear-gradient(135deg, #7f1d1d 0%, #b71c1c 45%, #d32f2f 100%);
+        border: 1px solid #ef5350;
+        border-left: 4px solid #ef5350;
+        box-shadow: 0 2px 10px rgba(183, 28, 28, 0.4);
+    }
+
+    #orderStatusLabel .status-icon {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 1.1rem;
+        height: 1.1rem;
+        border-radius: 50%;
+        background: rgba(255, 255, 255, 0.2);
+        flex-shrink: 0;
+    }
+
+    #orderStatusLabel .status-icon svg {
+        width: 0.65rem;
+        height: 0.65rem;
+        display: block;
+    }
+
+    #orderStatusLabel.hiding {
+        opacity: 0;
+        transform: translateX(10px);
+    }
+
+    @keyframes statusSlideIn {
+        from {
+            opacity: 0;
+            transform: translateX(12px);
+        }
+        to {
+            opacity: 1;
+            transform: translateX(0);
+        }
+    }
+
+    /* Temporary BUY price shown before broker/order reconciliation */
+    .temporary-buy-price {
+        background-color: #ffd54f !important;
+        color: #000 !important;
+        font-weight: 700;
+    }
+
+    /* Sell All / Cancel All sit right next to the Mode box, at the same
+       height as the Broker / Underlying / Expiry labels. Scoped here so
+       the table-row Sell buttons keep their size. */
+    .status-bar-actions .sell-button {
+        padding: 5px 10px;
+        font-size: 0.8rem;
+        font-weight: 700;
+    }
+
+    .status-bar-actions {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        flex: 0 0 auto;
+    }
+</style>
+<style>
+/* ===== CSS from orders.html ===== */
+/* --- GENERAL LAYOUT --- */
+    #panel-orders .main-content {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        padding: 1rem 0.25rem 1.5rem;
+        gap: 16px;
+        box-sizing: border-box;
+    }
+
+    /* --- SHARED PILL STYLES (used by the cash summary label) --- */
+    .toggle-buttons {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+    .expiry-label {
+        color: white;
+        min-width: auto;
+        white-space: nowrap;
+        flex: 0 0 auto;
+        font-size: 0.8rem;
+        vertical-align: middle;
+    }
+    .toggle-buttons .expiry-label {
+        background-color: hsl(0, 1%, 26%);
+        padding: 5px 10px;
+        border-radius: 4px;
+        border: 1px solid #c8c8c8;
+        display: inline-flex;
+        align-items: center;
+        white-space: nowrap;
+    }
+    .no-options { text-align: center; color: #888; margin: 0; padding: 6px; border: 1px dashed #555; border-radius: 8px; background-color: #333; }
+
+    /* --- ORDERS GRID (current day executed trades) --- */
+    #ordersGridWrapper {
+        width: 100%;
+        max-width: none;
+    }
+
+    .orders-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-bottom: 8px;
+    }
+
+    .cash-summary {
+        gap: 8px;
+    }
+
+    .cash-summary .cash-caption {
+        color: #aaa;
+        font-weight: 500;
+    }
+
+    #cashBeginValue {
+        color: #fff;
+        font-weight: 700;
+    }
+
+    .cash-summary .cash-arrow {
+        color: #757575;
+        font-size: 0.8rem;
+    }
+
+    #cashCurrentValue {
+        color: #fff;
+        font-weight: 700;
+    }
+
+    #cashChangePct {
+        margin-left: 4px;
+        padding: 2px 8px;
+        border-radius: 5px;
+        border: 1px solid #555;
+        color: #aaa;
+        font-weight: 700;
+        font-size: 0.72rem;
+    }
+
+    #cashChangePct.profit {
+        color: #66bb6a;
+        background: rgba(102, 187, 106, 0.12);
+        border-color: rgba(102, 187, 106, 0.45);
+    }
+
+    #cashChangePct.loss {
+        color: #ef5350;
+        background: rgba(239, 83, 80, 0.12);
+        border-color: rgba(239, 83, 80, 0.45);
+    }
+
+    .charges-summary .cash-caption {
+        color: #aaa;
+        font-weight: 500;
+    }
+
+    #totalBrokerageValue,
+    #totalOtherChargesValue {
+        color: #fff;
+        font-weight: 700;
+    }
+
+    .orders-header-right {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+
+    #ordersCountLabel {
+        font-size: 0.78rem;
+        color: #aaa;
+    }
+
+    #ordersRefreshBtn, #ordersDownloadBtn, #ordersUploadBtn {
+        background: transparent;
+        color: #ccc;
+        border: 1px solid #666;
+        border-radius: 6px;
+        padding: 4px 10px;
+        cursor: pointer;
+        font-size: 1rem;
+        line-height: 1.2;
+    }
+
+    #ordersDownloadBtn, #ordersUploadBtn { font-size: 0.78rem; font-weight: 600; }
+
+    #ordersRefreshBtn:hover, #ordersDownloadBtn:hover, #ordersUploadBtn:hover { background: #444; color: #fff; }
+
+    #ordersRefreshBtn:disabled, #ordersDownloadBtn:disabled, #ordersUploadBtn:disabled {
+        color: #666;
+        cursor: not-allowed;
+        background: transparent;
+    }
+
+    #ordersDateInput {
+        background: transparent;
+        color: #ccc;
+        border: 1px solid #666;
+        border-radius: 6px;
+        padding: 4px 8px;
+        font-size: 0.78rem;
+        font-weight: 600;
+        cursor: pointer;
+        color-scheme: dark;
+    }
+
+    #ordersDateInput:focus {
+        outline: none;
+        border-color: #888;
+        color: #fff;
+    }
+
+    #ordersGridContainer {
+        max-height: 420px;
+        overflow: auto;
+        border: 1px solid #444;
+        border-radius: 8px;
+        background: #1f1f1f;
+        padding: 10px;
+        box-sizing: border-box;
+    }
+
+    #ordersTable {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.75rem;
+        color: #ddd;
+    }
+
+    #ordersTable th, #ordersTable td {
+        border: 1px solid #444;
+        padding: 4px 5px;
+        text-align: center;
+        vertical-align: middle;
+        white-space: nowrap;
+    }
+
+    #ordersTable thead th {
+        background-color: #383838;
+        font-weight: 600;
+        color: #ccc;
+        position: sticky;
+        top: 0;
+        z-index: 2;
+    }
+
+    #ordersTable tbody tr:nth-child(even) { background: #262626; }
+    #ordersTable tbody tr:hover { background: #333; }
+    #ordersTable td:nth-child(4) { text-align: left; }
+
+    #ordersTable tr.trade-buy td:nth-child(3) {
+        background: #1c3a5e;
+        color: #64b5f6;
+        font-weight: 700;
+    }
+
+    #ordersTable tr.trade-sell td:nth-child(3) {
+        background: #5e1c1c;
+        color: #ef9a9a;
+        font-weight: 700;
+    }
+
+    #ordersTable td.type-ce {
+        background: #1c3a5e;
+        color: #64b5f6;
+        font-weight: 700;
+    }
+
+    #ordersTable td.type-pe {
+        background: #5e1c1c;
+        color: #ef9a9a;
+        font-weight: 700;
+    }
+
+    #ordersTable thead th[data-sort-key] { cursor: pointer; user-select: none; }
+    #ordersTable thead th[data-sort-key]:hover { background: #4a4a4a; color: #fff; }
+    #ordersTable thead th.sort-active { background-color: #2e2e2e; color: #fff; }
+    #ordersTable thead th.sort-active::after { content: '\25B2'; font-size: 0.7em; margin-left: 3px; }
+    #ordersTable thead th.sort-active.sort-desc::after { content: '\25BC'; }
+
+    #ordersTable .pnl-pos { background: #92D050 !important; color: #000000; font-weight: 700; }
+    #ordersTable .pnl-neg { background: #FF6666 !important; color: #000000; font-weight: 700; }
+</style>
+<style>
+/* ===== CSS from appconfig.html ===== */
+/* --- PAGE LAYOUT --- */
+    #panel-appconfig .main-content {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        padding: 0.3rem 0.6rem 4.2rem; /* bottom padding clears the fixed action bar */
+        gap: 0.7rem;
+        box-sizing: border-box;
+    }
+
+    /* --- SECTION CARD GRID --- */
+    .config-grid {
+        width: 100%;
+        max-width: 1080px;
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 0.7rem;
+        align-items: stretch;
+    }
+    @media (max-width: 900px) {
+        .config-grid { grid-template-columns: 1fr; }
+        .field-row.cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    }
+    @media (max-width: 560px) {
+        .field-row.cols-2, .field-row.cols-3 { grid-template-columns: 1fr; }
+    }
+
+    .card {
+        display: flex;
+        flex-direction: row;
+        gap: 0.7rem;
+        background-color: #2c2c2c;
+        border: 1px solid #444;
+        border-radius: 10px;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
+        padding: 0.7rem 0.85rem;
+        box-sizing: border-box;
+    }
+    .card.span-2 { grid-column: 1 / -1; }
+
+    /* --- VERTICAL CAPTION RAIL --- */
+    .card-rail {
+        flex: 0 0 auto;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center; /* center the rotated caption vertically */
+        padding-right: 0.7rem;
+        border-right: 1px solid #3a3a3a;
+    }
+    .card-title {
+        writing-mode: vertical-rl;
+        transform: rotate(180deg);
+        font-size: 0.68rem;
+        font-weight: 700;
+        letter-spacing: 1.2px;
+        text-transform: uppercase;
+        color: #66bb6a;
+        white-space: nowrap;
+        user-select: none;
+    }
+
+    /* --- FIELDS --- */
+    .card-body {
+        flex: 1 1 auto;
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 0.55rem;
+        justify-content: space-between;
+    }
+    /* Force fixed column counts inside a field-row */
+    .field-row.cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .field-row.cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+
+    /* --- CONDITIONAL VISIBILITY ---
+       The form carries data-cf / data-broker / data-underlying (synced
+       from the Session selects by syncGating()). Fields tagged with
+       .only-* classes appear only for the relevant selection. Hidden
+       fields still submit with the form (display:none does not exclude
+       them from FormData), so values are never lost. */
+    /* Sell trigger function */
+    form[data-cf="PCT"] .only-pnt, form[data-cf="PCT"] .only-ema { display: none; }
+    form[data-cf="PNT"] .only-pct, form[data-cf="PNT"] .only-ema { display: none; }
+    form[data-cf="EMA"] .only-pct, form[data-cf="EMA"] .only-pnt { display: none; }
+    /* Underlying */
+    form[data-underlying="NIFTY"] .only-sensex,
+    form[data-underlying="NIFTY"] .only-crude { display: none; }
+    form[data-underlying="SENSEX"] .only-nifty,
+    form[data-underlying="SENSEX"] .only-crude { display: none; }
+    form[data-underlying="CRUDEOIL"] .only-nifty,
+    form[data-underlying="CRUDEOIL"] .only-sensex { display: none; }
+    form[data-underlying="CRUDEOILM"] .only-nifty,
+    form[data-underlying="CRUDEOILM"] .only-sensex { display: none; }
+    /* Broker */
+    form[data-broker="MSTOCK"] .only-kite { display: none; }
+    form[data-broker="KITE"] .only-mstock { display: none; }
+    .field-row {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
+        gap: 0.55rem;
+    }
+    .field { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+    .field-caption {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 0.4rem;
+        min-width: 0;
+    }
+    .field-label {
+        color: #bbb;
+        font-size: 0.76rem;
+        font-weight: 500;
+        white-space: nowrap;
+    }
+    .unit { color: #777; font-weight: 400; font-size: 0.7rem; }
+    .key-hint {
+        font-family: Consolas, Monaco, monospace;
+        font-size: 0.56rem;
+        color: #6f6f6f;
+        background: #242424;
+        border: 1px solid #333;
+        border-radius: 3px;
+        padding: 0 4px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        max-width: 48%;
+    }
+
+    .input-wrap { position: relative; display: flex; align-items: center; }
+    .input-wrap input,
+    .input-wrap select {
+        width: 100%;
+        box-sizing: border-box;
+        background-color: #1a1a1a;
+        border: 1px solid #4a4a4a;
+        color: #fff;
+        padding: 0.3rem 1.7rem 0.3rem 0.55rem;
+        border-radius: 5px;
+        font-size: 0.82rem;
+        height: 30px;
+        transition: border-color 0.15s, box-shadow 0.15s;
+    }
+    .input-wrap .suffix {
+        position: absolute;
+        left: 8px;
+        font-size: 0.66rem;
+        color: #777;
+        pointer-events: none;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+    /* Number inputs: right-aligned value clears the left unit suffix and
+       leaves room for the native increment/decrement arrows on the right */
+    .input-wrap input[type="number"] {
+        padding-left: 1.7rem;
+        padding-right: 0.6rem;
+        text-align: right;
+    }
+    .input-wrap select {
+        appearance: none;
+        -webkit-appearance: none;
+        padding-right: 1.6rem;
+        background-image: linear-gradient(45deg, transparent 50%, #777 50%),
+                          linear-gradient(135deg, #777 50%, transparent 50%);
+        background-position: calc(100% - 14px) 13px, calc(100% - 9px) 13px;
+        background-size: 5px 5px;
+        background-repeat: no-repeat;
+        cursor: pointer;
+    }
+    .input-wrap input:focus,
+    .input-wrap select:focus {
+        outline: none;
+        border-color: #2e7d32;
+        box-shadow: 0 0 0 2px rgba(102, 187, 106, 0.25);
+    }
+    /* Native number spinners (increment/decrement arrows) are kept visible. */
+
+    /* --- TOGGLE SWITCH (checkbox) --- */
+    .switch-row {
+        display: flex;
+        align-items: center;
+        gap: 0.6rem;
+        padding: 0.3rem 0.6rem;
+        background: #1f1f1f;
+        border: 1px solid #4a4a4a;
+        border-radius: 7px;
+        cursor: pointer;
+        font-size: 0.78rem;
+        color: #ccc;
+        line-height: 1.3;
+        height: 30px;
+        box-sizing: border-box;
+    }
+    .switch-row input { position: absolute; opacity: 0; width: 0; height: 0; }
+    .switch {
+        flex: 0 0 auto;
+        position: relative;
+        width: 32px;
+        height: 17px;
+        background: #555;
+        border-radius: 999px;
+        transition: background-color 0.2s;
+    }
+    .switch::after {
+        content: "";
+        position: absolute;
+        top: 2px;
+        left: 2px;
+        width: 13px;
+        height: 13px;
+        background: #fff;
+        border-radius: 50%;
+        transition: left 0.2s;
+    }
+    .switch-row input:checked ~ .switch { background: #2e7d32; }
+    .switch-row input:checked ~ .switch::after { left: 17px; }
+    .switch-row input:focus-visible ~ .switch {
+        box-shadow: 0 0 0 2px rgba(102, 187, 106, 0.4);
+    }
+    .switch-row .switch-text {
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    /* --- FIXED ACTION BAR (always visible) --- */
+    .action-bar {
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        z-index: 500;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.9rem;
+        padding: 0.55rem 1rem;
+        background: rgba(26, 26, 26, 0.92);
+        backdrop-filter: blur(6px);
+        border-top: 1px solid #3a3a3a;
+        box-sizing: border-box;
+        flex-wrap: wrap;
+    }
+    .btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        border: none;
+        padding: 0.5rem 1.3rem;
+        border-radius: 7px;
+        font-size: 0.88rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: background-color 0.2s, opacity 0.2s;
+    }
+    .btn-save { background-color: #28a745; color: white; }
+    .btn-save:hover:not(:disabled) { background-color: #218838; }
+    .btn-save:disabled { background-color: #2f5e3a; color: #b5c9b8; cursor: not-allowed; opacity: 0.7; }
+    .btn-cancel { background-color: transparent; color: #ccc; border: 1px solid #666; }
+    .btn-cancel:hover { background-color: #333; color: #fff; }
+    .spinner {
+        display: none;
+        width: 13px;
+        height: 13px;
+        border: 2px solid rgba(255, 255, 255, 0.35);
+        border-top-color: #fff;
+        border-radius: 50%;
+        animation: spin 0.7s linear infinite;
+    }
+    .btn.saving .spinner { display: inline-block; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .dirty-flag {
+        display: none;
+        align-items: center;
+        gap: 6px;
+        font-size: 0.76rem;
+        color: #ffb74d;
+        font-weight: 500;
+    }
+    .dirty-flag.visible { display: inline-flex; }
+    .dirty-flag::before {
+        content: "";
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: #ffb74d;
+        box-shadow: 0 0 6px rgba(255, 183, 77, 0.7);
+    }
+
+    #statusMsg { font-size: 0.8rem; font-weight: 500; color: #66bb6a; }
+    #statusMsg.err { color: #ef5350; }
+</style>
+{% endblock %}
+
+{% block content %}
+    <section class="tab-panel" id="panel-trade" data-tab="trade">
+        <main class="main-content">
+
+    <!-- === TRADE (Sell Positions Grid + Buy Dashboard + info line + status message) === -->
+    <div class="widget-container" id="sell-widget-container">
+        <table class="option-table">
+            <thead>
+                <tr>
+                    <th class="center">Action</th>
+                    <th>P/L</th>
+                    <th>%</th>
+                    <th>PTS</th>
+                    <th>BK%</th>
+                    <th>Levels</th>
+                    <th>XE</th>
+                    <th>SPrice</th>
+                    <th>BPrice</th>
+                    <th>MPrice</th>
+                    <th>Lots</th>
+                    <th>Lots(O)</th>
+                    <th>StraSell</th>
+                    <th>Strategy Type</th>
+                    <th>Sell Type</th>
+                </tr>
+            </thead>
+            <tbody id="positionsTableBody">
+                <tr><td colspan="15" class="no-options">Loading open positions...</td></tr>
+            </tbody>
+        </table>
+    </div>
+    <div class="widget-container" id="buy-widget-container">
+        <table class="option-table">
+            <thead>
+                <tr>
+                    <th class="center">Action</th>                    
+                    <th>Levels</th> 
+                    <th>CPE</th> 
+                    <th>Strike Price</th> 
+                    <th>Market Price</th> 
+                    <th>ChgO</th> 
+                    <th>Lots</th>
+                    <th>Lots(O)</th>
+                    <th>StraSell</th>
+                    <th>Strategy Type</th>
+                    <th>Sell Type</th>
+                </tr>
+            </thead>
+            <tbody id="optionsTableBody">
+                <tr><td colspan="8" class="no-options">Waiting for data from server...</td></tr>
+            </tbody>
+        </table>        
+        <div class="toggle-container">
+
+        <!-- Left: Broker / Exchange / Future / Prices / Expiry -->
+        <div class="toggle-buttons">
+
+            <label id="broker" class="expiry-label">
+                <span id="brokerValue">--</span>
+            </label>
+<!--
+            <label id="exchange" class="expiry-label">
+                <span id="exchangeValue">--</span>
+            </label>
+-->
+
+            <label id="underlying" class="expiry-label">
+                <span id="underlyingValue">--</span>
+            </label>
+
+            <label id="ltp" class="expiry-label">
+                <span id="ltpValue">--</span>
+            </label>
+
+            <label id="nmf_pts" class="expiry-label" title="Points change since previous day close">
+                <span id="nmf_pts_value">--</span>
+            </label>
+
+            <label id="nmf_chgo" class="expiry-label">
+                <span id="nmf_chgo_value">--</span>
+            </label>
+
+            <label id="expiryLabel" class="expiry-label">
+                <span id="expiryValue">--</span>
+            </label>
+
+        </div>
+
+    <!-- Right: Available Balance / Refresh / Calls / Puts -->
+    <div class="toggle-buttons">
+        <label id="availableBalance" class="expiry-label" title="Available balance to trade">
+            <span id="availableBalanceValue">--</span>
+        </label>
+
+        <label class="announcement-toggle-label" title="Enable or disable voice announcement" aria-label="Voice announcement toggle">
+            <input type="checkbox" id="announcementToggle" checked>
+            <span aria-hidden="true">&#128266;</span>
+        </label>
+
+        <button class="toggle-button active-toggle" id="callBtn">
+            Calls
+        </button>
+
+        <button class="toggle-button" id="putBtn">
+            Puts
+        </button>
+    </div>
+
+</div>
+
+    <div class="status-bar">
+        <!-- Left zone: trading mode label + playback controls (same line as order status) -->
+        <div id="statusBarLeft" class="status-bar-left">
+            <span id="modeLabel" class="mode-label" data-mode="" title="Current trading mode">--</span>
+            <div class="status-bar-actions">
+                <button id="sellAllBtn" class="sell-button" disabled title="Sell every open position leg">Sell All</button>
+                <button id="cancelAllBtn" class="sell-button cancel-btn" disabled title="Cancel every pending order">Cancel All</button>
+            </div>
+            <div id="playbackControls" class="playback-controls" style="display: none;">
+                <input type="datetime-local" id="playbackStartInput" step="1"
+                       title="Playback start date &amp; time (seconds included)">
+                <button id="playbackStartBtn" class="playback-btn" title="Start playback from the selected time">&#x25B6;</button>
+                <button id="playbackPauseBtn" class="playback-btn" title="Pause / resume playback">&#x23F8;</button>
+                <button id="playbackStopBtn" class="playback-btn" title="Stop playback">&#x23F9;</button>
+                <select id="playbackSpeedSelect" title="Playback speed">
+                    <option value="0.5">0.5x</option>
+                    <option value="1" selected>1x</option>
+                    <option value="2">2x</option>
+                    <option value="5">5x</option>
+                    <option value="10">10x</option>
+                </select>
+            </div>
+        </div>
+        <div id="orderStatusLabel" role="status" aria-live="polite"></div>
+    </div>
+    <!-- === PENDING ORDERS GRID (position-grid format, pending-order semantics) === -->
+    <div class="widget-container" id="pending-widget-container">
+        <table class="option-table">
+            <thead>
+                <tr>
+                    <th class="center">Action</th>
+                    <th>Levels</th>
+                    <th>XE</th>
+                    <th>SPrice</th>
+                    <th>Order Type</th>
+                    <th>Limit Price</th>
+                    <th>BPrice</th>
+                    <th>MPrice</th>
+                    <th>Lots</th>
+                    <th>Qty(O)</th>
+                    <th>Strategy Type</th>
+                    <th>Sell Type</th>
+                </tr>
+            </thead>
+            <tbody id="pendingOrdersBody">
+                <tr><td colspan="12" class="no-options">No pending orders</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    </div>
+</main>
+    </section>
+    <section class="tab-panel" id="panel-orders" data-tab="orders">
+        <main class="main-content">
+
+    <!-- === ORDERS GRID (executed trades for the selected date) === -->
+    <div id="ordersGridWrapper">
+        <div class="orders-header">
+            <div class="toggle-buttons">
+                <label id="cashSummaryLabel" class="expiry-label cash-summary" style="display: none;" title="Opening balance of the day (broker start-of-day figure where known) &#8594; Net P/L from the trades shown, with return %">
+                    <!-- <span class="cash-caption">Cash</span>
+                    <span id="cashBeginValue">--</span>
+                    <span class="cash-arrow">&#8594;</span>
+                    <span id="cashCurrentValue">--</span>
+                    <span id="cashChangePct">--</span> -->
+                    <span class="cash-caption">Open Balance</span>
+                    <span id="cashBeginValue">--</span>
+                    <span class="cash-arrow">&#8594;</span>
+                    <span class="cash-caption">Net P/L</span>
+                    <span id="cashCurrentValue">--</span>
+                    <span id="cashChangePct">--</span>                    
+                </label>
+                <label id="brokerageSummaryLabel" class="expiry-label charges-summary" style="display: none;" title="Brokerage charged across the trades shown (flat per executed order)">
+                    <span class="cash-caption">Brokerage</span>
+                    <span id="totalBrokerageValue">--</span>
+                </label>
+                <label id="otherChargesSummaryLabel" class="expiry-label charges-summary" style="display: none;" title="STT + exchange transaction + SEBI + GST + stamp duty across the trades shown">
+                    <span class="cash-caption">Other Chgs</span>
+                    <span id="totalOtherChargesValue">--</span>
+                </label>
+            </div>
+            <div class="orders-header-right">
+                <input type="date" id="ordersDateInput" title="Trade date to load in this grid">
+                <span id="ordersCountLabel"></span>
+                <button id="ordersUploadBtn" type="button" title="Upload an M.Stock contract note PDF into this grid">&#8679; Upload</button>
+                <button id="ordersDownloadBtn" type="button" title="Download the trades shown in this grid as Excel">&#8681; Download</button>
+                <button id="ordersRefreshBtn" type="button" title="Refresh trades for the selected date">&#x21bb;</button>
+                <input type="file" id="ordersUploadInput" accept="application/pdf" style="display: none;">
+            </div>
+        </div>
+        <div id="ordersGridContainer">
+            <table id="ordersTable">
+                <thead>
+                    <tr>
+                        <th data-sort-key="ORDERDATE">OrderDate</th>
+                        <th data-sort-key="ORDERTIME">OrderTime</th>
+                        <th data-sort-key="TRAN">Tran</th>
+                        <th data-sort-key="CONT">Cont</th>
+                        <th data-sort-key="Type">Type</th>
+                        <th data-sort-key="Qty.">Qty.</th>
+                        <th data-sort-key="RATE">Rate</th>
+                        <th data-sort-key="Duration">Duration</th>
+                        <th data-sort-key="PurValue">PurValue</th>
+                        <th data-sort-key="PnL_Rate">PnL_Rate</th>
+                        <th data-sort-key="PnL">PnL</th>
+                        <th data-sort-key="PnL%">PnL%</th>
+                        <th data-sort-key="PnL_RT">PnL_RT</th>
+                        <th data-sort-key="Brokerage">Brokerage</th>
+                        <th data-sort-key="Other Charges">Other Chgs</th>
+                    </tr>
+                </thead>
+                <tbody id="ordersTableBody">
+                    <tr><td colspan="15" class="no-options">No trades for the selected date.</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+</main>
+    </section>
+    <section class="tab-panel" id="panel-appconfig" data-tab="appconfig">
+        <main class="main-content">
+
+    <!-- SECTION GRID -->
+    <form id="settingsForm" autocomplete="off" data-cf="PCT" data-broker="MSTOCK" data-underlying="NIFTY">
+    <div class="config-grid">
+
+        <!-- ============ SESSION (restart required) ============ -->
+        <section class="card span-2">
+            <div class="card-rail">
+                <span class="card-title" title="Mode, broker and underlying define the trading session &#8212; changing any of these requires an app restart.">Session</span>
+            </div>
+            <div class="card-body">
+                <div class="field-row">
+                    <div class="field">
+                        <div class="field-caption">
+                            <label class="field-label" for="MODE">Mode</label>
+                            <span class="key-hint">MODE</span>
+                        </div>
+                        <div class="input-wrap">
+                            <select id="MODE" name="MODE">
+                                <option value="LIVE" selected>LIVE</option>
+                                <option value="PAPER">PAPER</option>
+                                <option value="SIMULATION">SIMULATION</option>
+                                <option value="PLAYBACK">PLAYBACK</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="field">
+                        <div class="field-caption">
+                            <label class="field-label" for="BROKER">Broker</label>
+                            <span class="key-hint">BROKER</span>
+                        </div>
+                        <div class="input-wrap">
+                            <select id="BROKER" name="BROKER">
+                                <option value="MSTOCK" selected>MSTOCK</option>
+                                <option value="KITE">KITE</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="field">
+                        <div class="field-caption">
+                            <label class="field-label" for="UNDERLYING">Underlying</label>
+                            <span class="key-hint">UNDERLYING</span>
+                        </div>
+                        <div class="input-wrap">
+                            <select id="UNDERLYING" name="UNDERLYING">
+                                <option value="NIFTY" selected>NIFTY</option>
+                                <option value="SENSEX">SENSEX</option>
+                                <option value="CRUDEOIL">CRUDEOIL</option>
+                                <option value="CRUDEOILM">CRUDEOILM</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ============ BUY GATING ============ -->
+        <section class="card span-2">
+            <div class="card-rail">
+                <span class="card-title" title="TradingView indicator validation before CE/PE buys, plus the margin fraction used for position sizing.">Buy Gating</span>
+            </div>
+            <div class="card-body">
+                <div class="field-row">
+                    <div class="field">
+                        <div class="field-caption">
+                            <label class="field-label" for="TV_DATA_Validation_REQUIRED">TV Validation</label>
+                            <span class="key-hint">TV_DATA_Validation_REQUIRED</span>
+                        </div>
+                        <label class="switch-row" title="When ON: CE buys need 30M PVT &gt; 0 OR (5M PVT &gt; 0 AND 1m close &gt; VWAP); PE buys need 30M PVT &lt; 0 OR (5M PVT &lt; 0 AND 1m close &lt; VWAP). Otherwise CALL/PUT buttons are disabled and buys are rejected.">
+                            <input type="checkbox" name="TV_DATA_Validation_REQUIRED" id="TV_DATA_Validation_REQUIRED">
+                            <span class="switch"></span>
+                            <span class="switch-text">Require before CE/PE buys</span>
+                        </label>
+                    </div>
+                    <div class="field">
+                        <div class="field-caption">
+                            <label class="field-label" for="MARGIN_USAGE_PCT">Margin Usage (0&ndash;1)</label>
+                            <span class="key-hint">MARGIN_USAGE_PCT</span>
+                        </div>
+                        <div class="input-wrap">
+                            <input type="number" step="0.1" min="0.05" max="1" id="MARGIN_USAGE_PCT" name="MARGIN_USAGE_PCT" placeholder="0.9" />
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ============ MARKET & INSTRUMENTS (single line) ============ -->
+        <section class="card span-2">
+            <div class="card-rail">
+                <span class="card-title" title="Order freeze limits, WOC strike factors, fallback LTPs and crude lot sizes.">Market</span>
+            </div>
+            <div class="card-body">
+                <div class="field-row">
+                    <div class="field only-nifty">
+                        <div class="field-caption">
+                            <label class="field-label" for="NIFTY_ORDER_FREEZE_LIMIT">Freeze NIFTY</label>
+                            <span class="key-hint">NIFTY_ORDER_FREEZE_LIMIT</span>
+                        </div>
+                        <div class="input-wrap">
+                            <input type="number" id="NIFTY_ORDER_FREEZE_LIMIT" name="NIFTY_ORDER_FREEZE_LIMIT" placeholder="1755" />
+                        </div>
+                    </div>
+                    <div class="field only-sensex">
+                        <div class="field-caption">
+                            <label class="field-label" for="SENSEX_ORDER_FREEZE_LIMIT">Freeze SENSEX</label>
+                            <span class="key-hint">SENSEX_ORDER_FREEZE_LIMIT</span>
+                        </div>
+                        <div class="input-wrap">
+                            <input type="number" id="SENSEX_ORDER_FREEZE_LIMIT" name="SENSEX_ORDER_FREEZE_LIMIT" placeholder="500" />
+                        </div>
+                    </div>
+                    <div class="field">
+                        <div class="field-caption">
+                            <label class="field-label" for="WOC_CALL_FACTOR">WOC Call</label>
+                            <span class="key-hint">WOC_CALL_FACTOR</span>
+                        </div>
+                        <div class="input-wrap">
+                            <input type="number" step="1" id="WOC_CALL_FACTOR" name="WOC_CALL_FACTOR" placeholder="8" />
+                        </div>
+                    </div>
+                    <div class="field">
+                        <div class="field-caption">
+                            <label class="field-label" for="WOC_PUT_FACTOR">WOC Put</label>
+                            <span class="key-hint">WOC_PUT_FACTOR</span>
+                        </div>
+                        <div class="input-wrap">
+                            <input type="number" step="1" id="WOC_PUT_FACTOR" name="WOC_PUT_FACTOR" placeholder="-8" />
+                        </div>
+                    </div>
+                    <div class="field only-nifty">
+                        <div class="field-caption">
+                            <label class="field-label" for="NIFTY_FALLBACK_LTP">NIFTY Fallback</label>
+                            <span class="key-hint">NIFTY_FALLBACK_LTP</span>
+                        </div>
+                        <div class="input-wrap">
+                            <input type="number" step="0.01" id="NIFTY_FALLBACK_LTP" name="NIFTY_FALLBACK_LTP" placeholder="24000" />
+                        </div>
+                    </div>
+                    <div class="field only-sensex">
+                        <div class="field-caption">
+                            <label class="field-label" for="SENSEX_FALLBACK_LTP">SENSEX Fallback</label>
+                            <span class="key-hint">SENSEX_FALLBACK_LTP</span>
+                        </div>
+                        <div class="input-wrap">
+                            <input type="number" step="0.01" id="SENSEX_FALLBACK_LTP" name="SENSEX_FALLBACK_LTP" placeholder="85600" />
+                        </div>
+                    </div>
+                    <div class="field only-crude only-kite">
+                        <div class="field-caption">
+                            <label class="field-label" for="LOT_SIZE_CRUDEOIL">CRUDEOIL Lot</label>
+                            <span class="key-hint">LOT_SIZE_CRUDEOIL</span>
+                        </div>
+                        <div class="input-wrap">
+                            <input type="number" id="LOT_SIZE_CRUDEOIL" name="LOT_SIZE_CRUDEOIL" placeholder="100" />
+                        </div>
+                    </div>
+                    <div class="field only-crude only-kite">
+                        <div class="field-caption">
+                            <label class="field-label" for="LOT_SIZE_CRUDEOILM">CRUDEOILM Lot</label>
+                            <span class="key-hint">LOT_SIZE_CRUDEOILM</span>
+                        </div>
+                        <div class="input-wrap">
+                            <input type="number" id="LOT_SIZE_CRUDEOILM" name="LOT_SIZE_CRUDEOILM" placeholder="10" />
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ============ CHARGES ============ -->
+        <section class="card span-2">
+            <div class="card-rail">
+                <span class="card-title" title="Broker and statutory charges applied to the Orders grid. Percentages apply on premium turnover (Qty &times; Rate); SEBI fees are per crore of turnover. Any rate can be overridden per broker with a &lt;KEY&gt;_&lt;BROKER&gt; key (e.g. OPTIONS_STT_SELL_PCT_KITE); suffixed keys win over the base value.">Charges</span>
+            </div>
+            <div class="card-body">
+                <div class="field-row">
+                    <div class="field">
+                        <div class="field-caption">
+                            <label class="field-label" for="BROKERAGE_PER_ORDER">Brokerage / Order (&#8377;)</label>
+                            <span class="key-hint">BROKERAGE_PER_ORDER</span>
+                        </div>
+                        <div class="input-wrap">
+                            <input type="number" step="0.01" min="0" id="BROKERAGE_PER_ORDER" name="BROKERAGE_PER_ORDER" placeholder="20" />
+                        </div>
+                    </div>
+                    <div class="field only-kite">
+                        <div class="field-caption">
+                            <label class="field-label" for="BROKERAGE_PER_ORDER_KITE">Kite Brokerage / Order (&#8377;)</label>
+                            <span class="key-hint">BROKERAGE_PER_ORDER_KITE</span>
+                        </div>
+                        <div class="input-wrap">
+                            <input type="number" step="0.01" min="0" id="BROKERAGE_PER_ORDER_KITE" name="BROKERAGE_PER_ORDER_KITE" placeholder="20" />
+                        </div>
+                    </div>
+                    <div class="field">
+                        <div class="field-caption">
+                            <label class="field-label" for="OPTIONS_STT_SELL_PCT">STT Sell (%)</label>
+                            <span class="key-hint">OPTIONS_STT_SELL_PCT</span>
+                        </div>
+                        <div class="input-wrap">
+                            <input type="number" step="0.00001" min="0" id="OPTIONS_STT_SELL_PCT" name="OPTIONS_STT_SELL_PCT" placeholder="0.15" />
+                        </div>
+                    </div>
+                    <div class="field only-kite">
+                        <div class="field-caption">
+                            <label class="field-label" for="OPTIONS_STT_SELL_PCT_KITE">Kite STT Sell (%)</label>
+                            <span class="key-hint">OPTIONS_STT_SELL_PCT_KITE</span>
+                        </div>
+                        <div class="input-wrap">
+                            <input type="number" step="0.00001" min="0" id="OPTIONS_STT_SELL_PCT_KITE" name="OPTIONS_STT_SELL_PCT_KITE" placeholder="0.1" />
+                        </div>
+                    </div>
+                    <div class="field">
+                        <div class="field-caption">
+                            <label class="field-label" for="TXN_CHARGES_NSE_PCT">Transaction NSE (%)</label>
+                            <span class="key-hint">TXN_CHARGES_NSE_PCT</span>
+                        </div>
+                        <div class="input-wrap">
+                            <input type="number" step="0.00001" min="0" id="TXN_CHARGES_NSE_PCT" name="TXN_CHARGES_NSE_PCT" placeholder="0.03553" />
+                        </div>
+                    </div>
+                    <div class="field">
+                        <div class="field-caption">
+                            <label class="field-label" for="TXN_CHARGES_BSE_PCT">Transaction BSE (%)</label>
+                            <span class="key-hint">TXN_CHARGES_BSE_PCT</span>
+                        </div>
+                        <div class="input-wrap">
+                            <input type="number" step="0.00001" min="0" id="TXN_CHARGES_BSE_PCT" name="TXN_CHARGES_BSE_PCT" placeholder="0.0325" />
+                        </div>
+                    </div>
+                </div>
+                <div class="field-row">
+                    <div class="field">
+                        <div class="field-caption">
+                            <label class="field-label" for="SEBI_CHARGES_PER_CRORE">SEBI (&#8377;/crore)</label>
+                            <span class="key-hint">SEBI_CHARGES_PER_CRORE</span>
+                        </div>
+                        <div class="input-wrap">
+                            <input type="number" step="0.01" min="0" id="SEBI_CHARGES_PER_CRORE" name="SEBI_CHARGES_PER_CRORE" placeholder="10" />
+                        </div>
+                    </div>
+                    <div class="field">
+                        <div class="field-caption">
+                            <label class="field-label" for="GST_PCT">GST (%)</label>
+                            <span class="key-hint">GST_PCT</span>
+                        </div>
+                        <div class="input-wrap">
+                            <input type="number" step="0.01" min="0" id="GST_PCT" name="GST_PCT" placeholder="18" />
+                        </div>
+                    </div>
+                    <div class="field">
+                        <div class="field-caption">
+                            <label class="field-label" for="STAMP_DUTY_BUY_PCT">Stamp Duty Buy (%)</label>
+                            <span class="key-hint">STAMP_DUTY_BUY_PCT</span>
+                        </div>
+                        <div class="input-wrap">
+                            <input type="number" step="0.00001" min="0" id="STAMP_DUTY_BUY_PCT" name="STAMP_DUTY_BUY_PCT" placeholder="0.003" />
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ============ PROFIT / LOSS ============ -->
+        <section class="card span-2">
+            <div class="card-rail">
+                <span class="card-title" title="Book-profit and stop-loss triggers per strategy. Percent triggers scale by the strategy factors.">Profit / Loss</span>
+            </div>
+            <div class="card-body">
+                <div class="field">
+                    <div class="field-caption">
+                        <label class="field-label" for="COMPARISON_FUNCTION">Sell Trigger Function</label>
+                        <span class="key-hint">COMPARISON_FUNCTION</span>
+                    </div>
+                    <div class="input-wrap">
+                        <select id="COMPARISON_FUNCTION" name="COMPARISON_FUNCTION">
+                            <option value="PCT" selected>PCT</option>
+                            <option value="PNT">PNT</option>
+                            <option value="EMA">EMA</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="field-row">
+                    <div class="field only-pct">
+                        <div class="field-caption">
+                            <label class="field-label" for="PCT_BOOK_PROFIT">Book Profit</label>
+                            <span class="key-hint">PCT_BOOK_PROFIT</span>
+                        </div>
+                        <div class="input-wrap">
+                            <input type="number" step="1" id="PCT_BOOK_PROFIT" name="PCT_BOOK_PROFIT" placeholder="3" />
+                            <span class="suffix">%</span>
+                        </div>
+                    </div>
+                    <div class="field only-pct">
+                        <div class="field-caption">
+                            <label class="field-label" for="PCT_STOP_LOSS">Stop Loss</label>
+                            <span class="key-hint">PCT_STOP_LOSS</span>
+                        </div>
+                        <div class="input-wrap">
+                            <input type="number" step="1" id="PCT_STOP_LOSS" name="PCT_STOP_LOSS" placeholder="3" />
+                            <span class="suffix">%</span>
+                        </div>
+                    </div>
+                    <div class="field only-pnt">
+                        <div class="field-caption">
+                            <label class="field-label" for="PTS_PROFIT">Book Profit</label>
+                            <span class="key-hint">PTS_PROFIT</span>
+                        </div>
+                        <div class="input-wrap">
+                            <input type="number" step="1" id="PTS_PROFIT" name="PTS_PROFIT" placeholder="1" />
+                            <span class="suffix">pts</span>
+                        </div>
+                    </div>
+                    <div class="field only-pnt">
+                        <div class="field-caption">
+                            <label class="field-label" for="PTS_LOSS">Stop Loss</label>
+                            <span class="key-hint">PTS_LOSS</span>
+                        </div>
+                        <div class="input-wrap">
+                            <input type="number" step="1" id="PTS_LOSS" name="PTS_LOSS" placeholder="5" />
+                            <span class="suffix">pts</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="field-row">
+                    <div class="field only-pct">
+                        <div class="field-caption">
+                            <label class="field-label" for="PCT_PROFIT_INTRA_FACTOR">PCT Intra Factor</label>
+                            <span class="key-hint">PCT_PROFIT_INTRA_FACTOR</span>
+                        </div>
+                        <div class="input-wrap">
+                            <input type="number" step="1" id="PCT_PROFIT_INTRA_FACTOR" name="PCT_PROFIT_INTRA_FACTOR" placeholder="10" />
+                            <span class="suffix">x</span>
+                        </div>
+                    </div>
+                    <div class="field only-pct">
+                        <div class="field-caption">
+                            <label class="field-label" for="PCT_PROFIT_SCALPING_FACTOR">PCT Scalping Factor</label>
+                            <span class="key-hint">PCT_PROFIT_SCALPING_FACTOR</span>
+                        </div>
+                        <div class="input-wrap">
+                            <input type="number" step="1" id="PCT_PROFIT_SCALPING_FACTOR" name="PCT_PROFIT_SCALPING_FACTOR" placeholder="4" />
+                            <span class="suffix">x</span>
+                        </div>
+                    </div>
+                    <div class="field only-pct">
+                        <div class="field-caption">
+                            <label class="field-label" for="PCT_PROFIT_ULTRA_SCALPING_FACTOR">PCT Ultra Factor</label>
+                            <span class="key-hint">PCT_PROFIT_ULTRA_SCALPING_FACTOR</span>
+                        </div>
+                        <div class="input-wrap">
+                            <input type="number" step="1" id="PCT_PROFIT_ULTRA_SCALPING_FACTOR" name="PCT_PROFIT_ULTRA_SCALPING_FACTOR" placeholder="1" />
+                            <span class="suffix">x</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="field-row">
+                    <div class="field only-pnt">
+                        <div class="field-caption">
+                            <label class="field-label" for="PTS_PROFIT_INTRA_FACTOR">PTS Intra Factor</label>
+                            <span class="key-hint">PTS_PROFIT_INTRA_FACTOR</span>
+                        </div>
+                        <div class="input-wrap">
+                            <input type="number" step="1" id="PTS_PROFIT_INTRA_FACTOR" name="PTS_PROFIT_INTRA_FACTOR" placeholder="10" />
+                            <span class="suffix">x</span>
+                        </div>
+                    </div>
+                    <div class="field only-pnt">
+                        <div class="field-caption">
+                            <label class="field-label" for="PTS_PROFIT_SCALPING_FACTOR">PTS Scalping Factor</label>
+                            <span class="key-hint">PTS_PROFIT_SCALPING_FACTOR</span>
+                        </div>
+                        <div class="input-wrap">
+                            <input type="number" step="1" id="PTS_PROFIT_SCALPING_FACTOR" name="PTS_PROFIT_SCALPING_FACTOR" placeholder="4" />
+                            <span class="suffix">x</span>
+                        </div>
+                    </div>
+                    <div class="field only-pnt">
+                        <div class="field-caption">
+                            <label class="field-label" for="PTS_PROFIT_ULTRA_SCALPING_FACTOR">PTS Ultra Factor</label>
+                            <span class="key-hint">PTS_PROFIT_ULTRA_SCALPING_FACTOR</span>
+                        </div>
+                        <div class="input-wrap">
+                            <input type="number" step="1" id="PTS_PROFIT_ULTRA_SCALPING_FACTOR" name="PTS_PROFIT_ULTRA_SCALPING_FACTOR" placeholder="2.5" />
+                            <span class="suffix">x</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ============ ORDER PROTECTION ============ -->
+        <section class="card span-2">
+            <div class="card-rail">
+                <span class="card-title" title="Tiered market-protection buffer added to limit prices (% of LTP), with floor and cap in points.">Protection</span>
+            </div>
+            <div class="card-body">
+                <div class="field-row cols-3">
+                    <div class="field">
+                        <div class="field-caption">
+                            <label class="field-label" for="LIMIT_MARGIN_PCT_LT_10">LTP &lt; 10</label>
+                            <span class="key-hint">LIMIT_MARGIN_PCT_LT_10</span>
+                        </div>
+                        <div class="input-wrap">
+                            <input type="number" step="0.1" id="LIMIT_MARGIN_PCT_LT_10" name="LIMIT_MARGIN_PCT_LT_10" placeholder="5" />
+                            <span class="suffix">%</span>
+                        </div>
+                    </div>
+                    <div class="field">
+                        <div class="field-caption">
+                            <label class="field-label" for="LIMIT_MARGIN_PCT_10_100">LTP 10 &ndash; 100</label>
+                            <span class="key-hint">LIMIT_MARGIN_PCT_10_100</span>
+                        </div>
+                        <div class="input-wrap">
+                            <input type="number" step="0.1" id="LIMIT_MARGIN_PCT_10_100" name="LIMIT_MARGIN_PCT_10_100" placeholder="3" />
+                            <span class="suffix">%</span>
+                        </div>
+                    </div>
+                    <div class="field">
+                        <div class="field-caption">
+                            <label class="field-label" for="LIMIT_MARGIN_PCT_100_500">LTP 100 &ndash; 500</label>
+                            <span class="key-hint">LIMIT_MARGIN_PCT_100_500</span>
+                        </div>
+                        <div class="input-wrap">
+                            <input type="number" step="0.1" id="LIMIT_MARGIN_PCT_100_500" name="LIMIT_MARGIN_PCT_100_500" placeholder="2" />
+                            <span class="suffix">%</span>
+                        </div>
+                    </div>
+                    <div class="field">
+                        <div class="field-caption">
+                            <label class="field-label" for="LIMIT_MARGIN_PCT_GT_500">LTP &gt; 500</label>
+                            <span class="key-hint">LIMIT_MARGIN_PCT_GT_500</span>
+                        </div>
+                        <div class="input-wrap">
+                            <input type="number" step="0.1" id="LIMIT_MARGIN_PCT_GT_500" name="LIMIT_MARGIN_PCT_GT_500" placeholder="1" />
+                            <span class="suffix">%</span>
+                        </div>
+                    </div>
+                    <div class="field">
+                        <div class="field-caption">
+                            <label class="field-label" for="LIMIT_MARGIN_MIN_PTS">Floor</label>
+                            <span class="key-hint">LIMIT_MARGIN_MIN_PTS</span>
+                        </div>
+                        <div class="input-wrap">
+                            <input type="number" step="0.01" id="LIMIT_MARGIN_MIN_PTS" name="LIMIT_MARGIN_MIN_PTS" placeholder="0.05" />
+                            <span class="suffix">pts</span>
+                        </div>
+                    </div>
+                    <div class="field">
+                        <div class="field-caption">
+                            <label class="field-label" for="LIMIT_MARGIN_MAX_PTS">Cap</label>
+                            <span class="key-hint">LIMIT_MARGIN_MAX_PTS</span>
+                        </div>
+                        <div class="input-wrap">
+                            <input type="number" step="0.01" id="LIMIT_MARGIN_MAX_PTS" name="LIMIT_MARGIN_MAX_PTS" placeholder="3.0" />
+                            <span class="suffix">pts</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ============ CASH & SIGNALS (single line) ============ -->
+        <section class="card span-2">
+            <div class="card-rail">
+                <span class="card-title" title="Paper-mode starting cash, live fallback cash used when the broker funds fetch fails, P&amp;L log throttle (TICK or seconds), and EMA signal selection (visible when EMA is the sell trigger).">Misc</span>
+            </div>
+            <div class="card-body">
+                <div class="field-row">
+                    <div class="field">
+                        <div class="field-caption">
+                            <label class="field-label" for="CASH_BALANCE_PAPER_TRADING">Paper Cash</label>
+                            <span class="key-hint">CASH_BALANCE_PAPER_TRADING</span>
+                        </div>
+                        <div class="input-wrap">
+                            <input type="number" id="CASH_BALANCE_PAPER_TRADING" name="CASH_BALANCE_PAPER_TRADING" placeholder="100000" />
+                        </div>
+                    </div>
+                    <div class="field">
+                        <div class="field-caption">
+                            <label class="field-label" for="FALLBACK_CASH_BALANCE">Fallback Cash</label>
+                            <span class="key-hint">FALLBACK_CASH_BALANCE</span>
+                        </div>
+                        <div class="input-wrap">
+                            <input type="number" id="FALLBACK_CASH_BALANCE" name="FALLBACK_CASH_BALANCE" placeholder="10000" />
+                        </div>
+                    </div>
+                    <div class="field">
+                        <div class="field-caption">
+                            <label class="field-label" for="POSITION_PNL_LOG_FREQ">P&amp;L Log Freq</label>
+                            <span class="key-hint">POSITION_PNL_LOG_FREQ</span>
+                        </div>
+                        <div class="input-wrap">
+                            <input type="text" id="POSITION_PNL_LOG_FREQ" name="POSITION_PNL_LOG_FREQ" placeholder="TICK / 60" />
+                        </div>
+                    </div>
+                    <div class="field only-ema">
+                        <div class="field-caption">
+                            <label class="field-label" for="INTRA_EMA">Intra EMA</label>
+                            <span class="key-hint">INTRA_EMA</span>
+                        </div>
+                        <div class="input-wrap">
+                            <select id="INTRA_EMA" name="INTRA_EMA">
+                                <option value="15sEMA9">15s EMA9</option>
+                                <option value="15sEMA21">15s EMA21</option>
+                                <option value="1mEMA9">1m EMA9</option>
+                                <option value="1mEMA21">1m EMA21</option>
+                                <option value="1mEMA50">1m EMA50</option>
+                                <option value="1mEMA100">1m EMA100</option>
+                                <option value="1mEMA200">1m EMA200</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="field only-ema">
+                        <div class="field-caption">
+                            <label class="field-label" for="SCALPING_EMA">Scalping EMA</label>
+                            <span class="key-hint">SCALPING_EMA</span>
+                        </div>
+                        <div class="input-wrap">
+                            <select id="SCALPING_EMA" name="SCALPING_EMA">
+                                <option value="15sEMA9">15s EMA9</option>
+                                <option value="15sEMA21">15s EMA21</option>
+                                <option value="1mEMA9">1m EMA9</option>
+                                <option value="1mEMA21">1m EMA21</option>
+                                <option value="1mEMA50">1m EMA50</option>
+                                <option value="1mEMA100">1m EMA100</option>
+                                <option value="1mEMA200">1m EMA200</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="field only-ema">
+                        <div class="field-caption">
+                            <label class="field-label" for="ULTRA_SCALPING_EMA">Ultra Scalp EMA</label>
+                            <span class="key-hint">ULTRA_SCALPING_EMA</span>
+                        </div>
+                        <div class="input-wrap">
+                            <select id="ULTRA_SCALPING_EMA" name="ULTRA_SCALPING_EMA">
+                                <option value="15sEMA9">15s EMA9</option>
+                                <option value="15sEMA21">15s EMA21</option>
+                                <option value="1mEMA9">1m EMA9</option>
+                                <option value="1mEMA21">1m EMA21</option>
+                                <option value="1mEMA50">1m EMA50</option>
+                                <option value="1mEMA100">1m EMA100</option>
+                                <option value="1mEMA200">1m EMA200</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="field only-ema">
+                        <div class="field-caption">
+                            <label class="field-label" for="EMA_TOLERANCE_PTS">EMA Tolerance</label>
+                            <span class="key-hint">EMA_TOLERANCE_PTS</span>
+                        </div>
+                        <div class="input-wrap">
+                            <input type="number" id="EMA_TOLERANCE_PTS" name="EMA_TOLERANCE_PTS" placeholder="5" />
+                            <span class="suffix">pts</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+    </div>
+    </form>
+</main>
+
+<!-- FIXED ACTION BAR -->
+<div class="action-bar">
+    <span class="dirty-flag" id="dirtyFlag">Unsaved changes</span>
+    <button type="button" class="btn btn-save" id="saveBtn">
+        <span class="spinner"></span>
+        <span id="saveBtnLabel">Save</span>
+    </button>
+    <button type="button" class="btn btn-cancel" id="cancelBtn">Reset</button>
+    <span id="statusMsg"></span>
+</div>
+    </section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+document.addEventListener('DOMContentLoaded', function() {
+    console.log('TRADE PAGE JS: DOMContentLoaded', new Date().toISOString());
+    // --- SOCKET CONNECTION ---
+    // Websocket-only transport: the default polling-then-upgrade
+    // handshake delayed the first data by ~0.5-1s on every page load.
+    const socket = io('http://localhost:5001', { transports: ['websocket'] });
+
+    // --- DOM ELEMENTS ---
+    const buyWidgetContainer = document.getElementById('buy-widget-container');
+    const optionsTableBody = document.getElementById('optionsTableBody');
+    const callBtn = document.getElementById('callBtn');
+    const putBtn = document.getElementById('putBtn');
+    const brokerValueEl = document.getElementById('brokerValue');
+    //const exchangeValueEl = document.getElementById('exchangeValue');
+    const underlyingValueEl = document.getElementById('underlyingValue');
+    const ltpValueEl = document.getElementById('ltpValue');
+    const ptsValueEl = document.getElementById('nmf_pts_value');
+    const ptsLabelEl = document.getElementById('nmf_pts');
+    const chgOValueEl = document.getElementById('nmf_chgo_value');
+    const chgOLabelEl = document.getElementById('nmf_chgo');
+    const expiryValueEl = document.getElementById('expiryValue');
+    const announcementToggleEl = document.getElementById('announcementToggle');
+    const availableBalanceEl = document.getElementById('availableBalanceValue');
+    const positionsTableBody = document.getElementById('positionsTableBody');
+    const pendingOrdersBody = document.getElementById('pendingOrdersBody');
+
+
+    // --- STATE VARIABLES ---
+    let allContracts = {};
+    let openPositions = {};
+    let orderStrategyMapping = {}; // To store strategies from setup_data
+    // Tokens whose BUY Price is temporarily displayed using LTP
+    let temporaryBuyPriceTokens = new Set();
+    // Trading symbols with a sell request in flight (duplicate click guard)
+    const pendingSellSymbols = new Set();
+
+    // ---------------------------------------------------------------
+    // Position legs are keyed "token:STRATEGY:MODE" by the backend so
+    // same-contract trades with different strategies/sell types stay
+    // separate rows. DOM ids cannot contain ':' reliably in
+    // querySelector, so every row/cell id uses the sanitized key.
+    // ---------------------------------------------------------------
+    function positionDomId(positionKey) {
+        return String(positionKey).replace(/:/g, '_');
+    }
+
+    // Strike / option-type resolution shared by the position grid and
+    // the pending orders grid: prefer the backend contract table, parse
+    // the tradingsymbol only as a fallback.
+    function resolveStrikeAndType(contract, tradingsymbol) {
+        let strikePrice = contract.strike || contract.strike_price || "";
+        let optionType = contract.call_or_put || "";
+
+        if (tradingsymbol) {
+            const upperSymbol = String(tradingsymbol).toUpperCase();
+            if (!optionType) {
+                if (upperSymbol.endsWith("CE")) optionType = "CE";
+                else if (upperSymbol.endsWith("PE")) optionType = "PE";
+            }
+
+            if (!strikePrice) {
+                const symbolBody = upperSymbol.replace(/(CE|PE)$/, "");
+                // 1) Dash/space separated: NIFTY-04Nov2025-25600-PE
+                // 2) Month-name format: CRUDEOILM25NOV5600
+                // 3) Numeric expiry code (MStock/Kite index weeklies):
+                //    NIFTY2692225700 -> 25700 (anchored to 5 digits so
+                //    the expiry code digits are not swallowed).
+                const m = symbolBody.match(/(\d+(?:\.\d+)?)[-\s]$/)
+                    || symbolBody.match(/[A-Z]{3}(\d+(?:\.\d+)?)$/)
+                    || symbolBody.match(/(\d{5})$/);
+                if (m) strikePrice = m[1].replace(/\.00$/, '');
+            }
+        }
+        return { strikePrice, optionType };
+    }
+
+    // Derive ATM/OTMx/ITMx for positions whose contract is not in the
+    // current 5-weekly window (e.g. external buys picked up from the
+    // broker). Moneyness is computed against the window's ATM strike.
+    function computeLevelFromWindow(strikePrice, optionType) {
+        if (!strikePrice || !optionType) return '';
+        const strike = Number(strikePrice);
+        if (!isFinite(strike) || strike <= 0) return '';
+        let atmStrike = null;
+        const windowStrikes = [];
+        for (const tk in allContracts) {
+            const c = allContracts[tk] || {};
+            const s = Number(c.strike);
+            if (s > 0) windowStrikes.push(s);
+            if (c.level === 'ATM' && s > 0) atmStrike = s;
+        }
+        if (!atmStrike) return '';
+        const uniq = [...new Set(windowStrikes)].sort((a, b) => a - b);
+        let step = 0;
+        for (let i = 1; i < uniq.length; i++) {
+            const d = uniq[i] - uniq[i - 1];
+            if (d > 0 && (step === 0 || d < step)) step = d;
+        }
+        if (!step) return '';
+        const steps = Math.round((strike - atmStrike) / step);
+        if (steps === 0) return 'ATM';
+        const n = Math.abs(steps);
+        if (optionType === 'CE') return steps > 0 ? `OTM${n}` : `ITM${n}`;
+        return steps > 0 ? `ITM${n}` : `OTM${n}`;
+    }
+
+    // Tokens whose Buy Grid strategy radio the user set manually.
+    // Manual choice wins over the level auto-strategy so grid
+    // re-renders (chain refresh / ATM drift) don't wipe it. The set
+    // is persisted so the preference also survives a page reload.
+    const MANUAL_STRATEGY_TOKENS_KEY = 'manuallySetStrategyTokens';
+    function loadManualStrategyTokens() {
+        try {
+            const raw = localStorage.getItem(MANUAL_STRATEGY_TOKENS_KEY);
+            return new Set(raw ? JSON.parse(raw) : []);
+        } catch (error) {
+            return new Set();
+        }
+    }
+    function saveManualStrategyTokens() {
+        try {
+            localStorage.setItem(MANUAL_STRATEGY_TOKENS_KEY, JSON.stringify([...manuallySetStrategyTokens]));
+        } catch (error) {
+            // Storage unavailable - manual choices just won't persist.
+        }
+    }
+    const manuallySetStrategyTokens = loadManualStrategyTokens();
+
+    // TradingView entry validation state (TV_DATA_Validation_REQUIRED).
+    // Fail-safe defaults: assume validation is ON and both sides blocked
+    // until setup_data / update_trading_view_data confirm otherwise.
+    let tvValidationRequired = true;
+    let tvCEBuyAllowed = false;
+    let tvPEBuyAllowed = false;
+
+    // --- SOCKET EVENT HANDLERS ---
+    socket.on('connect', () => {
+
+        console.log(
+            'MSTOCK BROWSER SOCKET CONNECTED | sid=',
+            socket.id,
+            '| connected=',
+            socket.connected
+        );
+        
+        // No request_weekly_options / request_open_positions emits here:
+        // the server already pushes both in setup_data on connect
+        // (handle_connect), so requesting them again only added a
+        // redundant round-trip before the tables could populate.
+        socket.emit('voice_announcement_toggle', {
+            enabled: announcementToggleEl ? announcementToggleEl.checked : true
+        });
+
+        // Pending orders are NOT pushed in setup_data - request them
+        // explicitly (resting U/D exit limits show here).
+        socket.emit('request_pending_orders');
+    });
+
+    // Periodic refresh so resting U/D exit orders reflect fills/cancels
+    // without a manual reload.
+    setInterval(() => {
+        if (socket.connected) {
+            socket.emit('request_pending_orders');
+        }
+    }, 15000);
+
+    if (announcementToggleEl) {
+        // Restore the persisted preference (defaults to ON until the
+        // user ever toggles it) instead of forcing it back to ON on
+        // every page load / return from another tab.
+        const savedAnnouncementPref = localStorage.getItem('announcementToggleEnabled');
+        announcementToggleEl.checked = savedAnnouncementPref === null ? true : savedAnnouncementPref === 'true';
+        announcementToggleEl.addEventListener('change', () => {
+            localStorage.setItem('announcementToggleEnabled', String(announcementToggleEl.checked));
+            socket.emit('voice_announcement_toggle', {
+                enabled: announcementToggleEl.checked
+            });
+        });
+    }
+
+
+    socket.on('setup_data', (data) => {
+        if (data.broker) brokerValueEl.textContent = data.broker;
+        //if (data.exchange) exchangeValueEl.textContent = data.exchange;
+        if (data.underlying) underlyingValueEl.textContent = data.underlying;
+        if (data.positions_data) {
+            openPositions = data.positions_data;
+        }
+        if (data.order_strategy_mapping) {
+            orderStrategyMapping = data.order_strategy_mapping;
+            console.log("Received strategy mapping:", orderStrategyMapping);
+        }
+        if (data.mode) applyModeLabel(data.mode);
+        if (data.playback) configurePlaybackControls(data.playback);
+        // TradingView entry validation flags (TV_DATA_Validation_REQUIRED)
+        applyTVValidationPayload(data);
+        // Repopulate tables if needed to apply initial strategies
+        if (Object.keys(allContracts).length > 0) populateOptionsTable(allContracts, callBtn.classList.contains('active-toggle') ? 'CE' : 'PE');
+        //if (Object.keys(openPositions).length > 0 && positionsTableBody) populatePositionsTable(openPositions);
+        if (positionsTableBody) 
+        {
+            populatePositionsTable(openPositions);
+}       });
+
+    //badd
+    socket.on('near-month-ltp-updated', (payload) => {
+        //alert(payload)
+        if (payload.ltp !== undefined) {
+            ltpValueEl.textContent = Number(payload.ltp).toFixed(2);
+
+            const ptsValue = Number(payload.ptsChg);
+            if (Number.isFinite(ptsValue)) {
+                ptsValueEl.textContent = (ptsValue > 0 ? '+' : '') + ptsValue.toFixed(2);
+                ptsLabelEl.classList.remove('profit', 'loss');
+                if (ptsValue > 0) ptsLabelEl.classList.add('profit');
+                else if (ptsValue < 0) ptsLabelEl.classList.add('loss');
+            }
+
+            const chgOValue = Number(payload.chgO);
+            if (Number.isFinite(chgOValue)) {
+                chgOValueEl.textContent = (chgOValue > 0 ? '+' : '') + chgOValue.toFixed(2) + '%';
+                chgOLabelEl.classList.remove('profit', 'loss');
+                if (chgOValue > 0) chgOLabelEl.classList.add('profit');
+                else if (chgOValue < 0) chgOLabelEl.classList.add('loss');
+            }
+
+             // Apply flash effect
+            ltpValueEl.classList.add('flash');
+            // Remove flash after animation completes
+            setTimeout(() => ltpValueEl.classList.remove('flash'), 700);
+        }
+    });
+
+    socket.onAny((event, payload) => {
+        console.log("Socket event received:", event, payload);
+    });
+
+
+    // enable_disable_callput_buttons(recommendation)
+    // updateTradeRecommendation(recommendation,recomDescription)
+
+
+    socket.on('update_trading_view_data', (payload) => {
+        console.log("Received TradingView data:", payload);
+
+        // TradingView entry validation flags (TV_DATA_Validation_REQUIRED).
+        // These gate the CE/PE Buy buttons on every webhook. The Trade
+        // Setups table painting that used to live here is stashed in
+        // trade_setup_pending_tabs_backup.html for later reuse.
+        applyTVValidationPayload(payload);
+    });
+
+    
+        
+    // // const tradingViewData = JSON.parse(payload.TradingView_Data);
+    // // const recommendation = msg.TradeRecommendation || '--';
+    // //alert(tradingViewData.PVT["30m"])
+    // if (tradingViewData.PVT["30m"] < 0)
+    //     tradingRecommendation.innerText = recomDescription
+
+    // });
+
+
+
+
+    // Status toasts auto-hide within seconds; if one arrives while this
+    // tab is in the background (e.g. saving from the config tab) hold it
+    // and show it the moment the user comes back.
+    let pendingStatusMessage = null;
+    document.addEventListener('visibilitychange', () => {
+        if (!document.hidden && pendingStatusMessage) {
+            showInlineStatus(pendingStatusMessage.message, pendingStatusMessage.type, 6000);
+            pendingStatusMessage = null;
+        }
+    });
+
+    socket.on('update_weekly_options', (contracts) => {
+        // A real rebuild (contract set changed after initial load) is
+        // worth announcing; plain reconnects re-send identical data.
+        const chainChanged = Object.keys(allContracts).length > 0 &&
+            JSON.stringify(allContracts) !== JSON.stringify(contracts);
+        allContracts = contracts;
+        
+        populateOptionsTable(allContracts, callBtn.classList.contains('active-toggle') ? 'CE' : 'PE');
+        // The positions grid may have rendered before the contract
+        // window arrived (setup_data precedes this event on some
+        // paths); re-render so Level/strike columns resolve.
+        if (Object.keys(openPositions).length > 0 && positionsTableBody) {
+            populatePositionsTable(openPositions);
+        }
+        if (chainChanged) {
+            const message = 'Option chain updated - new WOC factors applied';
+            if (document.hidden) {
+                pendingStatusMessage = { message: message, type: 'success' };
+            } else {
+                showInlineStatus(message, 'success', 6000);
+            }
+        }
+    });
+
+    socket.on('update_open_positions', (positions) => {
+        console.log(
+        'UPDATE_OPEN_POSITIONS RECEIVED:',
+        new Date().toISOString(),
+        positions
+    );
+
+        openPositions = positions;
+        if (positionsTableBody) {
+            populatePositionsTable(openPositions);
+
+            console.log(
+                'POSITION GRID RENDERED:',
+                new Date().toISOString()
+            );
+
+        }
+
+    });
+
+    socket.on('temporary_buy_price', (data) => {
+        const key = data.position_key ? String(data.position_key) : String(data.token);
+        const domId = positionDomId(key);
+
+        temporaryBuyPriceTokens.add(domId);
+
+        const buyPriceCell = document.getElementById(`buy-price-${domId}`);
+
+        if (buyPriceCell) {
+            buyPriceCell.classList.add('temporary-buy-price');
+        }
+    });
+
+    socket.on('authoritative_buy_price', (data) => {
+        const key = data.position_key ? String(data.position_key) : String(data.token);
+        const domId = positionDomId(key);
+
+        temporaryBuyPriceTokens.delete(domId);
+
+        const buyPriceCell = document.getElementById(`buy-price-${domId}`);
+
+        if (buyPriceCell) {
+            buyPriceCell.classList.remove('temporary-buy-price');
+        }
+    });
+
+
+   socket.on('price-updated-order', (tick) => {
+        console.log('MSTOCK BROWSER RECEIVED price-updated-order:', new Date().toISOString(), tick);
+
+        console.log(
+        'MSTOCK BROWSER RECEIVED price-updated-order:',
+        new Date().toISOString(),
+        tick
+        );
+        const token = String(tick.token);
+        const ltp = Number(tick.ltp);
+        if (!Number.isFinite(ltp)) return;
+
+        if (allContracts[token]) {
+            if (tick.prev_close !== undefined && Number(tick.prev_close) > 0) {
+                allContracts[token].prev_close = Number(tick.prev_close);
+            }
+            const prevClose = allContracts[token].prev_close;
+
+        console.log("PREV CLOSE =", prevClose, "LTP =", ltp);
+
+        allContracts[token].ltp = ltp;
+        
+        
+        allContracts[token].chgO = prevClose ? (((ltp - prevClose) / prevClose) * 100).toFixed(2) : '0.00';
+
+        const chgOCell = document.getElementById(`chgO-${token}`);
+        
+        if (chgOCell) {
+            chgOCell.textContent = allContracts[token].chgO;
+            chgOCell.classList.add('flash');
+            setTimeout(() => chgOCell.classList.remove('flash'), 700);
+        }
+
+            
+        if (tick.lots !== undefined) {
+            allContracts[token].lots = tick.lots;
+        }
+    }
+        console.log('MSTOCK BEFORE PRICE CELL LOOKUP:', token);
+        const priceCell = document.getElementById(`price-${token}`);
+        if (priceCell) {
+            priceCell.textContent = ltp.toFixed(2);
+            priceCell.classList.add('flash');
+            setTimeout(() => priceCell.classList.remove('flash'), 700);
+        }
+        const lotsCell = document.getElementById(`lots-${token}`);
+        if (lotsCell && tick.lots !== undefined) {
+             lotsCell.textContent = tick.lots;
+             const overrideInput = document.getElementById(`override-lots-${token}`);
+              if (overrideInput ) { //This allows override input also to be updated when qty is recalculated based on new price
+                 overrideInput.placeholder = tick.lots;
+                 overrideInput.value = tick.lots;
+             }
+             const buyButton = document.querySelector(`#row-${token} .buy-button`);
+             if (buyButton) {
+                 buyButton.dataset.lots = tick.lots;
+             }
+         }
+    });
+
+    socket.on('price-updated-position', (tick) => {
+        // Backend fans ticks out per position leg; fall back to the
+        // raw token for legacy payloads.
+        const key = tick.position_key ? String(tick.position_key) : String(tick.token);
+        const domId = positionDomId(key);
+        const ltp = Number(tick.ltp);
+        if (!Number.isFinite(ltp)) return;
+         // Update Sell Widget Data & UI
+         if (openPositions[key]) { // Update internal data first
+            openPositions[key].latest_price = ltp;
+            if (tick.pts_pl !== undefined) { // Only update if P/L data exists
+                openPositions[key].pts_pl = tick.pts_pl;
+                openPositions[key].pct_pl = tick.pct_pl;
+                openPositions[key].total_pl = tick.total_pl;
+            }
+        }
+        const marketPriceCell = document.getElementById(`market-price-${domId}`);
+        if (marketPriceCell) { // Check if the row exists in the sell table
+            marketPriceCell.textContent = ltp.toFixed(2); // Always update LTP
+            marketPriceCell.classList.add('flash');
+            setTimeout(() => marketPriceCell.classList.remove('flash'), 700);
+
+            // Update P/L Cells ONLY if P/L data is present in the tick
+            if (tick.pts_pl !== undefined) {
+                const plClass = tick.pts_pl >= 0 ? 'profit' : 'loss';
+                const totalPlCell = document.getElementById(`total-pl-${domId}`);
+                const pctCell = document.getElementById(`pct-${domId}`);
+                const ptsCell = document.getElementById(`pts-${domId}`);
+
+                if (totalPlCell) totalPlCell.textContent = `${(tick.total_pl || 0).toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+                if (ptsCell) ptsCell.textContent = (tick.pts_pl || 0).toFixed(2);
+                if (pctCell) pctCell.textContent = `${(tick.pct_pl || 0).toFixed(2)}%`;
+
+                [totalPlCell, pctCell, ptsCell].forEach(el => { if(el) el.className = plClass });
+            }
+        }
+    }); 
+
+    socket.on('refresh_fund_summary', function() {
+        fetchFundSummary(); // ✅ Called only after buy order completes
+    });
+
+    // --- UTILITY FUNCTIONS ---
+    async function fetchFundSummary() {
+        try {
+            // Only show 'Fetching...' when no balance is displayed yet;
+            // a background refresh converging to a fresh value should
+            // update in place instead of flashing the placeholder.
+            if (availableBalanceEl && !availableBalanceEl.textContent.startsWith('Bal:')) {
+                availableBalanceEl.textContent = 'Fetching...';
+            }
+            const response = await fetch('/fund_summary');
+            if (!response.ok) { throw new Error(`HTTP Error: ${response.status}`); }
+            const summary = await response.json();
+            const cashBalance = parseFloat(summary.data.cash_balance).toLocaleString('en-IN', { maximumFractionDigits: 0 });
+            if (availableBalanceEl) availableBalanceEl.textContent = `Bal: ${cashBalance}`;
+        } catch (error) {
+            console.error("Could not fetch fund summary:", error);
+            if (availableBalanceEl) availableBalanceEl.textContent = 'Error';
+        }
+    }
+
+    function mapValueToStrategy(value) {
+        switch (value) {
+            case 'Intra': return 'INTRA';
+            case 'Scalping': return 'SCALPING';
+            case 'UltraScalping': return 'ULTRA_SCALPING';
+            default: return 'UNKNOWN';
+        }
+    }
+
+    // Display-only 2-letter leg code (e.g. "UU", "SD", "IT"):
+    // strategy letter + sell-mode letter, purely for readability.
+    function strategyCodeLetter(strategy) {
+        const s = String(strategy || '').toUpperCase();
+        if (s.startsWith('ULTRA')) return 'U';
+        if (s.startsWith('SCALP')) return 'S';
+        if (s.startsWith('INTRA')) return 'I';
+        return '';
+    }
+
+    function legCode(strategy, sellMode) {
+        const strat = strategyCodeLetter(strategy);
+        const sell = String(sellMode || '').toUpperCase();
+        return (strat && sell && 'UDT'.includes(sell)) ? strat + sell : '--';
+    }
+
+    function updateBuyCodeCell(token) {
+        const cell = document.getElementById(`code-${token}`);
+        if (!cell) return;
+        const stratRadio = optionsTableBody.querySelector(`input[name="type-${token}"]:checked`);
+        const sellRadio = optionsTableBody.querySelector(`input[name="sellmode-${token}"]:checked`);
+        cell.textContent = legCode(
+            stratRadio ? stratRadio.value : '',
+            sellRadio ? sellRadio.value : ''
+        );
+    }
+
+    function updatePositionCodeCell(domId) {
+        const cell = document.getElementById(`pos-code-${domId}`);
+        if (!cell || !positionsTableBody) return;
+        const stratRadio = positionsTableBody.querySelector(`input[name="sell-type-${domId}"]:checked`);
+        const sellRadio = positionsTableBody.querySelector(`input[name="sellmode-pos-${domId}"]:checked`);
+        cell.textContent = legCode(
+            stratRadio ? stratRadio.value : '',
+            sellRadio ? sellRadio.value : ''
+        );
+    }
+
+    // --- TABLE POPULATION & LISTENERS ---
+    function populateOptionsTable(contracts, optionType) {
+        optionsTableBody.innerHTML = '';
+        const filteredContracts = Object.entries(contracts).filter(([token, contract]) => contract.call_or_put === optionType);
+        if (filteredContracts.length === 0) {
+            optionsTableBody.innerHTML = `<tr><td colspan="8" class="no-options">No ${optionType === 'CE' ? 'call' : 'put'} options found.</td></tr>`;
+            return;
+        }
+
+        /*
+        // Keep a stable broker-agnostic level order (same visual order for KITE and MSTOCK).
+        const levelOrder = { OTM2: 0, OTM1: 1, ATM: 2, ITM1: 3, ITM2: 4 };
+        filteredContracts.sort(([, a], [, b]) => {
+            const aOrder = levelOrder[a.level] ?? 999;
+            const bOrder = levelOrder[b.level] ?? 999;
+
+            if (aOrder !== bOrder) {
+                return aOrder - bOrder;
+            }
+
+            // Fallback for unknown level labels.
+            return (a.ltp || 0) - (b.ltp || 0);
+        });*/
+
+        /*        // Dynamic level ordering:
+    // OTM highest -> OTM lowest -> ATM -> ITM lowest -> ITM highest
+
+    function getLevelSortOrder(level) {
+        if (level === 'ATM') {
+            return 0;
+        }
+
+        const match = level.match(/^(OTM|ITM)(\d+)$/);
+
+        if (!match) {
+            return 999999;
+        }
+
+        const type = match[1];
+        const number = parseInt(match[2], 10);
+
+        if (type === 'OTM') {
+            return -number;
+        }
+
+        return number;
+    }
+
+filteredContracts.sort(([, a], [, b]) => {
+    return getLevelSortOrder(a.level) - getLevelSortOrder(b.level);
+});*/
+
+    function getLevelSortOrder(level) {
+        if (level === 'ATM') {
+            return 0;
+        }
+
+        const match = level.match(/^(OTM|ITM)(\d+)$/);
+
+        if (!match) {
+            return 999999;
+        }
+
+        const type = match[1];
+        const number = parseInt(match[2], 10);
+
+        if (type === 'OTM') {
+            return -number;
+        }
+
+        return number;
+    }
+
+    filteredContracts.sort(([, a], [, b]) => {
+        return getLevelSortOrder(a.level) -
+            getLevelSortOrder(b.level);
+    });
+        if (filteredContracts.length > 0) {
+            const firstContract = filteredContracts[0][1];
+            if (firstContract && firstContract.expiry) {
+                 try {
+                     const date = new Date(firstContract.expiry);
+                     expiryValueEl.textContent = date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }).replace(' ', '-');
+                 } catch (e) { expiryValueEl.textContent = '--'; }
+            } else { expiryValueEl.textContent = '--'; }
+        } else { expiryValueEl.textContent = '--'; }
+
+        let displayRowIndex = 0;
+        for (const [token, contract] of filteredContracts) {
+            //const regex = /(?:NIFTY|SENSEX)\d{2}[A-Z]\d{2}(\d{5})(?=CE|PE$)|CRUDEOILM?\d{2}[A-Z]{3}(\d{4,5})(?=CE|PE$)/i;
+            //const match = contract.name.match(regex);
+            //const strikePrice = match ? (match[1] || match[2]) : contract.name;
+            //const regex = /^(?:NIFTY|SENSEX|CRUDEOILM?)\d{2}(?:[A-Z]{3}|[A-Z]\d{2})(\d{4,5})(?=CE|PE$)/i;
+            //const match = contract.name.match(regex);
+            // const match = contract.name.match(/(\d+)(?=CE|PE$)/);
+            // //const match = contract.name.match(/(\d{5})$/);
+            // const strikePrice = match ? match[1] : null;
+
+
+            const match = contract.name.match(/(\d{4,5})(?=CE|PE$)/);
+            const strikePrice = match ? Number(match[1]) : null;
+
+
+            const chgO = contract.prev_close !== undefined && contract.prev_close !== 0 ? (((contract.ltp - contract.prev_close) / contract.prev_close) * 100).toFixed(2) : '0.00';
+
+            const row = document.createElement('tr');
+            row.id = `row-${token}`;
+            
+            if (contract.level === 'ATM') {
+                row.classList.add('atm-row');
+            }
+
+            // Auto strategy / sell mode by ROW POSITION (the display
+            // window can shift, so level names may be any OTMx/ITMx -
+            // the row's position in the sorted grid is the reference):
+            //   row 1 (top) -> INTRA + T
+            //   row 2       -> SCALPING + D
+            //   row 3 (mid) -> ULTRA_SCALPING + U
+            //   rows 4/5    -> ULTRA_SCALPING + T (as before)
+            let autoStrategy = '';
+            let autoSellMode = 'T';
+            if (displayRowIndex === 0) {
+                autoStrategy = 'INTRA';
+                autoSellMode = 'T';
+            } else if (displayRowIndex === 1) {
+                autoStrategy = 'SCALPING';
+                autoSellMode = 'D';
+            } else if (displayRowIndex === 2) {
+                autoStrategy = 'ULTRA_SCALPING';
+                autoSellMode = 'U';
+            } else {
+                autoStrategy = 'ULTRA_SCALPING';
+                autoSellMode = 'T';
+            }
+
+
+            // Final strategy: manual choice > row auto-choice > saved mapping
+            const currentStrategy = manuallySetStrategyTokens.has(String(token))
+                ? (orderStrategyMapping[token] || 'ULTRA_SCALPING')
+                : (autoStrategy || orderStrategyMapping[token] || 'ULTRA_SCALPING');
+
+            // Radio check state
+            const isIntraChecked = currentStrategy === 'INTRA' ? 'checked' : '';
+            const isScalpingChecked = currentStrategy === 'SCALPING' ? 'checked' : '';
+            const isUltraChecked = currentStrategy === 'ULTRA_SCALPING' ? 'checked' : '';
+
+
+            // Sell Mode radio state from the row's auto selection.
+            const sellUChecked = autoSellMode === 'U' ? 'checked' : '';
+            const sellDChecked = autoSellMode === 'D' ? 'checked' : '';
+            const sellTChecked = autoSellMode === 'T' ? 'checked' : '';
+            
+
+
+            row.innerHTML = `
+                <td class="center">
+                    <button class="buy-button ${optionType === 'PE' ? 'put-buy-button' : ''}" data-token="${token}" data-tradingsymbol="${contract.name}" data-lots="${contract.lots || 0}">Buy</button>
+                </td>            
+                <td>${contract.level || ''}</td>
+                <td>${contract.call_or_put || ''}</td>
+                <td>${strikePrice || ''}</td>
+                <td id="price-${token}">${(contract.ltp || 0).toFixed(2)}</td>
+                <td id="chgO-${token}">${chgO}</td>
+                <td id="lots-${token}">${contract.lots || 0}</td>
+                <td><input type="number" class="lots-override-input" id="override-lots-${token}" placeholder="${contract.lots || 0}" value="${contract.lots || 0}"></td>
+                <td id="code-${token}" class="leg-code-cell">${legCode(currentStrategy, autoSellMode)}</td>
+                <td class="type-cell">
+                    <label><input type="radio" name="type-${token}" value="UltraScalping" ${isUltraChecked}> U</label>
+                    <label><input type="radio" name="type-${token}" value="Scalping" ${isScalpingChecked}> S</label>
+                    <label><input type="radio" name="type-${token}" value="Intra" ${isIntraChecked}> I</label>
+                </td>
+                <td class="type-cell">
+                    <label><input type="radio" name="sellmode-${token}" value="U" ${sellUChecked}> U</label>
+                    <label><input type="radio" name="sellmode-${token}" value="D" ${sellDChecked}> D</label>
+                    <label><input type="radio" name="sellmode-${token}" value="T" ${sellTChecked}> T</label>
+                </td>
+            `;
+            optionsTableBody.appendChild(row);
+            displayRowIndex++;
+        }
+        addBuyButtonListeners();
+        // Re-apply TradingView buy validation: this table rebuild creates
+        // fresh (enabled) buttons on every CE/PE view switch or refresh.
+        applyTVBuyValidation();
+        //Since ondocument load this ia called - end of this page..we dont have to call it each time when option table is switched between CE/PE
+        //fetchFundSummary();
+        addStrategyRadioListeners();
+    }
+
+    // Applies the TradingView entry validation (TV_DATA_Validation_REQUIRED)
+    // to the CE/PE Buy buttons. When validation is OFF both sides stay
+    // enabled (previous behaviour); when ON a side is enabled only if the
+    // backend marked it allowed.
+    function applyTVBuyValidation() {
+        const ceButtons = document.querySelectorAll('button.buy-button[data-tradingsymbol$="CE"]');
+        const peButtons = document.querySelectorAll('button.buy-button[data-tradingsymbol$="PE"]');
+        if (!tvValidationRequired) {
+            ceButtons.forEach(btn => btn.disabled = false);
+            peButtons.forEach(btn => btn.disabled = false);
+        } else {
+            ceButtons.forEach(btn => btn.disabled = !tvCEBuyAllowed);
+            peButtons.forEach(btn => btn.disabled = !tvPEBuyAllowed);
+        }
+    }
+
+    function applyTVValidationPayload(payload) {
+        if (payload.TVValidationRequired === undefined) return;
+        tvValidationRequired = !!payload.TVValidationRequired;
+        tvCEBuyAllowed = payload.CE_BUY_ALLOWED === true;
+        tvPEBuyAllowed = payload.PE_BUY_ALLOWED === true;
+        applyTVBuyValidation();
+    }
+
+    function addBuyButtonListeners() {
+        optionsTableBody.querySelectorAll('.buy-button').forEach(button => {
+            button.addEventListener('click', function() {
+                //alert("buy button clicked")
+                const token = this.dataset.token;
+                const overrideInput = document.getElementById(`override-lots-${token}`);
+                const lotsToBuy = (overrideInput && overrideInput.value > 0) ? overrideInput.value : this.dataset.lots;
+                // Send the canonical strategy label (ULTRA_SCALPING /
+                // SCALPING / INTRA), not the raw radio value
+                // ('UltraScalping' would corrupt the position leg key).
+                const rawStrategy = document.querySelector(`input[name="type-${token}"]:checked`)?.value || 'UltraScalping';
+                const strategyType = mapValueToStrategy(rawStrategy);
+                const sellMode = document.querySelector(`input[name="sellmode-${token}"]:checked`)?.value || 'T';
+                const orderDetails = { token: token, tradingsymbol: this.dataset.tradingsymbol, lots: lotsToBuy,strategy:strategyType,SELL_MODE: sellMode };
+                socket.emit('place_buy_order', orderDetails);
+                // alert(`Buy order for ${lotsToBuy} lots of ${this.dataset.tradingsymbol} sent!`);
+                //fetchFundSummary();
+            });
+        });
+    }
+
+    let inlineStatusTimer = null;
+    let inlineStatusHideTimer = null;
+
+    function showInlineStatus(message, type = 'success', duration = 3500) {
+        const statusLabel = document.getElementById('orderStatusLabel');
+        if (!statusLabel) return;
+
+        if (inlineStatusTimer) {
+            clearTimeout(inlineStatusTimer);
+        }
+        if (inlineStatusHideTimer) {
+            clearTimeout(inlineStatusHideTimer);
+        }
+
+        const iconSvg = (type === 'error')
+            ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg>'
+            : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 12.5 9.5 18 20 6.5"/></svg>';
+
+        statusLabel.className = type;
+        statusLabel.innerHTML = `<span class="status-icon">${iconSvg}</span>`;
+
+        const textSpan = document.createElement('span');
+        textSpan.textContent = message;
+        statusLabel.appendChild(textSpan);
+
+        inlineStatusTimer = setTimeout(() => {
+            statusLabel.classList.add('hiding');
+            inlineStatusHideTimer = setTimeout(() => {
+                statusLabel.textContent = '';
+                statusLabel.className = '';
+                inlineStatusHideTimer = null;
+            }, 300);
+            inlineStatusTimer = null;
+        }, duration);
+    }
+
+    function showTransactionSuccess(message) {
+        showInlineStatus(message, 'success', 5000);
+    }
+
+    socket.on('status_message', function (result) {
+        const success = result.success === true;    // Ensure boolean
+        const message = result.message || "Unknown response";
+
+        if (success && /refresh(ed|ing) position/i.test(message)) {
+            return;
+        }
+
+        if (document.hidden) {
+            pendingStatusMessage = { message: message, type: success ? 'success' : 'error' };
+            return;
+        }
+
+        if (success) {
+            showInlineStatus(message, 'success');
+        } else {
+            showInlineStatus(message, 'error');
+        }
+    });
+
+    socket.on('buy_order_result', function (result) {
+        if (result.success) {
+            showTransactionSuccess(`Buy order successful for ${result.tradingsymbol} (${result.lots} lots)`);
+        } else {
+            showInlineStatus(`Buy order failed for ${result.tradingsymbol}: ${result.error}`, 'error');
+        }
+        // A resting BUY limit changes the order book.
+        socket.emit('request_pending_orders');
+    });
+
+    socket.on('sell_order_result', function (result) {
+    const resultKey = result.position_key
+        ? positionDomId(result.position_key)
+        : result.tradingsymbol;
+    pendingSellSymbols.delete(resultKey);
+    const sellBtn = positionsTableBody && positionsTableBody.querySelector(`.sell-button[data-sellkey="${resultKey}"]`);
+    if (sellBtn) { sellBtn.disabled = false; sellBtn.textContent = 'Sell'; }
+    if (result.success) {
+        showTransactionSuccess(`Sell order successful for ${result.tradingsymbol} (${result.lots} lots)`);
+    } else {
+        showInlineStatus(`Sell order failed for ${result.tradingsymbol}: ${result.error}`, 'error');
+    }
+    // The sell just placed (or the U/D exit) changes the order book.
+    socket.emit('request_pending_orders');
+    });
+
+    // --- PENDING ORDERS GRID ---
+    // Position-grid format, pending-order semantics.
+    //
+    // RELEVANT: Levels/XE/SPrice (from the contract table, or parsed
+    // from the symbol), Order Type, Limit Price (the resting price -
+    // the U/D exit target), BPrice (the joined leg's buy price),
+    // MPrice (live market, shows distance to fill), Lots/Qty, and the
+    // leg's Strategy/Sell Type when the order belongs to a position.
+    //
+    // DROPPED: P/L, %, PTS (nothing is realized while an order rests)
+    // and Symbol / Order ID / Order Status (per request; the cancel
+    // button still carries the order id internally).
+    //
+    // Orphan orders (never filled, e.g. stale market buys) have no leg:
+    // Strategy/Sell Type/BPrice show '--' and Levels/MPrice show '--'
+    // when the strike is outside the current contract window.
+    socket.on('update_pending_orders', function(orders) {
+        if (!pendingOrdersBody) return;
+        pendingOrdersBody.innerHTML = "";
+
+        const hasOrders = orders && orders.length > 0;
+        if (cancelAllBtn) {
+            // Re-enabled on every backend render; also resets the
+            // "Cancelling All.." state once the cancel batch completes.
+            cancelAllBtn.disabled = !hasOrders;
+            cancelAllBtn.textContent = 'Cancel All';
+        }
+
+        if (!hasOrders) {
+            pendingOrdersBody.innerHTML =
+                `<tr><td colspan="12" class="no-options">No pending orders</td></tr>`;
+            return;
+        }
+
+        orders.forEach(order => {
+            const row = document.createElement("tr");
+
+            const symbol = order.tradingsymbol || '';
+            const token = String(order.token || '');
+            const contract = allContracts[token] || {};
+            const { strikePrice, optionType } = resolveStrikeAndType(contract, symbol);
+            const level = contract.level || '';
+
+            // Join the order to its position leg (U/D exits belong to a
+            // leg; stale/unfilled buys have none).
+            let leg = null;
+            for (const key in openPositions) {
+                const p = openPositions[key];
+                if (String(p.instrument_token) === token
+                    || (symbol && p.tradingsymbol === symbol)) {
+                    leg = p;
+                    break;
+                }
+            }
+
+            const isBuy = String(order.transaction_type || '').toUpperCase() === 'BUY';
+            const isMcx = order.exchange === 'MCX';
+            const qtyUnits = Number(order.quantity) || 0;
+            const lotSize = Number(contract.lotsize || (leg ? leg.lotsize : 0) || 0);
+            const lots = (isMcx || lotSize <= 1) ? qtyUnits : qtyUnits / lotSize;
+
+            const limitPrice = Number(order.price);
+            const hasLimit = Number.isFinite(limitPrice) && limitPrice > 0;
+            const marketPrice = Number(
+                leg ? (leg.latest_price ?? leg.average_price) : contract.ltp
+            );
+
+            // BPrice: a resting BUY's limit IS its buy price; a SELL exit
+            // shows the buy price of the position it is exiting. Market
+            // orders have no limit (price 0) until they fill.
+            const bPrice = isBuy
+                ? (hasLimit ? limitPrice : (Number(order.average_price) || 0))
+                : (leg ? Number(leg.average_price) : NaN);
+            const strategyLabel = leg ? (leg.order_strategy || '--') : '--';
+            const sellTypeLabel = (!isBuy && leg) ? (leg.sell_mode || 'T') : '--';
+            const orderType = order.order_type || '--';
+
+            row.innerHTML = `
+                <td class="center">
+                    <button class="sell-button cancel-btn" data-orderid="${order.order_id}">Cancel</button>
+                </td>
+                <td>${level || '--'}</td>
+                <td>${optionType || '--'}</td>
+                <td>${strikePrice || '--'}</td>
+                <td>${orderType}</td>
+                <td>${hasLimit ? limitPrice.toFixed(2) : '--'}</td>
+                <td>${Number.isFinite(bPrice) && bPrice > 0 ? bPrice.toFixed(2) : '--'}</td>
+                <td>${Number.isFinite(marketPrice) && marketPrice > 0 ? marketPrice.toFixed(2) : '--'}</td>
+                <td>${Number.isFinite(lots) ? lots : '--'}</td>
+                <td>${qtyUnits || '--'}</td>
+                <td>${strategyLabel}</td>
+                <td>${sellTypeLabel}</td>
+            `;
+            pendingOrdersBody.appendChild(row);
+        });
+
+        addCancelOrderListeners();
+    });
+
+    function addCancelOrderListeners() {
+        if (!pendingOrdersBody) return;
+        pendingOrdersBody.querySelectorAll('.cancel-btn').forEach(btn => {
+            btn.addEventListener('click', function() {
+                const orderId = this.dataset.orderid;
+                this.disabled = true;
+                this.textContent = 'Cancelling..';
+                socket.emit('cancel_pending_order', { order_id: orderId });
+            });
+        });
+    }
+
+    // --- SELL ALL (position grid) / CANCEL ALL (pending grid) ---
+    // Single-click actions living in the status-bar row. Sell All emits
+    // the same per-leg payload as the row Sell buttons; Cancel All hits
+    // the backend bulk-cancel endpoint.
+    const sellAllBtn = document.getElementById('sellAllBtn');
+    const cancelAllBtn = document.getElementById('cancelAllBtn');
+
+    if (sellAllBtn) {
+        sellAllBtn.addEventListener('click', function() {
+            if (this.disabled) return;
+            const legKeys = Object.keys(openPositions);
+            if (!legKeys.length) return;
+
+            this.disabled = true;
+            this.textContent = 'Selling All..';
+
+            legKeys.forEach(key => {
+                const pos = openPositions[key];
+                if (!pos) return;
+                const sellKey = positionDomId(key);
+                if (pendingSellSymbols.has(sellKey)) return;   // already selling
+                const lotsToSell = pos.lots || pos.net_quantity || 0;
+                if (!lotsToSell) return;
+
+                pendingSellSymbols.add(sellKey);
+                const rowBtn = positionsTableBody && positionsTableBody.querySelector(`.sell-button[data-sellkey="${sellKey}"]`);
+                if (rowBtn) { rowBtn.disabled = true; rowBtn.textContent = 'Selling..'; }
+                // Same payload as the per-row Sell button - the backend
+                // handles U/D exit cancellation, paper/live routing etc.
+                socket.emit('place_sell_order', {
+                    token: key.split(':')[0],
+                    tradingsymbol: pos.tradingsymbol,
+                    lots: lotsToSell,
+                    position_key: key
+                });
+            });
+
+            // Rows re-enable individually via sell_order_result; this
+            // fallback restores the button even if some legs error out.
+            setTimeout(() => {
+                sellAllBtn.disabled = !Object.keys(openPositions).length;
+                sellAllBtn.textContent = 'Sell All';
+            }, 6000);
+        });
+    }
+
+    if (cancelAllBtn) {
+        cancelAllBtn.addEventListener('click', function() {
+            if (this.disabled) return;
+
+            this.disabled = true;
+            this.textContent = 'Cancelling All..';
+            socket.emit('cancel_all_pending_orders');
+
+            // The backend re-emits update_pending_orders on completion;
+            // fallback in case that never arrives.
+            setTimeout(() => {
+                this.disabled = !pendingOrdersBody || pendingOrdersBody.querySelectorAll('.cancel-btn').length === 0;
+                this.textContent = 'Cancel All';
+            }, 8000);
+        });
+    }
+
+
+    function populatePositionsTable(positions) {
+        if (!positionsTableBody) return;
+        positionsTableBody.innerHTML = '';
+        
+        if (!positions || Object.keys(positions).length === 0) {
+            positionsTableBody.innerHTML = `<tr><td colspan="13" class="no-options">No open positions found.</td></tr>`;
+            if (sellAllBtn) { sellAllBtn.disabled = true; sellAllBtn.textContent = 'Sell All'; }
+            return;
+        }
+        if (sellAllBtn) sellAllBtn.disabled = false;
+        for (const positionKey in positions) {
+        
+            const pos = positions[positionKey];
+            // Position keys are composite legs ("token:STRATEGY:MODE").
+            const token = String(positionKey).split(':')[0];
+            const domId = positionDomId(positionKey);
+            const contract = allContracts[String(token)] || {};
+            
+            const plClass = (pos.pts_pl || 0) >= 0 ? 'profit' : 'loss';
+            const row = document.createElement('tr');
+            row.id = `row-sell-${domId}`;
+            const currentStrategy = pos.order_strategy || 'ULTRA_SCALPING';
+            const isIntraChecked = currentStrategy === 'INTRA' ? 'checked' : '';
+            const isScalpingChecked = currentStrategy === 'SCALPING' ? 'checked' : '';
+            const isUltraChecked = currentStrategy === 'ULTRA_SCALPING' ? 'checked' : '';
+
+            // Reflect the actual sell mode recorded by the backend
+            // (defaults to 'T', matching the backend fallback).
+            const posSellMode = (pos.sell_mode || 'T').toUpperCase();
+            const posSellTChecked = posSellMode === 'T' ? 'checked' : '';
+            const posSellUChecked = posSellMode === 'U' ? 'checked' : '';
+            const posSellDChecked = posSellMode === 'D' ? 'checked' : '';
+
+            const { strikePrice, optionType } = resolveStrikeAndType(contract, pos.tradingsymbol);
+
+            const level = pos.level || contract.level || computeLevelFromWindow(strikePrice, optionType);
+            const sellPending = pendingSellSymbols.has(domId);
+
+            
+
+
+            row.innerHTML = `
+                <td class="center">
+                    <button class="sell-button" data-token="${token}" data-tradingsymbol="${pos.tradingsymbol}" data-positionkey="${positionKey}" data-sellkey="${domId}" data-lots="${pos.lots || 0}" data-quantity="${pos.net_quantity || 0}" data-lotsize="${pos.lotsize || ''}" ${sellPending ? 'disabled' : ''}>${sellPending ? 'Selling..' : 'Sell'}</button>
+                </td>                        
+                <td id="total-pl-${domId}" class="${plClass}">${(pos.total_pl || 0).toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+                <td id="pct-${domId}" class="${plClass}">${(pos.pct_pl || 0).toFixed(2)}</td>
+                <td id="pts-${domId}" class="${plClass}">${(pos.pts_pl || 0).toFixed(2)}</td>
+                <td><input type="number" class="bp-override-input" id="bp-override-${domId}" step="0.5" min="0" placeholder="%" value="${pos.override_book_profit_pct ?? ''}"></td>
+                <td>${level}</td>
+                <td>${optionType || ''}</td>
+                <td>${strikePrice || ''}</td>
+                <td id="buy-price-${domId}" class="${temporaryBuyPriceTokens.has(domId) ? 'temporary-buy-price' : ''}">
+                    ${(pos.average_price || 0).toFixed(2)}
+                </td>
+                <td id="market-price-${domId}">${(pos.latest_price || pos.average_price).toFixed(2)}</td>
+                <td>${pos.lots || 0}</td>
+                <td><input type="number" class="lots-override-input" id="override-lots-sell-${domId}" placeholder="${pos.lots || 0}"></td>
+                <td id="pos-code-${domId}" class="leg-code-cell">${legCode(currentStrategy, posSellMode)}</td>
+                <td class="type-cell">
+                    <label><input type="radio" name="sell-type-${domId}" value="UltraScalping" ${isUltraChecked}> U</label>
+                    <label><input type="radio" name="sell-type-${domId}" value="Scalping" ${isScalpingChecked}> S</label>
+                    <label><input type="radio" name="sell-type-${domId}" value="Intra" ${isIntraChecked}> I</label>
+                </td>
+                <td class="type-cell">
+                    <label><input type="radio" name="sellmode-pos-${domId}" value="U" ${posSellUChecked}> U</label>
+                    <label><input type="radio" name="sellmode-pos-${domId}" value="D" ${posSellDChecked}> D</label>
+                    <label><input type="radio" name="sellmode-pos-${domId}" value="T" ${posSellTChecked}> T</label>
+                </td>
+            `;
+        positionsTableBody.appendChild(row);
+        }
+        addSellButtonListeners();
+        addStrategyRadioListeners();
+        addBookProfitInputListeners();
+    }
+
+    function addSellButtonListeners() {
+        if (!positionsTableBody) return;
+        positionsTableBody.querySelectorAll('.sell-button').forEach(button => {
+            button.addEventListener('click', function() {
+                const token = this.dataset.token;
+                const symbol = this.dataset.tradingsymbol;
+                const positionKey = this.dataset.positionkey;
+                const sellKey = this.dataset.sellkey;
+                if (pendingSellSymbols.has(sellKey)) return;
+                const overrideInput = document.getElementById(`override-lots-sell-${sellKey}`);
+                const lotsToSell = (overrideInput && overrideInput.value > 0) ? overrideInput.value : this.dataset.lots;
+                const lotSize = parseInt(this.dataset.lotsize || 0);
+                const displayQuantity = (lotSize > 0) ? (lotsToSell) : this.dataset.quantity;
+                pendingSellSymbols.add(sellKey);
+                this.disabled = true;
+                this.textContent = 'Selling..';
+                setTimeout(() => {
+                    if (pendingSellSymbols.delete(sellKey)) {
+                        const btn = positionsTableBody && positionsTableBody.querySelector(`.sell-button[data-sellkey="${sellKey}"]`);
+                        if (btn) { btn.disabled = false; btn.textContent = 'Sell'; }
+                    }
+                }, 10000);
+                // if (confirm(`Are you sure you want to sell ${displayQuantity} shares (${lotsToSell} lots) of ${this.dataset.tradingsymbol}?`)) {
+                socket.emit('place_sell_order', { token: token, tradingsymbol: symbol, lots: lotsToSell, position_key: positionKey });
+                    // alert(`Sell order for ${lotsToSell} lots sent!`);
+                // }
+            });
+        });
+    }
+
+    // --- STRATEGY RADIO LISTENERS ---
+    function addBookProfitInputListeners() {
+        if (!positionsTableBody) return;
+        positionsTableBody.querySelectorAll('.bp-override-input').forEach(input => {
+            input.removeEventListener('change', handleBookProfitInputChange);
+            input.addEventListener('change', handleBookProfitInputChange);
+        });
+    }
+
+    function handleBookProfitInputChange(event) {
+        // Recover the position key from the row's sell button; a cleared
+        // / invalid entry means 0 = no auto profit-booking for this leg.
+        const row = event.target.closest('tr');
+        const sellBtn = row ? row.querySelector('.sell-button[data-positionkey]') : null;
+        if (!sellBtn) return;
+        const raw = parseFloat(event.target.value);
+        const bp = isFinite(raw) && raw > 0 ? raw : 0;
+        socket.emit('position_book_profit_updated', {
+            position_key: sellBtn.dataset.positionkey || '',
+            instrument_token: sellBtn.dataset.token || '',
+            book_profit_pct: bp
+        });
+    }
+
+    function addStrategyRadioListeners() {
+        optionsTableBody.querySelectorAll('input[type="radio"][name^="type-"]').forEach(radio => {
+            radio.removeEventListener('change', handleBuyRadioChange);
+            radio.addEventListener('change', handleBuyRadioChange);
+        });
+        optionsTableBody.querySelectorAll('input[type="radio"][name^="sellmode-"]').forEach(radio => {
+            radio.removeEventListener('change', handleBuySellModeRadioChange);
+            radio.addEventListener('change', handleBuySellModeRadioChange);
+        });
+        if (positionsTableBody) {
+            positionsTableBody.querySelectorAll('input[type="radio"][name^="sell-type-"]').forEach(radio => {
+                radio.removeEventListener('change', handleSellRadioChange);
+                radio.addEventListener('change', handleSellRadioChange);
+            });
+            positionsTableBody.querySelectorAll('input[type="radio"][name^="sellmode-pos-"]').forEach(radio => {
+                radio.removeEventListener('change', handleSellModeRadioChange);
+                radio.addEventListener('change', handleSellModeRadioChange);
+            });
+        }
+    }
+
+    function handleBuyRadioChange(event) {
+        if (event.target.checked) {
+            const token = event.target.name.replace('type-', '');
+            const row = document.getElementById(`row-${token}`);
+            if (!row) return;
+            const buyButton = row.querySelector('.buy-button');
+            const tradingsymbol = buyButton ? buyButton.dataset.tradingsymbol : '';
+            const selectedValue = event.target.value;
+            let strategyType = mapValueToStrategy(selectedValue);
+            const payload = { "tradingsymbol": tradingsymbol, "instrument_token": token, "strategy_type": strategyType };
+            console.log('Emitting order strategy update:', payload);
+            socket.emit('order_strategy_data_updated_orders', payload);
+            // Remember the manual choice locally so table re-renders
+            // (chain refresh / ATM drift) keep the radio as selected.
+            orderStrategyMapping[token] = strategyType;
+            manuallySetStrategyTokens.add(token);
+            saveManualStrategyTokens();
+            updateBuyCodeCell(token);
+        }
+    }
+
+    function handleSellRadioChange(event) {
+         if (event.target.checked) {
+            // Radio names carry the sanitized position-leg key
+            // (":" replaced with "_"); rebuild the composite key so the
+            // backend updates only this leg's strategy.
+            const domId = event.target.name.replace('sell-type-', '');
+            const row = document.getElementById(`row-sell-${domId}`);
+            if (!row) return;
+            const sellButton = row.querySelector('.sell-button');
+            const tradingsymbol = sellButton ? sellButton.dataset.tradingsymbol : '';
+            const positionKey = sellButton ? sellButton.dataset.positionkey : '';
+            const token = positionKey ? positionKey.split(':')[0] : domId.split('_')[0];
+            const selectedValue = event.target.value;
+            let strategyType = mapValueToStrategy(selectedValue);
+            const payload = { "tradingsymbol": tradingsymbol, "instrument_token": token, "strategy_type": strategyType };
+            if (positionKey) payload["position_key"] = positionKey;
+            console.log('Emitting position strategy update:', payload);
+            socket.emit('order_strategy_data_updated_positions', payload);
+            updatePositionCodeCell(domId);
+        }
+    }
+
+    function handleSellModeRadioChange(event) {
+         if (event.target.checked) {
+            // Per-leg Sell Type switch: the leg key comes from the
+            // sanitized radio name; the backend updates that leg's
+            // sell_mode so the TP/SL watcher applies the right mode.
+            const domId = event.target.name.replace('sellmode-pos-', '');
+            const row = document.getElementById(`row-sell-${domId}`);
+            if (!row) return;
+            const sellButton = row.querySelector('.sell-button');
+            const tradingsymbol = sellButton ? sellButton.dataset.tradingsymbol : '';
+            const positionKey = sellButton ? sellButton.dataset.positionkey : '';
+            const token = positionKey ? positionKey.split(':')[0] : domId.split('_')[0];
+            const payload = {
+                "tradingsymbol": tradingsymbol,
+                "instrument_token": token,
+                "sell_mode": event.target.value
+            };
+            if (positionKey) payload["position_key"] = positionKey;
+            console.log('Emitting position sell mode update:', payload);
+            socket.emit('position_sell_mode_updated', payload);
+            updatePositionCodeCell(domId);
+        }
+    }
+
+    function handleBuySellModeRadioChange(event) {
+        if (event.target.checked) {
+            updateBuyCodeCell(event.target.name.replace('sellmode-', ''));
+        }
+    }
+
+    // --- EVENT LISTENERS & INITIAL CALLS ---
+    callBtn.addEventListener('click', () => {
+        buyWidgetContainer.classList.remove('put-view');
+        putBtn.classList.remove('active-toggle');
+        callBtn.classList.add('active-toggle');
+        populateOptionsTable(allContracts, 'CE');
+    });
+
+    putBtn.addEventListener('click', () => {
+        //alert("put button clicked")
+        buyWidgetContainer.classList.add('put-view');
+        callBtn.classList.remove('active-toggle');
+        putBtn.classList.add('active-toggle');
+        //alert("enable_disable_callput_buttons function called")
+        populateOptionsTable(allContracts, 'PE');
+    });
+
+    // =================================================================
+    // MODE LABEL + PLAYBACK CONTROLS
+    // =================================================================
+    let playbackState = { running: false, paused: false, speed: 1 };
+
+    function applyModeLabel(mode) {
+        const modeLabel = document.getElementById('modeLabel');
+        if (!modeLabel) return;
+        const normalized = String(mode || '').trim().toUpperCase();
+        modeLabel.textContent = normalized || '--';
+        modeLabel.dataset.mode = normalized;
+
+        const controls = document.getElementById('playbackControls');
+        if (controls) controls.style.display = normalized === 'PLAYBACK' ? 'flex' : 'none';
+    }
+
+    function toDatetimeLocalValue(bound) {
+        // Backend sends "YYYY-MM-DD HH:MM:SS"; datetime-local wants "YYYY-MM-DDTHH:MM:SS"
+        return String(bound || '').replace(' ', 'T');
+    }
+
+    function setPlaybackInputTime(timeStr) {
+        const input = document.getElementById('playbackStartInput');
+        if (!input || !timeStr) return;
+        // Don't fight the user while they are picking a new time
+        if (document.activeElement === input) return;
+        input.value = toDatetimeLocalValue(timeStr);
+    }
+
+    socket.on('playback_time', (payload) => {
+        // Live replay clock: keeps the date/time control in sync as
+        // playback seconds tick by.
+        setPlaybackInputTime(payload && payload.time);
+    });
+
+    function updatePlaybackSpeedSelect(speed) {
+        const speedSelect = document.getElementById('playbackSpeedSelect');
+        if (!speedSelect || speed === undefined || speed === null) return;
+        const value = String(speed);
+        if (![...speedSelect.options].some(option => option.value === value)) {
+            const option = document.createElement('option');
+            option.value = value;
+            option.textContent = value + 'x';
+            speedSelect.appendChild(option);
+        }
+        speedSelect.value = value;
+    }
+
+    function updatePlaybackButtons(status) {
+        const pauseBtn = document.getElementById('playbackPauseBtn');
+        const startBtn = document.getElementById('playbackStartBtn');
+        if (!pauseBtn || !startBtn || !status) return;
+
+        if (status.paused) {
+            pauseBtn.innerHTML = '&#x25B6;'; // play icon while paused
+            pauseBtn.title = 'Resume playback';
+            pauseBtn.classList.add('playback-active');
+        } else {
+            pauseBtn.innerHTML = '&#x23F8;'; // pause icon while running
+            pauseBtn.title = 'Pause playback';
+            pauseBtn.classList.remove('playback-active');
+        }
+
+        startBtn.classList.toggle('playback-active', !!status.running);
+    }
+
+    function configurePlaybackControls(playback) {
+        const input = document.getElementById('playbackStartInput');
+        if (!input || !playback) return;
+
+        if (playback.start_bound) input.min = toDatetimeLocalValue(playback.start_bound);
+        if (playback.end_bound) input.max = toDatetimeLocalValue(playback.end_bound);
+        if (playback.start_bound && !input.value) input.value = toDatetimeLocalValue(playback.start_bound);
+
+        playbackState = {
+            running: !!playback.running,
+            paused: !!playback.paused,
+            speed: playback.speed || 1
+        };
+        updatePlaybackSpeedSelect(playback.speed);
+        updatePlaybackButtons(playback);
+    }
+
+    socket.on('playback_status', (status) => {
+        console.log('Received playback status:', status);
+        if (!status) return;
+        playbackState = {
+            running: !!status.running,
+            paused: !!status.paused,
+            speed: status.speed || 1
+        };
+        updatePlaybackButtons(status);
+        updatePlaybackSpeedSelect(status.speed);
+        // Keep the date/time control current on pause/resume/stop too
+        setPlaybackInputTime(status.current_time);
+    });
+
+    const playbackStartBtn = document.getElementById('playbackStartBtn');
+    const playbackPauseBtn = document.getElementById('playbackPauseBtn');
+    const playbackStopBtn = document.getElementById('playbackStopBtn');
+    const playbackSpeedSelect = document.getElementById('playbackSpeedSelect');
+    const playbackStartInput = document.getElementById('playbackStartInput');
+
+    if (playbackStartBtn) {
+        playbackStartBtn.addEventListener('click', () => {
+            if (!playbackStartInput || !playbackStartInput.value) {
+                showInlineStatus('Select a playback date and time first', 'error');
+                return;
+            }
+            socket.emit('start_playback', { start_datetime: playbackStartInput.value });
+        });
+    }
+
+    if (playbackPauseBtn) {
+        playbackPauseBtn.addEventListener('click', () => {
+            if (playbackState.paused) {
+                socket.emit('resume_playback');
+            } else {
+                socket.emit('pause_playback');
+            }
+        });
+    }
+
+    if (playbackStopBtn) {
+        playbackStopBtn.addEventListener('click', () => {
+            socket.emit('stop_playback');
+        });
+    }
+
+    if (playbackSpeedSelect) {
+        playbackSpeedSelect.addEventListener('change', () => {
+            socket.emit('set_playback_speed', { speed: parseFloat(playbackSpeedSelect.value) });
+        });
+    }
+
+
+    fetchFundSummary();
+});
+})();
+</script>
+<script>
+(function () {
+document.addEventListener('DOMContentLoaded', function() {
+    console.log('ORDERS PAGE JS: DOMContentLoaded', new Date().toISOString());
+
+    // --- SOCKET CONNECTION ---
+    // This page keeps its own Socket.IO connection so the grid refreshes
+    // automatically right after an order is placed from the Trade page.
+    // Websocket-only transport: skips the polling-then-upgrade handshake.
+    const socket = io('http://localhost:5001', { transports: ['websocket'] });
+
+    // --- DOM ELEMENTS ---
+    const ordersTableBody = document.getElementById('ordersTableBody');
+    const ordersCountLabel = document.getElementById('ordersCountLabel');
+    const ordersRefreshBtn = document.getElementById('ordersRefreshBtn');
+    const ordersDownloadBtn = document.getElementById('ordersDownloadBtn');
+    const ordersUploadBtn = document.getElementById('ordersUploadBtn');
+    const ordersUploadInput = document.getElementById('ordersUploadInput');
+    const ordersDateInput = document.getElementById('ordersDateInput');
+    const cashSummaryLabel = document.getElementById('cashSummaryLabel');
+
+    // --- STATE VARIABLES ---
+    let ordersRowsCache = [];
+    // Default: newest order first (descending Order Time).
+    let ordersSort = { key: 'ORDERTIME', direction: -1 };
+    // Grid data source: 'broker' (live trades for the selected date) or
+    // 'upload' (contract-note rows). Refresh / date change resets this.
+    let ordersSource = 'broker';
+    let uploadedOrdersMeta = null;
+    let ordersRefreshTimer = null;
+
+    // --- ORDERS GRID: current day executed trades ---
+    function getTodayTradeDate() {
+        const now = new Date();
+        const yyyy = now.getFullYear();
+        const mm = String(now.getMonth() + 1).padStart(2, '0');
+        const dd = String(now.getDate()).padStart(2, '0');
+        return `${yyyy}-${mm}-${dd}`;
+    }
+
+    function getSelectedTradeDate() {
+        return (ordersDateInput && ordersDateInput.value) || getTodayTradeDate();
+    }
+
+    // Default the date picker to today once.
+    if (ordersDateInput && !ordersDateInput.value) {
+        ordersDateInput.value = getTodayTradeDate();
+    }
+
+    async function loadOrders() {
+        if (!ordersTableBody) return;
+        // Loading broker data resets any uploaded contract-note view.
+        ordersSource = 'broker';
+        uploadedOrdersMeta = null;
+        if (ordersRefreshBtn) ordersRefreshBtn.disabled = true;
+        const tradeDate = getSelectedTradeDate();
+        try {
+            const tradesPromise = fetch('/get_executed_trades', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ trade_date: tradeDate })
+            });
+            /*
+            const fundPromise = fetch('/fund_summary')
+                .then(response => response.json())
+                .catch(() => null);
+            */
+            const dayCashPromise = fetch(`/day_cash?trade_date=${encodeURIComponent(tradeDate)}`)
+                .then(response => response.json())
+                .catch(() => null);
+
+            const response = await tradesPromise;
+            const data = await response.json();
+            if (!response.ok || !data.success) {
+                throw new Error(data.error || `HTTP Error: ${response.status}`);
+            }
+            /*    
+            const fundData = await fundPromise;
+            const currentCash = parseFloat(
+                fundData && fundData.data && fundData.data.cash_balance
+            );
+            */
+
+            const dayCashData = await dayCashPromise;
+            const dayStartCash = (dayCashData && dayCashData.success)
+                ? parseFloat(dayCashData.cash_balance)
+                : NaN;
+
+            ordersRowsCache = data.rows || [];
+            // Show the cash summary box whenever there are trades to
+            // display; a missing opening balance (dates before tracking
+            // began) simply renders as '--'.
+            if (cashSummaryLabel) {
+                cashSummaryLabel.style.display =
+                    ordersRowsCache.length > 0 ? '' : 'none';
+            }
+            renderOrders(ordersRowsCache);
+            //renderOrdersCashSummary(currentCash, dayStartCash);
+            renderOrdersCashSummary(dayStartCash);
+        } catch (error) {
+            console.error("Could not load trades:", error);
+            ordersTableBody.innerHTML = `<tr><td colspan="15" class="no-options">Failed to load trades: ${error.message || 'Unknown error'}</td></tr>`;
+            if (ordersCountLabel) ordersCountLabel.textContent = '';
+            if (cashSummaryLabel) cashSummaryLabel.style.display = 'none';
+        } finally {
+            if (ordersRefreshBtn) ordersRefreshBtn.disabled = false;
+        }
+    }
+
+    function formatInstrumentDisplay(value) {
+        const symbol = String(value || '').toUpperCase();
+        if (!symbol) return '';
+
+        let prefix = '';
+        if (symbol.startsWith('CRUDEOILM')) prefix = 'CM';
+        else if (symbol.startsWith('CRUDEOIL')) prefix = 'C';
+        else if (symbol.startsWith('NIFTY')) prefix = 'N';
+        else if (symbol.startsWith('SENSEX')) prefix = 'S';
+        else return symbol;
+
+        const match = symbol.match(/(\d{4,5})(?=CE|PE$)/);
+        if (!match) return symbol;
+
+        return `${prefix} ${match[1]}`;
+    }
+
+    const ORDERS_NUMERIC_SORT_COLUMNS = ['ORDERDATE', 'ORDERTIME', 'Qty.', 'RATE', 'Duration', 'PurValue', 'PnL_Rate', 'PnL', 'PnL%', 'PnL_RT', 'Brokerage', 'Other Charges'];
+
+    function getOrdersSortValue(row, column) {
+        if (column === 'Type') {
+            const contractSymbol = String(row['CONT'] || '').toUpperCase();
+            const typeMatch = contractSymbol.match(/(CE|PE)$/);
+            return typeMatch ? typeMatch[1] : '';
+        }
+        const raw = row[column];
+        if (raw === null || raw === undefined) return '';
+        if (column === 'ORDERDATE') {
+            const parts = String(raw).split('/');
+            if (parts.length !== 3) return '';
+            const parsed = Date.UTC(Number(parts[2]), Number(parts[0]) - 1, Number(parts[1]));
+            return Number.isNaN(parsed) ? '' : parsed;
+        }
+        if (column === 'ORDERTIME') {
+            // Composite day + second-of-day so multi-day grids
+            // (playback) order correctly by time.
+            const day = getOrdersSortValue(row, 'ORDERDATE');
+            const timeParts = String(raw || '').split(':');
+            const secondsOfDay = timeParts.length === 3
+                ? Number(timeParts[0]) * 3600 + Number(timeParts[1]) * 60 + Number(timeParts[2])
+                : 0;
+            if (day === '' || Number.isNaN(Number(day))) return secondsOfDay;
+            return Number(day) + secondsOfDay * 1000;
+        }
+        if (column === 'Duration') {
+            const parts = String(raw).split(':');
+            if (parts.length !== 2) return '';
+            const seconds = Number(parts[0]) * 60 + Number(parts[1]);
+            return Number.isNaN(seconds) ? '' : seconds;
+        }
+        if (column === 'PurValue') {
+            const parsed = parseFloat(String(raw));
+            return Number.isNaN(parsed) ? '' : parsed;
+        }
+        if (column === 'Qty.') return String(raw).split('/')[0];
+        return raw;
+    }
+
+    function sortOrdersRows(rows) {
+        if (!ordersSort.key || !rows || rows.length === 0) return rows || [];
+        const numeric = ORDERS_NUMERIC_SORT_COLUMNS.includes(ordersSort.key);
+        const direction = ordersSort.direction;
+        return [...rows].sort((a, b) => {
+            const av = getOrdersSortValue(a, ordersSort.key);
+            const bv = getOrdersSortValue(b, ordersSort.key);
+            const aEmpty = av === '' || (numeric && Number.isNaN(Number(av)));
+            const bEmpty = bv === '' || (numeric && Number.isNaN(Number(bv)));
+            if (aEmpty && bEmpty) return 0;
+            if (aEmpty) return 1;
+            if (bEmpty) return -1;
+            if (numeric) return (Number(av) - Number(bv)) * direction;
+            return String(av).localeCompare(String(bv), undefined, { sensitivity: 'base', numeric: true }) * direction;
+        });
+    }
+
+    function updateOrdersSortIndicators() {
+        document.querySelectorAll('#ordersTable thead th[data-sort-key]').forEach(th => {
+            const isActive = ordersSort.key === th.getAttribute('data-sort-key');
+            th.classList.toggle('sort-active', isActive);
+            th.classList.toggle('sort-desc', isActive && ordersSort.direction === -1);
+        });
+    }
+
+    function attachOrdersSortHandlers() {
+        document.querySelectorAll('#ordersTable thead th[data-sort-key]').forEach(th => {
+            th.addEventListener('click', () => {
+                const key = th.getAttribute('data-sort-key');
+                if (ordersSort.key === key) {
+                    ordersSort.direction = -ordersSort.direction;
+                } else {
+                    ordersSort.key = key;
+                    ordersSort.direction = 1;
+                }
+                renderOrders(ordersRowsCache);
+            });
+        });
+    }
+
+    function renderOrders(rows) {
+        ordersTableBody.innerHTML = '';
+        updateOrdersSortIndicators();
+
+        if (!rows || rows.length === 0) {
+            ordersTableBody.innerHTML = `<tr><td colspan="15" class="no-options">No trades for the selected date.</td></tr>`;
+            if (ordersCountLabel) ordersCountLabel.textContent = '';
+            updateChargesTotals(rows);
+            return;
+        }
+
+        const columns = [
+            'ORDERDATE', 'ORDERTIME', 'TRAN', 'CONT', 'Type', 'Qty.', 'RATE',
+            'Duration', 'PurValue', 'PnL_Rate', 'PnL', 'PnL%', 'PnL_RT',
+            'Brokerage', 'Other Charges'
+        ];
+
+        sortOrdersRows(rows).forEach(row => {
+            const tr = document.createElement('tr');
+
+            const transaction = String(row['TRAN'] || '').toUpperCase();
+            if (transaction === 'BUY') tr.classList.add('trade-buy');
+            else if (transaction === 'SELL') tr.classList.add('trade-sell');
+
+            columns.forEach(column => {
+                const td = document.createElement('td');
+                const value = row[column];
+                let displayValue = (value === null || value === undefined) ? '' : value;
+                if (column === 'Qty.' && displayValue !== '') {
+                    displayValue = String(displayValue).split('/')[0];
+                }
+                if (column === 'CONT' && displayValue !== '') {
+                    displayValue = formatInstrumentDisplay(displayValue);
+                }
+                if (column === 'Type') {
+                    const contractSymbol = String(row['CONT'] || '').toUpperCase();
+                    const typeMatch = contractSymbol.match(/(CE|PE)$/);
+                    displayValue = typeMatch ? typeMatch[1] : '';
+                    if (displayValue === 'CE') td.classList.add('type-ce');
+                    else if (displayValue === 'PE') td.classList.add('type-pe');
+                }
+                if (column === 'PnL' || column === 'PnL_RT') {
+                    const pnlValue = Number(value);
+                    if (value !== '' && value !== null && value !== undefined && !Number.isNaN(pnlValue)) {
+                        displayValue = pnlValue.toLocaleString('en-IN');
+                    }
+                }
+                if (column === 'PnL_Rate') {
+                    const pnlRateValue = Number(value);
+                    if (value !== '' && value !== null && value !== undefined && !Number.isNaN(pnlRateValue)) {
+                        displayValue = pnlRateValue.toFixed(2);
+                    }
+                }
+                if (column === 'PnL%') {
+                    const pnlPercent = Number(value);
+                    if (value !== '' && value !== null && value !== undefined && !Number.isNaN(pnlPercent)) {
+                        displayValue = pnlPercent.toFixed(1);
+                    }
+                }
+                if (column === 'Brokerage' || column === 'Other Charges') {
+                    const chargeValue = Number(value);
+                    if (value !== '' && value !== null && value !== undefined && !Number.isNaN(chargeValue)) {
+                        displayValue = chargeValue.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                    }
+                }
+                td.textContent = displayValue;
+
+                if (column === 'PnL%') {
+                    const pnlCellValue = Number(value);
+                    if (value !== '' && value !== null && value !== undefined && !Number.isNaN(pnlCellValue)) {
+                        if (pnlCellValue > 0) td.classList.add('pnl-pos');
+                        else if (pnlCellValue < 0) td.classList.add('pnl-neg');
+                    }
+                }
+
+                tr.appendChild(td);
+            });
+
+            ordersTableBody.appendChild(tr);
+        });
+
+        if (ordersCountLabel) {
+            const sourceSuffix = ordersSource === 'upload'
+                ? ` · Contract Note${uploadedOrdersMeta && uploadedOrdersMeta.trade_date ? ' ' + uploadedOrdersMeta.trade_date : ''}`
+                : '';
+            ordersCountLabel.textContent = `${rows.length} trade${rows.length === 1 ? '' : 's'}${sourceSuffix}`;
+        }
+
+        updateChargesTotals(rows);
+    }
+
+    function updateChargesTotals(rows) {
+        const brokerageLabel = document.getElementById('brokerageSummaryLabel');
+        const otherChargesLabel = document.getElementById('otherChargesSummaryLabel');
+        if (!brokerageLabel || !otherChargesLabel) return;
+
+        const hasRows = rows && rows.length > 0;
+        brokerageLabel.style.display = hasRows ? '' : 'none';
+        otherChargesLabel.style.display = hasRows ? '' : 'none';
+        if (!hasRows) return;
+
+        const sumColumn = (key) => (rows || []).reduce((total, row) => {
+            const value = Number(row[key]);
+            return Number.isFinite(value) ? total + value : total;
+        }, 0);
+
+        const formatRupees = (value) => '\u20B9' + value.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+        document.getElementById('totalBrokerageValue').textContent = formatRupees(sumColumn('Brokerage'));
+        document.getElementById('totalOtherChargesValue').textContent = formatRupees(sumColumn('Other Charges'));
+    }
+
+    // function renderOrdersCashSummary(currentCash, dayStartCash) {
+    //     const cashBeginEl = document.getElementById('cashBeginValue');
+    //     const cashCurrentEl = document.getElementById('cashCurrentValue');
+    //     const cashChangeEl = document.getElementById('cashChangePct');
+    //     if (!cashBeginEl || !cashCurrentEl || !cashChangeEl) return;
+
+    //     cashBeginEl.textContent = Number.isFinite(dayStartCash)
+    //         ? dayStartCash.toLocaleString('en-IN', { maximumFractionDigits: 0 })
+    //         : '--';
+    //     cashCurrentEl.textContent = Number.isFinite(currentCash)
+    //         ? currentCash.toLocaleString('en-IN', { maximumFractionDigits: 0 })
+    //         : '--';
+
+    //     if (Number.isFinite(currentCash) && Number.isFinite(dayStartCash) && dayStartCash > 0) {
+    //         const changePct = ((currentCash - dayStartCash) / dayStartCash) * 100;
+    //         cashChangeEl.textContent = `${changePct.toFixed(2)}%`;
+    //         cashChangeEl.className = changePct > 0 ? 'profit' : (changePct < 0 ? 'loss' : '');
+    //     } else {
+    //         cashChangeEl.textContent = '--';
+    //         cashChangeEl.className = '';
+    //     }
+    // }
+
+    function renderOrdersCashSummary(dayStartCash) {
+        const cashBeginEl = document.getElementById('cashBeginValue');
+        const cashCurrentEl = document.getElementById('cashCurrentValue');
+        const cashChangeEl = document.getElementById('cashChangePct');
+
+        if (!cashBeginEl || !cashCurrentEl || !cashChangeEl) return;
+
+        cashBeginEl.textContent = Number.isFinite(dayStartCash)
+            ? dayStartCash.toLocaleString('en-IN', { maximumFractionDigits: 0 })
+            : '--';
+
+        // Calculate net P/L for all executed trades shown in the grid.
+        const netPnL = (ordersRowsCache || []).reduce((total, row) => {
+            const pnl = Number(row['PnL']);
+            return Number.isFinite(pnl) ? total + pnl : total;
+        }, 0);
+
+        cashCurrentEl.textContent = Number.isFinite(netPnL)
+            ? netPnL.toLocaleString('en-IN', {
+                maximumFractionDigits: 2,
+                minimumFractionDigits: 2
+            })
+            : '--';
+
+        if (Number.isFinite(netPnL) && Number.isFinite(dayStartCash) && dayStartCash > 0) {
+            const pnlPct = (netPnL / dayStartCash) * 100;
+
+            cashChangeEl.textContent = `${pnlPct.toFixed(2)}%`;
+            cashChangeEl.className =
+                pnlPct > 0 ? 'profit' : (pnlPct < 0 ? 'loss' : '');
+        } else {
+            cashChangeEl.textContent = '--';
+            cashChangeEl.className = '';
+        }
+    }
+
+
+
+
+    function scheduleOrdersRefresh() {
+        if (ordersRefreshTimer) clearTimeout(ordersRefreshTimer);
+        ordersRefreshTimer = setTimeout(loadOrders, 1500);
+    }
+
+    if (ordersRefreshBtn) {
+        ordersRefreshBtn.addEventListener('click', loadOrders);
+    }
+
+    if (ordersDateInput) {
+        ordersDateInput.addEventListener('change', loadOrders);
+    }
+
+    attachOrdersSortHandlers();
+
+    function downloadBlobAsFile(response, fallbackName) {
+        return response.blob().then(blob => {
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            const contentDisposition = response.headers.get('Content-Disposition') || '';
+            const filenameMatch = contentDisposition.match(/filename="?([^";]+)"?/i);
+            a.download = filenameMatch && filenameMatch[1] ? filenameMatch[1] : fallbackName;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            window.URL.revokeObjectURL(url);
+        });
+    }
+
+    async function downloadBrokerOrders() {
+        const tradeDate = getSelectedTradeDate();
+        const response = await fetch('/import_executed_trades', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ trade_date: tradeDate })
+        });
+
+        const contentType = response.headers.get('Content-Type') || '';
+        if (contentType.includes('application/json')) {
+            const data = await response.json();
+            throw new Error(data.error || 'No executed trades available to download');
+        }
+
+        if (!response.ok) {
+            throw new Error(`HTTP Error: ${response.status}`);
+        }
+
+        await downloadBlobAsFile(response, `Orders_${tradeDate.replace(/-/g, '_')}.xlsx`);
+    }
+
+    async function downloadUploadedOrders() {
+        const tradeDate = (uploadedOrdersMeta && uploadedOrdersMeta.trade_date) || '';
+        const filenameDate = tradeDate.replaceAll('-', '_');
+        const fallbackName = `MStock_Orders_${filenameDate || 'ContractNote'}.xlsx`;
+
+        const response = await fetch('/export_executed_trades', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                rows: ordersRowsCache,
+                pine_script: (uploadedOrdersMeta && uploadedOrdersMeta.pine_script) || '',
+                filename: filenameDate ? `MStock_Orders_${filenameDate}` : 'MStock_Orders_ContractNote'
+            })
+        });
+
+        const contentType = response.headers.get('Content-Type') || '';
+        if (contentType.includes('application/json')) {
+            const data = await response.json();
+            throw new Error(data.error || 'No trades available to download');
+        }
+
+        if (!response.ok) {
+            throw new Error(`HTTP Error: ${response.status}`);
+        }
+
+        await downloadBlobAsFile(response, fallbackName);
+    }
+
+    async function downloadOrders() {
+        if (ordersDownloadBtn) ordersDownloadBtn.disabled = true;
+        try {
+            // Download exactly what the grid is showing: uploaded
+            // contract-note rows when present, else the selected date's
+            // broker trades.
+            if (ordersSource === 'upload' && ordersRowsCache.length > 0) {
+                await downloadUploadedOrders();
+            } else {
+                await downloadBrokerOrders();
+            }
+        } catch (error) {
+            console.error("Could not download trades:", error);
+            alert(error.message || "Could not download trades");
+        } finally {
+            if (ordersDownloadBtn) ordersDownloadBtn.disabled = false;
+        }
+    }
+
+    if (ordersDownloadBtn) {
+        ordersDownloadBtn.addEventListener('click', downloadOrders);
+    }
+
+    async function uploadContractNote() {
+        if (!ordersUploadInput || !ordersUploadInput.files || ordersUploadInput.files.length === 0) return;
+        const pdfFile = ordersUploadInput.files[0];
+        if (ordersUploadBtn) ordersUploadBtn.disabled = true;
+        if (ordersRefreshBtn) ordersRefreshBtn.disabled = true;
+        try {
+            const formData = new FormData();
+            formData.append("pdf", pdfFile);
+
+            const response = await fetch('/convert_contract_note_rows', {
+                method: 'POST',
+                body: formData
+            });
+
+            const data = await response.json();
+            if (!response.ok || !data.success) {
+                throw new Error(data.error || `HTTP Error: ${response.status}`);
+            }
+
+            ordersRowsCache = data.rows || [];
+            ordersSource = 'upload';
+            uploadedOrdersMeta = {
+                pine_script: data.pine_script || '',
+                trade_date: data.trade_date || ''
+            };
+            renderOrders(ordersRowsCache);
+            // Uploaded data is not tied to today's live cash story.
+            if (cashSummaryLabel) cashSummaryLabel.style.display = 'none';
+        } catch (error) {
+            console.error("Could not upload contract note:", error);
+            alert(error.message || "Could not upload contract note");
+        } finally {
+            if (ordersUploadBtn) ordersUploadBtn.disabled = false;
+            if (ordersRefreshBtn) ordersRefreshBtn.disabled = false;
+            ordersUploadInput.value = '';
+        }
+    }
+
+    if (ordersUploadBtn && ordersUploadInput) {
+        ordersUploadBtn.addEventListener('click', () => ordersUploadInput.click());
+        ordersUploadInput.addEventListener('change', uploadContractNote);
+    }
+
+    // --- SOCKET-DRIVEN AUTO REFRESH ---
+    // Orders are placed on the Trade page; when a buy/sell result is
+    // broadcast, debounce-refresh this grid so it stays current.
+    socket.on('buy_order_result', function (result) {
+        console.log('ORDERS PAGE: buy_order_result received:', result);
+        scheduleOrdersRefresh();
+    });
+
+    socket.on('sell_order_result', function (result) {
+        console.log('ORDERS PAGE: sell_order_result received:', result);
+        scheduleOrdersRefresh();
+    });
+
+    // --- INITIAL LOAD ---
+    loadOrders();
+});
+})();
+</script>
+<script>
+(function () {
+document.addEventListener('DOMContentLoaded', () => {
+    // Keep a socket alive on this page too: the server shuts down when
+    // its LAST browser client disconnects, so sitting here with the
+    // trade tab closed must not stop the app.
+    const socket = io('http://localhost:5001', { transports: ['websocket'] });
+
+    const form = document.getElementById('settingsForm');
+    const statusMsg = document.getElementById('statusMsg');
+    const saveBtn = document.getElementById('saveBtn');
+    const saveBtnLabel = document.getElementById('saveBtnLabel');
+    const cancelBtn = document.getElementById('cancelBtn');
+    const dirtyFlag = document.getElementById('dirtyFlag');
+
+    let snapshot = null;   // last loaded/saved form state
+    let isSaving = false;
+
+    // Collect the form exactly the way /save_appconfig expects:
+    // COMPARISON_FUNCTION as an array, checkboxes as booleans,
+    // everything else as strings (FormData semantics).
+    function collectForm() {
+        const formData = new FormData(form);
+        const data = {};
+
+        for (const [key, value] of formData.entries()) {
+            const input = form.querySelector(`[name="${key}"]`);
+
+            if (key === "COMPARISON_FUNCTION") {
+                data[key] = [value];
+            }
+            else if (input && input.type === 'checkbox') {
+                data[key] = input.checked;
+            }
+            else {
+                data[key] = value;
+            }
+        }
+
+        // FormData omits unchecked checkboxes; add the toggle explicitly
+        // so toggling OFF is persisted too (backend merges into appconfig.json).
+        const tvValidationToggle = document.getElementById('TV_DATA_Validation_REQUIRED');
+        if (tvValidationToggle) {
+            data['TV_DATA_Validation_REQUIRED'] = tvValidationToggle.checked;
+        }
+
+        return data;
+    }
+
+    function isDirty() {
+        return snapshot !== null && JSON.stringify(collectForm()) !== JSON.stringify(snapshot);
+    }
+
+    function refreshDirtyState() {
+        syncGating();
+        const dirty = isDirty();
+        saveBtn.disabled = !dirty || isSaving;
+        dirtyFlag.classList.toggle('visible', dirty);
+    }
+
+    // Conditional visibility: mirror the Session / Sell Trigger selections
+    // onto the form's data-* attributes; CSS shows only the relevant
+    // .only-* tagged controls.
+    function syncGating() {
+        const val = (id) => {
+            const el = document.getElementById(id);
+            return el ? String(el.value).toUpperCase() : "";
+        };
+        form.dataset.cf = val("COMPARISON_FUNCTION");
+        form.dataset.broker = val("BROKER");
+        form.dataset.underlying = val("UNDERLYING");
+    }
+
+    function applyConfig(data) {
+        Object.entries(data).forEach(([key, value]) => {
+            const el = form.querySelector(`[name="${key}"]`);
+            if (!el) return;
+
+            if (key === "COMPARISON_FUNCTION") {
+                // Stored as a one-element array; the control is a select,
+                // so pick the option directly.
+                const selected = Array.isArray(value) ? value[0] : value;
+                if (el.tagName === 'SELECT') {
+                    el.value = selected;
+                } else {
+                    const radio = form.querySelector(`[name="COMPARISON_FUNCTION"][value="${selected}"]`);
+                    if (radio) radio.checked = true;
+                }
+                return;
+            }
+
+            if (el.type === 'radio') {
+                const radio = form.querySelector(`[name="${key}"][value="${value}"]`);
+                if (radio) radio.checked = true;
+            }
+            else if (el.type === 'checkbox') {
+                el.checked = !!value;
+            }
+            else {
+                el.value = value;
+            }
+        });
+    }
+
+    function setStatus(message, isError) {
+        statusMsg.textContent = message;
+        statusMsg.classList.toggle('err', !!isError);
+    }
+
+    // Session keys are restart-required; flag any that differ from the
+    // loaded baseline so a casual Save cannot silently re-mode the app.
+    const RESTART_KEYS = ["MODE", "BROKER", "UNDERLYING"];
+    function sessionChanges() {
+        if (!snapshot) return [];
+        const current = collectForm();
+        return RESTART_KEYS.filter((k) => {
+            const base = Array.isArray(snapshot[k]) ? snapshot[k][0] : snapshot[k];
+            return String(current[k]).toUpperCase() !== String(base).toUpperCase();
+        });
+    }
+
+    // Initial load
+    (async () => {
+        try {
+            const res = await fetch('/load_appconfig');
+            if (res.ok) {
+                const data = await res.json();
+                applyConfig(data);
+                snapshot = collectForm();
+                refreshDirtyState();
+            } else {
+                setStatus('Error loading configuration.', true);
+            }
+        } catch (err) {
+            console.error('Error loading appconfig:', err);
+            setStatus('Error loading configuration.', true);
+        }
+    })();
+
+    // Dirty tracking on any edit
+    form.addEventListener('input', refreshDirtyState);
+    form.addEventListener('change', refreshDirtyState);
+
+    // Save (shared by button click and Ctrl+S)
+    async function saveConfig() {
+        if (isSaving || saveBtn.disabled) return;
+
+        // Guard restart-required session keys: confirm before persisting
+        // a Mode/Broker/Underlying change (takes effect on next restart).
+        const changedSession = sessionChanges();
+        if (changedSession.length &&
+            !confirm('Session setting(s) changed: ' + changedSession.join(', ') +
+                '.\nThey take effect only after an app restart.\nSave anyway?')) {
+            return;
+        }
+
+        isSaving = true;
+        saveBtn.classList.add('saving');
+        saveBtn.disabled = true;
+        saveBtnLabel.textContent = 'Saving...';
+        setStatus('');
+
+        try {
+            const res = await fetch('/save_appconfig', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(collectForm())
+            });
+
+            if (res.ok) {
+                snapshot = collectForm(); // new baseline
+                setStatus('Saved successfully.');
+            } else {
+                setStatus('Error saving configuration.', true);
+            }
+        } catch (err) {
+            console.error('Error saving:', err);
+            setStatus('Error saving configuration.', true);
+        } finally {
+            isSaving = false;
+            saveBtn.classList.remove('saving');
+            saveBtnLabel.textContent = 'Save';
+            refreshDirtyState();
+        }
+    }
+
+    saveBtn.addEventListener('click', saveConfig);
+
+    // Reset to last loaded/saved values
+    cancelBtn.addEventListener('click', () => {
+        if (snapshot) {
+            form.reset();
+            applyConfig(snapshot);
+            refreshDirtyState();
+        }
+        setStatus('Changes discarded.');
+    });
+
+    // Ctrl+S / Cmd+S saves
+    document.addEventListener('keydown', (e) => {
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+            e.preventDefault();
+            saveConfig();
+        }
+    });
+
+    // Guard against losing unsaved changes
+    window.addEventListener('beforeunload', (e) => {
+        if (isDirty()) {
+            e.preventDefault();
+            e.returnValue = '';
+        }
+    });
+});
+})();
+</script>
+<script>
+        // Client-side tab switching: panels live in one document, so switching
+        // tabs never reloads the page and all JS state / sockets stay alive.
+        document.addEventListener('DOMContentLoaded', function () {
+            var panels = Array.prototype.slice.call(document.querySelectorAll('.tab-panel'));
+            if (!panels.length) return; // standalone pages: let links navigate normally
+
+            var tabLinks = Array.prototype.slice.call(document.querySelectorAll('#appTabs .app-tab'));
+
+            function tabNameFromLink(a) {
+                var href = a.getAttribute('href') || '';
+                var name = href.replace(/^\//, '');
+                return name === '' ? 'trade' : name;
+            }
+
+            function activate(name, skipHash) {
+                panels.forEach(function (p) {
+                    p.classList.toggle('active', p.id === 'panel-' + name);
+                });
+                tabLinks.forEach(function (a) {
+                    a.classList.toggle('active', tabNameFromLink(a) === name);
+                });
+                var activeLink = tabLinks.filter(function (a) { return a.classList.contains('active'); })[0];
+                var strip = document.getElementById('appTabs');
+                if (activeLink && strip && strip.scrollWidth > strip.clientWidth) {
+                    activeLink.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+                }
+                if (!skipHash && location.hash !== '#' + name) {
+                    location.hash = name; // history entry so Back/Forward moves between tabs
+                }
+            }
+
+            tabLinks.forEach(function (a) {
+                a.addEventListener('click', function (e) {
+                    e.preventDefault();
+                    activate(tabNameFromLink(a), false);
+                });
+            });
+
+            window.addEventListener('hashchange', function () {
+                var name = (location.hash || '').replace(/^#/, '');
+                if (name && document.getElementById('panel-' + name)) {
+                    activate(name, true);
+                }
+            });
+
+            // Initial tab: URL hash wins, else the active_tab hint from the
+            // server route, else the first panel.
+            var initial = (location.hash || '').replace(/^#/, '');
+            if (!initial || !document.getElementById('panel-' + initial)) {
+                initial = document.body.getAttribute('data-active-tab') || '';
+            }
+            if (!initial || !document.getElementById('panel-' + initial)) {
+                initial = panels[0].getAttribute('data-tab');
+            }
+            activate(initial, true);
+        });
+    </script>
+{% endblock %}
