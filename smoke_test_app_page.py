@@ -15,9 +15,10 @@ for path, tab in [("/", "trade"), ("/orders", "orders"), ("/appconfig", "appconf
     checks = {
         "panels3": html.count('class="tab-panel"') == 3,
         "body_tab": f'data-active-tab="{tab}"' in html,
-        "sockets3": html.count("io('http://localhost:5001'") == 3,
+        "sockets1": html.count("io('http://localhost:5001'") == 1,
+        "shared_refs": html.count("window.__appSocket") == 4,  # 1 create + 3 panel refs
         "iifes3": html.count("(function () {") == 3,
-        "script_tags": len(re.findall(r"<script>", html)) == 5,  # base scroll + 3 pages + switcher (CDN has src=)
+        "script_tags": len(re.findall(r"<script>", html)) == 6,  # base scroll + shared + 3 pages + switcher (CDN has src=)
         "style_tags": len(re.findall(r"<style>", html)) == 4,  # base universal + 3 pages
         "tabbar3": links == ["/trade", "/orders", "/appconfig"],
         "active_link": active_links == ["/trade" if tab == "trade" else "/" + tab],

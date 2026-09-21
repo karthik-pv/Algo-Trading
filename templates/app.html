@@ -1853,13 +1853,29 @@
 
 {% block scripts %}
 <script>
+// --- SHARED SOCKET (single connection for all tab panels) ---
+// One Socket.IO connection serves Trade, Orders and App Config. Panel
+// scripts register their handlers on this socket; events fan out to
+// every listener. Keeping one connection alive also keeps the server
+// running (it shuts down when the last browser client disconnects),
+// regardless of which tab is active.
+// Created on DOMContentLoaded — this listener is registered BEFORE the
+// panels' (script order), so the socket exists by the time panel scripts
+// grab it, and the async 'connect' handshake can only fire after every
+// panel has attached its handlers (same ordering as the old per-page
+// sockets, which were also created inside DOMContentLoaded).
+document.addEventListener('DOMContentLoaded', function () {
+    window.__appSocket = io('http://localhost:5001', { transports: ['websocket'] });
+});
+</script>
+<script>
 (function () {
 document.addEventListener('DOMContentLoaded', function() {
     console.log('TRADE PAGE JS: DOMContentLoaded', new Date().toISOString());
     // --- SOCKET CONNECTION ---
     // Websocket-only transport: the default polling-then-upgrade
     // handshake delayed the first data by ~0.5-1s on every page load.
-    const socket = io('http://localhost:5001', { transports: ['websocket'] });
+    const socket = window.__appSocket;
 
     // --- DOM ELEMENTS ---
     const buyWidgetContainer = document.getElementById('buy-widget-container');
@@ -3256,7 +3272,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // This page keeps its own Socket.IO connection so the grid refreshes
     // automatically right after an order is placed from the Trade page.
     // Websocket-only transport: skips the polling-then-upgrade handshake.
-    const socket = io('http://localhost:5001', { transports: ['websocket'] });
+    const socket = window.__appSocket;
 
     // --- DOM ELEMENTS ---
     const ordersTableBody = document.getElementById('ordersTableBody');
@@ -3794,10 +3810,10 @@ document.addEventListener('DOMContentLoaded', function() {
 <script>
 (function () {
 document.addEventListener('DOMContentLoaded', () => {
-    // Keep a socket alive on this page too: the server shuts down when
-    // its LAST browser client disconnects, so sitting here with the
-    // trade tab closed must not stop the app.
-    const socket = io('http://localhost:5001', { transports: ['websocket'] });
+    // Uses the shared socket opened once for the whole app page: the
+    // server shuts down when its LAST browser client disconnects, so
+    // having the page open (on any tab) keeps the app alive.
+    const socket = window.__appSocket;
 
     const form = document.getElementById('settingsForm');
     const statusMsg = document.getElementById('statusMsg');
