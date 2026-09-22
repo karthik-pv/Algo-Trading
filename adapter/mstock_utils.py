@@ -11,7 +11,9 @@ from utils import fetch_from_json, get_underlying_for_symbol, get_exchange_for_u
 
 
 def position_attribute_mgmt(positions):
-    logger.info(f"Raw positions data: {positions}")
+    logger.info(
+        f"Positions fetched: {len(positions) if positions else 0}"
+    )
     updated_positions = []
     if positions:
         for position in positions:
@@ -50,6 +52,9 @@ def order_attribute_mgmt(orders):
                 "order_type" : order.get("ordertype"),
                 "order_status": order.get("orderstatus") or order.get("status"),
                 "order_id": (order.get("orderid")),
+                # Filled-so-far quantity; lets the broker-side fill
+                # detector react to partial fills of resting exits.
+                "filled_quantity": order.get("filledshares"),
                 # For the pending-grid joins (position leg + lot size).
                 "token": order.get("symboltoken") or order.get("token"),
                 "exchange": order.get("exchange")
@@ -219,6 +224,7 @@ def format_lakhs(amount):
 TXN_CHARGE_KEYS_BY_EXCHANGE = {
     "NFO": ("TXN_CHARGES_NSE_PCT", 0.03553),
     "BFO": ("TXN_CHARGES_BSE_PCT", 0.0325),
+    "MCX": ("TXN_CHARGES_MCX_PCT", 0.05),
 }
 
 
@@ -250,8 +256,9 @@ def compute_option_trade_charges(transaction_type, turnover, symbol):
     Compute (brokerage, other_charges) for one F&O option order.
 
     Turnover is the premium value (units x rate). Other charges bundle
-    STT (sell side), exchange transaction charges, SEBI turnover fees,
-    GST on (brokerage + SEBI + transaction) and buy-side stamp duty.
+    the sell-side turnover tax (STT for NFO/BFO, CTT for MCX), exchange
+    transaction charges, SEBI turnover fees, GST on (brokerage + SEBI +
+    transaction) and buy-side stamp duty.
     Exercise charges (0.15% of intrinsic value on bought-and-exercised
     options) never appear as grid rows and are intentionally excluded.
     """
@@ -259,7 +266,6 @@ def compute_option_trade_charges(transaction_type, turnover, symbol):
     turnover = max(0.0, float(turnover or 0.0))
 
     brokerage = _charges_rate("BROKERAGE_PER_ORDER", 20.0)
-    stt_sell_pct = _charges_rate("OPTIONS_STT_SELL_PCT", 0.15)
     sebi_per_crore = _charges_rate("SEBI_CHARGES_PER_CRORE", 10.0)
     gst_pct = _charges_rate("GST_PCT", 18.0)
     stamp_buy_pct = _charges_rate("STAMP_DUTY_BUY_PCT", 0.003)
@@ -270,13 +276,22 @@ def compute_option_trade_charges(transaction_type, turnover, symbol):
     )
     txn_pct = _charges_rate(txn_key, txn_default)
 
-    stt = turnover * stt_sell_pct / 100.0 if transaction_type == "SELL" else 0.0
+    # Sell-side turnover tax is exchange-specific: equity/index options
+    # pay STT (NSE 0.1% for Kite / 0.15% MSTOCK), while MCX commodity
+    # options pay CTT at 0.0001% - roughly 1000x smaller. Applying the
+    # STT rate to MCX rows massively overstated the estimated charges.
+    if exchange == "MCX":
+        sell_tax_pct = _charges_rate("OPTIONS_CTT_SELL_PCT", 0.0001)
+    else:
+        sell_tax_pct = _charges_rate("OPTIONS_STT_SELL_PCT", 0.15)
+
+    sell_tax = turnover * sell_tax_pct / 100.0 if transaction_type == "SELL" else 0.0
     transaction_charges = turnover * txn_pct / 100.0
     sebi_charges = turnover * sebi_per_crore / 1e7
     gst = (brokerage + sebi_charges + transaction_charges) * gst_pct / 100.0
     stamp_duty = turnover * stamp_buy_pct / 100.0 if transaction_type == "BUY" else 0.0
 
-    other_charges = stt + transaction_charges + sebi_charges + gst + stamp_duty
+    other_charges = sell_tax + transaction_charges + sebi_charges + gst + stamp_duty
     return round(brokerage, 2), round(other_charges, 2)
 
 

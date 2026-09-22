@@ -1,9 +1,11 @@
 """Standalone Jinja render check for app.html (no server import needed)."""
+import os
 import re
 
 import jinja2
 
-env = jinja2.Environment(loader=jinja2.FileSystemLoader("templates"))
+_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+env = jinja2.Environment(loader=jinja2.FileSystemLoader(os.path.join(_PROJECT_ROOT, "templates")))
 
 ok = True
 for path, tab in [("/", "trade"), ("/orders", "orders"), ("/appconfig", "appconfig")]:

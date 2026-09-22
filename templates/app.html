@@ -239,8 +239,13 @@
         border: 1px solid #555; color: white; border-radius: 4px;
         font-size: 0.9rem; text-align: center; box-sizing: border-box;
     }
-    /* Sell grid: half-width Lots(O) box so the StraSell column stays in view */
+    /* Sell grid: half-width Lots(O) box so the SS column stays in view */
     #sell-widget-container .lots-override-input { width: 30px; padding-left: 0.1rem; padding-right: 0.1rem; }
+    /* Stale-LTP guard: a leg with no recent tick shows dimmed with a
+       highlighted market-price cell - a market sell fills at the LIVE
+       market, which can sit far from a stale grid price. */
+    .ltp-stale-row td { opacity: 0.5; }
+    .ltp-stale-cell { background-color: rgba(255, 152, 0, 0.25) !important; font-weight: 700; }
     .bp-override-input {
         width: 54px; padding: 0.4rem; background-color: #1a1a1a;
         border: 1px solid #555; color: #ffd75e; border-radius: 4px;
@@ -1060,7 +1065,7 @@
                     <th>MPrice</th>
                     <th>Lots</th>
                     <th>Lots(O)</th>
-                    <th>StraSell</th>
+                    <th>SS</th>
                     <th>Strategy Type</th>
                     <th>Sell Type</th>
                 </tr>
@@ -1082,13 +1087,13 @@
                     <th>ChgO</th> 
                     <th>Lots</th>
                     <th>Lots(O)</th>
-                    <th>StraSell</th>
+                    <th>SS</th>
                     <th>Strategy Type</th>
                     <th>Sell Type</th>
                 </tr>
             </thead>
             <tbody id="optionsTableBody">
-                <tr><td colspan="8" class="no-options">Waiting for data from server...</td></tr>
+                <tr><td colspan="11" class="no-options">Waiting for data from server...</td></tr>
             </tbody>
         </table>        
         <div class="toggle-container">
@@ -1328,37 +1333,6 @@
             </div>
         </section>
 
-        <!-- ============ BUY GATING ============ -->
-        <section class="card span-2">
-            <div class="card-rail">
-                <span class="card-title" title="TradingView indicator validation before CE/PE buys, plus the margin fraction used for position sizing.">Buy Gating</span>
-            </div>
-            <div class="card-body">
-                <div class="field-row">
-                    <div class="field">
-                        <div class="field-caption">
-                            <label class="field-label" for="TV_DATA_Validation_REQUIRED">TV Validation</label>
-                            <span class="key-hint">TV_DATA_Validation_REQUIRED</span>
-                        </div>
-                        <label class="switch-row" title="When ON: CE buys need 30M PVT &gt; 0 OR (5M PVT &gt; 0 AND 1m close &gt; VWAP); PE buys need 30M PVT &lt; 0 OR (5M PVT &lt; 0 AND 1m close &lt; VWAP). Otherwise CALL/PUT buttons are disabled and buys are rejected.">
-                            <input type="checkbox" name="TV_DATA_Validation_REQUIRED" id="TV_DATA_Validation_REQUIRED">
-                            <span class="switch"></span>
-                            <span class="switch-text">Require before CE/PE buys</span>
-                        </label>
-                    </div>
-                    <div class="field">
-                        <div class="field-caption">
-                            <label class="field-label" for="MARGIN_USAGE_PCT">Margin Usage (0&ndash;1)</label>
-                            <span class="key-hint">MARGIN_USAGE_PCT</span>
-                        </div>
-                        <div class="input-wrap">
-                            <input type="number" step="0.1" min="0.05" max="1" id="MARGIN_USAGE_PCT" name="MARGIN_USAGE_PCT" placeholder="0.9" />
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </section>
-
         <!-- ============ MARKET & INSTRUMENTS (single line) ============ -->
         <section class="card span-2">
             <div class="card-rail">
@@ -1366,24 +1340,6 @@
             </div>
             <div class="card-body">
                 <div class="field-row">
-                    <div class="field only-nifty">
-                        <div class="field-caption">
-                            <label class="field-label" for="NIFTY_ORDER_FREEZE_LIMIT">Freeze NIFTY</label>
-                            <span class="key-hint">NIFTY_ORDER_FREEZE_LIMIT</span>
-                        </div>
-                        <div class="input-wrap">
-                            <input type="number" id="NIFTY_ORDER_FREEZE_LIMIT" name="NIFTY_ORDER_FREEZE_LIMIT" placeholder="1755" />
-                        </div>
-                    </div>
-                    <div class="field only-sensex">
-                        <div class="field-caption">
-                            <label class="field-label" for="SENSEX_ORDER_FREEZE_LIMIT">Freeze SENSEX</label>
-                            <span class="key-hint">SENSEX_ORDER_FREEZE_LIMIT</span>
-                        </div>
-                        <div class="input-wrap">
-                            <input type="number" id="SENSEX_ORDER_FREEZE_LIMIT" name="SENSEX_ORDER_FREEZE_LIMIT" placeholder="500" />
-                        </div>
-                    </div>
                     <div class="field">
                         <div class="field-caption">
                             <label class="field-label" for="WOC_CALL_FACTOR">WOC Call</label>
@@ -1400,6 +1356,24 @@
                         </div>
                         <div class="input-wrap">
                             <input type="number" step="1" id="WOC_PUT_FACTOR" name="WOC_PUT_FACTOR" placeholder="-8" />
+                        </div>
+                    </div>
+                    <div class="field only-nifty">
+                        <div class="field-caption">
+                            <label class="field-label" for="NIFTY_ORDER_FREEZE_LIMIT">Freeze NIFTY</label>
+                            <span class="key-hint">NIFTY_ORDER_FREEZE_LIMIT</span>
+                        </div>
+                        <div class="input-wrap">
+                            <input type="number" id="NIFTY_ORDER_FREEZE_LIMIT" name="NIFTY_ORDER_FREEZE_LIMIT" placeholder="1755" />
+                        </div>
+                    </div>
+                    <div class="field only-sensex">
+                        <div class="field-caption">
+                            <label class="field-label" for="SENSEX_ORDER_FREEZE_LIMIT">Freeze SENSEX</label>
+                            <span class="key-hint">SENSEX_ORDER_FREEZE_LIMIT</span>
+                        </div>
+                        <div class="input-wrap">
+                            <input type="number" id="SENSEX_ORDER_FREEZE_LIMIT" name="SENSEX_ORDER_FREEZE_LIMIT" placeholder="500" />
                         </div>
                     </div>
                     <div class="field only-nifty">
@@ -1438,98 +1412,22 @@
                             <input type="number" id="LOT_SIZE_CRUDEOILM" name="LOT_SIZE_CRUDEOILM" placeholder="10" />
                         </div>
                     </div>
-                </div>
-            </div>
-        </section>
-
-        <!-- ============ CHARGES ============ -->
-        <section class="card span-2">
-            <div class="card-rail">
-                <span class="card-title" title="Broker and statutory charges applied to the Orders grid. Percentages apply on premium turnover (Qty &times; Rate); SEBI fees are per crore of turnover. Any rate can be overridden per broker with a &lt;KEY&gt;_&lt;BROKER&gt; key (e.g. OPTIONS_STT_SELL_PCT_KITE); suffixed keys win over the base value.">Charges</span>
-            </div>
-            <div class="card-body">
-                <div class="field-row">
-                    <div class="field">
+                    <div class="field only-crude only-kite">
                         <div class="field-caption">
-                            <label class="field-label" for="BROKERAGE_PER_ORDER">Brokerage / Order (&#8377;)</label>
-                            <span class="key-hint">BROKERAGE_PER_ORDER</span>
+                            <label class="field-label" for="CRUDEOIL_FALLBACK_LTP">CRUDEOIL Fallback</label>
+                            <span class="key-hint">CRUDEOIL_FALLBACK_LTP</span>
                         </div>
                         <div class="input-wrap">
-                            <input type="number" step="0.01" min="0" id="BROKERAGE_PER_ORDER" name="BROKERAGE_PER_ORDER" placeholder="20" />
+                            <input type="number" step="0.01" id="CRUDEOIL_FALLBACK_LTP" name="CRUDEOIL_FALLBACK_LTP" placeholder="6000" />
                         </div>
                     </div>
-                    <div class="field only-kite">
+                    <div class="field only-crude only-kite">
                         <div class="field-caption">
-                            <label class="field-label" for="BROKERAGE_PER_ORDER_KITE">Kite Brokerage / Order (&#8377;)</label>
-                            <span class="key-hint">BROKERAGE_PER_ORDER_KITE</span>
+                            <label class="field-label" for="CRUDEOILM_FALLBACK_LTP">CRUDEOILM Fallback</label>
+                            <span class="key-hint">CRUDEOILM_FALLBACK_LTP</span>
                         </div>
                         <div class="input-wrap">
-                            <input type="number" step="0.01" min="0" id="BROKERAGE_PER_ORDER_KITE" name="BROKERAGE_PER_ORDER_KITE" placeholder="20" />
-                        </div>
-                    </div>
-                    <div class="field">
-                        <div class="field-caption">
-                            <label class="field-label" for="OPTIONS_STT_SELL_PCT">STT Sell (%)</label>
-                            <span class="key-hint">OPTIONS_STT_SELL_PCT</span>
-                        </div>
-                        <div class="input-wrap">
-                            <input type="number" step="0.00001" min="0" id="OPTIONS_STT_SELL_PCT" name="OPTIONS_STT_SELL_PCT" placeholder="0.15" />
-                        </div>
-                    </div>
-                    <div class="field only-kite">
-                        <div class="field-caption">
-                            <label class="field-label" for="OPTIONS_STT_SELL_PCT_KITE">Kite STT Sell (%)</label>
-                            <span class="key-hint">OPTIONS_STT_SELL_PCT_KITE</span>
-                        </div>
-                        <div class="input-wrap">
-                            <input type="number" step="0.00001" min="0" id="OPTIONS_STT_SELL_PCT_KITE" name="OPTIONS_STT_SELL_PCT_KITE" placeholder="0.1" />
-                        </div>
-                    </div>
-                    <div class="field">
-                        <div class="field-caption">
-                            <label class="field-label" for="TXN_CHARGES_NSE_PCT">Transaction NSE (%)</label>
-                            <span class="key-hint">TXN_CHARGES_NSE_PCT</span>
-                        </div>
-                        <div class="input-wrap">
-                            <input type="number" step="0.00001" min="0" id="TXN_CHARGES_NSE_PCT" name="TXN_CHARGES_NSE_PCT" placeholder="0.03553" />
-                        </div>
-                    </div>
-                    <div class="field">
-                        <div class="field-caption">
-                            <label class="field-label" for="TXN_CHARGES_BSE_PCT">Transaction BSE (%)</label>
-                            <span class="key-hint">TXN_CHARGES_BSE_PCT</span>
-                        </div>
-                        <div class="input-wrap">
-                            <input type="number" step="0.00001" min="0" id="TXN_CHARGES_BSE_PCT" name="TXN_CHARGES_BSE_PCT" placeholder="0.0325" />
-                        </div>
-                    </div>
-                </div>
-                <div class="field-row">
-                    <div class="field">
-                        <div class="field-caption">
-                            <label class="field-label" for="SEBI_CHARGES_PER_CRORE">SEBI (&#8377;/crore)</label>
-                            <span class="key-hint">SEBI_CHARGES_PER_CRORE</span>
-                        </div>
-                        <div class="input-wrap">
-                            <input type="number" step="0.01" min="0" id="SEBI_CHARGES_PER_CRORE" name="SEBI_CHARGES_PER_CRORE" placeholder="10" />
-                        </div>
-                    </div>
-                    <div class="field">
-                        <div class="field-caption">
-                            <label class="field-label" for="GST_PCT">GST (%)</label>
-                            <span class="key-hint">GST_PCT</span>
-                        </div>
-                        <div class="input-wrap">
-                            <input type="number" step="0.01" min="0" id="GST_PCT" name="GST_PCT" placeholder="18" />
-                        </div>
-                    </div>
-                    <div class="field">
-                        <div class="field-caption">
-                            <label class="field-label" for="STAMP_DUTY_BUY_PCT">Stamp Duty Buy (%)</label>
-                            <span class="key-hint">STAMP_DUTY_BUY_PCT</span>
-                        </div>
-                        <div class="input-wrap">
-                            <input type="number" step="0.00001" min="0" id="STAMP_DUTY_BUY_PCT" name="STAMP_DUTY_BUY_PCT" placeholder="0.003" />
+                            <input type="number" step="0.01" id="CRUDEOILM_FALLBACK_LTP" name="CRUDEOILM_FALLBACK_LTP" placeholder="6000" />
                         </div>
                     </div>
                 </div>
@@ -1600,11 +1498,11 @@
                 <div class="field-row">
                     <div class="field only-pct">
                         <div class="field-caption">
-                            <label class="field-label" for="PCT_PROFIT_INTRA_FACTOR">PCT Intra Factor</label>
-                            <span class="key-hint">PCT_PROFIT_INTRA_FACTOR</span>
+                            <label class="field-label" for="PCT_PROFIT_ULTRA_SCALPING_FACTOR">PCT Ultra Factor</label>
+                            <span class="key-hint">PCT_PROFIT_ULTRA_SCALPING_FACTOR</span>
                         </div>
                         <div class="input-wrap">
-                            <input type="number" step="1" id="PCT_PROFIT_INTRA_FACTOR" name="PCT_PROFIT_INTRA_FACTOR" placeholder="10" />
+                            <input type="number" step="1" id="PCT_PROFIT_ULTRA_SCALPING_FACTOR" name="PCT_PROFIT_ULTRA_SCALPING_FACTOR" placeholder="1" />
                             <span class="suffix">x</span>
                         </div>
                     </div>
@@ -1620,11 +1518,11 @@
                     </div>
                     <div class="field only-pct">
                         <div class="field-caption">
-                            <label class="field-label" for="PCT_PROFIT_ULTRA_SCALPING_FACTOR">PCT Ultra Factor</label>
-                            <span class="key-hint">PCT_PROFIT_ULTRA_SCALPING_FACTOR</span>
+                            <label class="field-label" for="PCT_PROFIT_INTRA_FACTOR">PCT Intra Factor</label>
+                            <span class="key-hint">PCT_PROFIT_INTRA_FACTOR</span>
                         </div>
                         <div class="input-wrap">
-                            <input type="number" step="1" id="PCT_PROFIT_ULTRA_SCALPING_FACTOR" name="PCT_PROFIT_ULTRA_SCALPING_FACTOR" placeholder="1" />
+                            <input type="number" step="1" id="PCT_PROFIT_INTRA_FACTOR" name="PCT_PROFIT_INTRA_FACTOR" placeholder="10" />
                             <span class="suffix">x</span>
                         </div>
                     </div>
@@ -1632,11 +1530,11 @@
                 <div class="field-row">
                     <div class="field only-pnt">
                         <div class="field-caption">
-                            <label class="field-label" for="PTS_PROFIT_INTRA_FACTOR">PTS Intra Factor</label>
-                            <span class="key-hint">PTS_PROFIT_INTRA_FACTOR</span>
+                            <label class="field-label" for="PTS_PROFIT_ULTRA_SCALPING_FACTOR">PTS Ultra Factor</label>
+                            <span class="key-hint">PTS_PROFIT_ULTRA_SCALPING_FACTOR</span>
                         </div>
                         <div class="input-wrap">
-                            <input type="number" step="1" id="PTS_PROFIT_INTRA_FACTOR" name="PTS_PROFIT_INTRA_FACTOR" placeholder="10" />
+                            <input type="number" step="1" id="PTS_PROFIT_ULTRA_SCALPING_FACTOR" name="PTS_PROFIT_ULTRA_SCALPING_FACTOR" placeholder="2.5" />
                             <span class="suffix">x</span>
                         </div>
                     </div>
@@ -1652,12 +1550,43 @@
                     </div>
                     <div class="field only-pnt">
                         <div class="field-caption">
-                            <label class="field-label" for="PTS_PROFIT_ULTRA_SCALPING_FACTOR">PTS Ultra Factor</label>
-                            <span class="key-hint">PTS_PROFIT_ULTRA_SCALPING_FACTOR</span>
+                            <label class="field-label" for="PTS_PROFIT_INTRA_FACTOR">PTS Intra Factor</label>
+                            <span class="key-hint">PTS_PROFIT_INTRA_FACTOR</span>
                         </div>
                         <div class="input-wrap">
-                            <input type="number" step="1" id="PTS_PROFIT_ULTRA_SCALPING_FACTOR" name="PTS_PROFIT_ULTRA_SCALPING_FACTOR" placeholder="2.5" />
+                            <input type="number" step="1" id="PTS_PROFIT_INTRA_FACTOR" name="PTS_PROFIT_INTRA_FACTOR" placeholder="10" />
                             <span class="suffix">x</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ============ BUY GATING ============ -->
+        <section class="card span-2">
+            <div class="card-rail">
+                <span class="card-title" title="TradingView indicator validation before CE/PE buys, plus the margin fraction used for position sizing.">Buy Gating</span>
+            </div>
+            <div class="card-body">
+                <div class="field-row">
+                    <div class="field">
+                        <div class="field-caption">
+                            <label class="field-label" for="TV_DATA_Validation_REQUIRED">TV Validation</label>
+                            <span class="key-hint">TV_DATA_Validation_REQUIRED</span>
+                        </div>
+                        <label class="switch-row" title="When ON: CE buys need 30M PVT &gt; 0 OR (5M PVT &gt; 0 AND 1m close &gt; VWAP); PE buys need 30M PVT &lt; 0 OR (5M PVT &lt; 0 AND 1m close &lt; VWAP). Otherwise CALL/PUT buttons are disabled and buys are rejected.">
+                            <input type="checkbox" name="TV_DATA_Validation_REQUIRED" id="TV_DATA_Validation_REQUIRED">
+                            <span class="switch"></span>
+                            <span class="switch-text">Require before CE/PE buys</span>
+                        </label>
+                    </div>
+                    <div class="field">
+                        <div class="field-caption">
+                            <label class="field-label" for="MARGIN_USAGE_PCT">Margin Usage (0&ndash;1)</label>
+                            <span class="key-hint">MARGIN_USAGE_PCT</span>
+                        </div>
+                        <div class="input-wrap">
+                            <input type="number" step="0.1" min="0.05" max="1" id="MARGIN_USAGE_PCT" name="MARGIN_USAGE_PCT" placeholder="0.9" />
                         </div>
                     </div>
                 </div>
@@ -1834,6 +1763,118 @@
             </div>
         </section>
 
+        <!-- ============ CHARGES ============ -->
+        <section class="card span-2">
+            <div class="card-rail">
+                <span class="card-title" title="Broker and statutory charges applied to the Orders grid. Percentages apply on premium turnover (Qty &times; Rate); SEBI fees are per crore of turnover. Any rate can be overridden per broker with a &lt;KEY&gt;_&lt;BROKER&gt; key (e.g. OPTIONS_STT_SELL_PCT_KITE); suffixed keys win over the base value.">Charges</span>
+            </div>
+            <div class="card-body">
+                <div class="field-row">
+                    <div class="field">
+                        <div class="field-caption">
+                            <label class="field-label" for="BROKERAGE_PER_ORDER">Brokerage / Order (&#8377;)</label>
+                            <span class="key-hint">BROKERAGE_PER_ORDER</span>
+                        </div>
+                        <div class="input-wrap">
+                            <input type="number" step="0.01" min="0" id="BROKERAGE_PER_ORDER" name="BROKERAGE_PER_ORDER" placeholder="20" />
+                        </div>
+                    </div>
+                    <div class="field only-kite">
+                        <div class="field-caption">
+                            <label class="field-label" for="BROKERAGE_PER_ORDER_KITE">Kite Brokerage / Order (&#8377;)</label>
+                            <span class="key-hint">BROKERAGE_PER_ORDER_KITE</span>
+                        </div>
+                        <div class="input-wrap">
+                            <input type="number" step="0.01" min="0" id="BROKERAGE_PER_ORDER_KITE" name="BROKERAGE_PER_ORDER_KITE" placeholder="20" />
+                        </div>
+                    </div>
+                    <div class="field">
+                        <div class="field-caption">
+                            <label class="field-label" for="OPTIONS_STT_SELL_PCT">STT Sell (%)</label>
+                            <span class="key-hint">OPTIONS_STT_SELL_PCT</span>
+                        </div>
+                        <div class="input-wrap">
+                            <input type="number" step="0.00001" min="0" id="OPTIONS_STT_SELL_PCT" name="OPTIONS_STT_SELL_PCT" placeholder="0.15" />
+                        </div>
+                    </div>
+                    <div class="field only-kite">
+                        <div class="field-caption">
+                            <label class="field-label" for="OPTIONS_STT_SELL_PCT_KITE">Kite STT Sell (%)</label>
+                            <span class="key-hint">OPTIONS_STT_SELL_PCT_KITE</span>
+                        </div>
+                        <div class="input-wrap">
+                            <input type="number" step="0.00001" min="0" id="OPTIONS_STT_SELL_PCT_KITE" name="OPTIONS_STT_SELL_PCT_KITE" placeholder="0.1" />
+                        </div>
+                    </div>
+                    <div class="field only-crude">
+                        <div class="field-caption">
+                            <label class="field-label" for="OPTIONS_CTT_SELL_PCT">CTT Sell (%)</label>
+                            <span class="key-hint">OPTIONS_CTT_SELL_PCT</span>
+                        </div>
+                        <div class="input-wrap">
+                            <input type="number" step="0.00001" min="0" id="OPTIONS_CTT_SELL_PCT" name="OPTIONS_CTT_SELL_PCT" placeholder="0.0001" />
+                        </div>
+                    </div>
+                    <div class="field">
+                        <div class="field-caption">
+                            <label class="field-label" for="TXN_CHARGES_NSE_PCT">Transaction NSE (%)</label>
+                            <span class="key-hint">TXN_CHARGES_NSE_PCT</span>
+                        </div>
+                        <div class="input-wrap">
+                            <input type="number" step="0.00001" min="0" id="TXN_CHARGES_NSE_PCT" name="TXN_CHARGES_NSE_PCT" placeholder="0.03553" />
+                        </div>
+                    </div>
+                    <div class="field">
+                        <div class="field-caption">
+                            <label class="field-label" for="TXN_CHARGES_BSE_PCT">Transaction BSE (%)</label>
+                            <span class="key-hint">TXN_CHARGES_BSE_PCT</span>
+                        </div>
+                        <div class="input-wrap">
+                            <input type="number" step="0.00001" min="0" id="TXN_CHARGES_BSE_PCT" name="TXN_CHARGES_BSE_PCT" placeholder="0.0325" />
+                        </div>
+                    </div>
+                    <div class="field only-crude">
+                        <div class="field-caption">
+                            <label class="field-label" for="TXN_CHARGES_MCX_PCT">Transaction MCX (%)</label>
+                            <span class="key-hint">TXN_CHARGES_MCX_PCT</span>
+                        </div>
+                        <div class="input-wrap">
+                            <input type="number" step="0.00001" min="0" id="TXN_CHARGES_MCX_PCT" name="TXN_CHARGES_MCX_PCT" placeholder="0.05" />
+                        </div>
+                    </div>
+                </div>
+                <div class="field-row">
+                    <div class="field">
+                        <div class="field-caption">
+                            <label class="field-label" for="SEBI_CHARGES_PER_CRORE">SEBI (&#8377;/crore)</label>
+                            <span class="key-hint">SEBI_CHARGES_PER_CRORE</span>
+                        </div>
+                        <div class="input-wrap">
+                            <input type="number" step="0.01" min="0" id="SEBI_CHARGES_PER_CRORE" name="SEBI_CHARGES_PER_CRORE" placeholder="10" />
+                        </div>
+                    </div>
+                    <div class="field">
+                        <div class="field-caption">
+                            <label class="field-label" for="GST_PCT">GST (%)</label>
+                            <span class="key-hint">GST_PCT</span>
+                        </div>
+                        <div class="input-wrap">
+                            <input type="number" step="0.01" min="0" id="GST_PCT" name="GST_PCT" placeholder="18" />
+                        </div>
+                    </div>
+                    <div class="field">
+                        <div class="field-caption">
+                            <label class="field-label" for="STAMP_DUTY_BUY_PCT">Stamp Duty Buy (%)</label>
+                            <span class="key-hint">STAMP_DUTY_BUY_PCT</span>
+                        </div>
+                        <div class="input-wrap">
+                            <input type="number" step="0.00001" min="0" id="STAMP_DUTY_BUY_PCT" name="STAMP_DUTY_BUY_PCT" placeholder="0.003" />
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
     </div>
     </form>
 </main>
@@ -1899,8 +1940,21 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // --- STATE VARIABLES ---
     let allContracts = {};
+    // Per-token timestamps of the last auto-sync of the lots override
+    // box with the recalculated quantity. Ticks used to overwrite the
+    // box on every update, clobbering manual entries; the sync now
+    // runs at most once per minute (double-click forces it earlier).
+    const lotsOverrideSyncTs = {};
+    // Last local-receive time of a price tick per position leg key.
+    // Feeds the stale-LTP guard: rows with no tick for POSITION_STALE_MS
+    // gray out and selling them asks for confirmation. On 2026-09-22
+    // 14:14 a stale leg showed -48% while the live market was +32% -
+    // the market sell filled at the real price, not the grid price.
+    const positionTickAt = {};
+    const POSITION_STALE_MS = 120000;
     let openPositions = {};
     let orderStrategyMapping = {}; // To store strategies from setup_data
+    let orderSellModeMapping = {}; // To store sell modes from setup_data
     // Tokens whose BUY Price is temporarily displayed using LTP
     let temporaryBuyPriceTokens = new Set();
     // Trading symbols with a sell request in flight (duplicate click guard)
@@ -1998,6 +2052,27 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     const manuallySetStrategyTokens = loadManualStrategyTokens();
 
+    // Tokens whose Buy Grid sell-mode radio the user set manually.
+    // Mirrors MANUAL_STRATEGY_TOKENS so a grid re-render (chain
+    // refresh / ATM drift) and a full page reload keep the choice.
+    const MANUAL_SELL_MODE_TOKENS_KEY = 'manuallySetSellModeTokens';
+    function loadManualSellModeTokens() {
+        try {
+            const raw = localStorage.getItem(MANUAL_SELL_MODE_TOKENS_KEY);
+            return new Set(raw ? JSON.parse(raw) : []);
+        } catch (error) {
+            return new Set();
+        }
+    }
+    function saveManualSellModeTokens() {
+        try {
+            localStorage.setItem(MANUAL_SELL_MODE_TOKENS_KEY, JSON.stringify([...manuallySetSellModeTokens]));
+        } catch (error) {
+            // Storage unavailable - manual choices just won't persist.
+        }
+    }
+    const manuallySetSellModeTokens = loadManualSellModeTokens();
+
     // TradingView entry validation state (TV_DATA_Validation_REQUIRED).
     // Fail-safe defaults: assume validation is ON and both sides blocked
     // until setup_data / update_trading_view_data confirm otherwise.
@@ -2061,6 +2136,10 @@ document.addEventListener('DOMContentLoaded', function() {
         if (data.order_strategy_mapping) {
             orderStrategyMapping = data.order_strategy_mapping;
             console.log("Received strategy mapping:", orderStrategyMapping);
+        }
+        if (data.order_sell_mode_mapping) {
+            orderSellModeMapping = data.order_sell_mode_mapping;
+            console.log("Received sell mode mapping:", orderSellModeMapping);
         }
         if (data.mode) applyModeLabel(data.mode);
         if (data.playback) configurePlaybackControls(data.playback);
@@ -2178,6 +2257,14 @@ document.addEventListener('DOMContentLoaded', function() {
     );
 
         openPositions = positions;
+        // Seed each leg's freshness clock: the server just re-fetched
+        // positions (with broker-side prices), so treat the shown LTP
+        // as fresh from now and flag the leg only if no tick arrives
+        // within the staleness window.
+        const seededAt = Date.now();
+        for (const positionKey in (positions || {})) {
+            positionTickAt[positionKey] = seededAt;
+        }
         if (positionsTableBody) {
             populatePositionsTable(openPositions);
 
@@ -2268,7 +2355,14 @@ document.addEventListener('DOMContentLoaded', function() {
              const overrideInput = document.getElementById(`override-lots-${token}`);
               if (overrideInput ) { //This allows override input also to be updated when qty is recalculated based on new price
                  overrideInput.placeholder = tick.lots;
-                 overrideInput.value = tick.lots;
+                 // Auto-sync the VALUE at most once per minute and never
+                 // while the user is editing the box; double-click on the
+                 // box re-syncs it to the calculated lots immediately.
+                 if (document.activeElement !== overrideInput &&
+                     Date.now() - (lotsOverrideSyncTs[token] || 0) >= 60000) {
+                     lotsOverrideSyncTs[token] = Date.now();
+                     overrideInput.value = tick.lots;
+                 }
              }
              const buyButton = document.querySelector(`#row-${token} .buy-button`);
              if (buyButton) {
@@ -2284,6 +2378,11 @@ document.addEventListener('DOMContentLoaded', function() {
         const domId = positionDomId(key);
         const ltp = Number(tick.ltp);
         if (!Number.isFinite(ltp)) return;
+        // Freshness stamp for the stale-LTP guard + clear any stale
+        // marking from this row's market-price cell.
+        positionTickAt[key] = Date.now();
+        const freshCell = document.getElementById(`market-price-${domId}`);
+        if (freshCell) freshCell.classList.remove('ltp-stale-cell');
          // Update Sell Widget Data & UI
          if (openPositions[key]) { // Update internal data first
             openPositions[key].latest_price = ltp;
@@ -2314,6 +2413,36 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         }
     }); 
+
+    // --- STALE-LTP GUARD SWEEP ---
+    // Every 10s, flag position rows whose leg has received no tick
+    // within POSITION_STALE_MS: dim the row and highlight the market
+    // price cell with the tick age in its tooltip. A quiet option can
+    // legitimately go a minute without a print, hence the generous
+    // window; genuinely dead feeds stay flagged until a tick returns.
+    setInterval(() => {
+        const now = Date.now();
+        for (const key in openPositions) {
+            const domId = positionDomId(key);
+            const row = document.getElementById(`row-sell-${domId}`);
+            if (!row) continue;
+            const last = positionTickAt[key] || 0;
+            const age = now - last;
+            const isStale = !last || age > POSITION_STALE_MS;
+            row.classList.toggle('ltp-stale-row', isStale);
+            const cell = document.getElementById(`market-price-${domId}`);
+            if (cell) {
+                cell.classList.toggle('ltp-stale-cell', isStale);
+                if (isStale) {
+                    cell.title = !last
+                        ? 'LTP never ticked since this row appeared - price may be stale.'
+                        : `LTP stale - no tick for ${Math.round(age / 1000)}s. Market sell may fill far from this price.`;
+                } else {
+                    cell.removeAttribute('title');
+                }
+            }
+        }
+    }, 10000);
 
     socket.on('refresh_fund_summary', function() {
         fetchFundSummary(); // ✅ Called only after buy order completes
@@ -2391,7 +2520,7 @@ document.addEventListener('DOMContentLoaded', function() {
         optionsTableBody.innerHTML = '';
         const filteredContracts = Object.entries(contracts).filter(([token, contract]) => contract.call_or_put === optionType);
         if (filteredContracts.length === 0) {
-            optionsTableBody.innerHTML = `<tr><td colspan="8" class="no-options">No ${optionType === 'CE' ? 'call' : 'put'} options found.</td></tr>`;
+            optionsTableBody.innerHTML = `<tr><td colspan="11" class="no-options">No ${optionType === 'CE' ? 'call' : 'put'} options found.</td></tr>`;
             return;
         }
 
@@ -2533,10 +2662,13 @@ filteredContracts.sort(([, a], [, b]) => {
             const isUltraChecked = currentStrategy === 'ULTRA_SCALPING' ? 'checked' : '';
 
 
-            // Sell Mode radio state from the row's auto selection.
-            const sellUChecked = autoSellMode === 'U' ? 'checked' : '';
-            const sellDChecked = autoSellMode === 'D' ? 'checked' : '';
-            const sellTChecked = autoSellMode === 'T' ? 'checked' : '';
+            // Sell Mode radio state: manual choice > row auto-choice.
+            const currentSellMode = manuallySetSellModeTokens.has(String(token))
+                ? (orderSellModeMapping[token] || autoSellMode)
+                : autoSellMode;
+            const sellUChecked = currentSellMode === 'U' ? 'checked' : '';
+            const sellDChecked = currentSellMode === 'D' ? 'checked' : '';
+            const sellTChecked = currentSellMode === 'T' ? 'checked' : '';
             
 
 
@@ -2550,8 +2682,8 @@ filteredContracts.sort(([, a], [, b]) => {
                 <td id="price-${token}">${(contract.ltp || 0).toFixed(2)}</td>
                 <td id="chgO-${token}">${chgO}</td>
                 <td id="lots-${token}">${contract.lots || 0}</td>
-                <td><input type="number" class="lots-override-input" id="override-lots-${token}" placeholder="${contract.lots || 0}" value="${contract.lots || 0}"></td>
-                <td id="code-${token}" class="leg-code-cell">${legCode(currentStrategy, autoSellMode)}</td>
+                <td><input type="number" class="lots-override-input" id="override-lots-${token}" placeholder="${contract.lots || 0}" value="${contract.lots || 0}" ondblclick="this.value=this.placeholder" title="Double-click to reset to calculated lots"></td>
+                <td id="code-${token}" class="leg-code-cell">${legCode(currentStrategy, currentSellMode)}</td>
                 <td class="type-cell">
                     <label><input type="radio" name="type-${token}" value="UltraScalping" ${isUltraChecked}> U</label>
                     <label><input type="radio" name="type-${token}" value="Scalping" ${isScalpingChecked}> S</label>
@@ -2886,7 +3018,7 @@ filteredContracts.sort(([, a], [, b]) => {
         positionsTableBody.innerHTML = '';
         
         if (!positions || Object.keys(positions).length === 0) {
-            positionsTableBody.innerHTML = `<tr><td colspan="13" class="no-options">No open positions found.</td></tr>`;
+            positionsTableBody.innerHTML = `<tr><td colspan="15" class="no-options">No open positions found.</td></tr>`;
             if (sellAllBtn) { sellAllBtn.disabled = true; sellAllBtn.textContent = 'Sell All'; }
             return;
         }
@@ -2938,7 +3070,7 @@ filteredContracts.sort(([, a], [, b]) => {
                 </td>
                 <td id="market-price-${domId}">${(pos.latest_price || pos.average_price).toFixed(2)}</td>
                 <td>${pos.lots || 0}</td>
-                <td><input type="number" class="lots-override-input" id="override-lots-sell-${domId}" placeholder="${pos.lots || 0}"></td>
+                <td><input type="number" class="lots-override-input" id="override-lots-sell-${domId}" placeholder="${pos.lots || 0}" ondblclick="this.value=this.placeholder" title="Double-click to reset to position lots"></td>
                 <td id="pos-code-${domId}" class="leg-code-cell">${legCode(currentStrategy, posSellMode)}</td>
                 <td class="type-cell">
                     <label><input type="radio" name="sell-type-${domId}" value="UltraScalping" ${isUltraChecked}> U</label>
@@ -2971,6 +3103,18 @@ filteredContracts.sort(([, a], [, b]) => {
                 const lotsToSell = (overrideInput && overrideInput.value > 0) ? overrideInput.value : this.dataset.lots;
                 const lotSize = parseInt(this.dataset.lotsize || 0);
                 const displayQuantity = (lotSize > 0) ? (lotsToSell) : this.dataset.quantity;
+                // Stale-LTP guard: a market sell fills at the live
+                // market, which can sit far from a stale grid price.
+                const tickTs = positionTickAt[positionKey] || positionTickAt[token] || 0;
+                const tickAge = tickTs ? (Date.now() - tickTs) : Infinity;
+                if (tickAge > POSITION_STALE_MS) {
+                    const ageText = Number.isFinite(tickAge)
+                        ? `last tick ${Math.round(tickAge / 1000)}s ago`
+                        : 'no tick since the row appeared';
+                    if (!confirm(`LTP for ${symbol} is STALE (${ageText}).\nThe real market price may be very different from the grid price.\nSell ${lotsToSell} lot(s) anyway?`)) {
+                        return;
+                    }
+                }
                 pendingSellSymbols.add(sellKey);
                 this.disabled = true;
                 this.textContent = 'Selling..';
@@ -3102,7 +3246,22 @@ filteredContracts.sort(([, a], [, b]) => {
 
     function handleBuySellModeRadioChange(event) {
         if (event.target.checked) {
-            updateBuyCodeCell(event.target.name.replace('sellmode-', ''));
+            const token = event.target.name.replace('sellmode-', '');
+            // Sync the DEFAULT sell mode for the NEXT buy of this
+            // instrument to the backend (persisted there so it also
+            // survives an app restart). Open legs are unaffected.
+            const row = document.getElementById(`row-${token}`);
+            const buyButton = row ? row.querySelector('.buy-button') : null;
+            const tradingsymbol = buyButton ? buyButton.dataset.tradingsymbol : '';
+            const payload = { "tradingsymbol": tradingsymbol, "instrument_token": token, "sell_mode": event.target.value };
+            console.log('Emitting order sell mode update:', payload);
+            socket.emit('order_sell_mode_data_updated_orders', payload);
+            // Remember the manual choice locally so table re-renders
+            // (chain refresh / ATM drift) keep the radio as selected.
+            orderSellModeMapping[token] = event.target.value;
+            manuallySetSellModeTokens.add(token);
+            saveManualSellModeTokens();
+            updateBuyCodeCell(token);
         }
     }
 
@@ -3799,6 +3958,16 @@ document.addEventListener('DOMContentLoaded', function() {
 
     socket.on('sell_order_result', function (result) {
         console.log('ORDERS PAGE: sell_order_result received:', result);
+        scheduleOrdersRefresh();
+    });
+
+    // A resting U/D exit limit can fill broker-side with no buy/sell
+    // result event of our own - the server nudges this when its
+    // pending-orders poll notices the fill. Without this the filled
+    // trade only showed up in the grid after a manual refresh or an
+    // app restart.
+    socket.on('broker_side_fill_detected', function (info) {
+        console.log('ORDERS PAGE: broker_side_fill_detected received:', info);
         scheduleOrdersRefresh();
     });
 

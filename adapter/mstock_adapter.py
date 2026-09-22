@@ -75,6 +75,8 @@ def _sanitise_closed_market_quote(response):
         if not fetched:
             return response
 
+        sanitised_tokens = []
+
         for quote in fetched:
             if not isinstance(quote, dict):
                 continue
@@ -95,17 +97,21 @@ def _sanitise_closed_market_quote(response):
             if ltp_val > 0 and abs(ltp_val - close_val) / close_val < 0.001:
                 continue
 
-            logger.warning(
-                f"Closed-market quote sanitised for token "
-                f"{quote.get('symbolToken', '?')}: ltp={ltp_val} "
-                f"open={quote.get('open')} high={quote.get('high')} "
-                f"low={quote.get('low')} -> close={close_val}"
-            )
+            sanitised_tokens.append(str(quote.get("symbolToken", "?")))
 
             quote["ltp"] = close_val
             quote["open"] = close_val
             quote["high"] = close_val
             quote["low"] = close_val
+
+        if sanitised_tokens:
+            # One summary per quote batch instead of a warning per token
+            # (after hours every token in the batch gets sanitised).
+            logger.warning(
+                f"Closed-market sanitise: normalised "
+                f"{len(sanitised_tokens)} quote(s) to previous close "
+                f"(tokens: {', '.join(sanitised_tokens)})"
+            )
 
         return response
     except Exception as e:
@@ -133,6 +139,25 @@ class MStockAdapter(BrokerInterface):
         # appconfig.json). Populated at startup by download_instrument_list
         # or read from the reduced instrument file's meta block.
         self._instrument_meta = None
+
+        # When one endpoint reports an expired session, every other
+        # authenticated endpoint will too. Remember the failure briefly
+        # so the burst of startup calls fails fast instead of burning an
+        # HTTP round-trip each. Auto-expires, so after a fresh login the
+        # next call goes out normally without any wiring.
+        self._session_expired_until = 0.0
+        self._SESSION_EXPIRED_COOLDOWN_SECONDS = 10.0
+
+        # Broker-side exit-fill detection. The U/D sell modes leave a
+        # resting SELL LIMIT at the broker; when the broker executes it,
+        # nothing in the app flow refreshes the position grid - the leg
+        # keeps showing (and the SL watcher keeps evaluating) a
+        # position the broker no longer holds. The pending-orders poll
+        # (the frontend pings it every ~15s) diffs the pending SELL set
+        # and forces a debounced grid refresh when one of them trades.
+        self._prev_pending_sell_order_ids = set()
+        self._last_fill_refresh_ts = 0.0
+        self._FILL_REFRESH_DEBOUNCE_SECONDS = 10.0
 
     def _get_order_freeze_limit(self):
         # Fetched per order so ORDER_FREEZE_LIMIT edits apply without a restart.
@@ -189,6 +214,20 @@ class MStockAdapter(BrokerInterface):
             invalid-session detection) keeps working unchanged
         Returns the parsed dict/list, or None after all attempts fail.
         """
+        now = time.time()
+        if now < self._session_expired_until:
+            logger.debug(
+                f"M.Stock API {method} {endpoint} skipped - session known "
+                f"expired (cooldown for another "
+                f"{self._session_expired_until - now:.1f}s)"
+            )
+            return {
+                "status": False,
+                "message": "invalid session. Kindly logout and login again",
+                "errorcode": "MAInternalServerError",
+                "data": None,
+            }
+
         last_reason = "unknown error"
 
         for attempt in range(1, max_retries + 1):
@@ -219,7 +258,21 @@ class MStockAdapter(BrokerInterface):
                     # e.g. the bare "<html>502 Bad Gateway</html>" page
                     last_reason = f"HTTP {status} with non-JSON body: {stripped[:120]!r}"
                 else:
-                    return json.loads(raw)
+                    parsed = json.loads(raw)
+                    if (
+                        isinstance(parsed, dict)
+                        and not parsed.get("status")
+                        and "invalid session" in str(parsed.get("message", "")).lower()
+                    ):
+                        self._session_expired_until = (
+                            time.time() + self._SESSION_EXPIRED_COOLDOWN_SECONDS
+                        )
+                        logger.warning(
+                            f"M.Stock session expired (reported by "
+                            f"{method} {endpoint}); API calls fail fast for "
+                            f"{self._SESSION_EXPIRED_COOLDOWN_SECONDS}s"
+                        )
+                    return parsed
 
             except (http.client.HTTPException, OSError, ValueError) as e:
                 last_reason = f"{type(e).__name__}: {e}"
@@ -258,11 +311,13 @@ class MStockAdapter(BrokerInterface):
                     "Authorization": f"Bearer {self.mstock_instance._access_token}",
                     "Content-Type": "application/json"
                 }
-                # MStock (Mirae OpenAPI) mirrors Kite's REST design: cancelling
-                # a regular order is a DELETE on the order resource. POST here
-                # returns 405 Method Not Allowed.
+                # MStock's cancel endpoint REQUIRES a body carrying the
+                # variety and the orderid (docs: tradingapi.mstock.com
+                # typeB "Order Cancellation"). An empty/"{}" body passes
+                # routing but their controller 500s (IA500) without it.
                 endpoint = f"/openapi/typeb/orders/regular/{order_id}"
-                conn.request("DELETE", endpoint, body="{}", headers=headers)
+                body = json.dumps({"variety": "NORMAL", "orderid": str(order_id)})
+                conn.request("DELETE", endpoint, body=body, headers=headers)
 
                 response = conn.getresponse()
                 raw = response.read().decode("utf-8")
@@ -315,7 +370,16 @@ class MStockAdapter(BrokerInterface):
 
             data = response.get("data", [])
 
-            logger.debug(f"Raw Pending orders data: {data}")
+            # Full raw dumps of the order book on every 15s poll inflated
+            # the logs by tens of MB/day; log a compact histogram instead.
+            if isinstance(data, list):
+                status_counts = {}
+                for order in data:
+                    key = str(order.get("orderstatus") or order.get("status") or "?").upper()
+                    status_counts[key] = status_counts.get(key, 0) + 1
+                logger.debug(f"Pending orders fetch: {len(data)} order(s) by status: {status_counts}")
+            else:
+                logger.debug(f"Pending orders fetch: unexpected payload type {type(data).__name__}")
 
             # Apply your existing transformation logic
             orders = order_attribute_mgmt(data)
@@ -331,6 +395,7 @@ class MStockAdapter(BrokerInterface):
             ]
 
             logger.info(f"Total orders: {len(orders)}, Pending: {len(pending_orders)}")
+            self._detect_broker_side_sell_fills(orders, pending_orders)
             self._trader.frontend_data_socket.emit('update_pending_orders', pending_orders)
             return pending_orders
 
@@ -338,8 +403,112 @@ class MStockAdapter(BrokerInterface):
             logger.error(f"Error fetching pending orders: {e} \n\n CONSIDER LOGGING IN AGAIN \n\n")
             return []
 
+    def _detect_broker_side_sell_fills(self, all_orders, pending_orders):
+        """
+        Detect SELL orders that left the pending set because the broker
+        executed them, and reconcile the position grid when that happens.
+
+        A filled resting exit (the U/D immediate target sell, or any
+        other algo SELL filled broker-side) must remove its position
+        leg. Without this reconciliation the grid keeps showing the
+        sold leg, the SL watcher keeps evaluating a phantom position
+        and a manual exit hits the RMS as a fresh short
+        (FUND LIMIT INSUFFICIENT).
+        """
+        try:
+            pending_ids = {
+                str(o.get("order_id"))
+                for o in pending_orders
+                if o.get("order_id")
+            }
+
+            filled_statuses = {
+                "traded", "executed", "complete", "completed",
+                "fully executed", "fully_executed",
+            }
+
+            def _filled_qty(order):
+                try:
+                    return float(order.get("filled_quantity") or 0)
+                except (TypeError, ValueError):
+                    return 0.0
+
+            filled_now = []
+            for order in all_orders or []:
+                if str(order.get("transaction_type") or "").upper() != "SELL":
+                    continue
+                order_id = str(order.get("order_id") or "")
+                if not order_id or order_id not in self._prev_pending_sell_order_ids:
+                    continue
+                if order_id in pending_ids:
+                    continue
+                if str(order.get("order_status") or "").strip().lower() in filled_statuses:
+                    filled_now.append(order_id)
+
+            # A still-pending SELL with a partial fill has already
+            # changed the broker position - reconcile for it too.
+            partial_now = [
+                str(o.get("order_id"))
+                for o in pending_orders
+                if str(o.get("transaction_type") or "").upper() == "SELL"
+                and _filled_qty(o) > 0
+            ]
+
+            self._prev_pending_sell_order_ids = pending_ids
+
+            if not filled_now and not partial_now:
+                return
+
+            now_ts = time.time()
+            if now_ts - self._last_fill_refresh_ts < self._FILL_REFRESH_DEBOUNCE_SECONDS:
+                return
+            self._last_fill_refresh_ts = now_ts
+
+            logger.info(
+                f"Broker-side SELL fill detected "
+                f"(filled: {filled_now or '[]'}, partial: {partial_now or '[]'}) - "
+                f"refreshing position grid to reconcile with the broker."
+            )
+            threading.Thread(
+                target=self._trader.refresh_open_pos_buy_price,
+                daemon=True
+            ).start()
+            # A resting U/D exit filling broker-side fires neither
+            # buy_order_result nor sell_order_result, so the Orders
+            # grid never re-fetched and the trade only showed up after
+            # a manual refresh / app restart (13:53:48 on 2026-09-22).
+            # Nudge the frontend explicitly.
+            try:
+                self._trader.frontend_data_socket.emit(
+                    'broker_side_fill_detected',
+                    {"filled": filled_now, "partial": partial_now}
+                )
+            except Exception as emit_error:
+                logger.debug(f"Could not emit broker-side fill event: {emit_error}")
+        except Exception as e:
+            logger.error(f"Broker-side SELL fill detection failed: {e}", exc_info=True)
+
     def cancel_all_pending_orders(self):
         logger.info("Cancelling ALL pending orders...")
+
+        # Official one-shot endpoint first (docs: POST /openapi/typeb/
+        # orders/cancelall). Whatever survives it (or any transport
+        # error) is handled by the paced per-order loop below.
+        try:
+            conn = http.client.HTTPSConnection("api.mstock.trade", context=_SSL_CONTEXT)
+            headers = {
+                "X-Mirae-Version": "1",
+                "X-PrivateKey": self.mstock_instance._api_key,
+                "Authorization": f"Bearer {self.mstock_instance._access_token}",
+                "Content-Type": "application/json"
+            }
+            conn.request("POST", "/openapi/typeb/orders/cancelall", body="", headers=headers)
+            response = conn.getresponse()
+            raw = response.read().decode("utf-8")
+            conn.close()
+            logger.debug(f"Cancel-all HTTP status: {response.status} | {raw}")
+        except Exception as e:
+            logger.error(f"Cancel-all endpoint failed: {e}")
 
         # MStock throttles order requests: firing cancels back-to-back
         # (10/sec) draws 429s and transient IA500 500s. Pace each call
@@ -931,10 +1100,11 @@ class MStockAdapter(BrokerInterface):
         if response is None:
             logger.error(f"Instrument quote fetch failed for {exchange} {instrument_token}: no valid response from M.Stock")
             return None
-        logger.info(f"Instrument quote fetched for {exchange} {instrument_token} is : {response}")
         if not response.get("status", True):
             logger.error("Instrument quote failed: {}", response)
         else:
+            # Payload available at DEBUG only - the full body was logged
+            # twice (INFO + DEBUG) on every call.
             logger.debug("Instrument quote response: {}", response)
         return _sanitise_closed_market_quote(response)
     
@@ -1415,9 +1585,15 @@ class MStockAdapter(BrokerInterface):
 
                         if mode == "LIVE":
                             logger.debug(f"Mode is {mode} and Sell_Mode is {sell_mode}")
-                            # if sell_mode == "U": # Undetermined Profit at LTP + target_profit
-                            #     logger.info("System placing Sell Order at LTP + {target_profit} points immediately after buy order is placed")
-                            #     self.sell_units_temp(trading_symbol, instrument_token , buy_quantity , exchange,ltp=ltp,limit_market="LIMIT",price=ltp+target_profit) 
+                            if sell_mode == "U": # Undetermined Profit at LTP + target_profit
+                                # Active U branch: a U-leg bought through
+                                # THIS path (insufficient-funds retry) used
+                                # to get no resting exit at all - the U
+                                # branch only lived in buy_sell_units. On
+                                # 2026-09-22 the 10:26 / 12:08 / 12:21 U
+                                # retries traded naked with no exit limit.
+                                logger.info(f"System placing Sell Order at LTP + {target_profit} points immediately after buy order is placed")
+                                self.sell_units_temp(trading_symbol, instrument_token , buy_quantity , exchange,ltp=ltp,limit_market="LIMIT",price=ltp+target_profit)
                             if sell_mode == "D": # Determined Profit at Buy Price + target_profit
                                 logger.debug(f"System placing Sell Order at Buy Price + {target_profit} points immediately after buy order is placed")
                                 logger.debug(f"Fetching Buy Price for the order id {parsed_response.get('data').get('orderid')}")

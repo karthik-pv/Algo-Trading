@@ -6,13 +6,14 @@ import sys
 import http.client
 import ssl
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from dotenv import load_dotenv
 
-load_dotenv()
+_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+load_dotenv(os.path.join(_PROJECT_ROOT, ".env"))
 
 API_KEY = os.getenv("MSTOCK_API_KEY")
-with open("data/access_token.json", "r", encoding="utf-8") as f:
+with open(os.path.join(_PROJECT_ROOT, "data", "access_token.json"), "r", encoding="utf-8") as f:
     JWT = json.load(f)["mstock_jwt_token"]
 
 CTX = ssl.create_default_context()
@@ -51,7 +52,10 @@ for round_no in (1, 2, 3):
 
     print(f"round {round_no}: attempting {len(pending)} cancel(s)...")
     for oid, o in pending.items():
-        status, raw = call("DELETE", f"/openapi/typeb/orders/regular/{oid}", "{}")
+        # Body is REQUIRED by the API (variety + orderid) - an empty
+        # body makes the endpoint 500 with IA500.
+        status, raw = call("DELETE", f"/openapi/typeb/orders/regular/{oid}",
+                           json.dumps({"variety": "NORMAL", "orderid": oid}))
         ok = status in (200, 202, 204)
         print(f"  {oid} ({o.get('tradingsymbol')}) -> HTTP {status} "
               f"{'OK' if ok else raw[:110]}")

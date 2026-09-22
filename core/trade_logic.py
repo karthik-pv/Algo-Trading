@@ -90,6 +90,16 @@ class Trader_Singleton:
     _last_price_flush_ts = 0.0
     _last_position_pnl_log_ts = 0.0
     _last_freq_log_ts = {}
+    _last_watcher_heartbeat_ts = 0.0
+    # Watchdog bookkeeping for the SL watcher thread. The loop stamps
+    # _watcher_loop_alive_ts every cycle; the supervisor restarts the
+    # thread when it dies or stops making progress. The generation
+    # counter ensures a previously stalled-but-revived thread exits
+    # instead of running alongside its replacement (double sells).
+    _watcher_loop_alive_ts = 0.0
+    _watcher_generation = 0
+    _watcher_thread_ref = None
+    _watcher_supervisor_started = False
     _voice_announcement_enabled = True
 
     # ---------------------------------------------------------
@@ -123,6 +133,13 @@ class Trader_Singleton:
     _LAST_KNOWN_PRICES_FILE = resolve_data_path("last_known_prices.json")
     _LAST_KNOWN_PRICE_MAX_AGE_DAYS = 7
 
+    # ---------------------------------------------------------
+    # Persisted order-selection defaults. The per-token strategy and
+    # sell-mode radio choices survive restarts so the next session's
+    # buys (and residual-leg keys) keep using what was selected.
+    # ---------------------------------------------------------
+    _ORDER_SELECTIONS_FILE = resolve_data_path("order_selections.json")
+
     # Standard PaperTrading.txt columns. Shared by write_paper_trade()
     # (writer) and fetch_paper_trades() (reader) so the two can never
     # drift apart again.
@@ -140,6 +157,7 @@ class Trader_Singleton:
     def __new__(cls):
         if cls._instance is None:
             cls._instance = super(Trader_Singleton, cls).__new__(cls)
+            cls._load_order_selections()
         return cls._instance
 
     def set_broker(self, broker):
@@ -438,6 +456,18 @@ class Trader_Singleton:
         else:
             factor = 1
         return pct_book_profit * factor
+
+    def _default_override_book_profit_pct(self, strategy_type):
+        """
+        Per-leg BK% seed, comparison-function aware: PCT mode seeds the
+        strategy-scaled percent; PNT mode seeds None so the visible
+        PTS_* point thresholds govern the leg unless the user types an
+        explicit percent override in the BK% box.
+        """
+        comparison_function = fetch_from_json("appconfig.json", "COMPARISON_FUNCTION") or []
+        if "PNT" in comparison_function:
+            return None
+        return self._effective_book_profit_pct(strategy_type)
 
     def _cancel_pending_exit_orders(self, tradingsymbol):
         """
@@ -923,7 +953,7 @@ class Trader_Singleton:
                 "total_pl": total_pl,
                 "order_strategy": strategy,
                 "sell_mode": sell_mode,
-                "override_book_profit_pct": self._effective_book_profit_pct(strategy)
+                "override_book_profit_pct": self._default_override_book_profit_pct(strategy)
             }
 
             # ---------------------------------------------------------
@@ -1387,7 +1417,7 @@ class Trader_Singleton:
                 # edits it in the grid.
                 leg.setdefault(
                     "override_book_profit_pct",
-                    self._effective_book_profit_pct(leg["order_strategy"])
+                    self._default_override_book_profit_pct(leg["order_strategy"])
                 )
                 self._update_leg_pl(key)
 
@@ -1509,9 +1539,13 @@ class Trader_Singleton:
     def stop_loss_book_profit_core(self, broker: BrokerInterface):
         logger.info("Started trading watcher thread")
 
+        my_generation = self._watcher_generation
         market_closed_logged = False
 
-        while not self._stop_event.is_set():
+        while not self._stop_event.is_set() and self._watcher_generation == my_generation:
+            # Liveness stamp for the supervisor thread - refreshed every
+            # cycle so a stall (not just a crash) is detectable.
+            self._watcher_loop_alive_ts = time.time()
             # LIVE only: no point watching when the market is shut -
             # the broker takes no orders. PAPER / SIMULATION / PLAYBACK
             # watch 24/7 so exits can be tested anytime (the sim/playback
@@ -1528,119 +1562,147 @@ class Trader_Singleton:
                 market_closed_logged = False
 
             for token , data in list(self._position_data.items()):
-                should_log_eval = self._should_log_with_frequency(f"stop_loss_eval:{token}")
-                if should_log_eval:
-                    logger.debug(f"Evaluating position for token {token}")
-                    logger.debug(f"Iterating Position records: {data}")
-                
-                qty = data.get("lots")
-                buy_price = data.get("average_price")
-                ltp = data.get("latest_price")
-                exchange = self._exchange
-                tradingsymbol = data.get("tradingsymbol")
-                instrument_token = data.get("instrument_token")
-                order_strategy_type = data.get("order_strategy" , "DEFAULT")
-                sell_type = data.get("sell_mode" , "T")
-
-                # Position keys are composite legs; skip malformed or
-                # incomplete entries so one bad row cannot kill the
-                # watcher thread.
-                if not tradingsymbol or not instrument_token or not qty:
-                    if should_log_eval:
-                        logger.debug(f"Skipping incomplete position record for {token}")
+                # One bad row (or one failing decision) must not kill
+                # the watcher thread - a silent death here disables the
+                # stop-loss for every subsequent position while the UI
+                # keeps looking alive. Failures are logged with the
+                # traceback and the cycle continues.
+                if not isinstance(data, dict):
+                    logger.error(f"Skipping malformed position record for {token}: {data}")
                     continue
-                
 
-                match = re.search(r'(CE|PE)$', tradingsymbol.upper())
-                contract_type = match.group(1) if match else None
+                try:
+                    should_log_eval = self._should_log_with_frequency(f"stop_loss_eval:{token}")
+                    if should_log_eval:
+                        logger.debug(f"Evaluating position for token {token}")
+                        logger.debug(f"Iterating Position records: {data}")
 
-                if should_log_eval:
-                    logger.debug(f"Order Strategy Type set is {order_strategy_type}")
-                
-                # For now just running the check for the Stop Loss..As we would be resorting to book profit undeterministically
-                # where in As soon as Buy Order is raised Sell Order is also raised with Sell Price = LTP + x (Limit Order)
-                # Refactor this change where this could be driven by the appconfig.json parameters
-                # Ultra Scalping is determined by 15s MACD2 Swing Set Up where in we are capturing 1s MACD2  + 5s Stochastic Swing
+                    qty = data.get("lots")
+                    buy_price = data.get("average_price")
+                    ltp = data.get("latest_price")
+                    exchange = self._exchange
+                    tradingsymbol = data.get("tradingsymbol")
+                    instrument_token = data.get("instrument_token")
+                    order_strategy_type = data.get("order_strategy" , "DEFAULT")
+                    sell_type = data.get("sell_mode" , "T")
 
-                # This trigger check is only applicable when Sell Type = T. For other cases U and D system raises Sell Order immediately after Buy Order is executed
-
-                #sell = self.to_sell_or_not_to_sell(buy_price , ltp , order_strategy_type,contract_type, should_log_eval)
-                sell = self._watcher_sell_decision(
-                    buy_price, ltp, order_strategy_type, contract_type,
-                    sell_type, should_log_eval,
-                    override_book_profit_pct=data.get("override_book_profit_pct")
-                )
-                
-                if should_log_eval:
-                    logger.debug(f"Decision To Sell {tradingsymbol} - {sell}")
-                # Execute Sell Order if these conditions are met
-                # 1. If sell is True and Sell Mode is TRIGGER_SELL and LTP > Buy Price (Book Profit Scenario)
-                # 2. If sell is True and LTP < Buy Price (Stop Loss Scenario). In this case, Sell Mode can be anything. We dont expect TRIGGER_SELL to be set here.
-                
-                
-                if self._mode in ("LIVE", "SIMULATION", "PLAYBACK"):
-                    if sell:
-                        # U/D legs hold a resting exit limit at the
-                        # broker; cancel it first or a later fill would
-                        # leave the account net short.
-                        if sell_type in ("U", "D"):
-                            self._cancel_pending_exit_orders(tradingsymbol)
-
-                        logger.info(f"Placing SELL order for {tradingsymbol} {instrument_token} : {qty} lots at LTP {ltp}")
-                        try:
-                            broker.sell_units(tradingsymbol,instrument_token,qty,exchange,ltp, position_key=str(token))
-                        except Exception as sell_error:
-                            # A failed auto-sell must not kill the
-                            # watcher thread; the next cycle retries.
-                            logger.error(
-                                f"Auto-sell failed for {tradingsymbol} "
-                                f"[{token}]: {sell_error}",
-                                exc_info=True
-                            )
-                    else:
+                    # Position keys are composite legs; skip malformed or
+                    # incomplete entries so one bad row cannot kill the
+                    # watcher thread.
+                    if not tradingsymbol or not instrument_token or not qty:
                         if should_log_eval:
-                            logger.debug(f"No SELL action taken for {tradingsymbol} at LTP {ltp}")
-                else:
-                    # PAPER mode: mirror the LIVE branch - only record the
-                    # SELL when the decision maker actually says sell, then
-                    # rebuild the paper position grid. A failure here must
-                    # not kill the watcher thread.
-                    if not sell:
-                        if should_log_eval:
-                            logger.debug(f"PAPER: No SELL action taken for {tradingsymbol} at LTP {ltp}")
-                    else:
-                        try:
-                            logger.info(f"PAPER: Recording paper SELL for {tradingsymbol} {instrument_token} : {qty} lots at LTP {ltp}")
+                            logger.debug(f"Skipping incomplete position record for {token}")
+                        continue
 
-                            self.write_paper_trade(
-                                transaction_type="SELL",
-                                tradingsymbol=tradingsymbol,
-                                token=instrument_token,
-                                qty=qty,
-                                ltp=ltp,
-                                product="MIS",
-                                buy_price=buy_price,
-                                lot_size=data.get("lotsize", 1),
-                                buy_time=self.get_open_position_buy_time(
-                                    instrument_token,
+
+                    match = re.search(r'(CE|PE)$', tradingsymbol.upper())
+                    contract_type = match.group(1) if match else None
+
+                    if should_log_eval:
+                        logger.debug(f"Order Strategy Type set is {order_strategy_type}")
+
+                    # For now just running the check for the Stop Loss..As we would be resorting to book profit undeterministically
+                    # where in As soon as Buy Order is raised Sell Order is also raised with Sell Price = LTP + x (Limit Order)
+                    # Refactor this change where this could be driven by the appconfig.json parameters
+                    # Ultra Scalping is determined by 15s MACD2 Swing Set Up where in we are capturing 1s MACD2  + 5s Stochastic Swing
+
+                    # This trigger check is only applicable when Sell Type = T. For other cases U and D system raises Sell Order immediately after Buy Order is executed
+
+                    #sell = self.to_sell_or_not_to_sell(buy_price , ltp , order_strategy_type,contract_type, should_log_eval)
+                    sell = self._watcher_sell_decision(
+                        buy_price, ltp, order_strategy_type, contract_type,
+                        sell_type, should_log_eval,
+                        override_book_profit_pct=data.get("override_book_profit_pct")
+                    )
+
+                    if should_log_eval:
+                        logger.debug(f"Decision To Sell {tradingsymbol} - {sell}")
+                    # Execute Sell Order if these conditions are met
+                    # 1. If sell is True and Sell Mode is TRIGGER_SELL and LTP > Buy Price (Book Profit Scenario)
+                    # 2. If sell is True and LTP < Buy Price (Stop Loss Scenario). In this case, Sell Mode can be anything. We dont expect TRIGGER_SELL to be set here.
+
+
+                    if self._mode in ("LIVE", "SIMULATION", "PLAYBACK"):
+                        if sell:
+                            # U/D legs hold a resting exit limit at the
+                            # broker; cancel it first or a later fill would
+                            # leave the account net short.
+                            if sell_type in ("U", "D"):
+                                self._cancel_pending_exit_orders(tradingsymbol)
+
+                            logger.info(f"Placing SELL order for {tradingsymbol} {instrument_token} : {qty} lots at LTP {ltp}")
+                            try:
+                                broker.sell_units(tradingsymbol,instrument_token,qty,exchange,ltp, position_key=str(token))
+                            except Exception as sell_error:
+                                # A failed auto-sell must not kill the
+                                # watcher thread; the next cycle retries.
+                                logger.error(
+                                    f"Auto-sell failed for {tradingsymbol} "
+                                    f"[{token}]: {sell_error}",
+                                    exc_info=True
+                                )
+                        else:
+                            if should_log_eval:
+                                logger.debug(f"No SELL action taken for {tradingsymbol} at LTP {ltp}")
+                    else:
+                        # PAPER mode: mirror the LIVE branch - only record the
+                        # SELL when the decision maker actually says sell, then
+                        # rebuild the paper position grid. A failure here must
+                        # not kill the watcher thread.
+                        if not sell:
+                            if should_log_eval:
+                                logger.debug(f"PAPER: No SELL action taken for {tradingsymbol} at LTP {ltp}")
+                        else:
+                            try:
+                                logger.info(f"PAPER: Recording paper SELL for {tradingsymbol} {instrument_token} : {qty} lots at LTP {ltp}")
+
+                                self.write_paper_trade(
+                                    transaction_type="SELL",
                                     tradingsymbol=tradingsymbol,
+                                    token=instrument_token,
+                                    qty=qty,
+                                    ltp=ltp,
+                                    product="MIS",
+                                    buy_price=buy_price,
+                                    lot_size=data.get("lotsize", 1),
+                                    buy_time=self.get_open_position_buy_time(
+                                        instrument_token,
+                                        tradingsymbol=tradingsymbol,
+                                        strategy=order_strategy_type,
+                                        sell_type=sell_type
+                                    ),
                                     strategy=order_strategy_type,
                                     sell_type=sell_type
-                                ),
-                                strategy=order_strategy_type,
-                                sell_type=sell_type
-                            )
+                                )
 
-                            # Recalculate paper positions so the sold
-                            # quantity disappears from the grid.
-                            self.refresh_paper_positions()
-                        except Exception as paper_sell_error:
-                            logger.error(
-                                f"PAPER auto-sell failed for {tradingsymbol}: {paper_sell_error}",
-                                exc_info=True
-                            )
+                                # Recalculate paper positions so the sold
+                                # quantity disappears from the grid.
+                                self.refresh_paper_positions()
+                            except Exception as paper_sell_error:
+                                logger.error(
+                                    f"PAPER auto-sell failed for {tradingsymbol}: {paper_sell_error}",
+                                    exc_info=True
+                                )
+                except Exception as eval_error:
+                    logger.error(
+                        f"SL watcher evaluation failed for {token}: {eval_error}",
+                        exc_info=True
+                    )
 
-                self._stop_event.wait(timeout=2)
+            # Heartbeat - proves the watcher is alive in the log file.
+            # A silent watcher previously went unnoticed because a
+            # crashed thread only printed to the console, never to the
+            # log.
+            now_ts = time.time()
+            if now_ts - self._last_watcher_heartbeat_ts >= 300:
+                self._last_watcher_heartbeat_ts = now_ts
+                logger.info(
+                    f"SL watcher heartbeat | monitoring {len(self._position_data)} position leg(s)"
+                )
+
+            # Wait once per cycle (not once per leg) - an empty
+            # position dict must idle, not busy-spin.
+            self._stop_event.wait(timeout=2)
 
     # ---------------------- DECISION MAKER ----------------------------
 
@@ -1652,8 +1714,9 @@ class Trader_Singleton:
         Sell Types U/D hold a broker-side resting exit limit (LIVE) or
         a strategy-scaled POINTS target (PAPER / SIMULATION / PLAYBACK),
         but the watcher additionally market-books profit the moment the
-        strategy-scaled PCT threshold is crossed - cancelling the
-        resting exit first - together with the SL safety net.
+        strategy-scaled threshold is crossed (PCT or PNT per the
+        configured sell-trigger function) - cancelling the resting exit
+        first - together with the SL safety net.
         A per-position BK% override (positions grid) replaces the
         strategy-scaled profit threshold wherever it applies.
         """
@@ -1743,10 +1806,89 @@ class Trader_Singleton:
             return False
         
     #BADD
+    def _pnt_sell_decision(self, buy_price, current_price, order_strategy_type, log_enabled=True, check_profit=True, override_book_profit_pct=None):
+        """
+        PNT (points) branch of the SL safety net - mirrors the PNT branch
+        of to_sell_or_not_to_sell: profit threshold is PTS_PROFIT scaled
+        by the strategy's PTS factor, stop loss is PTS_LOSS in points.
+        The per-leg BK% override stays a percent and is converted to
+        points off the buy price here (0 still disables profit booking).
+        """
+        try:
+            if float(buy_price) <= 0:
+                return False
+        except (TypeError, ValueError):
+            return False
+
+        if order_strategy_type == "INTRA":
+            PNT_FACTOR = float(fetch_from_json("appconfig.json", "PTS_PROFIT_INTRA_FACTOR") or 1)
+        elif order_strategy_type == "SCALPING":
+            PNT_FACTOR = float(fetch_from_json("appconfig.json", "PTS_PROFIT_SCALPING_FACTOR") or 1)
+        elif order_strategy_type == "ULTRA_SCALPING":
+            PNT_FACTOR = float(fetch_from_json("appconfig.json", "PTS_PROFIT_ULTRA_SCALPING_FACTOR") or 1)
+        else:
+            PNT_FACTOR = 1
+
+        PNT_BOOK_PROFIT = float(fetch_from_json("appconfig.json", "PTS_PROFIT") or 0)
+        PNT_STOP_LOSS = float(fetch_from_json("appconfig.json", "PTS_LOSS") or 0)
+
+        if override_book_profit_pct is not None:
+            override = max(0.0, float(override_book_profit_pct))
+            BOOK_PROFIT_THRESHOLD_PTS = float(buy_price) * override / 100.0
+        else:
+            BOOK_PROFIT_THRESHOLD_PTS = PNT_BOOK_PROFIT * PNT_FACTOR
+        STOP_LOSS_THRESHOLD_PTS = PNT_STOP_LOSS
+
+        if log_enabled:
+            logger.debug(
+                f"PNT thresholds: factor {PNT_FACTOR} | Book Profit >= {BOOK_PROFIT_THRESHOLD_PTS:.2f} pts "
+                f"| Stop Loss >= {STOP_LOSS_THRESHOLD_PTS:.2f} pts | check_profit={check_profit}"
+            )
+
+        # Profit booking: skipped entirely when check_profit is False
+        # (U/D sell modes handle profit via the broker-side limit order).
+        if check_profit and BOOK_PROFIT_THRESHOLD_PTS > 0 and current_price > buy_price:
+            point_diff = self.calculate_point_difference(buy_price, current_price)
+            if log_enabled:
+                logger.debug(
+                    f"PTS_PROFIT based Book Profit Check. Buy Price is {buy_price} and "
+                    f"Current Price is {current_price}. Point Diff is {point_diff} "
+                    f"and Book Profit threshold is {BOOK_PROFIT_THRESHOLD_PTS:.2f} pts"
+                )
+            if point_diff >= BOOK_PROFIT_THRESHOLD_PTS:
+                if log_enabled:
+                    logger.debug("Returning True for Booking Profit. PTS_PROFIT triggered.")
+                return True
+
+        if log_enabled:
+            logger.debug(
+                f"PTS_LOSS based Stop Loss Check. Buy Price is {buy_price} and "
+                f"Current Price is {current_price} and Stop Loss threshold is {STOP_LOSS_THRESHOLD_PTS:.2f} pts"
+            )
+        if STOP_LOSS_THRESHOLD_PTS > 0 and current_price < buy_price:
+            diff = abs(self.calculate_point_difference(buy_price, current_price))
+            if diff >= STOP_LOSS_THRESHOLD_PTS:
+                if log_enabled:
+                    logger.debug("Returning True for Booking Loss. PTS_LOSS triggered.")
+                return True
+        if log_enabled:
+            logger.debug("Returning False for Booking Loss")
+        return False
+
     def to_sell_or_not_to_sell_SL(self,buy_price , current_price , order_strategy_type,contract_type, log_enabled=True, check_profit=True, override_book_profit_pct=None):
-        # that is the question 
+        # that is the question
         if log_enabled:
             logger.debug(f"Deciding to sell or not for Stop Loss: Buy Price = {buy_price}, Current Price = {current_price} and Order Strategy Type is {order_strategy_type}")
+
+        # The SL path must apply the thresholds the UI actually shows:
+        # PNT mode -> PTS_* points; PCT mode (and EMA, whose indicator
+        # logic lives elsewhere) keeps the PCT_* percentages below.
+        comparison_function = fetch_from_json("appconfig.json", "COMPARISON_FUNCTION") or []
+        if "PNT" in comparison_function:
+            return self._pnt_sell_decision(
+                buy_price, current_price, order_strategy_type,
+                log_enabled, check_profit, override_book_profit_pct
+            )
 
         # PCT thresholds are scaled per strategy: TP% = PCT_BOOK_PROFIT * factor and
         # SL% = PCT_STOP_LOSS * factor. Unknown strategy types default to factor 1.
@@ -2268,6 +2410,61 @@ class Trader_Singleton:
         except Exception as e:
             logger.debug(f"Could not load last-known price for {symbol}: {e}")
             return None
+
+    # ---------------------------------------------------------
+    # Order-selection persistence (strategy + sell mode per token)
+    # ---------------------------------------------------------
+    @classmethod
+    def _load_order_selections(cls):
+        """
+        Hydrate the in-memory strategy/sell-mode mappings from
+        data/order_selections.json so selections survive a restart.
+        Runs once, when the singleton instance is first created.
+        """
+        try:
+            with open(cls._ORDER_SELECTIONS_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+
+            for token, selection in (data or {}).items():
+                if not isinstance(selection, dict):
+                    continue
+                token = str(token)
+                strategy = str(
+                    selection.get("strategy") or "ULTRA_SCALPING"
+                )
+                sell_mode = str(selection.get("sell_mode") or "T").strip().upper()
+                cls._order_strategy_mapping[token] = cls._normalise_strategy(strategy)
+                cls._order_sell_mode_mapping[token] = sell_mode
+
+            if data:
+                logger.debug(f"Restored order selections: {data}")
+
+        except FileNotFoundError:
+            pass
+        except Exception as e:
+            logger.debug(f"Could not load persisted order selections: {e}")
+
+    def _save_order_selections(self):
+        """
+        Snapshot both selection mappings into a single JSON file write.
+        File format: {token: {"strategy": ..., "sell_mode": ...}}.
+        """
+        try:
+            tokens = set(self._order_strategy_mapping) | set(self._order_sell_mode_mapping)
+            payload = {
+                token: {
+                    "strategy": self._normalise_strategy(
+                        self._order_strategy_mapping.get(token, "ULTRA_SCALPING")
+                    ),
+                    "sell_mode": str(
+                        self._order_sell_mode_mapping.get(token, "T")
+                    ).strip().upper(),
+                }
+                for token in tokens
+            }
+            write_to_json(payload, self._ORDER_SELECTIONS_FILE)
+        except Exception as e:
+            logger.debug(f"Could not persist order selections: {e}")
 
     def setup_woc_subscriptions(self):
         """
@@ -2926,7 +3123,17 @@ class Trader_Singleton:
                 self._order_sell_mode_mapping[token] = level_sell_mode
 
 
+            # Single write after the loop - the snapshot covers every
+            # token, so saving inside the loop would just re-write the
+            # file once per contract with the same values.
+            self._save_order_selections()
+
             self.save_last_known_prices(pending_price_updates)
+
+            # The setup batch just persisted every contract's price; seed
+            # the tick-flush timer so the first tick after startup does
+            # not immediately re-write the same values.
+            self._last_price_flush_ts = time.time()
 
             logger.info("Weekly options setup completed")
 
@@ -3495,11 +3702,13 @@ class Trader_Singleton:
         if not self._trading_watcher_thread_running:
             self._trading_watcher_thread_running = True
             self._stop_event.clear()
+            self._watcher_loop_alive_ts = time.time()
             thread = threading.Thread(
                 target=self.stop_loss_book_profit_core,
                 args=(self._broker,),
                 daemon=True,
             )
+            self._watcher_thread_ref = thread
             logger.info("Launching trading watcher thread 🚀")
             thread.start()
 
@@ -3509,7 +3718,62 @@ class Trader_Singleton:
                 daemon=True,
             )
             logger.info("Launching voice readout thread 🔊")
-            voice_thread.start()            
+            voice_thread.start()
+
+            # One supervisor per process watches the watcher and
+            # relaunches it if it ever dies or stalls again.
+            if not self._watcher_supervisor_started:
+                self._watcher_supervisor_started = True
+                supervisor = threading.Thread(
+                    target=self._watcher_supervisor_core,
+                    daemon=True,
+                )
+                logger.info("Launching SL watcher supervisor thread 🛡")
+                supervisor.start()
+
+    def _watcher_supervisor_core(self):
+        """
+        Watchdog for the stop-loss watcher thread.
+
+        A silent watcher death disables the stop-loss for every open
+        position while the UI keeps looking alive - this happened on
+        2026-09-22 at ~10:31 and the 10:40 loss excursion went
+        unguarded. Restart the thread when it exits (crash) or stops
+        making progress (hang). The generation bump makes any revived
+        old thread exit at its next cycle check instead of running
+        alongside the replacement.
+        """
+        while not self._stop_event.is_set():
+            self._stop_event.wait(timeout=30)
+            if self._stop_event.is_set():
+                return
+
+            if not self._trading_watcher_thread_running:
+                continue
+
+            thread = self._watcher_thread_ref
+            is_alive = thread is not None and thread.is_alive()
+            age = time.time() - self._watcher_loop_alive_ts
+            stalled = age > 120  # loop cycles every ~2s; 60x headroom
+
+            if is_alive and not stalled:
+                continue
+
+            logger.critical(
+                f"SL watcher thread "
+                f"{'DIED' if not is_alive else f'IS STALLED ({age:.0f}s without a loop tick)'} - "
+                f"stop-loss was NOT being enforced. Relaunching it now."
+            )
+
+            self._watcher_generation += 1
+            self._watcher_loop_alive_ts = time.time()
+            replacement = threading.Thread(
+                target=self.stop_loss_book_profit_core,
+                args=(self._broker,),
+                daemon=True,
+            )
+            self._watcher_thread_ref = replacement
+            replacement.start()            
 
     def stop_trading_watcher_thread(self):
         logger.info("Stopping trading watcher thread...")
@@ -4615,7 +4879,7 @@ class Trader_Singleton:
             new_position_data[leg_key]["override_book_profit_pct"] = (
                 previous_leg.get(
                     "override_book_profit_pct",
-                    self._effective_book_profit_pct(
+                    self._default_override_book_profit_pct(
                         new_position_data[leg_key]["order_strategy"]
                     )
                 )
@@ -4675,6 +4939,7 @@ class Trader_Singleton:
                     "underlying" : self._underlying,
                     "positions_data" : self._position_data,
                     "order_strategy_mapping" : self._order_strategy_mapping,
+                    "order_sell_mode_mapping" : self._order_sell_mode_mapping,
                     "mode" : self._mode
                 }
             setup_payload = {
@@ -4683,6 +4948,7 @@ class Trader_Singleton:
                     "underlying" : self._underlying,
                     "positions_data" : self._position_data,
                     "order_strategy_mapping" : self._order_strategy_mapping,
+                    "order_sell_mode_mapping" : self._order_sell_mode_mapping,
                     "mode" : self._mode,
                     "TVValidationRequired" : self._is_tv_validation_required(),
                     "CE_BUY_ALLOWED" : self._tv_ce_buy_allowed,
@@ -4937,7 +5203,7 @@ class Trader_Singleton:
                 # override to the new strategy's default.
                 leg = self._position_data.get(position_key)
                 if leg is not None:
-                    leg["override_book_profit_pct"] = self._effective_book_profit_pct(
+                    leg["override_book_profit_pct"] = self._default_override_book_profit_pct(
                         order_strategy_details["strategy_type"]
                     )
             else:
@@ -4952,7 +5218,7 @@ class Trader_Singleton:
                     str(order_strategy_details.get("instrument_token", ""))
                 ):
                     self._position_data[key]["override_book_profit_pct"] = (
-                        self._effective_book_profit_pct(
+                        self._default_override_book_profit_pct(
                             order_strategy_details["strategy_type"]
                         )
                     )
@@ -4970,6 +5236,7 @@ class Trader_Singleton:
             logger.debug(f"Received updated order strategy type for orders {order_strategy_details}")
             token = str(order_strategy_details["instrument_token"])
             self._order_strategy_mapping[token] = order_strategy_details["strategy_type"]
+            self._save_order_selections()
 
             # NOTE: this mapping is only the DEFAULT strategy for the
             # NEXT buy of this instrument. Open legs keep the strategy
@@ -4978,11 +5245,31 @@ class Trader_Singleton:
 
             logger.debug(f"Updated Order Strategy Mapping: {self._order_strategy_mapping}")
 
+        @self.frontend_data_socket.on("order_sell_mode_data_updated_orders")
+        def handle_order_sell_mode_orders(sell_mode_details):
+            # Buy-grid sell-mode radio: the DEFAULT sell mode for the NEXT
+            # buy of this instrument. Persisted so the choice survives a
+            # restart (open legs keep the sell mode stamped at buy time).
+            logger.debug(f"Received updated sell mode for orders {sell_mode_details}")
+            token = str(sell_mode_details["instrument_token"])
+            self._order_sell_mode_mapping[token] = str(
+                sell_mode_details.get("sell_mode") or "T"
+            ).strip().upper()
+            self._save_order_selections()
+            logger.debug(f"Updated Order Sell Mode Mapping: {self._order_sell_mode_mapping}")
+
         @self.frontend_data_socket.on("position_sell_mode_updated")
         def handle_position_sell_mode_updated(sell_mode_details):
             logger.debug(f"Received updated sell mode for positions {sell_mode_details}")
             position_key = str(sell_mode_details.get("position_key") or "")
             new_mode = str(sell_mode_details.get("sell_mode") or "T").strip().upper()
+            old_mode = None
+            affected_sym = None
+            affected_qty = 0
+            affected_token = None
+            affected_strategy = None
+            affected_ltp = 0.0
+            affected_avg = 0.0
 
             if position_key and ":" in position_key and position_key in self._position_data:
                 # Sell mode is part of the leg identity - re-key the leg
@@ -4998,13 +5285,99 @@ class Trader_Singleton:
                         f"Leg {position_key} re-keyed to {new_key} "
                         f"(sell mode switched mid-trade)"
                     )
+                    old_mode = current_mode
+                    affected_sym = leg.get("tradingsymbol")
+                    affected_qty = leg.get("lots") or leg.get("net_quantity") or 0
+                    affected_token = leg.get("instrument_token") or token
+                    affected_strategy = leg.get("order_strategy") or strategy
+                    affected_ltp = leg.get("latest_price") or 0.0
+                    affected_avg = leg.get("average_price") or 0.0
             else:
                 # Legacy payload without a leg key: apply to every open
                 # leg of the instrument.
                 for key in self._legs_for_token(
                     str(sell_mode_details.get("instrument_token", ""))
                 ):
-                    self._position_data[key]["sell_mode"] = new_mode
+                    leg_data = self._position_data.get(key) or {}
+                    if not old_mode:
+                        old_mode = str(leg_data.get("sell_mode") or "T").strip().upper()
+                        affected_sym = leg_data.get("tradingsymbol")
+                        affected_qty = leg_data.get("lots") or leg_data.get("net_quantity") or 0
+                        affected_token = leg_data.get("instrument_token")
+                        affected_strategy = leg_data.get("order_strategy", "DEFAULT")
+                        affected_ltp = leg_data.get("latest_price") or 0.0
+                        affected_avg = leg_data.get("average_price") or 0.0
+                    leg_data["sell_mode"] = new_mode
+
+            # A U/D leg holds a broker-side resting exit limit placed at
+            # buy time. Leaving U/D must cancel it, or the stale limit
+            # keeps managing the exit behind the new mode's back - it
+            # filled at 13:53:48 on 2026-09-22 after a U -> T switch and
+            # the T watcher's own exit then rejected as a phantom short.
+            if old_mode in ("U", "D") and new_mode != old_mode and affected_sym and affected_qty:
+                try:
+                    cancelled = self._cancel_pending_exit_orders(affected_sym)
+                    if cancelled:
+                        logger.info(
+                            f"Cancelled {cancelled} resting exit order(s) for "
+                            f"{affected_sym} after sell mode switch "
+                            f"{old_mode} -> {new_mode}"
+                        )
+                except Exception as cancel_error:
+                    logger.error(
+                        f"Could not cancel resting exit for {affected_sym} "
+                        f"after sell mode switch {old_mode} -> {new_mode}: "
+                        f"{cancel_error}"
+                    )
+
+            # Entering U/D from T: no resting exit exists (exits are
+            # placed at buy time only), so place one now with the same
+            # semantics as the buy-time U/D exit - U anchors the limit
+            # to the current LTP, D anchors it to the leg's average buy
+            # price - both plus the strategy-scaled target points.
+            if (
+                new_mode in ("U", "D")
+                and old_mode == "T"
+                and affected_sym
+                and affected_qty
+                and self._mode == "LIVE"
+            ):
+                target_pts = self._target_profit_points(affected_strategy)
+                base_price = affected_ltp if new_mode == "U" else affected_avg
+                if not base_price or float(base_price) <= 0:
+                    # One of the two anchors is always valid for an
+                    # open leg; fall back across before giving up.
+                    base_price = affected_avg or affected_ltp
+                if base_price and float(base_price) > 0 and target_pts > 0:
+                    exit_price = round(float(base_price) + target_pts, 2)
+                    logger.info(
+                        f"Placing {new_mode}-mode exit limit for "
+                        f"{affected_sym}: {affected_qty} lot(s) at "
+                        f"{exit_price} (base {base_price} + "
+                        f"{target_pts} target pts) after sell mode "
+                        f"switch {old_mode} -> {new_mode}"
+                    )
+                    try:
+                        self._broker.place_exit_limit(
+                            affected_sym,
+                            affected_token,
+                            affected_qty,
+                            self._exchange,
+                            exit_price
+                        )
+                    except Exception as place_error:
+                        logger.error(
+                            f"Could not place {new_mode}-mode exit limit "
+                            f"for {affected_sym} after sell mode switch: "
+                            f"{place_error}"
+                        )
+                elif target_pts <= 0:
+                    logger.warning(
+                        f"No target points configured for strategy "
+                        f"{affected_strategy}; the leg stays "
+                        f"watcher-managed after the "
+                        f"{old_mode} -> {new_mode} switch."
+                    )
 
             if self.frontend_data_socket:
                 self.frontend_data_socket.emit(
@@ -5240,7 +5613,20 @@ class Trader_Singleton:
 
         @self.frontend_data_socket.on('request_pending_orders')
         def send_pending():
-            self.frontend_data_socket.emit('update_pending_orders', self._broker.fetch_all_pending_orders())                     
+            # Watchdog: the UI polls every ~15s while the window is
+            # focused. Background/minimized browsers throttle timers to
+            # once a minute, which used to show up as unexplained 38-66s
+            # gaps in the log. Flag any suspicious gap explicitly.
+            now_ts = time.time()
+            gap = now_ts - getattr(self, "_last_frontend_poll_ts", 0.0)
+            self._last_frontend_poll_ts = now_ts
+            if gap > 30:
+                logger.warning(
+                    f"Frontend pending-orders poll gap was {gap:.0f}s "
+                    f"(expected ~15s) - browser timer throttling "
+                    f"(window minimized/background) or socket stall suspected."
+                )
+            self.frontend_data_socket.emit('update_pending_orders', self._broker.fetch_all_pending_orders())
 
         @self.frontend_data_socket.on('cancel_all_pending_orders')
         def handle_cancel_all_pending_orders():
@@ -5317,6 +5703,7 @@ class Trader_Singleton:
                 target_profit = self._target_profit_points(strategy)
                 self._order_sell_mode_mapping[order_details["token"]] = sell_mode
                 self._order_strategy_mapping[order_details["token"]] = strategy
+                self._save_order_selections()
                 logger.debug(f"Mode set is {self._mode} ; Strategy set is {strategy}  Sell Mode is {sell_mode} ")
 
                 # TradingView entry validation (TV_DATA_Validation_REQUIRED).

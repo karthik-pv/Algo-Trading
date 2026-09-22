@@ -4,6 +4,7 @@ import json
 import asyncio
 import logging
 import socket
+import time
 import http.client
 import websockets
 import threading
@@ -32,6 +33,15 @@ class MStockSingleton:
     _access_token = None
     _socket = None
     _trader = None
+
+    # Feed-rate sampler state: M.Stock pushes one 379-byte binary
+    # packet per instrument update. The sampler logs packets/min and
+    # the longest quiet gap every 60s, and warns when the feed goes
+    # silent - that is when the grid prices freeze on screen.
+    _feed_stats_window_start = 0.0
+    _feed_packets = 0
+    _feed_last_packet_ts = 0.0
+    _feed_max_gap = 0.0
 
     def __new__(cls):
         logger.info("Creating MStockSingleton instance...")
@@ -446,6 +456,35 @@ class MStockSingleton:
                 #     f"MSTOCK WS IGNORE | unsupported packet length={len(message)}"
                 # )
                 return
+
+            # --- FEED-RATE SAMPLER ---
+            # Counted per quote packet (one instrument update each).
+            now_ts = time.time()
+            if not self._feed_stats_window_start:
+                self._feed_stats_window_start = now_ts
+                self._feed_last_packet_ts = now_ts
+            self._feed_packets += 1
+            packet_gap = now_ts - self._feed_last_packet_ts
+            self._feed_last_packet_ts = now_ts
+            if packet_gap > self._feed_max_gap:
+                self._feed_max_gap = packet_gap
+            if packet_gap > 10:
+                logger.warning(
+                    f"MSTOCK FEED STALL | no quote packet for "
+                    f"{packet_gap:.1f}s - grid prices were frozen "
+                    f"during this window"
+                )
+            if now_ts - self._feed_stats_window_start >= 60:
+                elapsed = now_ts - self._feed_stats_window_start
+                rate = self._feed_packets / elapsed * 60
+                logger.info(
+                    f"MSTOCK FEED RATE | {self._feed_packets} quote "
+                    f"packets in {elapsed:.0f}s ({rate:.1f}/min) | "
+                    f"longest quiet gap {self._feed_max_gap:.1f}s"
+                )
+                self._feed_stats_window_start = now_ts
+                self._feed_packets = 0
+                self._feed_max_gap = 0.0
 
             # logger.debug("MSTOCK WS QUOTE PACKET | 379-byte packet received")
 

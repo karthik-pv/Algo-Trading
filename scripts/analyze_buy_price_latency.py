@@ -11,7 +11,7 @@ import sys
 import glob
 from datetime import datetime
 
-LOG_ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "logs")
+LOG_ROOT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "logs")
 
 ts_re = re.compile(r"^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}):(\d{3}) \|")
 fetch_start_re = re.compile(r"Fetching executed price for order id (\S+)")

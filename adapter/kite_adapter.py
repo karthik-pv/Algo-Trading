@@ -43,6 +43,15 @@ class KiteAdapter(BrokerInterface):
         # download_instrument_list / compute_instrument_meta.
         self._instrument_meta = None
 
+        # Kite websocket feed sampler state (KITE FEED RATE / FEED
+        # STALL log lines - mirrors the MStock connector sampler so the
+        # two feeds can be compared from the logs).
+        self._feed_packets = 0
+        self._feed_stats_window_start = 0.0
+        self._feed_last_tick_ts = 0.0
+        self._feed_max_gap = 0.0
+        self._feed_lock = threading.Lock()
+
     def _get_order_freeze_limit(self):
         # Fetched per order so ORDER_FREEZE_LIMIT edits apply without a restart.
         key = "NIFTY_ORDER_FREEZE_LIMIT" if str(self._underlying) == "NIFTY" else "SENSEX_ORDER_FREEZE_LIMIT"
@@ -57,8 +66,17 @@ class KiteAdapter(BrokerInterface):
         # Fetched per call so *_FALLBACK_LTP edits apply without a restart.
         # (The old code referenced non-existent Trader attributes here and
         # crashed instead of returning the configured fallback.)
+        # CRUDEOILM must be matched before CRUDEOIL - the shorter prefix
+        # also matches mini-contract symbols.
         symbol = str(tradingsymbol).upper()
-        key = "SENSEX_FALLBACK_LTP" if "SENSEX" in symbol else "NIFTY_FALLBACK_LTP"
+        if "CRUDEOILM" in symbol:
+            key = "CRUDEOILM_FALLBACK_LTP"
+        elif "CRUDEOIL" in symbol:
+            key = "CRUDEOIL_FALLBACK_LTP"
+        elif "SENSEX" in symbol:
+            key = "SENSEX_FALLBACK_LTP"
+        else:
+            key = "NIFTY_FALLBACK_LTP"
         return float(fetch_from_json("appconfig.json", key) or 0)
 
     def get_instrument_meta(self):
@@ -697,10 +715,82 @@ class KiteAdapter(BrokerInterface):
     def unsubscribe_from_all(self, instruments):
         return super().unsubscribe_from_all(instruments)
 
+    def _record_feed_ticks(self, count):
+        """
+        Feed-rate sampler for the Kite websocket - mirrors the MStock
+        sampler (KITE FEED RATE / KITE FEED STALL lines). Kite batches
+        several instrument ticks per on_ticks call; counting per tick
+        (not per batch) keeps the numbers comparable with MStock, which
+        counts per 379-byte quote packet. Runs on the ticker dispatch
+        thread; _feed_lock guards against the stall watchdog reading
+        concurrently.
+        """
+        if count <= 0:
+            return
+        now_ts = time.time()
+        with self._feed_lock:
+            if not self._feed_stats_window_start:
+                self._feed_stats_window_start = now_ts
+                self._feed_last_tick_ts = now_ts
+            self._feed_packets += count
+            gap = now_ts - self._feed_last_tick_ts
+            self._feed_last_tick_ts = now_ts
+            if gap > self._feed_max_gap:
+                self._feed_max_gap = gap
+            if gap > 10:
+                logger.warning(
+                    f"KITE FEED STALL | no tick for {gap:.1f}s - grid "
+                    f"prices were frozen during this window"
+                )
+            if now_ts - self._feed_stats_window_start >= 60:
+                elapsed = now_ts - self._feed_stats_window_start
+                rate = self._feed_packets / elapsed * 60
+                logger.info(
+                    f"KITE FEED RATE | {self._feed_packets} ticks in "
+                    f"{elapsed:.0f}s ({rate:.1f}/min) | longest quiet "
+                    f"gap {self._feed_max_gap:.1f}s"
+                )
+                self._feed_stats_window_start = now_ts
+                self._feed_packets = 0
+                self._feed_max_gap = 0.0
+
+    def _start_feed_stall_watchdog(self, shutdown_event):
+        """
+        Detect ONGOING feed silence. The sampler inside on_ticks can
+        only flag a stall after the feed resumes (the gap is measured
+        when the next tick lands) - if the websocket dies completely,
+        nothing would ever be logged. This watchdog wakes every 10s and
+        warns while the silence continues. Market-closed periods are
+        skipped so off-hours sessions do not raise false alarms.
+        """
+
+        def _watch():
+            while not shutdown_event.is_set():
+                shutdown_event.wait(timeout=10)
+                if shutdown_event.is_set():
+                    break
+                if not is_market_open():
+                    continue
+                with self._feed_lock:
+                    last_ts = self._feed_last_tick_ts
+                if not last_ts:
+                    continue
+                silent_for = time.time() - last_ts
+                if silent_for > 10:
+                    logger.warning(
+                        f"KITE FEED STALL | no tick for {silent_for:.0f}s "
+                        f"(ongoing) - prices on the grid are frozen"
+                    )
+
+        threading.Thread(
+            target=_watch, daemon=True, name="kite-feed-watchdog"
+        ).start()
+
     def start_socket_connection(self, shutdown_event, trader_instance):
         socket = self.kite_instance.get_kite_socket_connection()
 
         def on_ticks(ws, ticks):
+            self._record_feed_ticks(len(ticks))
             for tick in ticks:
                 instrument_token = tick["instrument_token"]
                 price = tick["last_price"]
@@ -764,6 +854,11 @@ class KiteAdapter(BrokerInterface):
         socket.on_order_update = on_order_update
 
         socket.connect(threaded=True)
+
+        # Ongoing-stall watchdog: the in-on_ticks sampler only reports a
+        # stall once the feed has resumed; this one warns while the
+        # silence continues.
+        self._start_feed_stall_watchdog(shutdown_event or threading.Event())
         # if shutdown_event:
         #     shutdown_event.wait()
         #socket.close()
@@ -886,6 +981,11 @@ class KiteAdapter(BrokerInterface):
         ].copy()
 
         near_option_expiry = None
+        # Fixed 100-point strike grid - deliberate parity with the
+        # MStock adapter (which also enforces 100 so a stale instrument
+        # file cannot bring back 50). Do NOT derive this from the CSV:
+        # NIFTY's real 50-point spacing was explicitly rejected by the
+        # user ("Call and PUT strikes interval ... should be 100").
         strike_interval = 100
         expire_together = False  # default
 

@@ -8,13 +8,14 @@ import sys
 import http.client
 import ssl
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from dotenv import load_dotenv
 
-load_dotenv()
+_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+load_dotenv(os.path.join(_PROJECT_ROOT, ".env"))
 
 API_KEY = os.getenv("MSTOCK_API_KEY")
-with open("data/access_token.json", "r", encoding="utf-8") as f:
+with open(os.path.join(_PROJECT_ROOT, "data", "access_token.json"), "r", encoding="utf-8") as f:
     JWT = json.load(f)["mstock_jwt_token"]
 
 CTX = ssl.create_default_context()

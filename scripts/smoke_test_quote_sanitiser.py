@@ -1,6 +1,6 @@
 """Verify closed-market quote sanitisation against the logged M.Stock garbage payload."""
 import sys, os
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from adapter.mstock_adapter import _sanitise_closed_market_quote
 from utils import is_market_open

@@ -34,6 +34,7 @@ _DATA_FILES = {
     "access_token.json",
     "day_cash.json",
     "last_known_prices.json",
+    "order_selections.json",
     "kite_instruments.csv",
     "mstock_instrument_list.json",
     "mstock_instrument_list_reduced.json",
