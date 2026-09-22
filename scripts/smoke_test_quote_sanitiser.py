@@ -3,7 +3,7 @@ import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from adapter.mstock_adapter import _sanitise_closed_market_quote
-from utils import is_market_open
+from core.utils import is_market_open
 
 print(f"is_market_open() = {is_market_open()}")  # Sunday morning -> False
 

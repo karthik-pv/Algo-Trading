@@ -10,7 +10,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 import urllib.parse
 
 
-from utils import get_access_token_from_json , write_to_json , fetch_from_json
+from core.utils import get_access_token_from_json , write_to_json , fetch_from_json
 
 #logging.basicConfig(level=logging.DEBUG)
 

@@ -21,7 +21,7 @@ from core.trade_utils import calculate_accurate_average_buy_price_and_update_pos
 from core.shared_state import latest_tradingview_data
 
 
-from utils import fetch_from_json , find_matching_object , is_market_open , write_to_json , compute_limit_margin , get_exchange_for_underlying , get_underlying_for_symbol , resolve_data_path
+from core.utils import fetch_from_json , find_matching_object , is_market_open , write_to_json , compute_limit_margin , get_exchange_for_underlying , get_underlying_for_symbol , resolve_data_path
 import time
 
 # NOTE: Trading thresholds (PCT/PTS book-profit, stop loss, strategy
@@ -1711,14 +1711,12 @@ class Trader_Singleton:
         The watcher's per-leg exit decision.
 
         Sell Type T is watcher-managed (profit + SL) in every mode.
-        Sell Types U/D hold a broker-side resting exit limit (LIVE) or
-        a strategy-scaled POINTS target (PAPER / SIMULATION / PLAYBACK),
-        but the watcher additionally market-books profit the moment the
-        strategy-scaled threshold is crossed (PCT or PNT per the
-        configured sell-trigger function) - cancelling the resting exit
-        first - together with the SL safety net.
-        A per-position BK% override (positions grid) replaces the
-        strategy-scaled profit threshold wherever it applies.
+        Sell Types U/D own a configured exit that books their profit:
+        a broker-side resting exit limit in LIVE, or the strategy-scaled
+        POINTS target below in PAPER / SIMULATION / PLAYBACK. The
+        watcher never PCT/PNT profit-books a U/D leg - that threshold
+        differs from the configured exit values - it only runs the
+        stop-loss safety net for them (check_profit=False).
         """
         if sell_type in ("U", "D") and self._mode != "LIVE":
             target_points = self._target_profit_points(order_strategy_type)
@@ -1739,14 +1737,17 @@ class Trader_Singleton:
 
             sl_hit = self.to_sell_or_not_to_sell_SL(
                 buy_price, ltp, order_strategy_type, contract_type,
-                log_enabled, check_profit=True,
+                log_enabled, check_profit=False,
                 override_book_profit_pct=override_book_profit_pct
             )
             return profit_hit or sl_hit
 
+        # T in every mode: full profit + SL check. U/D in LIVE: SL only -
+        # profit belongs to the resting exit limit at the broker.
         return self.to_sell_or_not_to_sell_SL(
             buy_price, ltp, order_strategy_type, contract_type,
-            log_enabled, check_profit=True,
+            log_enabled,
+            check_profit=sell_type not in ("U", "D"),
             override_book_profit_pct=override_book_profit_pct
         )
 

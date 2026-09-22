@@ -12,7 +12,7 @@ import pandas as pd
 from loguru import logger
 
 from interface.broker_interface import BrokerInterface
-from utils import (
+from core.utils import (
     fetch_from_json,
     find_matching_object,
     find_matching_row_in_csv,

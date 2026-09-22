@@ -7,7 +7,7 @@ import os
 import tempfile
 import re
 
-from utils import fetch_from_json, get_underlying_for_symbol, get_exchange_for_underlying
+from core.utils import fetch_from_json, get_underlying_for_symbol, get_exchange_for_underlying
 
 
 def position_attribute_mgmt(positions):

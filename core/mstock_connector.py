@@ -12,7 +12,7 @@ import datetime
 from dotenv import load_dotenv
 from loguru import logger
 
-from utils import fetch_from_json , write_to_json , get_exchange_for_underlying
+from core.utils import fetch_from_json , write_to_json , get_exchange_for_underlying
 from adapter.mstock_utils import parse_quote_message
 
 logging.basicConfig(level=logging.DEBUG)

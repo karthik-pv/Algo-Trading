@@ -20,7 +20,9 @@ _JSON_CACHE = {}
 # app generates or persists at runtime lives in data/. All path
 # resolution funnels through resolve_data_path() so callers can keep
 # passing bare filenames.
-_BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+# This module lives in core/, so the project root is one level up -
+# everything (config/, data/, root files) resolves from there.
+_BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CONFIG_DIR = os.path.join(_BASE_DIR, "config")
 DATA_DIR = os.path.join(_BASE_DIR, "data")
 
@@ -316,8 +318,7 @@ def round_to_tick(price, tick=0.05, up=True):
 
 def get_trading_symbols_from_json():
     logger.info("Fetching trading symbols from JSON file.")
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    symbols_file_path = os.path.join(current_dir, "trading_symbols.json")
+    symbols_file_path = os.path.join(_BASE_DIR, "trading_symbols.json")
     with open(symbols_file_path, "r") as file:
         data = json.load(file)
     return data.get("trading_symbols", [])

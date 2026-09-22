@@ -7,7 +7,7 @@ import time
 from pprint import pprint
 from loguru import logger
 
-from utils import get_trading_symbols_from_json , find_matching_row_in_csv , fetch_from_json , compute_limit_margin , round_to_tick , get_exchange_for_underlying , resolve_data_path
+from core.utils import get_trading_symbols_from_json , find_matching_row_in_csv , fetch_from_json , compute_limit_margin , round_to_tick , get_exchange_for_underlying , resolve_data_path
 from core.kite_connector import KiteSingleton
 from interface.broker_interface import BrokerInterface
 from core.trade_logic import Trader_Singleton
@@ -16,7 +16,7 @@ from adapter.kite_utils import fund_summary_attribute_mgmt , position_attribute_
 import pandas as pd
 import json
 
-from utils import is_market_open
+from core.utils import is_market_open
 
 from core import shared_state
 
@@ -920,7 +920,7 @@ class KiteAdapter(BrokerInterface):
                     writer.writerows(mcx_instruments)
                 logger.info(f"Successfully saved instruments to {filename}")
 
-                from utils import write_to_json
+                from core.utils import write_to_json
                 write_to_json({"kite_last_downloaded_instruments_timestamp": datetime.now().isoformat()}, "access_token.json")
 
                 self.compute_instrument_meta("kite_instruments.csv", underlying)

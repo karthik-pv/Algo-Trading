@@ -22,7 +22,7 @@ from collections import defaultdict, deque
 
 
 
-from utils import (
+from core.utils import (
     get_trading_symbols_from_json,
     find_matching_object,
     fetch_from_json,

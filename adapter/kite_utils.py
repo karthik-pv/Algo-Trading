@@ -1,5 +1,5 @@
 from loguru import logger
-from utils import fetch_from_json
+from core.utils import fetch_from_json
 
 def position_attribute_mgmt(positions):
     for position in positions:

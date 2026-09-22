@@ -124,7 +124,7 @@ class BrokerInterface(ABC):
         Default implementation derives what it can from appconfig.json
         (UNDERLYING) with safe fallbacks.
         """
-        from utils import fetch_from_json, get_exchange_for_underlying
+        from core.utils import fetch_from_json, get_exchange_for_underlying
 
         underlying = str(fetch_from_json("appconfig.json", "UNDERLYING") or "").upper()
         return {

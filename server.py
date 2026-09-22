@@ -22,7 +22,7 @@ from adapter.simulator_adapter import SimulatorAdapter
 from adapter.playback_adapter import PlaybackAdapter
 from core.trading_view_handler import trading_view_handle_func
 
-from utils import is_market_open, fetch_from_json, load_json_with_retry, backup_old_logs, resolve_day_start_cash, check_internet_connectivity, clear_json_cache, UNDERLYING_TO_EXCHANGE, resolve_data_path, DATA_DIR, _flatten_config
+from core.utils import is_market_open, fetch_from_json, load_json_with_retry, backup_old_logs, resolve_day_start_cash, check_internet_connectivity, clear_json_cache, UNDERLYING_TO_EXCHANGE, resolve_data_path, DATA_DIR, _flatten_config
 
 from adapter.mstock_utils import save_orders_to_xlsx, build_orders_export,write_orders_workbook
 
@@ -199,7 +199,7 @@ except Exception:
 
 logger.debug(f"Current Broker is {CURRENT_BROKER} and underlying is {UNDERLYING}")
 
-# Shared map (utils.py) — the exchange is fully determined by the
+# Shared map (core/utils.py) — the exchange is fully determined by the
 # underlying; the old instrument-derived EXCHANGE constant is gone.
 
 if UNDERLYING not in UNDERLYING_TO_EXCHANGE:

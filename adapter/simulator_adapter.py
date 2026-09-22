@@ -10,7 +10,7 @@ import holidays
 from loguru import logger
 
 from interface.broker_interface import BrokerInterface
-from utils import fetch_from_json, load_json_with_retry, get_exchange_for_underlying, resolve_data_path
+from core.utils import fetch_from_json, load_json_with_retry, get_exchange_for_underlying, resolve_data_path
 
 india_holidays = holidays.India()
 
