@@ -297,6 +297,7 @@ class SimulatorAdapter(BrokerInterface):
         sell_mode="",
         target_profit=0,
         strategy="",
+        target_profit_pct=None,
     ):
         return self._execute("BUY", trading_symbol, instrument_token, quantity, exchange, ltp)
 
@@ -311,6 +312,7 @@ class SimulatorAdapter(BrokerInterface):
         sell_mode="",
         target_profit=0,
         strategy="",
+        target_profit_pct=None,
     ):
         return self.buy_units(
             trading_symbol,

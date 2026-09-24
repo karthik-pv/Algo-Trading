@@ -19,6 +19,7 @@ import win32com.client
 
 from core.trade_utils import calculate_accurate_average_buy_price_and_update_positions
 from core.shared_state import latest_tradingview_data
+from core.audit_log import trade_audit
 
 
 from core.utils import fetch_from_json , find_matching_object , is_market_open , write_to_json , compute_limit_margin , get_exchange_for_underlying , get_underlying_for_symbol , resolve_data_path
@@ -47,6 +48,22 @@ class Trader_Singleton:
     _trading_watcher_thread_running = False
     _stop_event = threading.Event()
     _tick_counter = 0
+
+    # ---------------------------------------------------------
+    # Per-instrument hourly tick sampler. Both websocket feeds call
+    # record_tick() per wire tick; counts land in clock-hour buckets
+    # and are logged + persisted at every hour boundary. Motivation:
+    # a UU leg lost 7% on 2026-09-23 because its far-OTM contract's
+    # printed price gapped 57.3 -> 53.6 with no trade printing at the
+    # -3% level in between - this data quantifies how sparse each
+    # contract's feed actually is.
+    # ---------------------------------------------------------
+    _tick_hour_key = None
+    _tick_hour_counts = {}
+    _tick_day_counts = {}
+    _tick_lock = threading.Lock()
+    _TICK_STATS_FILE = resolve_data_path("tick_stats.json")
+
     # MODE, BROKER and UNDERLYING are captured at import time on purpose:
     # they define the running adapter/session and require an app restart.
     _use_max_margin = True
@@ -139,6 +156,26 @@ class Trader_Singleton:
     # buys (and residual-leg keys) keep using what was selected.
     # ---------------------------------------------------------
     _ORDER_SELECTIONS_FILE = resolve_data_path("order_selections.json")
+
+    # ---------------------------------------------------------
+    # Persisted strategy-leg ledger. Snapshots the LIVE position
+    # legs (token:STRATEGY:MODE identity, average price, qty) so
+    # a restart restores open legs with the identity they were
+    # bought with. Without it, refresh_open_pos_buy_price()
+    # re-books every restart-held position onto the CURRENT
+    # buy-grid defaults - which silently re-keyed an INTRA:T leg
+    # into ULTRA_SCALPING:U on 2026-09-23 and let the tighter
+    # ULTRA_SCALPING stop-loss (3% vs 12%) market-sell it eight
+    # seconds after startup.
+    #
+    # One file, sectioned per broker ({MSTOCK: {...}, KITE: {...},
+    # ...}): the MSTOCK and KITE token spaces are disjoint numeric
+    # universes, and SIMULATOR/PLAYBACK ledger their own paper
+    # positions, so no broker may ever load or overwrite another
+    # broker's legs.
+    # ---------------------------------------------------------
+    _POSITION_LEDGER_FILE = resolve_data_path("position_ledger.json")
+    _position_ledger_lock = threading.Lock()
 
     # Standard PaperTrading.txt columns. Shared by write_paper_trade()
     # (writer) and fetch_paper_trades() (reader) so the two can never
@@ -344,6 +381,54 @@ class Trader_Singleton:
         # We dont want to return 1 lot if the computed_lots is 0. This is because we want to avoid placing orders when the cash balance is low and the computed lots is 0. Hence we will return 0 in such cases.
         #return max(1, computed_lots) 
 
+    def _smart_retry_lots(self, error_message, asked_lots):
+        """
+        Size a fund-rejection retry from the RMS shortfall numbers instead
+        of blindly dropping one lot.
+
+        The m.Stock rejection text carries everything needed:
+          ...B,<qty>,M,<ref price>,FUND LIMIT INSUFFICIENT,
+          AVAILABLE FUND =<X>,ADDITIONAL REQUIRED FUND=<Y>,
+          CALCULATED SPAN & EXPOSURE FOR ORDER=<Z>
+
+        Span & exposure scale linearly with quantity, so the per-lot
+        requirement is Z / asked_lots and the affordable count is
+        available // per-lot. On 2026-09-22 this math reproduces all
+        three accepted retries (6 / 14 / 8 lots) in a single attempt,
+        versus one-at-a-time rejections (the RMS wanted only Rs.29 /
+        Rs.157 / Rs.41 more while a whole lot was dropped each time).
+
+        Returns:
+            >0  lots the RMS should accept
+             0  even one lot cannot pass - caller must fail fast
+            -1  message could not be parsed - caller falls back to
+                the decrement-by-one loop
+        """
+        try:
+            available_match = re.search(r"AVAILABLE FUND\s*=\s*([\d.]+)", error_message)
+            span_match = re.search(r"SPAN & EXPOSURE FOR ORDER\s*=\s*([\d.]+)", error_message)
+            if not available_match or not span_match or asked_lots <= 0:
+                return -1
+
+            available_fund = float(available_match.group(1))
+            span_exposure = float(span_match.group(1))
+            if span_exposure <= 0:
+                return -1
+
+            per_lot_requirement = span_exposure / asked_lots
+            # Small cushion for tick-to-tick drift between the rejection
+            # and the retry reaching the RMS again.
+            affordable = int((available_fund * 0.995) // per_lot_requirement)
+
+            # Rounding could land on the asked count; the order just
+            # failed at that size, so never retry at or above it.
+            if affordable >= asked_lots:
+                affordable = asked_lots - 1
+
+            return affordable
+        except Exception as e:
+            logger.debug(f"Smart retry lot calculation failed: {e}")
+            return -1
 
     def _should_log_with_frequency(self, channel: str = "default") -> bool:
         # Fetched per call so POSITION_PNL_LOG_FREQ edits apply without a restart.
@@ -443,6 +528,47 @@ class Trader_Singleton:
             return float(fetch_from_json("appconfig.json", "PTS_PROFIT_ULTRA_SCALPING_FACTOR") or 1) * pnt_book_profit
         return 0.0
 
+    def _exit_target_pct(self, strategy_type):
+        """
+        Strategy-scaled profit target for U/D resting exits in PERCENT.
+
+        Honors COMPARISON_FUNCTION: with PCT configured, the resting
+        exit must be percentage-based - symmetric with the percent
+        stop-loss - NOT the PNT point target. (Before 2026-09-23 the
+        U/D exits were always point-based: a 2.5-point UU target on a
+        28.45 buy meant +8.8% while the SL was 3%.) Returns None in
+        PNT mode so callers fall back to additive points.
+        """
+        comparison_function = fetch_from_json("appconfig.json", "COMPARISON_FUNCTION") or []
+        if "PCT" not in comparison_function:
+            return None
+        return self._effective_book_profit_pct(strategy_type)
+
+    def _exit_target_price(self, anchor_price, strategy_type):
+        """
+        Exit-limit price for a U/D leg, COMPARISON_FUNCTION-aware:
+          PCT -> anchor x (1 + PCT_BOOK_PROFIT x strategy factor / 100)
+          PNT -> anchor + PTS_PROFIT x strategy factor
+        Floored to the 0.05 tick (SELL side - never above the target).
+        Returns 0.0 when the anchor is unusable.
+        """
+        try:
+            anchor = float(anchor_price or 0)
+        except (TypeError, ValueError):
+            return 0.0
+        if anchor <= 0:
+            return 0.0
+        pct = self._exit_target_pct(strategy_type)
+        if pct:
+            raw = anchor * (1 + float(pct) / 100.0)
+        else:
+            raw = anchor + float(self._target_profit_points(strategy_type) or 0)
+        # Floor to the 0.05 tick; the epsilon guards against binary
+        # float artifacts (30.95 / 0.05 = 618.9999... would floor to
+        # 618 and silently give away a full tick).
+        tick = 0.05
+        return round(int(raw / tick + 1e-9) * tick, 2)
+
     def _effective_book_profit_pct(self, strategy_type):
         """Strategy-scaled book-profit threshold in percent (PCT_BOOK_PROFIT x strategy factor)."""
         pct_book_profit = float(fetch_from_json("appconfig.json", "PCT_BOOK_PROFIT") or 0)
@@ -476,19 +602,41 @@ class Trader_Singleton:
         U/D legs keep a broker-side exit limit from buy time. When the
         SL safety net (or a manual sell) exits the position, that limit
         must be cancelled first - otherwise a later fill would leave
-        the account net short. Returns the number of cancelled orders.
+        the account net short.
+
+        Returns (cancelled, failed):
+          cancelled - resting SELL orders successfully cancelled
+          failed    - cancel attempts that did NOT succeed. Non-zero
+                      means a resting exit may still be live at the
+                      broker (most likely it filled mid-flight), so
+                      the caller must NOT sell on top of it.
+        Raises RuntimeError when the pending-order book itself cannot
+        be fetched - the caller then cannot know whether an exit is
+        resting and must abort the sell.
         """
         try:
-            pending = self._broker.fetch_all_pending_orders() or []
+            pending = self._broker.fetch_all_pending_orders()
         except Exception as e:
             logger.error(
                 f"Could not fetch pending orders to cancel the exit for "
                 f"{tradingsymbol}: {e}"
             )
-            return 0
+            raise RuntimeError(
+                f"Could not fetch pending orders for {tradingsymbol}: {e}"
+            )
+        if pending is None:
+            # Both adapters return None ONLY on a failed fetch - a
+            # genuinely empty book comes back as []. A failed fetch
+            # means we cannot know whether an exit is resting, so the
+            # caller must abort instead of selling blind.
+            raise RuntimeError(
+                f"Pending-order book unavailable for {tradingsymbol} "
+                f"(broker fetch failed)"
+            )
 
         symbol_upper = str(tradingsymbol).upper()
         cancelled = 0
+        failed = 0
         for order in pending:
             if str(order.get("tradingsymbol", "") or "").upper() != symbol_upper:
                 continue
@@ -505,11 +653,13 @@ class Trader_Singleton:
                         f"for {tradingsymbol}"
                     )
                 else:
+                    failed += 1
                     logger.warning(
                         f"Broker did not confirm the cancel of pending "
                         f"exit order {order_id} for {tradingsymbol}"
                     )
             except Exception as e:
+                failed += 1
                 logger.error(
                     f"Failed to cancel pending exit order {order_id} "
                     f"for {tradingsymbol}: {e}"
@@ -520,7 +670,38 @@ class Trader_Singleton:
                 f"Cancelled {cancelled} pending exit order(s) "
                 f"for {tradingsymbol}"
             )
-        return cancelled
+        return (cancelled, failed)
+
+    def _broker_net_qty_for_token(self, token):
+        """
+        Live net position (in LOTS) for a token, straight from the
+        broker. Used before selling over a U/D leg's resting exit so a
+        mid-flight exit fill can never be double-sold into a net-short
+        account.
+
+        Returns None when the net cannot be verified (failed fetch) -
+        callers must treat None as "unknown" and abort, never as flat.
+        """
+        try:
+            positions = self._broker.fetch_all_positions()
+        except Exception as e:
+            logger.error(f"Net-position check failed for {token}: {e}")
+            return None
+
+        if positions is None:
+            return None
+        if isinstance(positions, dict):
+            positions = positions.get("net", [])
+
+        token = str(token)
+        for position in positions or []:
+            if str(position.get("instrument_token")) != token:
+                continue
+            try:
+                return int(float(position.get("quantity", 0) or 0))
+            except (TypeError, ValueError):
+                return None
+        return 0
 
     def position_data_update(self, token_or_symbol, attribute_name, updated_value, is_token=True):
         """Update an attribute on position leg(s).
@@ -858,6 +1039,13 @@ class Trader_Singleton:
         try:
             token = str(instrument_token)
 
+            # AUDIT: first post-execution avg-price receipt. Adapters
+            # pass the executed buy price here (real fill on the D
+            # path, provisional LTP otherwise).
+            trade_audit.record_buy_avg_price(
+                token, float(executed_buy_price or 0)
+            )
+
             # ---------------------------------------------------------
             # 0. Resolve the leg identity for this BUY.
             # ---------------------------------------------------------
@@ -981,13 +1169,16 @@ class Trader_Singleton:
                 f"LTP={latest_ltp:.2f}"
             )
 
+            # Persist immediately: a crash/restart between this fast
+            # update and the authoritative refresh must still find the
+            # leg's identity and average price in the ledger.
+            self._save_position_ledger()
+
         except Exception as e:
             logger.error(
                 f"Temporary BUY position grid update failed: {e}",
                 exc_info=True
             )
-
-
 
 
 
@@ -1141,6 +1332,9 @@ class Trader_Singleton:
                 f"LTP={temporary_buy_price:.2f}"
             )
 
+            # Persist immediately (see fast_update_position_after_buy).
+            self._save_position_ledger()
+
         except Exception as e:
             # Never allow the temporary UI update to break the BUY flow.
             logger.error(
@@ -1171,6 +1365,18 @@ class Trader_Singleton:
         if str(fetch_from_json("appconfig.json", "MODE") or "").upper() == "PAPER":
             self.refresh_paper_positions()
             return
+
+        # =========================================================
+        # 0b. RESTORE THE PERSISTED STRATEGY-LEG LEDGER
+        #
+        # No-op when legs are already tracked in memory. After a
+        # restart this re-seeds the open legs with the identity and
+        # average prices they were bought with, so the broker-net
+        # reconciliation below keeps those token:STRATEGY:MODE keys
+        # instead of booking the position onto whatever strategy/
+        # sell-mode the buy grid currently defaults to.
+        # =========================================================
+        self._load_position_ledger()
 
         # =========================================================
         # 0. PREFETCH FUND SUMMARY CONCURRENTLY
@@ -1213,6 +1419,14 @@ class Trader_Singleton:
             )
 
             self._position_data.clear()
+
+            # Persisted-ledger policy: the broker returning a definitive
+            # EMPTY book (None means the fetch itself failed) is the only
+            # signal trusted to prune the disk state. On a failed fetch
+            # the file is kept so leg identity survives the transient
+            # outage and the next refresh can restore the legs.
+            if positions_from_broker is not None:
+                self._save_position_ledger()
 
             try:
                 if not self.frontend_data_socket:
@@ -1422,6 +1636,16 @@ class Trader_Singleton:
                 self._update_leg_pl(key)
 
         # =========================================================
+        # 4b. PERSIST THE RECONCILED STRATEGY-LEG LEDGER
+        #
+        # Every mutation above (stale drops, FIFO reductions,
+        # residual bookings, attribute fills) is now on disk, so a
+        # restart re-keys the surviving legs with the identity they
+        # were bought with.
+        # =========================================================
+        self._save_position_ledger()
+
+        # =========================================================
         # 5. FINAL POSITION GRID UPDATE
         # =========================================================
         try:
@@ -1627,20 +1851,92 @@ class Trader_Singleton:
                             # U/D legs hold a resting exit limit at the
                             # broker; cancel it first or a later fill would
                             # leave the account net short.
+                            auto_sell_aborted = False
                             if sell_type in ("U", "D"):
-                                self._cancel_pending_exit_orders(tradingsymbol)
+                                try:
+                                    cancelled, cancel_failed = (
+                                        self._cancel_pending_exit_orders(
+                                            tradingsymbol
+                                        )
+                                    )
+                                except RuntimeError as fetch_error:
+                                    logger.error(
+                                        f"Auto-sell aborted for {tradingsymbol} "
+                                        f"[{token}]: {fetch_error}"
+                                    )
+                                    auto_sell_aborted = True
+                                else:
+                                    if cancel_failed:
+                                        auto_sell_aborted = True
 
-                            logger.info(f"Placing SELL order for {tradingsymbol} {instrument_token} : {qty} lots at LTP {ltp}")
-                            try:
-                                broker.sell_units(tradingsymbol,instrument_token,qty,exchange,ltp, position_key=str(token))
-                            except Exception as sell_error:
-                                # A failed auto-sell must not kill the
-                                # watcher thread; the next cycle retries.
-                                logger.error(
-                                    f"Auto-sell failed for {tradingsymbol} "
-                                    f"[{token}]: {sell_error}",
-                                    exc_info=True
+                                if auto_sell_aborted:
+                                    # The exit may have JUST filled -
+                                    # verify against the live broker net
+                                    # before selling, or the auto-sell
+                                    # would go net short.
+                                    net_qty = self._broker_net_qty_for_token(
+                                        instrument_token
+                                    )
+                                    if net_qty is None:
+                                        # Cannot verify - skip this
+                                        # cycle and retry on the next
+                                        # watcher pass.
+                                        logger.error(
+                                            f"Auto-sell aborted for "
+                                            f"{tradingsymbol} [{token}]: "
+                                            f"live net could not be verified"
+                                        )
+                                    elif net_qty <= 0:
+                                        # Exit filled and closed the
+                                        # position - drop the stale leg
+                                        # via a refresh; no sell.
+                                        logger.info(
+                                            f"Auto-exit already filled and "
+                                            f"closed {tradingsymbol} - "
+                                            f"refreshing instead of selling"
+                                        )
+                                        self.refresh_open_pos_buy_price()
+                                    elif net_qty < int(qty):
+                                        # Partial exit fill: refresh so
+                                        # the next cycle evaluates the
+                                        # true remaining quantity.
+                                        logger.info(
+                                            f"Broker net {net_qty} lot(s) is "
+                                            f"below the leg's {qty} for "
+                                            f"{tradingsymbol} (partial exit "
+                                            f"fill?) - refreshing instead "
+                                            f"of selling"
+                                        )
+                                        self.refresh_open_pos_buy_price()
+                                    else:
+                                        # The exit is confirmed gone and
+                                        # the net covers the leg - sell.
+                                        auto_sell_aborted = False
+
+                            if sell and not auto_sell_aborted:
+                                logger.info(f"Placing SELL order for {tradingsymbol} {instrument_token} : {qty} lots at LTP {ltp}")
+                                # AUDIT: stop-loss routine trigger.
+                                trade_audit.record_sell_trigger(
+                                    token=str(token),
+                                    lots=qty,
+                                    ltp=float(ltp or 0),
+                                    source="SL_WATCHER",
                                 )
+                                try:
+                                    broker.sell_units(tradingsymbol,instrument_token,qty,exchange,ltp, position_key=str(token))
+
+                                    # AUDIT: auto-sell success receipt.
+                                    trade_audit.record_sell_executed(
+                                        str(token), qty, float(ltp or 0)
+                                    )
+                                except Exception as sell_error:
+                                    # A failed auto-sell must not kill the
+                                    # watcher thread; the next cycle retries.
+                                    logger.error(
+                                        f"Auto-sell failed for {tradingsymbol} "
+                                        f"[{token}]: {sell_error}",
+                                        exc_info=True
+                                    )
                         else:
                             if should_log_eval:
                                 logger.debug(f"No SELL action taken for {tradingsymbol} at LTP {ltp}")
@@ -1655,6 +1951,17 @@ class Trader_Singleton:
                         else:
                             try:
                                 logger.info(f"PAPER: Recording paper SELL for {tradingsymbol} {instrument_token} : {qty} lots at LTP {ltp}")
+
+                                # AUDIT: paper auto-sell trigger + fill.
+                                trade_audit.record_sell_trigger(
+                                    token=str(token),
+                                    lots=qty,
+                                    ltp=float(ltp or 0),
+                                    source="SL_WATCHER",
+                                )
+                                trade_audit.record_sell_executed(
+                                    str(token), qty, float(ltp or 0)
+                                )
 
                                 self.write_paper_trade(
                                     transaction_type="SELL",
@@ -2466,6 +2773,174 @@ class Trader_Singleton:
             write_to_json(payload, self._ORDER_SELECTIONS_FILE)
         except Exception as e:
             logger.debug(f"Could not persist order selections: {e}")
+
+    def _ledger_broker_key(self):
+        """
+        Section key for the active broker inside position_ledger.json.
+
+        MSTOCK and KITE token spaces are disjoint numeric universes
+        sharing this file, and SIMULATOR/PLAYBACK ledger their own
+        paper positions. Sectioning by broker label keeps a broker
+        switch (restart) from grafting foreign tokens onto loaded legs
+        - or from wiping the other broker's saved identities.
+        """
+        label = str(
+            getattr(self, "_broker_string", "") or ""
+        ).strip().upper()
+        if label:
+            return label
+        return str(
+            fetch_from_json("appconfig.json", "BROKER") or "UNKNOWN"
+        ).strip().upper()
+
+    def _read_position_ledger_document(self):
+        """
+        Read position_ledger.json and return the section for the active
+        broker.
+
+        File format: {broker: {leg_key: leg}}. A legacy flat document
+        ({leg_key: leg} - top-level keys contain ':', the leg-key
+        separator) is recognised and treated as the active broker's
+        section; the next save rewrites it into the sectioned format.
+        """
+        with self._position_ledger_lock:
+            try:
+                with open(self._POSITION_LEDGER_FILE, "r", encoding="utf-8") as f:
+                    document = json.load(f)
+            except FileNotFoundError:
+                return {}
+            except Exception as e:
+                logger.error(f"Could not load persisted position ledger: {e}")
+                return {}
+
+        if not isinstance(document, dict):
+            return {}
+
+        if any(":" in str(key) for key in document):
+            # Legacy flat document written before per-broker
+            # sectioning; it can only hold the previous session's
+            # broker data.
+            return document
+
+        section = document.get(self._ledger_broker_key())
+        return section if isinstance(section, dict) else {}
+
+    def _save_position_ledger(self):
+        """
+        Snapshot the LIVE strategy-leg ledger into position_ledger.json,
+        under the active broker's section.
+
+        Deliberately a full-section overwrite - write_to_json() merges
+        into the existing document, which would resurrect legs deleted
+        by reconciliation. Other brokers' sections are preserved
+        verbatim. Volatile tick fields are stripped on save and the LTP
+        is re-seeded from the average price on restore, so a stale
+        saved tick can never be the price the stop-loss watcher
+        compares against right after a restart.
+        """
+        try:
+            payload = {}
+            for key, leg in self._position_data.items():
+                if not isinstance(leg, dict):
+                    continue
+                payload[str(key)] = {
+                    field: value
+                    for field, value in leg.items()
+                    if field not in (
+                        "latest_price", "pts_pl", "pct_pl",
+                        "total_pl", "buy_price_status"
+                    )
+                }
+
+            broker_key = self._ledger_broker_key()
+
+            with self._position_ledger_lock:
+                document = {}
+                try:
+                    with open(self._POSITION_LEDGER_FILE, "r", encoding="utf-8") as f:
+                        document = json.load(f)
+                except (FileNotFoundError, json.JSONDecodeError):
+                    document = {}
+                except Exception as e:
+                    logger.debug(f"Could not read position ledger for merge: {e}")
+                    document = {}
+
+                if not isinstance(document, dict):
+                    document = {}
+
+                # A legacy flat document (top-level leg keys) predates
+                # sectioning - whatever broker writes first claims it.
+                if any(":" in str(key) for key in document):
+                    document = {broker_key: document}
+
+                document[broker_key] = payload
+
+                temp_path = f"{self._POSITION_LEDGER_FILE}.tmp"
+                with open(temp_path, "w", encoding="utf-8") as f:
+                    json.dump(document, f, indent=4)
+                os.replace(temp_path, self._POSITION_LEDGER_FILE)
+
+        except Exception as e:
+            logger.debug(f"Could not persist position ledger: {e}")
+
+    def _load_position_ledger(self):
+        """
+        Restore the legs persisted by _save_position_ledger() into an
+        EMPTY in-memory ledger (i.e. right after a restart).
+
+        Only the ACTIVE broker's section is loaded - MSTOCK/KITE (and
+        SIMULATOR/PLAYBACK) token spaces are disjoint, so another
+        broker's legs must never graft onto this session.
+
+        The broker-net reconciliation in refresh_open_pos_buy_price()
+        then matches held quantity against these legs' ORIGINAL
+        token:STRATEGY:MODE keys instead of booking the position onto
+        whatever strategy/sell-mode the buy grid currently defaults to.
+
+        No mid-session effect: refresh() calls this on every pass and
+        it no-ops the moment any leg is tracked in memory.
+        """
+        if self._position_data:
+            return
+
+        data = self._read_position_ledger_document()
+
+        for key, leg in (data or {}).items():
+            parts = str(key).split(":")
+            if not isinstance(leg, dict) or len(parts) != 3:
+                continue
+
+            token, strategy, sell_mode = parts
+            try:
+                net_qty = int(leg.get("net_quantity", 0) or 0)
+                avg_price = float(leg.get("average_price", 0) or 0)
+            except (TypeError, ValueError):
+                continue
+
+            if net_qty <= 0 or avg_price <= 0:
+                continue
+
+            restored = dict(leg)
+            restored.setdefault("instrument_token", token)
+            restored.setdefault("order_strategy", strategy)
+            restored.setdefault("sell_mode", sell_mode)
+            # Neutral-start LTP: the last saved tick can be arbitrarily
+            # old by the time the app comes back up. Anchoring the LTP
+            # to the average price holds P&L at zero until a live tick
+            # lands, so the watcher cannot fire on a stale price during
+            # the startup window.
+            restored["latest_price"] = avg_price
+            restored.pop("pts_pl", None)
+            restored.pop("pct_pl", None)
+            restored.pop("total_pl", None)
+
+            self._position_data[str(key)] = restored
+
+        if self._position_data:
+            logger.info(
+                f"Restored {len(self._position_data)} open leg(s) from the "
+                f"persisted position ledger: {list(self._position_data)}"
+            )
 
     def setup_woc_subscriptions(self):
         """
@@ -3435,6 +3910,116 @@ class Trader_Singleton:
                 f"error={e}"
             )
 
+
+    def _tick_symbol_label(self, token):
+        """Human-readable symbol for a token (WOC cache first, then raw)."""
+        token = str(token)
+        contract = self._five_weekly_option_contracts.get(token)
+        if isinstance(contract, dict) and contract.get("name"):
+            return str(contract["name"])
+        near = self._near_month_data.get(token)
+        if isinstance(near, dict) and near.get("tradingsymbol"):
+            return str(near["tradingsymbol"])
+        return token
+
+    def record_tick(self, token):
+        """
+        Count one wire tick for a token in its clock-hour bucket.
+
+        Called by both websocket feeds (MStock: one call per 379-byte
+        quote packet; Kite: one call per tick inside the on_ticks
+        batch). At every hour boundary the finished hour's per-contract
+        counts are logged and persisted to data/tick_stats.json so the
+        feed cadence can be tabulated per contract per hour.
+        """
+        try:
+            token = str(token)
+            hour_key = datetime.datetime.now().strftime("%H")
+
+            with self._tick_lock:
+                if self._tick_hour_key != hour_key:
+                    if self._tick_hour_key is not None and self._tick_hour_counts:
+                        self._log_tick_counts(self._tick_hour_key)
+                    self._tick_hour_key = hour_key
+                    self._tick_hour_counts = {}
+
+                self._tick_hour_counts[token] = (
+                    self._tick_hour_counts.get(token, 0) + 1
+                )
+                day_bucket = self._tick_day_counts.setdefault(token, {})
+                day_bucket[hour_key] = day_bucket.get(hour_key, 0) + 1
+        except Exception:
+            # Sampling must never break the feed.
+            pass
+
+    def _log_tick_counts(self, finished_hour_key):
+        """Log + persist the finished hour's per-contract tick counts.
+
+        Called with self._tick_lock held.
+        """
+        try:
+            labelled = sorted(
+                (
+                    (count, self._tick_symbol_label(token), token)
+                    for token, count in self._tick_hour_counts.items()
+                ),
+                reverse=True
+            )
+            breakdown = " | ".join(
+                f"{symbol}({token}): {count}"
+                for count, symbol, token in labelled
+            )
+            logger.info(
+                f"TICK COUNTS | {self._broker_string} | hour "
+                f"{finished_hour_key}:00-{self._tick_hour_key or '?'}:00 | "
+                f"{len(labelled)} instrument(s) | {breakdown}"
+            )
+
+            self._persist_tick_counts(finished_hour_key)
+        except Exception as e:
+            logger.debug(f"Tick-count logging failed: {e}")
+
+    def _persist_tick_counts(self, finished_hour_key):
+        """Merge the day's per-hour tick buckets into tick_stats.json.
+
+        Called with self._tick_lock held. Restart mid-hour loses that
+        partial hour's in-memory counts; the persisted buckets only
+        ever grow within a day.
+        """
+        try:
+            document = {}
+            try:
+                with open(self._TICK_STATS_FILE, "r", encoding="utf-8") as f:
+                    document = json.load(f)
+            except (FileNotFoundError, json.JSONDecodeError):
+                document = {}
+
+            if not isinstance(document, dict):
+                document = {}
+
+            today = datetime.datetime.now().strftime("%Y-%m-%d")
+            broker_key = str(self._broker_string or "UNKNOWN").upper()
+            day_doc = document.setdefault(today, {})
+            broker_doc = day_doc.setdefault(broker_key, {})
+
+            for token, hour_bucket in self._tick_day_counts.items():
+                token_doc = broker_doc.setdefault(str(token), {})
+                for hour_key, count in hour_bucket.items():
+                    token_doc[hour_key] = count
+
+            temp_path = f"{self._TICK_STATS_FILE}.tmp"
+            with open(temp_path, "w", encoding="utf-8") as f:
+                json.dump(document, f, indent=4)
+            os.replace(temp_path, self._TICK_STATS_FILE)
+        except Exception as e:
+            logger.debug(f"Tick-count persistence failed: {e}")
+
+    def flush_tick_counts(self):
+        """Persist the day's tick buckets immediately (hourly rollover
+        handles this automatically; safe to call at shutdown)."""
+        with self._tick_lock:
+            if self._tick_day_counts:
+                self._persist_tick_counts(self._tick_hour_key or "?")
 
     def set_latest_price(self, instrument_token, tradingsymbol, price, close=None):
         try:
@@ -5317,13 +5902,40 @@ class Trader_Singleton:
             # the T watcher's own exit then rejected as a phantom short.
             if old_mode in ("U", "D") and new_mode != old_mode and affected_sym and affected_qty:
                 try:
-                    cancelled = self._cancel_pending_exit_orders(affected_sym)
+                    cancelled, cancel_failed = (
+                        self._cancel_pending_exit_orders(affected_sym)
+                    )
                     if cancelled:
                         logger.info(
                             f"Cancelled {cancelled} resting exit order(s) for "
                             f"{affected_sym} after sell mode switch "
                             f"{old_mode} -> {new_mode}"
                         )
+                    if cancel_failed:
+                        # The cancel did not confirm - the exit may have
+                        # just filled (closing the position) or may still
+                        # be resting. Reconcile the grid with the broker
+                        # so the user decides on fresh data.
+                        logger.error(
+                            f"{cancel_failed} resting exit order(s) for "
+                            f"{affected_sym} could not be cancelled after "
+                            f"the {old_mode} -> {new_mode} switch - "
+                            f"reconciling with the broker"
+                        )
+                        self.refresh_open_pos_buy_price()
+                        if self.frontend_data_socket:
+                            self.frontend_data_socket.emit(
+                                'status_message',
+                                {
+                                    "success": False,
+                                    "message": (
+                                        f"Resting exit for {affected_sym} could "
+                                        f"not be cancelled after the sell-mode "
+                                        f"switch (it may have just filled). "
+                                        f"Positions refreshed - verify the net."
+                                    )
+                                }
+                            )
                 except Exception as cancel_error:
                     logger.error(
                         f"Could not cancel resting exit for {affected_sym} "
@@ -5335,7 +5947,8 @@ class Trader_Singleton:
             # placed at buy time only), so place one now with the same
             # semantics as the buy-time U/D exit - U anchors the limit
             # to the current LTP, D anchors it to the leg's average buy
-            # price - both plus the strategy-scaled target points.
+            # price. COMPARISON_FUNCTION-aware: percent of the anchor
+            # in PCT mode, additive points in PNT mode.
             if (
                 new_mode in ("U", "D")
                 and old_mode == "T"
@@ -5343,19 +5956,17 @@ class Trader_Singleton:
                 and affected_qty
                 and self._mode == "LIVE"
             ):
-                target_pts = self._target_profit_points(affected_strategy)
                 base_price = affected_ltp if new_mode == "U" else affected_avg
                 if not base_price or float(base_price) <= 0:
                     # One of the two anchors is always valid for an
                     # open leg; fall back across before giving up.
                     base_price = affected_avg or affected_ltp
-                if base_price and float(base_price) > 0 and target_pts > 0:
-                    exit_price = round(float(base_price) + target_pts, 2)
+                exit_price = self._exit_target_price(base_price, affected_strategy)
+                if exit_price > 0:
                     logger.info(
                         f"Placing {new_mode}-mode exit limit for "
                         f"{affected_sym}: {affected_qty} lot(s) at "
-                        f"{exit_price} (base {base_price} + "
-                        f"{target_pts} target pts) after sell mode "
+                        f"{exit_price} (anchor {base_price}) after sell mode "
                         f"switch {old_mode} -> {new_mode}"
                     )
                     try:
@@ -5372,13 +5983,18 @@ class Trader_Singleton:
                             f"for {affected_sym} after sell mode switch: "
                             f"{place_error}"
                         )
-                elif target_pts <= 0:
+                else:
                     logger.warning(
-                        f"No target points configured for strategy "
-                        f"{affected_strategy}; the leg stays "
+                        f"Could not compute an exit price for strategy "
+                        f"{affected_strategy} (anchor {base_price}); the leg stays "
                         f"watcher-managed after the "
                         f"{old_mode} -> {new_mode} switch."
                     )
+
+            # The re-key/legacy mode edits changed leg identity or
+            # attributes on disk-bound state - snapshot it now so a
+            # restart does not undo the switch.
+            self._save_position_ledger()
 
             if self.frontend_data_socket:
                 self.frontend_data_socket.emit(
@@ -5411,6 +6027,8 @@ class Trader_Singleton:
                     f"Book-profit override for {len(legs)} leg(s) of token "
                     f"{bp_details.get('instrument_token')} set to {new_pct}%"
                 )
+
+            self._save_position_ledger()
 
             if self.frontend_data_socket:
                 self.frontend_data_socket.emit(
@@ -5475,6 +6093,14 @@ class Trader_Singleton:
                 self._mode = fetch_from_json("appconfig.json", "MODE")
                 logger.debug(f"Current trading mode: {self._mode}")
 
+                # AUDIT: manual sell click = sell trigger.
+                trade_audit.record_sell_trigger(
+                    token=token,
+                    lots=order_details.get("lots", 0),
+                    ltp=float(ltp or 0),
+                    source="MANUAL",
+                )
+
                 # =========================================================
                 # PAPER MODE
                 # =========================================================
@@ -5533,6 +6159,11 @@ class Trader_Singleton:
                     # Recalculate paper positions
                     self.refresh_paper_positions()
 
+                    # AUDIT: paper sell fills at the trigger LTP.
+                    trade_audit.record_sell_executed(
+                        token, order_details.get("lots", 0), float(ltp or 0)
+                    )
+
                     self.frontend_data_socket.emit(
                         'sell_order_result',
                         {
@@ -5559,13 +6190,117 @@ class Trader_Singleton:
                     # cancel it before the manual sell (full or partial)
                     # or a later fill would leave the account net short.
                     if leg_sell_mode in ("U", "D"):
-                        self._cancel_pending_exit_orders(
-                            order_details["tradingsymbol"]
+                        try:
+                            cancelled, cancel_failed = (
+                                self._cancel_pending_exit_orders(
+                                    order_details["tradingsymbol"]
+                                )
+                            )
+                        except RuntimeError as fetch_error:
+                            self.frontend_data_socket.emit(
+                                'sell_order_result',
+                                {
+                                    "success": False,
+                                    "tradingsymbol": order_details["tradingsymbol"],
+                                    "position_key": position_key,
+                                    "error": (
+                                        f"Sell aborted - could not verify the "
+                                        f"resting exit: {fetch_error}"
+                                    )
+                                }
+                            )
+                            return
+
+                        if cancel_failed:
+                            # The cancel did not confirm - the exit may
+                            # have JUST FILLED. Selling the stale leg
+                            # quantity now would go net short. Verify
+                            # the live broker net first.
+                            net_qty = self._broker_net_qty_for_token(
+                                order_details["token"]
+                            )
+                            if net_qty is None or net_qty <= 0:
+                                self.refresh_open_pos_buy_price()
+                                self.frontend_data_socket.emit(
+                                    'sell_order_result',
+                                    {
+                                        "success": False,
+                                        "tradingsymbol": order_details["tradingsymbol"],
+                                        "position_key": position_key,
+                                        "error": (
+                                            "Sell aborted - the resting exit "
+                                            "could not be cancelled (it may have "
+                                            "just filled and closed the position). "
+                                            "Grid refreshed - check the position."
+                                        )
+                                    }
+                                )
+                                return
+
+                        # Even after a clean cancel, confirm the broker
+                        # still holds at least the requested lots before
+                        # selling (a partial exit fill shrinks the net).
+                        net_qty = self._broker_net_qty_for_token(
+                            order_details["token"]
                         )
+                        if net_qty is None:
+                            self.frontend_data_socket.emit(
+                                'sell_order_result',
+                                {
+                                    "success": False,
+                                    "tradingsymbol": order_details["tradingsymbol"],
+                                    "position_key": position_key,
+                                    "error": (
+                                        "Sell aborted - could not verify the "
+                                        "live net position with the broker"
+                                    )
+                                }
+                            )
+                            return
+                        if net_qty <= 0:
+                            # Exit filled and closed the position while
+                            # we were cancelling.
+                            self.refresh_open_pos_buy_price()
+                            self.frontend_data_socket.emit(
+                                'sell_order_result',
+                                {
+                                    "success": False,
+                                    "tradingsymbol": order_details["tradingsymbol"],
+                                    "position_key": position_key,
+                                    "error": (
+                                        "Sell aborted - the resting exit filled "
+                                        "and closed this position just now. "
+                                        "Grid refreshed."
+                                    )
+                                }
+                            )
+                            return
+                        if net_qty < int(order_details["lots"]):
+                            self.refresh_open_pos_buy_price()
+                            self.frontend_data_socket.emit(
+                                'sell_order_result',
+                                {
+                                    "success": False,
+                                    "tradingsymbol": order_details["tradingsymbol"],
+                                    "position_key": position_key,
+                                    "error": (
+                                        f"Sell aborted - broker net is {net_qty} "
+                                        f"lot(s), less than the {order_details['lots']} "
+                                        f"requested (exit partially filled?). "
+                                        f"Grid refreshed - retry with fresh numbers."
+                                    )
+                                }
+                            )
+                            return
 
                     result = self._broker.sell_units(order_details["tradingsymbol"] , order_details["token"] , order_details["lots"] , self._exchange , ltp, position_key=position_key)
 
                     logger.info(f"Sell order successful for {order_details['tradingsymbol']} ({order_details['lots']} lots)")
+
+                    # AUDIT: sell success response receipt.
+                    trade_audit.record_sell_executed(
+                        token, order_details.get("lots", 0), float(ltp or 0)
+                    )
 
                     # Partial manual sell on a U/D leg: re-place the exit
                     # for the remaining lots so the leg keeps its target.
@@ -5575,12 +6310,11 @@ class Trader_Singleton:
                             - int(order_details["lots"])
                         )
                         if remaining_lots > 0:
-                            target_points = self._target_profit_points(leg_strategy)
-                            if target_points > 0:
-                                exit_price = (
-                                    float(position.get("average_price", 0) or 0)
-                                    + target_points
-                                )
+                            exit_price = self._exit_target_price(
+                                position.get("average_price", 0),
+                                leg_strategy
+                            )
+                            if exit_price > 0:
                                 logger.info(
                                     f"Re-placing {leg_sell_mode}-mode exit for "
                                     f"remaining {remaining_lots} lots of "
@@ -5596,7 +6330,7 @@ class Trader_Singleton:
                                 )
                             else:
                                 logger.warning(
-                                    f"No target points configured for strategy "
+                                    f"Could not compute an exit price for strategy "
                                     f"{leg_strategy}; the remaining "
                                     f"{remaining_lots} lots will be managed by "
                                     f"the stop-loss watcher only."
@@ -5699,9 +6433,11 @@ class Trader_Singleton:
                 strategy = self._normalise_strategy(
                     order_details.get("strategy", "")
                 )
-                # Strategy-scaled book-profit target in points; shared
-                # with the exit re-placement on partial manual sells.
+                # Strategy-scaled book-profit target; POINTS in PNT
+                # comparison mode, PERCENT in PCT mode (both passed -
+                # the adapter applies whichever the config selects).
                 target_profit = self._target_profit_points(strategy)
+                target_profit_pct = self._exit_target_pct(strategy)
                 self._order_sell_mode_mapping[order_details["token"]] = sell_mode
                 self._order_strategy_mapping[order_details["token"]] = strategy
                 self._save_order_selections()
@@ -5727,8 +6463,28 @@ class Trader_Singleton:
 
                 ltp = self._five_weekly_option_contracts[order_details["token"]]["ltp"]
 
+                # AUDIT: the button-click moment + LTP at click.
+                trade_audit.record_buy_click(
+                    tradingsymbol=order_details.get("tradingsymbol", ""),
+                    token=str(order_details["token"]),
+                    lots=order_details.get("lots", 0),
+                    ltp=float(ltp or 0),
+                    strategy=strategy,
+                    sell_mode=sell_mode,
+                )
+
                 if self._mode not in ("LIVE", "SIMULATION", "PLAYBACK"):
                     self.write_paper_trade(transaction_type="BUY",tradingsymbol=order_details["tradingsymbol"],token=order_details["token"],qty=order_details["lots"],ltp=ltp,product="MIS",strategy=strategy,sell_type=sell_mode)
+
+                    # AUDIT: paper fills execute at the click LTP.
+                    trade_audit.record_buy_executed(
+                        str(order_details["token"]),
+                        order_details.get("lots", 0),
+                        float(ltp or 0),
+                    )
+                    trade_audit.record_buy_avg_price(
+                        str(order_details["token"]), float(ltp or 0)
+                    )
                     logger.info(
                             f"Paper BUY recorded: "
                             f"{order_details['tradingsymbol']} "
@@ -5745,62 +6501,107 @@ class Trader_Singleton:
                 else:
                     if sell_mode == "U":
                         logger.info(f"Placing Buy-Sell order as Sell Mode is set to {sell_mode} ")
-                        self._broker.buy_sell_units(order_details["tradingsymbol"] , order_details["token"] , order_details["lots"] , self._exchange , ltp,self._mode,sell_mode,target_profit,strategy)
+                        self._broker.buy_sell_units(order_details["tradingsymbol"] , order_details["token"] , order_details["lots"] , self._exchange , ltp,self._mode,sell_mode,target_profit,strategy, target_profit_pct=target_profit_pct)
                     else: # Sell Mode is 'T' or 'D'
                         logger.info("Placing Buy order")
-                        self._broker.buy_units(order_details["tradingsymbol"] , order_details["token"] , order_details["lots"] , self._exchange , ltp,self._mode,sell_mode,target_profit,strategy)
+                        self._broker.buy_units(order_details["tradingsymbol"] , order_details["token"] , order_details["lots"] , self._exchange , ltp,self._mode,sell_mode,target_profit,strategy, target_profit_pct=target_profit_pct)
+
+                    # AUDIT: broker call returned = success response receipt.
+                    try:
+                        exec_ltp = float(
+                            self._five_weekly_option_contracts[
+                                order_details["token"]
+                            ]["ltp"] or ltp
+                        )
+                    except (KeyError, TypeError, ValueError):
+                        exec_ltp = float(ltp or 0)
+                    trade_audit.record_buy_executed(
+                        str(order_details["token"]),
+                        order_details.get("lots", 0),
+                        exec_ltp,
+                    )
                     # ✅ Once order completes, tell frontend to refresh fund summary
                     #self.frontend_data_socket.emit('refresh_fund_summary')
                     # ✅ Notify frontend of success
                     #self.frontend_data_socket.emit('buy_order_result', { "success": True,"tradingsymbol": order_details["tradingsymbol"],"lots": order_details["lots"]})
             except Exception as e:
                     logger.error(f"|Error placing buy order: {e}|", exc_info=True)
-                    #Check if the error is because of insufficient fund..If so, reduce the lots by 1 and reattempt
+                    #Check if the error is because of insufficient fund..If so, retry with lots the RMS would accept
                     error_message = str(e).upper()
 
-                    # New Implementation to keep decrementing the Lots till 0 to check if we could buy some lots with the available funds
-                    # Provided by ChatGPT Go
+                    if "EXIT_LEG_FAILED" in error_message:
+                        # The BUY executed but its resting exit leg could
+                        # not be placed. Re-buying here would create a
+                        # duplicate position, so surface the true state
+                        # and stop.
+                        logger.error(
+                            f"Buy executed for {order_details['tradingsymbol']} "
+                            f"but the exit leg failed - NOT retrying to "
+                            f"avoid a duplicate position."
+                        )
 
-                    # if "FUND LIMIT INSUFFICIENT" in error_message:
-                    #     reduced_lots = max(1, int(order_details["lots"]) - 1)
-                    #     logger.warning(f"Insufficient funds for {order_details['lots']} lots — retrying with {reduced_lots} lot(s)...")
-                    #     try:
-                    #         ltp = self._five_weekly_option_contracts[order_details["token"]]["ltp"]
-                    #         self._broker.buy_units(order_details["tradingsymbol"] , order_details["token"] , reduced_lots , self._exchange , ltp)
-                    #         self.frontend_data_socket.emit('buy_order_result', { 
-                    #             "success": True,
-                    #             "tradingsymbol": order_details["tradingsymbol"],
-                    #             "lots": reduced_lots,
-                    #             "note": "Retried with reduced lots due to insufficient funds"
-                    #         })
-                    #         return
-                    #     except Exception as retry_error:
-                    #         logger.error(f"Retry buy order failed: {retry_error}", exc_info=True)
-                    #         self.frontend_data_socket.emit('buy_order_result', {
-                    #             "success": False,
-                    #             "tradingsymbol": order_details["tradingsymbol"],
-                    #             "lots": reduced_lots,
-                    #             "error": str(retry_error)
-                    #         })
-                    #         return
-                    # #logger.exception(f"Error placing buy order: {e}")
-                    # # ❌ Notify frontend of failure
-                    # self.frontend_data_socket.emit('buy_order_result', {
-                    #     "success": False,
-                    #     "tradingsymbol": order_details["tradingsymbol"],
-                    #     "lots": order_details["lots"],
-                    #     "error": str(e)
-                    # })
+                        self.frontend_data_socket.emit('buy_order_result', {
+                            "success": True,
+                            "tradingsymbol": order_details["tradingsymbol"],
+                            "lots": order_details["lots"],
+                            "warning": "BUY executed but the resting exit could not be placed - position is open without an exit limit."
+                        })
+
+                        return
+
                     if "FUND LIMIT INSUFFICIENT" in error_message:
 
-                        retry_lots = int(order_details["lots"]) - 1
+                        smart_lots = self._smart_retry_lots(error_message, int(order_details["lots"]))
+
+                        if smart_lots == 0:
+                            # RMS shortfall math says even 1 lot cannot
+                            # pass - fail fast instead of burning
+                            # another rejection on the account.
+                            logger.error(
+                                f"Insufficient funds for even 1 lot of "
+                                f"{order_details['tradingsymbol']} "
+                                f"(per RMS shortfall math)"
+                            )
+
+                            self.frontend_data_socket.emit('buy_order_result', {
+                                "success": False,
+                                "tradingsymbol": order_details["tradingsymbol"],
+                                "lots": 0,
+                                "error": "Insufficient funds even for 1 lot"
+                            })
+
+                            return
+
+                        if smart_lots > 0:
+                            retry_lots = smart_lots
+                            logger.warning(
+                                f"Insufficient funds for {order_details['lots']} lots "
+                                f"— retrying with {retry_lots} lot(s) sized from "
+                                f"the RMS shortfall numbers"
+                            )
+                        else:
+                            # RMS numbers unparseable - fall back to the
+                            # classic decrement-by-one loop.
+                            retry_lots = int(order_details["lots"]) - 1
 
                         while retry_lots >= 1:
 
-                            logger.warning(
-                                f"Insufficient funds for {retry_lots + 1} lots "
-                                f"— retrying with {retry_lots} lot(s)..."
+                            # AUDIT: lots-decrement retry attempt.
+                            try:
+                                retry_click_ltp = float(ltp or 0)
+                            except (TypeError, ValueError):
+                                retry_click_ltp = 0.0
+                            trade_audit.record_retry_attempt(
+                                str(order_details["token"]),
+                                retry_lots,
+                                retry_click_ltp,
                             )
+
+                            if smart_lots <= 0:
+                                logger.warning(
+                                    f"Insufficient funds for {retry_lots + 1} lots "
+                                    f"— retrying with {retry_lots} lot(s)..."
+                                )
 
                             try:
                                 ltp = self._five_weekly_option_contracts[
@@ -5816,13 +6617,22 @@ class Trader_Singleton:
                                     self._mode,
                                     sell_mode,
                                     target_profit,
-                                    strategy
+                                    strategy,
+                                    target_profit_pct=target_profit_pct
+                                )
+
+                                trade_audit.record_buy_executed(
+                                    str(order_details["token"]),
+                                    retry_lots,
+                                    float(ltp or 0),
+                                    retried=True,
                                 )
 
                                 self.frontend_data_socket.emit('buy_order_result', {
                                     "success": True,
                                     "tradingsymbol": order_details["tradingsymbol"],
                                     "lots": retry_lots,
+                                    "requested_lots": order_details["lots"],
                                     "note": "Retried with reduced lots due to insufficient funds"
                                 })
 
@@ -5831,6 +6641,26 @@ class Trader_Singleton:
                             except Exception as retry_error:
 
                                 retry_error_message = str(retry_error).upper()
+
+                                if "EXIT_LEG_FAILED" in retry_error_message:
+                                    # BUY of the retry executed but its
+                                    # exit leg failed - same rule as the
+                                    # primary path: never re-buy.
+                                    logger.error(
+                                        f"Retry buy executed for "
+                                        f"{order_details['tradingsymbol']} but its "
+                                        f"exit leg failed - NOT retrying further "
+                                        f"to avoid a duplicate position."
+                                    )
+
+                                    self.frontend_data_socket.emit('buy_order_result', {
+                                        "success": True,
+                                        "tradingsymbol": order_details["tradingsymbol"],
+                                        "lots": retry_lots,
+                                        "warning": "BUY executed but the resting exit could not be placed - position is open without an exit limit."
+                                    })
+
+                                    return
 
                                 if "FUND LIMIT INSUFFICIENT" not in retry_error_message:
                                     logger.error(
@@ -5847,6 +6677,10 @@ class Trader_Singleton:
 
                                     return
 
+                                # The smart sizing undershot (price moved
+                                # against the cushion) - drop one lot and
+                                # continue the safety-net loop.
+                                smart_lots = -1
                                 retry_lots -= 1
 
                         # No lot size could be placed

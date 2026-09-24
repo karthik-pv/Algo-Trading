@@ -37,6 +37,7 @@ from core.utils import (
 from core.mstock_connector import MStockSingleton
 from interface.broker_interface import BrokerInterface
 from core.trade_logic import Trader_Singleton
+from core.audit_log import trade_audit
 from adapter.mstock_utils import (
     position_attribute_mgmt, fund_summary_attribute_mgmt, order_attribute_mgmt,
     instr_det_attrib_mgmt, normalize_contract_symbol, write_orders_workbook,
@@ -366,7 +367,11 @@ class MStockAdapter(BrokerInterface):
 
             if response is None:
                 logger.error("Error fetching pending orders: no valid response from M.Stock \n\n CONSIDER LOGGING IN AGAIN \n\n")
-                return []
+                # None (not []) distinguishes a FAILED fetch from a
+                # genuine empty book - _cancel_pending_exit_orders
+                # must abort the sell rather than believe no exit
+                # is resting.
+                return None
 
             data = response.get("data", [])
 
@@ -401,7 +406,8 @@ class MStockAdapter(BrokerInterface):
 
         except Exception as e:
             logger.error(f"Error fetching pending orders: {e} \n\n CONSIDER LOGGING IN AGAIN \n\n")
-            return []
+            # None = failed fetch (see above); [] = genuinely empty.
+            return None
 
     def _detect_broker_side_sell_fills(self, all_orders, pending_orders):
         """
@@ -469,6 +475,44 @@ class MStockAdapter(BrokerInterface):
                 f"(filled: {filled_now or '[]'}, partial: {partial_now or '[]'}) - "
                 f"refreshing position grid to reconcile with the broker."
             )
+            # Announce broker-side exits: a filled resting U/D exit
+            # books its profit WITHOUT any app-placed market sell, so
+            # nothing else toasts it - the position row just silently
+            # vanished (the 2026-09-23 12:19:30 UU exit filled +144
+            # while the user, seeing no message, believed profit
+            # booking was broken and sold manually).
+            for order in all_orders or []:
+                if str(order.get("order_id") or "") not in filled_now:
+                    continue
+                symbol = order.get("tradingsymbol") or "?"
+                try:
+                    filled_qty = _filled_qty(order) or float(order.get("quantity") or 0)
+                except (TypeError, ValueError):
+                    filled_qty = 0.0
+                fill_price = order.get("average_price") or order.get("price")
+                # AUDIT: broker-side resting-exit fill = sell execution.
+                try:
+                    trade_audit.record_broker_side_sell_fill(
+                        symbol, float(fill_price) if fill_price else None,
+                        float(filled_qty or 0),
+                    )
+                except Exception:
+                    pass
+                try:
+                    self._trader.frontend_data_socket.emit(
+                        'status_message',
+                        {
+                            "success": True,
+                            "message": (
+                                f"Exit/target order filled - SELL executed "
+                                f"for {symbol} ({filled_qty:g} qty"
+                                + (f" @ {fill_price}" if fill_price else "")
+                                + "). Position closed, P/L booked."
+                            )
+                        }
+                    )
+                except Exception:
+                    pass
             threading.Thread(
                 target=self._trader.refresh_open_pos_buy_price,
                 daemon=True
@@ -517,7 +561,7 @@ class MStockAdapter(BrokerInterface):
         PACE_SECONDS = 0.3
         MAX_PASSES = 3
 
-        pending_orders = self.fetch_all_pending_orders()
+        pending_orders = self.fetch_all_pending_orders() or []
         logger.info(f"Pending orders found: {len(pending_orders)}")
 
         failed = [
@@ -1426,7 +1470,15 @@ class MStockAdapter(BrokerInterface):
                 logger.error(f"Error parsing SELL response: {parse_err}")
                 raise
 
-            self._trader.frontend_data_socket.emit('sell_order_result',{"success": True, "tradingsymbol": trading_symbol , "lots": quantity})
+            # NOTE: no UI 'sell_order_result' here. This is a RESTING
+            # exit limit (U/D buy-time exit, T->U/D mode switch,
+            # partial-sell re-placement) - not a sale. Emitting the
+            # sell toast here made every such buy/switch pop
+            # "Sell order successful".
+            # AUDIT: resting exit placement = the U/D sell trigger.
+            trade_audit.record_resting_exit_placed(
+                trading_symbol_for_transaction, quantity, price
+            )
             self._trader.frontend_data_socket.emit('status_message',{"success": True, "message": "Refreshing position now..."})
             logger.info("Refreshing open positions and buy prices after SELL...This would update the fund summar / cash balance as well")
             self._trader.refresh_open_pos_buy_price()
@@ -1438,7 +1490,7 @@ class MStockAdapter(BrokerInterface):
             logger.error(f"Error selling units {e}")
             raise
 
-    def buy_units(self, trading_symbol = None, instrument_token = None, quantity = 0, exchange="",ltp=0,mode="",sell_mode="",target_profit=0,strategy=""):
+    def buy_units(self, trading_symbol = None, instrument_token = None, quantity = 0, exchange="",ltp=0,mode="",sell_mode="",target_profit=0,strategy="", target_profit_pct=None):
         try:
             logger.info(f"Buying units: {quantity} of {trading_symbol} ({instrument_token}) via M.Stock...Current LTP: {ltp}...Mode is {mode}. Sell Mode is {sell_mode}, target_profit is {target_profit}")
             buy_quantity = quantity
@@ -1585,30 +1637,64 @@ class MStockAdapter(BrokerInterface):
 
                         if mode == "LIVE":
                             logger.debug(f"Mode is {mode} and Sell_Mode is {sell_mode}")
-                            if sell_mode == "U": # Undetermined Profit at LTP + target_profit
-                                # Active U branch: a U-leg bought through
-                                # THIS path (insufficient-funds retry) used
-                                # to get no resting exit at all - the U
-                                # branch only lived in buy_sell_units. On
-                                # 2026-09-22 the 10:26 / 12:08 / 12:21 U
-                                # retries traded naked with no exit limit.
-                                logger.info(f"System placing Sell Order at LTP + {target_profit} points immediately after buy order is placed")
-                                self.sell_units_temp(trading_symbol, instrument_token , buy_quantity , exchange,ltp=ltp,limit_market="LIMIT",price=ltp+target_profit)
-                            if sell_mode == "D": # Determined Profit at Buy Price + target_profit
-                                logger.debug(f"System placing Sell Order at Buy Price + {target_profit} points immediately after buy order is placed")
-                                logger.debug(f"Fetching Buy Price for the order id {parsed_response.get('data').get('orderid')}")
-                                buy_price = self.fetch_order_executed_price(parsed_response.get('data').get("orderid"))
-                                logger.info(f"Buy Price fetched for the order id {parsed_response.get('data').get('orderid')} is {buy_price}")
-                                if buy_price is None:
-                                    buy_price = float(ltp)
-                                    logger.warning(
-                                        f"Executed price unavailable for order "
-                                        f"{parsed_response.get('data').get('orderid')}; "
-                                        f"using buy LTP {buy_price} for the immediate sell"
-                                    )
-                                self.sell_units_temp(trading_symbol, instrument_token , buy_quantity , exchange,ltp=ltp,limit_market="LIMIT",price=buy_price+target_profit) 
-                            elif sell_mode == "T": # Trigger Based..So Sell Order is not explicity raised..
-                                logger.debug("Waiting for Trigger to raise the Sell order")
+                            try:
+                                if sell_mode == "U": # Undetermined Profit at LTP + target
+                                    # Active U branch: a U-leg bought through
+                                    # THIS path (insufficient-funds retry) used
+                                    # to get no resting exit at all - the U
+                                    # branch only lived in buy_sell_units. On
+                                    # 2026-09-22 the 10:26 / 12:08 / 12:21 U
+                                    # retries traded naked with no exit limit.
+                                    if target_profit_pct:
+                                        u_exit_price = round((float(ltp) * (1 + float(target_profit_pct) / 100.0) // 0.05) * 0.05, 2)
+                                        logger.info(f"System placing Sell Order at LTP + {target_profit_pct}% immediately after buy order is placed")
+                                    else:
+                                        u_exit_price = ltp + target_profit
+                                        logger.info(f"System placing Sell Order at LTP + {target_profit} points immediately after buy order is placed")
+                                    self.sell_units_temp(trading_symbol, instrument_token , buy_quantity , exchange,ltp=ltp,limit_market="LIMIT",price=u_exit_price)
+                                if sell_mode == "D": # Determined Profit at Buy Price + target
+                                    logger.debug(f"Fetching Buy Price for the order id {parsed_response.get('data').get('orderid')}")
+                                    buy_price = self.fetch_order_executed_price(parsed_response.get('data').get("orderid"))
+                                    logger.info(f"Buy Price fetched for the order id {parsed_response.get('data').get('orderid')} is {buy_price}")
+                                    if buy_price is None:
+                                        buy_price = float(ltp)
+                                        logger.warning(
+                                            f"Executed price unavailable for order "
+                                            f"{parsed_response.get('data').get('orderid')}; "
+                                            f"using buy LTP {buy_price} for the immediate sell"
+                                        )
+                                    if target_profit_pct:
+                                        d_exit_price = round((float(buy_price) * (1 + float(target_profit_pct) / 100.0) // 0.05) * 0.05, 2)
+                                        logger.info(f"System placing Sell Order at Buy Price + {target_profit_pct}% immediately after buy order is placed")
+                                    else:
+                                        d_exit_price = buy_price + target_profit
+                                        logger.info(f"System placing Sell Order at Buy Price + {target_profit} points immediately after buy order is placed")
+                                    self.sell_units_temp(trading_symbol, instrument_token , buy_quantity , exchange,ltp=ltp,limit_market="LIMIT",price=d_exit_price)
+                                elif sell_mode == "T": # Trigger Based..So Sell Order is not explicity raised..
+                                    logger.debug("Waiting for Trigger to raise the Sell order")
+                            except Exception as exit_leg_error:
+                                # The BUY has already filled here. A failed
+                                # exit leg must NOT propagate as a generic
+                                # buy failure - the retry loop in
+                                # trade_logic would treat it as another
+                                # fund rejection and buy again, stacking a
+                                # duplicate position with still no exit.
+                                # Mark it explicitly so the caller can
+                                # distinguish "buy failed" from "buy ok,
+                                # exit failed".
+                                logger.error(
+                                    f"Exit leg failed after successful BUY for "
+                                    f"{trading_symbol}: {exit_leg_error}",
+                                    exc_info=True
+                                )
+                                try:
+                                    self._trader.frontend_data_socket.emit('status_message', {
+                                        "success": False,
+                                        "message": f"BUY filled for {trading_symbol} but the resting exit could not be placed: {exit_leg_error}"
+                                    })
+                                except Exception:
+                                    pass
+                                raise Exception(f"EXIT_LEG_FAILED: {exit_leg_error}")
 
                         
                         # Moved position refresh and frontend emit after the Sell Order Placement to gain timwe advantage..Check logs and decide if this should be the way or should this be moved above as earlier
@@ -1623,7 +1709,7 @@ class MStockAdapter(BrokerInterface):
             logger.error(f"Error buying units {e}")
             raise
 
-    def buy_sell_units(self, trading_symbol = None, instrument_token = None, quantity = 0, exchange="",ltp=0,mode="",sell_mode="",target_profit=0,strategy=""):
+    def buy_sell_units(self, trading_symbol = None, instrument_token = None, quantity = 0, exchange="",ltp=0,mode="",sell_mode="",target_profit=0,strategy="", target_profit_pct=None):
         try:
             logger.info(f"Buying/Selling units: {quantity} of {trading_symbol} ({instrument_token}) via M.Stock...Current LTP: {ltp}...Mode is {mode}. Sell Mode is {sell_mode}, target_profit is {target_profit}")
             
@@ -1733,7 +1819,16 @@ class MStockAdapter(BrokerInterface):
                         else:
                             self._trader.frontend_data_socket.emit('buy_order_result',{"success": True, "tradingsymbol": trading_symbol , "lots": buy_quantity})
                             logger.debug("Selling immediately after buying as per settings...")
-                            logger.debug(f"LTP: {ltp} ; Target Profit : {target_profit} ; So Selling Price is {ltp+target_profit}")
+                            # Exit target: PERCENT of LTP when the config
+                            # runs PCT comparison (symmetric with the
+                            # percent stop-loss), additive POINTS in PNT
+                            # mode. Floored to the 0.05 tick.
+                            if target_profit_pct:
+                                sell_price = round((float(ltp) * (1 + float(target_profit_pct) / 100.0) // 0.05) * 0.05, 2)
+                                logger.debug(f"LTP: {ltp} ; Target Profit : {target_profit_pct}% ; So Selling Price is {sell_price}")
+                            else:
+                                sell_price = ltp + target_profit
+                                logger.debug(f"LTP: {ltp} ; Target Profit : {target_profit} ; So Selling Price is {sell_price}")
 
                             if mode != "LIVE":
                                 logger.debug(f"Mode is {mode} and Sell_Mode is {sell_mode}")
@@ -1750,7 +1845,7 @@ class MStockAdapter(BrokerInterface):
                             'ordertype': "LIMIT",
                             'quantity': str(int(qty)),
                             'producttype': 'CARRYFORWARD',
-                            'price': str(ltp+target_profit),
+                            'price': str(sell_price),
                             'triggerprice': '0.00',
                             'squareoff': '0.00',
                             'stoploss': '0.00',
@@ -1770,10 +1865,12 @@ class MStockAdapter(BrokerInterface):
                         logger.debug(f"Sell order response raw: {raw_response}")
                         conn.close()
 
-                        self._trader.frontend_data_socket.emit('sell_order_result',{"success": True, "tradingsymbol": trading_symbol , "lots": buy_quantity,"Sell Price": ltp+target_profit})
+                        # Resting exit for the U-mode buy - NOT a sale;
+                        # no 'sell_order_result' toast (it used to pop
+                        # "Sell order successful" right after the BUY).
                         self._trader.frontend_data_socket.emit('status_message', {"success": True,"message": "Refreshing position now..."})            
-                        self._trader.refresh_open_pos_buy_price()                        
-                                
+                        self._trader.refresh_open_pos_buy_price()                                
+                
                 return response
         except Exception as e:
             logger.error(f"Error buying units {e}")

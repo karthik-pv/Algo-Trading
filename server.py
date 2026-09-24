@@ -15,6 +15,7 @@ import pytz
 
 
 from core.trade_logic import Trader_Singleton
+from core.audit_log import trade_audit
 from interface.broker_interface import BrokerInterface
 from adapter.kite_adapter import KiteAdapter
 from adapter.mstock_adapter import MStockAdapter
@@ -1025,6 +1026,129 @@ def Utilities():
     return redirect("/orders")
 
 
+# Audit page: Trade Execution Technical Report (click -> fill timing,
+# slippage, retries) with an Excel download.
+@app.route("/audit")
+def audit_page():
+    logger.info("Rendering Audit page")
+    return render_template("app.html", active_tab="audit")
+
+
+def _audit_lot_size(symbol):
+    """Lot size for the audit backfill (broker instrument details)."""
+    try:
+        details = broker.get_instrument_details(symbol)
+        if not details:
+            return None
+        for key in ("lot_size", "lotsize"):
+            value = details.get(key)
+            if value:
+                return int(float(value))
+    except Exception:
+        return None
+    return None
+
+
+_broker_orders_cache = {"ts": 0.0, "orders": None}
+_BROKER_ORDERS_TTL = 15  # seconds
+
+
+def _audit_broker_orders():
+    """Executed-orders payload for the audit report, cached for 15s so
+    tab loads / auto-refreshes never hammer the broker API."""
+    now = time.time()
+    if now - _broker_orders_cache["ts"] < _BROKER_ORDERS_TTL:
+        return _broker_orders_cache["orders"]
+    try:
+        orders = broker.fetch_all_orders()
+    except Exception as e:
+        logger.warning(f"Audit backfill: could not fetch broker orders: {e}")
+        orders = None
+    _broker_orders_cache["ts"] = now
+    _broker_orders_cache["orders"] = orders
+    return orders
+
+
+def _audit_enrichment_loop():
+    """Background: every 5 minutes during market hours, fold today's
+    broker order book into the audit records (sell fill prices, actual
+    averages) and persist. Keeps the report complete even if the Audit
+    tab is never opened that day. Purely additive to trading."""
+    while True:
+        time.sleep(300)
+        try:
+            if not is_market_open():
+                continue
+            orders = _audit_broker_orders()
+            if orders:
+                trade_audit.enrich_today(orders, _audit_lot_size)
+        except Exception:
+            logger.exception("Audit enrichment loop failed")
+
+
+@app.route("/api/audit")
+def api_audit():
+    # Selected report date (?date=YYYY-MM-DD, defaults to today).
+    date_str = request.args.get("date") or datetime.now().strftime("%Y-%m-%d")
+    # Best-effort broker enrichment/import: today's executed orders add
+    # fill prices and cover trades the logs/hooks never saw.
+    orders = _audit_broker_orders()
+    return jsonify({
+        "records": trade_audit.build_snapshot_for_date(
+            date_str, broker_orders=orders, lot_size_lookup=_audit_lot_size
+        )
+    })
+
+
+@app.route("/api/audit/download")
+def api_audit_download():
+    try:
+        import io
+        date_str = request.args.get("date") or datetime.now().strftime("%Y-%m-%d")
+        orders = _audit_broker_orders()
+        rows = trade_audit.build_snapshot_for_date(
+            date_str, broker_orders=orders, lot_size_lookup=_audit_lot_size
+        )
+        df = pd.DataFrame(rows, columns=trade_audit.COLUMNS)
+        # Second header row shows prefix-free captions (the merged
+        # group band above already says BUY / SELL).
+        df = df.rename(columns=trade_audit.DISPLAY_NAMES)
+        buf = io.BytesIO()
+        with pd.ExcelWriter(buf, engine="xlsxwriter") as writer:
+            # Data starts at row 1; row 0 carries the merged group band
+            # (BUY / SELL / RETRY) matching the grid's caption row.
+            df.to_excel(writer, index=False, sheet_name="Audit", startrow=1)
+            worksheet = writer.sheets["Audit"]
+            group_format = writer.book.add_format({
+                "bold": True, "align": "center", "valign": "vcenter",
+                "bg_color": "#D9EAD3", "border": 1,
+            })
+            col = 0
+            for label, span in trade_audit.COLUMN_GROUPS:
+                if span > 1:
+                    worksheet.merge_range(0, col, 0, col + span - 1, label, group_format)
+                else:
+                    worksheet.write(0, col, label, group_format)
+                col += span
+            # Widen the columns so the export is readable without
+            # manual formatting.
+            for col_idx, col_name in enumerate(trade_audit.COLUMNS):
+                width = max(len(str(col_name)) + 2, 12)
+                width = min(width, 40)
+                worksheet.set_column(col_idx, col_idx, width)
+        buf.seek(0)
+        filename = f"Trade_Execution_Audit_{date_str}.xlsx"
+        return send_file(
+            buf,
+            as_attachment=True,
+            download_name=filename,
+            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+    except Exception as e:
+        logger.exception("Audit Excel download failed")
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/convert_contract_note", methods=["POST"])
 def convert_contract_note():
     pdf_file = request.files.get("pdf")
@@ -1400,7 +1524,13 @@ if 1==1: #__name__ == "__main__":
             logger.info("FLASK: Flask thread launched.")
 
         trader.on_start()
-        
+
+        # Audit enrichment: fold the broker order book into the audit
+        # records every 5 minutes during market hours (sell fill prices,
+        # actual averages) and persist - independent of the UI.
+        threading.Thread(
+            target=_audit_enrichment_loop, daemon=True, name="audit-enrich"
+        ).start()
 
         if CURRENT_BROKER == "KITE":
             socket_thread = threading.Thread(target=start_socket, daemon=True)
@@ -1426,6 +1556,12 @@ if 1==1: #__name__ == "__main__":
     except KeyboardInterrupt:
         shutdown_event.set()
         logger.info("Shutting down server...")
+        # The last clock-hour's tick buckets never see an hour-boundary
+        # rollover if the app closes first - flush them to disk here.
+        try:
+            trader.flush_tick_counts()
+        except Exception:
+            pass
 
 
 

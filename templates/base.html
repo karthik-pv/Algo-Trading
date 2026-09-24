@@ -98,6 +98,7 @@
         <div class="app-tabs" id="appTabs">
             <a class="app-tab {% if request.path in ('/trade', '/') %}active{% endif %}" href="/trade">Trade</a>
             <a class="app-tab {% if request.path == '/orders' %}active{% endif %}" href="/orders">Orders</a>
+            <a class="app-tab {% if request.path == '/audit' %}active{% endif %}" href="/audit">Audit</a>
             <a class="app-tab {% if request.path in ('/settings', '/constants', '/appconfig') %}active{% endif %}" href="/appconfig">App Config</a>
         </div>
         <button class="tab-scroll-btn" id="tabScrollRight" type="button" title="Scroll tabs right">&#x276F;</button>

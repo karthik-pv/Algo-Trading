@@ -11,6 +11,7 @@ from core.utils import get_trading_symbols_from_json , find_matching_row_in_csv 
 from core.kite_connector import KiteSingleton
 from interface.broker_interface import BrokerInterface
 from core.trade_logic import Trader_Singleton
+from core.audit_log import trade_audit
 from adapter.kite_utils import fund_summary_attribute_mgmt , position_attribute_mgmt , orders_attribute_mgmt, instr_det_attrib_mgmt
 
 import pandas as pd
@@ -249,7 +250,10 @@ class KiteAdapter(BrokerInterface):
             return positions
         except Exception as e:
             logger.error(f"Kite fetch_all_positions error: {e}")
-            return []
+            # None (not []) distinguishes a FAILED fetch from a genuine
+            # empty book - refresh_open_pos_buy_price() trusts [] for
+            # ledger pruning but never trusts a failed fetch.
+            return None
 
     def fetch_all_trades(self):
         try:
@@ -468,32 +472,54 @@ class KiteAdapter(BrokerInterface):
             # Sell Type T places nothing - the TP/SL watcher manages it.
             # =========================================================
             if mode == "LIVE" and sell_mode in ("U", "D"):
-                if target_profit <= 0:
-                    logger.warning(
-                        f"Sell Mode {sell_mode} with target_profit "
-                        f"{target_profit}; skipping the immediate exit "
-                        f"order (watcher will manage the position)."
-                    )
-                else:
-                    if sell_mode == "D":
-                        buy_price = self.fetch_order_executed_price(order_id)
-                        if buy_price is None:
-                            buy_price = float(ltp)
-                            logger.warning(
-                                f"Executed price unavailable for order "
-                                f"{order_id}; using buy LTP {buy_price} "
-                                f"for the immediate sell"
-                            )
-                        exit_price = buy_price + target_profit
-                    else:  # U
-                        exit_price = float(ltp) + target_profit
+                if sell_mode == "D":
+                    buy_price = self.fetch_order_executed_price(order_id)
+                    if buy_price is None:
+                        buy_price = float(ltp)
+                        logger.warning(
+                            f"Executed price unavailable for order "
+                            f"{order_id}; using buy LTP {buy_price} "
+                            f"for the immediate sell"
+                        )
+                    anchor_price = buy_price
+                else:  # U
+                    anchor_price = float(ltp)
 
+                # Exit target: PERCENT of the anchor when the config
+                # runs PCT comparison (symmetric with the percent
+                # stop-loss), additive POINTS in PNT mode. Floored to
+                # the instrument tick (SELL side - never overshoot).
+                if target_profit_pct:
+                    exit_price = round_to_tick(
+                        anchor_price * (1 + float(target_profit_pct) / 100.0),
+                        tick,
+                        up=False
+                    )
+                    logger.info(
+                        f"Placing {sell_mode} exit at {exit_price} "
+                        f"(anchor {anchor_price} + {target_profit_pct}%)"
+                    )
                     self.place_exit_limit(
                         trading_symbol,
                         instrument_token,
                         grid_qty,
                         exchange,
                         exit_price
+                    )
+                elif target_profit > 0:
+                    exit_price = anchor_price + target_profit
+                    self.place_exit_limit(
+                        trading_symbol,
+                        instrument_token,
+                        grid_qty,
+                        exchange,
+                        exit_price
+                    )
+                else:
+                    logger.warning(
+                        f"Sell Mode {sell_mode} with target_profit "
+                        f"{target_profit}; skipping the immediate exit "
+                        f"order (watcher will manage the position)."
                     )
             elif mode == "LIVE" and sell_mode == "T":
                 logger.debug("Waiting for Trigger to raise the Sell order")
@@ -508,7 +534,7 @@ class KiteAdapter(BrokerInterface):
             logger.error(f"Error in kite buy order {e}")
             self._trader.frontend_data_socket.emit('status_message', {"success": False, "message": "Error placing order..."})
 
-    def buy_sell_units(self, trading_symbol, instrument_token, quantity, exchange, ltp, mode="", sell_mode="", target_profit=0, strategy=""):
+    def buy_sell_units(self, trading_symbol, instrument_token, quantity, exchange, ltp, mode="", sell_mode="", target_profit=0, strategy="", target_profit_pct=None):
         """Sell Type U entry point: BUY + immediate SELL LIMIT at LTP + target.
 
         Mirrors MStock's buy_sell_units - the exit is placed aggressively
@@ -524,7 +550,8 @@ class KiteAdapter(BrokerInterface):
             mode=mode,
             sell_mode="U",
             target_profit=target_profit,
-            strategy=strategy
+            strategy=strategy,
+            target_profit_pct=target_profit_pct
         )
 
     def place_exit_limit(self, trading_symbol, instrument_token, quantity, exchange, price):
@@ -557,10 +584,13 @@ class KiteAdapter(BrokerInterface):
                 f"Kite SELL LIMIT exit placed at {limit_price} for "
                 f"{trading_symbol} ({quantity} lots)"
             )
-            self._trader.frontend_data_socket.emit(
-                'sell_order_result',
-                {"success": True, "tradingsymbol": trading_symbol, "lots": int(quantity), "Sell Price": limit_price}
+            # AUDIT: resting exit placement = the U/D sell trigger.
+            trade_audit.record_resting_exit_placed(
+                trading_symbol, quantity, float(limit_price)
             )
+            # Resting exit placement - NOT a sale; no UI
+            # 'sell_order_result' toast (it used to pop "Sell order
+            # successful" on U/D buys and mode switches).
             return order_id
         except Exception as e:
             logger.error(f"Kite place_exit_limit failed for {trading_symbol}: {e}")
@@ -795,6 +825,8 @@ class KiteAdapter(BrokerInterface):
                 instrument_token = tick["instrument_token"]
                 price = tick["last_price"]
                 ohlc = tick.get("ohlc") or {}
+                # Per-instrument hourly tick sampler (see Trader_Singleton).
+                self._trader.record_tick(str(instrument_token))
                 self._trader.set_latest_price(
                     str(instrument_token),
                     None,
@@ -1206,7 +1238,7 @@ class KiteAdapter(BrokerInterface):
     def cancel_all_pending_orders(self):
         logger.info("Cancelling ALL pending orders via Kite...")
         try:
-            pending_orders = self.fetch_all_pending_orders()
+            pending_orders = self.fetch_all_pending_orders() or []
             logger.info(f"Pending orders found: {len(pending_orders)}")
 
             cancelled = 0
@@ -1261,6 +1293,10 @@ class KiteAdapter(BrokerInterface):
             return pending_orders
         except Exception as e:
             logger.error(f"Error fetching pending orders: {e}")
-            return []
+            # None (not []) distinguishes a FAILED fetch from a
+            # genuine empty book - _cancel_pending_exit_orders
+            # must abort the sell rather than believe no exit
+            # is resting.
+            return None
 
 

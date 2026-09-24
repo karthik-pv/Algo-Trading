@@ -156,6 +156,23 @@
     white-space: nowrap;
 }
 
+/* Balance Box open-profit (+/-%) additions */
+#openProfitValue,
+#openProfitPct {
+    margin-left: 8px;
+    font-weight: 700;
+}
+
+#openProfitPct::before {
+    content: '(';
+    font-weight: 400;
+}
+
+#openProfitPct::after {
+    content: ')';
+    font-weight: 400;
+}
+
 #nmf_pts.profit, #nmf_chgo.profit {
     background-color: #00B050;
     border-color: #00B050;
@@ -745,6 +762,125 @@
     #ordersTable .pnl-neg { background: #FF6666 !important; color: #000000; font-weight: 700; }
 </style>
 <style>
+/* ===== AUDIT TAB (Trade Execution Technical Report) ===== */
+    #panel-audit .main-content {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        padding: 1rem 0.25rem 1.5rem;
+        gap: 16px;
+        box-sizing: border-box;
+    }
+
+    #auditGridWrapper { width: 100%; max-width: none; }
+
+    #auditDateInput {
+        background: transparent;
+        color: #ccc;
+        border: 1px solid #666;
+        border-radius: 6px;
+        padding: 4px 8px;
+        font-size: 0.78rem;
+        font-weight: 600;
+        cursor: pointer;
+        color-scheme: dark;
+    }
+    #auditDateInput:focus { outline: none; border-color: #888; color: #fff; }
+
+    .audit-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-bottom: 8px;
+    }
+
+    .audit-header-left {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+
+    #auditCountLabel { font-size: 0.78rem; color: #aaa; }
+
+    #auditRefreshBtn, #auditDownloadBtn {
+        background: transparent;
+        color: #ccc;
+        border: 1px solid #666;
+        border-radius: 6px;
+        padding: 4px 10px;
+        cursor: pointer;
+        font-size: 0.78rem;
+        font-weight: 600;
+        line-height: 1.2;
+    }
+    #auditRefreshBtn:hover, #auditDownloadBtn:hover { background: #444; color: #fff; }
+    #auditRefreshBtn:disabled, #auditDownloadBtn:disabled {
+        color: #666; cursor: not-allowed; background: transparent;
+    }
+
+    #auditGridContainer {
+        max-height: 560px;
+        overflow: auto;
+        border: 1px solid #444;
+        border-radius: 8px;
+        background: #1f1f1f;
+        padding: 10px;
+        box-sizing: border-box;
+    }
+
+    #auditTable {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.72rem;
+        color: #ddd;
+    }
+    #auditTable th, #auditTable td {
+        border: 1px solid #3a3a3a;
+        padding: 5px 8px;
+        text-align: left;
+        white-space: nowrap;
+        vertical-align: middle;
+    }
+    #auditTable thead th {
+        background: #383838;
+        color: #ccc;
+        font-weight: 600;
+        position: sticky;
+        top: 26px; /* below the sticky group band row */
+        z-index: 2;
+    }
+
+    /* Group band row: BUY / SELL / RETRY column-group captions */
+    #auditTable thead tr.group-row th {
+        background: #2c2c2c;
+        color: #eee;
+        font-weight: 700;
+        font-size: 0.78rem;
+        text-align: center;
+        letter-spacing: 1px;
+        position: sticky;
+        top: 0;
+        z-index: 3;
+    }
+    #auditTable thead tr.group-row th.audit-group-buy   { background: #1b3a1e; color: #a5d6a7; }
+    #auditTable thead tr.group-row th.audit-group-sell  { background: #3e1414; color: #ef9a9a; }
+    #auditTable thead tr.group-row th.audit-group-retry { background: #3d2f10; color: #ffcc80; }
+    #auditTable thead tr.group-row th.audit-group-trade,
+    #auditTable thead tr.group-row th.audit-group-comment { color: #999; }
+    #auditTable tbody tr:nth-child(even) { background: #262626; }
+    #auditTable tbody tr:hover { background: #333; }
+
+    /* Column-group tints keep the buy / sell / retry blocks scannable */
+    /* Body cells stay plain (like the other grids) - only the group
+       band + slippage text carry color */
+    #auditTable td.audit-comment { white-space: normal; min-width: 240px; }
+
+    #auditTable td.slip-pos { color: #ef5350; font-weight: 600; }
+    #auditTable td.slip-neg { color: #66bb6a; font-weight: 600; }
+</style>
+<style>
 /* ===== CSS from appconfig.html ===== */
 /* --- PAGE LAYOUT --- */
     #panel-appconfig .main-content {
@@ -1134,8 +1270,10 @@
 
     <!-- Right: Available Balance / Refresh / Calls / Puts -->
     <div class="toggle-buttons">
-        <label id="availableBalance" class="expiry-label" title="Available balance to trade">
+        <label id="availableBalance" class="expiry-label" title="Available balance to trade &#8594; Net P/L for the day (realized + open) and its % of the day's opening balance">
             <span id="availableBalanceValue">--</span>
+            <span id="openProfitValue" class="profit" style="display: none;"></span>
+            <span id="openProfitPct" class="profit" style="display: none;"></span>
         </label>
 
         <label class="announcement-toggle-label" title="Enable or disable voice announcement" aria-label="Voice announcement toggle">
@@ -1268,6 +1406,37 @@
                 </thead>
                 <tbody id="ordersTableBody">
                     <tr><td colspan="15" class="no-options">No trades for the selected date.</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+</main>
+    </section>
+    <section class="tab-panel" id="panel-audit" data-tab="audit">
+        <main class="main-content">
+
+    <!-- === AUDIT GRID (Trade Execution Technical Report) === -->
+    <div id="auditGridWrapper">
+        <div class="audit-header">
+            <div class="audit-header-left">
+                <span style="font-size: 0.85rem; font-weight: 600; color: #ccc;">Trade Execution Technical Report</span>
+                <span id="auditCountLabel"></span>
+            </div>
+            <div class="orders-header-right">
+                <input type="date" id="auditDateInput" title="Report date to load in this grid (reads that date's session logs)">
+                <button id="auditRefreshBtn" type="button" title="Reload the audit events for the selected date">&#x21bb; Refresh</button>
+                <button id="auditDownloadBtn" type="button" title="Download the report as Excel">&#8681; Download Excel</button>
+            </div>
+        </div>
+        <div id="auditGridContainer">
+            <table id="auditTable">
+                <thead>
+                    <tr id="auditTableGroupHead" class="group-row"></tr>
+                    <tr id="auditTableHead"></tr>
+                </thead>
+                <tbody id="auditTableBody">
+                    <tr><td class="no-options">Loading audit events...</td></tr>
                 </tbody>
             </table>
         </div>
@@ -1934,6 +2103,87 @@ document.addEventListener('DOMContentLoaded', function() {
     const expiryValueEl = document.getElementById('expiryValue');
     const announcementToggleEl = document.getElementById('announcementToggle');
     const availableBalanceEl = document.getElementById('availableBalanceValue');
+    const openProfitEl = document.getElementById('openProfitValue');
+    const openProfitPctEl = document.getElementById('openProfitPct');
+    // Latest available balance (from /fund_summary) - the denominator
+    // for the open-profit % shown in the Balance Box.
+    let latestCashBalance = 0;
+
+    // Balance Box NET DAY P/L: realized P/L from today's executed
+    // trades (same rows the Orders grid shows) plus the unrealized
+    // P/L of the open position legs. Shown as integer rupees with
+    // its % of the day's opening balance (integer), both color-coded
+    // green/red. Always rendered - flat shows +0 (+0%).
+    let dayRealizedPl = 0;
+    let dayStartCashBalance = 0;
+
+    function updateBalanceBoxProfit() {
+        if (!openProfitEl || !openProfitPctEl) return;
+
+        let unrealizedPl = 0;
+        for (const key in openPositions) {
+            unrealizedPl += parseFloat(openPositions[key] && openPositions[key].total_pl) || 0;
+        }
+
+        const netDayPl = dayRealizedPl + unrealizedPl;
+
+        const plClass = netDayPl >= 0 ? 'profit' : 'loss';
+        openProfitEl.className = plClass;
+        openProfitPctEl.className = plClass;
+
+        const sign = netDayPl >= 0 ? '+' : '';
+        openProfitEl.textContent = `${sign}${Math.round(netDayPl).toLocaleString('en-IN')}`;
+
+        const pctBase = dayStartCashBalance > 0 ? dayStartCashBalance : latestCashBalance;
+        const pct = pctBase > 0 ? (netDayPl / pctBase) * 100 : 0;
+        openProfitPctEl.textContent = `${sign}${Math.round(pct)}%`;
+
+        openProfitEl.style.display = '';
+        openProfitPctEl.style.display = '';
+    }
+
+    function tradeTabDate() {
+        const now = new Date();
+        const yyyy = now.getFullYear();
+        const mm = String(now.getMonth() + 1).padStart(2, '0');
+        const dd = String(now.getDate()).padStart(2, '0');
+        return `${yyyy}-${mm}-${dd}`;
+    }
+
+    async function loadDayRealizedPl() {
+        try {
+            const tradeDate = tradeTabDate();
+            const [tradesRes, cashRes] = await Promise.all([
+                fetch('/get_executed_trades', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ trade_date: tradeDate })
+                }).catch(() => null),
+                fetch(`/day_cash?trade_date=${encodeURIComponent(tradeDate)}`).catch(() => null)
+            ]);
+
+            if (cashRes && cashRes.ok) {
+                const cashData = await cashRes.json();
+                if (cashData && cashData.success) {
+                    dayStartCashBalance = parseFloat(cashData.cash_balance) || 0;
+                }
+            }
+
+            if (tradesRes && tradesRes.ok) {
+                const tradesData = await tradesRes.json();
+                if (tradesData && tradesData.success) {
+                    dayRealizedPl = (tradesData.rows || []).reduce((total, row) => {
+                        const pnl = Number(row['PnL']);
+                        return Number.isFinite(pnl) ? total + pnl : total;
+                    }, 0);
+                }
+            }
+
+            updateBalanceBoxProfit();
+        } catch (error) {
+            console.error("Could not load day P/L:", error);
+        }
+    }
     const positionsTableBody = document.getElementById('positionsTableBody');
     const pendingOrdersBody = document.getElementById('pendingOrdersBody');
 
@@ -2132,6 +2382,8 @@ document.addEventListener('DOMContentLoaded', function() {
         if (data.underlying) underlyingValueEl.textContent = data.underlying;
         if (data.positions_data) {
             openPositions = data.positions_data;
+            updateBalanceBoxProfit();
+            loadDayRealizedPl();
         }
         if (data.order_strategy_mapping) {
             orderStrategyMapping = data.order_strategy_mapping;
@@ -2225,11 +2477,29 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
 
+    // Structural identity of the option chain: tokens, strikes,
+    // CE/PE, expiry, level and lot size. Volatile market fields
+    // (ltp/lots/prev_close) are deliberately excluded - the backend
+    // re-emits the chain with fresh LTPs on every refresh/reconnect,
+    // and comparing full JSON made the "Option chain updated" toast
+    // fire on virtually every emit even when nothing changed.
+    function chainSignature(contracts) {
+        return JSON.stringify(
+            Object.keys(contracts || {}).sort().map((key) => {
+                const c = contracts[key] || {};
+                return [
+                    key, c.name, c.strike, c.call_or_put,
+                    c.expiry, c.level, c.lotsize
+                ].join('|');
+            })
+        );
+    }
+
     socket.on('update_weekly_options', (contracts) => {
-        // A real rebuild (contract set changed after initial load) is
-        // worth announcing; plain reconnects re-send identical data.
+        // Toast only on a REAL rebuild (contract set changed); plain
+        // reconnects/LTP re-sends stay silent.
         const chainChanged = Object.keys(allContracts).length > 0 &&
-            JSON.stringify(allContracts) !== JSON.stringify(contracts);
+            chainSignature(allContracts) !== chainSignature(contracts);
         allContracts = contracts;
         
         populateOptionsTable(allContracts, callBtn.classList.contains('active-toggle') ? 'CE' : 'PE');
@@ -2257,6 +2527,7 @@ document.addEventListener('DOMContentLoaded', function() {
     );
 
         openPositions = positions;
+        updateBalanceBoxProfit();
         // Seed each leg's freshness clock: the server just re-fetched
         // positions (with broker-side prices), so treat the shown LTP
         // as fresh from now and flag the leg only if no tick arrives
@@ -2390,6 +2661,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 openPositions[key].pts_pl = tick.pts_pl;
                 openPositions[key].pct_pl = tick.pct_pl;
                 openPositions[key].total_pl = tick.total_pl;
+                updateBalanceBoxProfit();
             }
         }
         const marketPriceCell = document.getElementById(`market-price-${domId}`);
@@ -2446,6 +2718,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     socket.on('refresh_fund_summary', function() {
         fetchFundSummary(); // ✅ Called only after buy order completes
+        loadDayRealizedPl(); // realized day P/L changed with the cash
     });
 
     // --- UTILITY FUNCTIONS ---
@@ -2460,8 +2733,10 @@ document.addEventListener('DOMContentLoaded', function() {
             const response = await fetch('/fund_summary');
             if (!response.ok) { throw new Error(`HTTP Error: ${response.status}`); }
             const summary = await response.json();
-            const cashBalance = parseFloat(summary.data.cash_balance).toLocaleString('en-IN', { maximumFractionDigits: 0 });
+            latestCashBalance = parseFloat(summary.data.cash_balance) || 0;
+            const cashBalance = latestCashBalance.toLocaleString('en-IN', { maximumFractionDigits: 0 });
             if (availableBalanceEl) availableBalanceEl.textContent = `Bal: ${cashBalance}`;
+            updateBalanceBoxProfit();
         } catch (error) {
             console.error("Could not fetch fund summary:", error);
             if (availableBalanceEl) availableBalanceEl.textContent = 'Error';
@@ -2814,7 +3089,22 @@ filteredContracts.sort(([, a], [, b]) => {
 
     socket.on('buy_order_result', function (result) {
         if (result.success) {
-            showTransactionSuccess(`Buy order successful for ${result.tradingsymbol} (${result.lots} lots)`);
+            if (result.warning) {
+                // BUY filled but its resting exit could not be placed:
+                // red toast so the unguarded position is noticed.
+                showInlineStatus(
+                    `Buy order successful for ${result.tradingsymbol} (${result.lots} lots) - ${result.warning}`,
+                    'error',
+                    8000
+                );
+            } else if (result.note && result.requested_lots !== undefined &&
+                       Number(result.lots) !== Number(result.requested_lots)) {
+                showTransactionSuccess(
+                    `Buy order successful for ${result.tradingsymbol} (${result.lots} lots, requested ${result.requested_lots})`
+                );
+            } else {
+                showTransactionSuccess(`Buy order successful for ${result.tradingsymbol} (${result.lots} lots)`);
+            }
         } else {
             showInlineStatus(`Buy order failed for ${result.tradingsymbol}: ${result.error}`, 'error');
         }
@@ -2831,6 +3121,7 @@ filteredContracts.sort(([, a], [, b]) => {
     if (sellBtn) { sellBtn.disabled = false; sellBtn.textContent = 'Sell'; }
     if (result.success) {
         showTransactionSuccess(`Sell order successful for ${result.tradingsymbol} (${result.lots} lots)`);
+        loadDayRealizedPl(); // realized day P/L changed with the exit
     } else {
         showInlineStatus(`Sell order failed for ${result.tradingsymbol}: ${result.error}`, 'error');
     }
@@ -3419,6 +3710,7 @@ filteredContracts.sort(([, a], [, b]) => {
 
 
     fetchFundSummary();
+    loadDayRealizedPl();
 });
 })();
 </script>
@@ -4191,6 +4483,280 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 });
 })();
+</script>
+<script>
+// ===== AUDIT TAB: Trade Execution Technical Report =====
+// Pure request/response: the grid refetches /api/audit on demand
+// (tab activation, refresh click). No socket traffic.
+document.addEventListener('DOMContentLoaded', function () {
+    const auditTableHead = document.getElementById('auditTableHead');
+    const auditTableGroupHead = document.getElementById('auditTableGroupHead');
+    const auditTableBody = document.getElementById('auditTableBody');
+    const auditCountLabel = document.getElementById('auditCountLabel');
+    const auditRefreshBtn = document.getElementById('auditRefreshBtn');
+    const auditDownloadBtn = document.getElementById('auditDownloadBtn');
+    const auditDateInput = document.getElementById('auditDateInput');
+
+    // Report date: defaults to today, capped at today (future dates
+    // have no data).
+    function auditDate() {
+        const today = new Date();
+        const iso = today.getFullYear() + '-' +
+            String(today.getMonth() + 1).padStart(2, '0') + '-' +
+            String(today.getDate()).padStart(2, '0');
+        if (auditDateInput) {
+            if (!auditDateInput.value) auditDateInput.value = iso;
+            auditDateInput.max = iso;
+            return auditDateInput.value || iso;
+        }
+        return iso;
+    }
+
+    // Mirrors core.audit_log.TradeAudit.COLUMNS (server order).
+    const AUDIT_COLUMNS = [
+        'Symbol', 'Lots', 'SS',
+        'Buy Click Time', 'Buy Exec Time', 'Buy Avg Price', 'Buy Time Cost (s)',
+        'LTP @ Click', 'LTP @ Exec', 'Buy Slippage', 'Buy Slippage %',
+        'Buy Lot Cost Slippage',
+        'Sell Trigger Time', 'Trigger Source', 'Sell Exec Time', 'Sell Time Cost (s)',
+        'LTP @ Trigger', 'LTP @ Sell Exec', 'Sell Slippage', 'Sell Slippage %',
+        'Sell Profit Slippage',
+        'Retries', 'Retry Elapsed (s)', 'First Attempt LTP',
+        'Exec Slippage %', 'Buy Cost Increase',
+        'Comment',
+    ];
+
+    // Column-group bands shown above the header row: which caption
+    // each column belongs to (rendered as colspan cells).
+    const COLUMN_GROUP = {
+        'Symbol': 'Trade', 'Lots': 'Trade', 'SS': 'Trade',
+        'Buy Click Time': 'Buy', 'Buy Exec Time': 'Buy',
+        'Buy Avg Price': 'Buy', 'Buy Time Cost (s)': 'Buy',
+        'LTP @ Click': 'Buy', 'LTP @ Exec': 'Buy',
+        'Buy Slippage': 'Buy', 'Buy Slippage %': 'Buy',
+        'Buy Lot Cost Slippage': 'Buy',
+        'Sell Trigger Time': 'Sell', 'Trigger Source': 'Sell',
+        'Sell Exec Time': 'Sell', 'Sell Time Cost (s)': 'Sell',
+        'LTP @ Trigger': 'Sell', 'LTP @ Sell Exec': 'Sell',
+        'Sell Slippage': 'Sell', 'Sell Slippage %': 'Sell',
+        'Sell Profit Slippage': 'Sell',
+        'Retries': 'Retry', 'Retry Elapsed (s)': 'Retry',
+        'First Attempt LTP': 'Retry', 'Exec Slippage %': 'Retry',
+        'Buy Cost Increase': 'Retry',
+        'Comment': 'Comment',
+    };
+    const GROUP_CLASS = {
+        'Trade': 'audit-group-trade', 'Buy': 'audit-group-buy',
+        'Sell': 'audit-group-sell', 'Retry': 'audit-group-retry',
+        'Comment': 'audit-group-comment',
+    };
+
+    // Second header row captions: "Buy"/"Sell" prefixes stripped - the
+    // group band row above already carries them.
+    const DISPLAY_NAME = {
+        'Buy Click Time': 'Click Time',
+        'Buy Exec Time': 'Exec Time',
+        'Buy Avg Price': 'Avg Price',
+        'Buy Time Cost (s)': 'Time Cost (s)',
+        'Buy Slippage': 'Slippage',
+        'Buy Slippage %': 'Slippage %',
+        'Buy Lot Cost Slippage': 'Lot Cost Slippage',
+        'Sell Trigger Time': 'Trigger Time',
+        'Sell Exec Time': 'Exec Time',
+        'Sell Time Cost (s)': 'Time Cost (s)',
+        'LTP @ Sell Exec': 'LTP @ Exec',
+        'Sell Slippage': 'Slippage',
+        'Sell Slippage %': 'Slippage %',
+        'Sell Profit Slippage': 'Profit Slippage',
+        'Buy Cost Increase': 'Cost Increase',
+    };
+
+    // Slippage colouring: BUY slippage up = paid more (bad/red),
+    // SELL slippage up = sold higher (good/green).
+    const SLIP_SIGN = {
+        'Buy Slippage': 1, 'Buy Slippage %': 1, 'Buy Lot Cost Slippage': 1,
+        'Exec Slippage %': 1, 'Buy Cost Increase': 1,
+        'Sell Slippage': -1, 'Sell Slippage %': -1, 'Sell Profit Slippage': -1,
+    };
+
+    function numeric(value) {
+        const n = parseFloat(value);
+        return Number.isFinite(n) ? n : null;
+    }
+
+    function loadAudit() {
+        auditTableBody.innerHTML =
+            '<tr><td colspan="' + AUDIT_COLUMNS.length + '" class="no-options">Loading audit events...</td></tr>';
+        fetch('/api/audit?date=' + encodeURIComponent(auditDate()), { cache: 'no-store' })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                const rows = (data && data.records) || [];
+                renderAudit(rows);
+            })
+            .catch(function (err) {
+                auditTableBody.innerHTML =
+                    '<tr><td colspan="' + AUDIT_COLUMNS.length + '" class="no-options">' +
+                    'Failed to load audit report: ' + (err.message || err) +
+                    '</td></tr>';
+            });
+    }
+
+    function appendGroupCell(label, span) {
+        const th = document.createElement('th');
+        th.colSpan = span;
+        th.textContent = label;
+        th.className = 'audit-group-' + (GROUP_CLASS[label] || 'trade')
+            .replace('audit-group-', '');
+        if (label === 'Buy') {
+            th.title = 'Buy Click Time -> Buy Lot Cost Slippage';
+        } else if (label === 'Sell') {
+            th.title = 'Sell Trigger Time -> Sell Profit Slippage';
+        } else if (label === 'Retry') {
+            th.title = 'Lots-reduction retries and their cost impact';
+        }
+        auditTableGroupHead.appendChild(th);
+    }
+
+    function renderAudit(rows) {
+        // Group band row (BUY / SELL / RETRY captions over their
+        // colspan ranges). Built from COLUMN_GROUP runs so it can
+        // never mis-align with the column list.
+        auditTableGroupHead.innerHTML = '';
+        let runLabel = null, runLen = 0;
+        AUDIT_COLUMNS.forEach(function (col) {
+            const label = COLUMN_GROUP[col] || '';
+            if (label === runLabel) {
+                runLen += 1;
+            } else {
+                if (runLabel !== null) {
+                    appendGroupCell(runLabel, runLen);
+                }
+                runLabel = label;
+                runLen = 1;
+            }
+        });
+        if (runLabel !== null) {
+            appendGroupCell(runLabel, runLen);
+        }
+
+        // Header (prefix-free captions: the group band above already
+        // says BUY / SELL)
+        auditTableHead.innerHTML = '';
+        AUDIT_COLUMNS.forEach(function (col) {
+            const th = document.createElement('th');
+            th.textContent = DISPLAY_NAME[col] || col;
+            if (col === 'SS') {
+                th.title = 'Strategy + Sell Mode: UU=Ultra Scalping + U, '
+                    + 'UT=Ultra + T, UD=Ultra + D, SU/ST/SD=Scalping, '
+                    + 'IU/IT/ID=Intra';
+            }
+            auditTableHead.appendChild(th);
+        });
+
+        auditCountLabel.textContent =
+            rows.length + ' trade' + (rows.length === 1 ? '' : 's') +
+            ' (' + auditDate() + ')';
+
+        if (!rows.length) {
+            auditTableBody.innerHTML =
+                '<tr><td colspan="' + AUDIT_COLUMNS.length + '" class="no-options">' +
+                'No trades audited in this session yet. Place a BUY/SELL on the Trade tab.</td></tr>';
+            return;
+        }
+
+        auditTableBody.innerHTML = '';
+        rows.forEach(function (rec) {
+            const tr = document.createElement('tr');
+            AUDIT_COLUMNS.forEach(function (col) {
+                const td = document.createElement('td');
+                td.textContent = (rec[col] === 0 || rec[col]) ? String(rec[col]) : '';
+                if (col === 'Comment') td.classList.add('audit-comment');
+                const num = numeric(rec[col]);
+                if (num !== null && SLIP_SIGN[col] && num !== 0) {
+                    // BUY: positive slip costs money -> red.
+                    // SELL: negative slip costs money -> red.
+                    if (SLIP_SIGN[col] > 0) {
+                        td.classList.toggle('slip-pos', num > 0);
+                        td.classList.toggle('slip-neg', num < 0);
+                    } else {
+                        td.classList.toggle('slip-pos', num < 0);
+                        td.classList.toggle('slip-neg', num > 0);
+                    }
+                }
+                tr.appendChild(td);
+            });
+            auditTableBody.appendChild(tr);
+        });
+    }
+
+    auditRefreshBtn.addEventListener('click', loadAudit);
+
+    if (auditDateInput) {
+        auditDateInput.addEventListener('change', loadAudit);
+    }
+
+    auditDownloadBtn.addEventListener('click', function () {
+        auditDownloadBtn.disabled = true;
+        // Full navigation triggers the browser's file download dialog.
+        window.location.href = '/api/audit/download?date=' +
+            encodeURIComponent(auditDate()) + '&ts=' + Date.now();
+        setTimeout(function () { auditDownloadBtn.disabled = false; }, 1500);
+    });
+
+    // Lazy load: fetch when the Audit tab becomes visible. Covers all
+    // activation paths: fresh /audit page load, page refreshed on
+    // #audit, and tab clicks (hash change). The MutationObserver is
+    // authoritative - on DOMContentLoaded the tab-initializer script
+    // (registered later) has not applied the active class yet, so a
+    // visibility check alone would miss the fresh /audit load.
+    let lastAuditLoad = 0;
+    function loadAuditIfVisible() {
+        const now = Date.now();
+        if (now - lastAuditLoad < 1000) return; // dedupe observer+hash triggers
+        if (!auditPanelVisible()) return;
+        lastAuditLoad = now;
+        loadAudit();
+    }
+    const auditPanel = document.getElementById('panel-audit');
+    if (auditPanel && typeof MutationObserver !== 'undefined') {
+        new MutationObserver(loadAuditIfVisible).observe(auditPanel, {
+            attributes: true, attributeFilter: ['class'],
+        });
+    }
+    window.addEventListener('hashchange', function () {
+        if ((location.hash || '').replace(/^#/, '') === 'audit') loadAuditIfVisible();
+    });
+    // Fresh /audit page: the server-rendered hint or the URL hash.
+    if (document.body.getAttribute('data-active-tab') === 'audit'
+            || (location.hash || '').replace(/^#/, '') === 'audit') {
+        lastAuditLoad = Date.now();
+        loadAudit();
+    }
+    // The tab initializer runs after this script - it toggles the
+    // active class, which the observer above catches.
+
+    // Live update: any completed buy/sell (or broker-side resting-exit
+    // fill) refreshes the report - but only while the Audit tab is the
+    // one on screen, so trading never pays for this. The shared socket
+    // is declared in an earlier script block; guard if not up yet.
+    function auditPanelVisible() {
+        const panel = document.getElementById('panel-audit');
+        return !!(panel && panel.classList.contains('active'));
+    }
+    function hookAuditSocket() {
+        if (typeof socket === 'undefined' || !socket) return false;
+        const refreshIfVisible = function () {
+            if (auditPanelVisible()) loadAudit();
+        };
+        socket.on('buy_order_result', refreshIfVisible);
+        socket.on('sell_order_result', refreshIfVisible);
+        socket.on('broker_side_fill_detected', refreshIfVisible);
+        return true;
+    }
+    if (!hookAuditSocket()) {
+        setTimeout(hookAuditSocket, 3000);
+    }
+});
 </script>
 <script>
         // Client-side tab switching: panels live in one document, so switching

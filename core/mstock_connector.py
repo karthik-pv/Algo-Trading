@@ -503,6 +503,9 @@ class MStockSingleton:
             token = str(market_update["token"])
             ltp = market_update["ltp"]
 
+            # Per-instrument hourly tick sampler (see Trader_Singleton).
+            self._trader.record_tick(token)
+
             # logger.info(
             #     f"MSTOCK TICK | token={token} | ltp={ltp}"
             # )
