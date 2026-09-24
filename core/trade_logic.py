@@ -1,4 +1,6 @@
 import re
+import subprocess
+import sys
 import threading
 import logging
 import queue
@@ -12,8 +14,15 @@ from loguru import logger
 import json
 
 import time
-import pythoncom
-import win32com.client
+
+# SAPI voice output is Windows-only (pywin32). Import lazily so the app
+# runs on macOS/Linux; voice_readout_core() degrades to a no-op.
+try:
+    import pythoncom
+    import win32com.client
+except ImportError:
+    pythoncom = None
+    win32com = None
 
 
 
@@ -1718,12 +1727,12 @@ class Trader_Singleton:
     # ---------------------- TRADING LOGIC (Refactored) ----------------------
 
     def voice_readout_core(self):
-        logger.info("Started voice readout thread")
-        pythoncom.CoInitialize()
-        speaker = win32com.client.Dispatch("SAPI.SpVoice")
-        SVSFlagsAsync = 1 
-        SVSFPurgeBeforeSpeak = 2
+        """Speaks the P&L percentage of every open position so it can be
+        followed without watching the screen.
 
+        macOS uses the built-in `say` CLI; Windows keeps the original
+        SAPI.SpVoice COM implementation; other platforms park silently.
+        """
         def format_pct_pl_for_voice(pct_pl):
             if pct_pl is None:
                 return None
@@ -1737,6 +1746,65 @@ class Trader_Singleton:
                 formatted = formatted.replace("-", "minus ")
 
             return formatted
+
+        if sys.platform == "darwin":
+            self._voice_readout_macos(format_pct_pl_for_voice)
+        elif sys.platform == "win32" and pythoncom is not None and win32com is not None:
+            self._voice_readout_windows(format_pct_pl_for_voice)
+        else:
+            logger.info("Voice readout not supported on this platform; thread idle.")
+            while not self._stop_event.is_set():
+                self._stop_event.wait(timeout=1.0)
+
+    def _voice_readout_macos(self, format_pct_pl_for_voice):
+        logger.info("Started voice readout thread (macOS `say`)")
+        speaker_process = None
+
+        def stop_speaking():
+            nonlocal speaker_process
+            if speaker_process is not None and speaker_process.poll() is None:
+                try:
+                    speaker_process.terminate()
+                except Exception:
+                    pass
+            speaker_process = None
+
+        while not self._stop_event.is_set():
+            if not self._voice_announcement_enabled:
+                stop_speaking()
+                self._stop_event.wait(timeout=0.25)
+                continue
+
+            if self._position_data:
+                # `say` is busy while its process is still running; only
+                # queue a fresh readout once the previous one finished.
+                # Multiple arguments are spoken sequentially by one
+                # process, matching SAPI's queued async speech.
+                if speaker_process is None or speaker_process.poll() is not None:
+                    texts = []
+                    for token, data in list(self._position_data.items()):
+                        pct_pl = data.get("pct_pl")
+                        rounded_pl = format_pct_pl_for_voice(pct_pl)
+                        if rounded_pl is not None:
+                            texts.append(rounded_pl)
+                    if texts:
+                        try:
+                            speaker_process = subprocess.Popen(["say"] + texts)
+                        except Exception:
+                            speaker_process = None
+                            logger.warning("Voice readout: failed to start `say`")
+
+            # Wait for 1 second before evaluating again
+            self._stop_event.wait(timeout=1.0)
+
+        stop_speaking()
+
+    def _voice_readout_windows(self, format_pct_pl_for_voice):
+        logger.info("Started voice readout thread (SAPI)")
+        pythoncom.CoInitialize()
+        speaker = win32com.client.Dispatch("SAPI.SpVoice")
+        SVSFlagsAsync = 1
+        SVSFPurgeBeforeSpeak = 2
 
         while not self._stop_event.is_set():
             if not self._voice_announcement_enabled:
@@ -1757,7 +1825,7 @@ class Trader_Singleton:
                         rounded_pl = format_pct_pl_for_voice(pct_pl)
                         if rounded_pl is not None:
                             speaker.Speak(rounded_pl, SVSFlagsAsync)
-            
+
             # Wait for 1 second before evaluating again
             self._stop_event.wait(timeout=1.0)
     def stop_loss_book_profit_core(self, broker: BrokerInterface):

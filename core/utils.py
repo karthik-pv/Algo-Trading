@@ -5,6 +5,7 @@ import ijson
 import logging
 import csv
 import calendar
+import threading
 from time import sleep
 from datetime import datetime, time
 from typing import Generator, Dict, Any , List, Optional
@@ -664,7 +665,10 @@ def save_day_cash(trade_date, cash_balance, source=None):
         "source": str(source or "persisted"),
     }
     payload = {"version": 2, "entries": entries}
-    tmp_path = DAY_CASH_FILE + ".tmp"
+    # Unique temp name per write: concurrent /day_cash requests share
+    # this path, and a shared name makes one os.replace() delete the
+    # tmp file the other is about to move (Errno 2 on startup).
+    tmp_path = f"{DAY_CASH_FILE}.{os.getpid()}.{threading.get_ident()}.tmp"
     try:
         with open(tmp_path, "w", encoding="utf-8") as tmp_file:
             json.dump(payload, tmp_file, indent=2)

@@ -30,6 +30,7 @@ pycparser==2.22
 pyOpenSSL==25.1.0
 python-dateutil==2.9.0.post0
 python-dotenv==1.1.1
+pytz==2025.2
 python-engineio==4.12.3
 python-socketio==5.14.0
 redis==3.5.3
