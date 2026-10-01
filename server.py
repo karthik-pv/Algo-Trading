@@ -1213,11 +1213,13 @@ def Utilities():
     return redirect("/orders")
 
 
-# Audit page: Trade Execution Technical Report (click -> fill timing,
-# slippage, retries) with an Excel download.
+# System Audit page (tab "System Audit" in the nav bar): section 1 is
+# the Audit grid (Trade Execution Technical Report - click -> fill
+# timing, slippage, retries, Excel download); section 2, behind the
+# feed_lab_enabled flag, is the Feed Lab capture + report.
 @app.route("/audit")
 def audit_page():
-    logger.info("Rendering Audit page")
+    logger.info("Rendering System Audit page")
     return render_template("app.html", active_tab="audit")
 
 
@@ -1277,12 +1279,16 @@ def _audit_enrichment_loop():
 def api_audit():
     # Selected report date (?date=YYYY-MM-DD, defaults to today).
     date_str = request.args.get("date") or datetime.now().strftime("%Y-%m-%d")
+    # LIVE / PAPER bucket: paper and live executions are never mixed in
+    # one report view (defaults to LIVE).
+    mode = request.args.get("mode") or "LIVE"
     # Best-effort broker enrichment/import: today's executed orders add
     # fill prices and cover trades the logs/hooks never saw.
     orders = _audit_broker_orders()
     return jsonify({
         "records": trade_audit.build_snapshot_for_date(
-            date_str, broker_orders=orders, lot_size_lookup=_audit_lot_size
+            date_str, broker_orders=orders, lot_size_lookup=_audit_lot_size,
+            mode=mode,
         )
     })
 
@@ -1292,9 +1298,11 @@ def api_audit_download():
     try:
         import io
         date_str = request.args.get("date") or datetime.now().strftime("%Y-%m-%d")
+        mode = request.args.get("mode") or "LIVE"
         orders = _audit_broker_orders()
         rows = trade_audit.build_snapshot_for_date(
-            date_str, broker_orders=orders, lot_size_lookup=_audit_lot_size
+            date_str, broker_orders=orders, lot_size_lookup=_audit_lot_size,
+            mode=mode,
         )
         df = pd.DataFrame(rows, columns=trade_audit.COLUMNS)
         # Second header row shows prefix-free captions (the merged
@@ -1386,8 +1394,9 @@ def api_audit_log_report():
     overview, trade timing, error categories, tick-feed health and a
     verdict - generated from the datewise logs + audit records."""
     date_str = request.args.get("date") or datetime.now().strftime("%Y-%m-%d")
+    mode = request.args.get("mode") or "LIVE"
     try:
-        return jsonify(build_session_report(date_str))
+        return jsonify(build_session_report(date_str, mode=mode))
     except Exception as e:
         logger.exception("Session log report failed")
         return jsonify({"error": str(e)}), 500
@@ -1757,11 +1766,13 @@ def start_socket():
 
 # ============================ Feed Lab (self-contained) ============================
 # Dual-broker (KITE + M.Stock) tick capture + performance report.
-# To unplug: delete this whole block, core/feed_capture.py,
-# templates/feedlab.html, the Feed Lab nav line in templates/base.html,
-# and the FEED_LAB_ENABLED key in config/appconfig.json.
-# Setting FEED_LAB_ENABLED to "false" in appconfig.json hides the tab and
-# disables the routes without any code change.
+# The UI lives in the System Audit tab (Feed Lab section of
+# templates/app.html), behind the feed_lab_enabled flag.
+# To unplug: delete this whole block, core/feed_capture.py, the Feed Lab
+# section (markup, styles, script) in templates/app.html, and the
+# FEED_LAB_ENABLED key in config/appconfig.json.
+# Setting FEED_LAB_ENABLED to "false" in appconfig.json hides the section
+# and disables the routes without any code change.
 
 def _feed_lab_enabled():
     try:
@@ -1777,9 +1788,9 @@ def _feed_lab_nav():
 
 @app.route("/feedlab")
 def feedlab_page():
-    if not _feed_lab_enabled():
-        return redirect("/trade")
-    return render_template("feedlab.html", active_tab="feedlab")
+    # Feed Lab moved into the System Audit tab (app.html, Feed Lab
+    # section); the old standalone URL just lands there now.
+    return redirect("/audit")
 
 
 @app.route("/feed_compare/status")

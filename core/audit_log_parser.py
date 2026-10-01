@@ -342,6 +342,26 @@ def _group(events):
             token = str(payload.get("token", ""))
             clicks_by_token.setdefault(token, []).append(ts)
 
+    # Paper-flow clicks: every PAPER-mode buy logs BOTH "Received buy
+    # order from client" (BUY_CLICK, written before the mode branch in
+    # handle_buy_order) AND its own "Paper BUY recorded" receipt a
+    # moment later. The PAPER_BUY event owns that trade - if the
+    # BUY_CLICK also created a record it would be a phantom LIVE-tagged
+    # row (no exec data) and paper trades would leak into the LIVE
+    # view. Pre-scan the paper receipts so those clicks are skipped.
+    paper_buy_ts_by_token = {}
+    for ets, ekind, epayload in events:
+        if ekind == "PAPER_BUY":
+            paper_buy_ts_by_token.setdefault(
+                str(epayload.get("token", "")), []
+            ).append(ets)
+
+    def _owned_by_paper_buy(token, ts):
+        return any(
+            0 <= pt - ts <= EXEC_WINDOW
+            for pt in paper_buy_ts_by_token.get(str(token), [])
+        )
+
     def own_by_token(token, ts):
         """Record owning this timestamp: same token, latest click
         at or before ts."""
@@ -381,11 +401,13 @@ def _group(events):
 
     for ts, kind, payload in events:
         if kind == "BUY_CLICK":
+            token = str(payload.get("token", ""))
+            if _owned_by_paper_buy(token, ts):
+                continue
             # Collapse double-fires: a repeat click for the SAME
             # contract/strategy/mode within 2s is one trade intent
             # (the grid button re-emitted). Keep the first click -
             # that is the true button-press time.
-            token = str(payload.get("token", ""))
             dup = next(
                 (
                     r for r in reversed(records)
@@ -406,6 +428,7 @@ def _group(events):
                 "lots": payload.get("lots", ""),
                 "strategy": payload.get("strategy", ""),
                 "sell_mode": payload.get("SELL_MODE", ""),
+                "trade_mode": "LIVE",
                 "buy_click_ts": ts,
                 "first_attempt_ts": ts,
                 "retry_count": 0,
@@ -614,6 +637,7 @@ def _group(events):
                 "lots": payload.get("lots", ""),
                 "strategy": payload.get("strategy", ""),
                 "sell_mode": payload.get("sell_mode", ""),
+                "trade_mode": "PAPER",
                 "buy_click_ts": ts,
                 "buy_exec_ts": ts,
                 "ltp_click": payload.get("price"),
@@ -642,6 +666,7 @@ def _group(events):
                     "lots": payload.get("lots", ""),
                     "strategy": "",
                     "sell_mode": "",
+                    "trade_mode": "PAPER",
                     "retry_count": 0,
                     "retries": [],
                 }
@@ -655,6 +680,40 @@ def _group(events):
             continue
 
     return [r for r in records if r.get("buy_click_ts") or r.get("buy_exec_ts") or r.get("sell_exec_ts")]
+
+
+def retag_untagged(records, log_recs):
+    """Fold the trade_mode of log-reconstructed rows into matching
+    UNTAGGED records (persisted by app versions that predate mode
+    tagging - they would otherwise default to LIVE and paper trades
+    would show in the LIVE view). Same trade = same token or same
+    canonical symbol, first event within 10s. Records that already
+    carry a tag are authoritative - never overwritten."""
+    def _first_ts(r):
+        return (r.get("buy_click_ts") or r.get("buy_exec_ts")
+                or r.get("sell_trigger_ts") or r.get("sell_exec_ts"))
+
+    for log_rec in log_recs:
+        lr_ts = _first_ts(log_rec)
+        want_mode = log_rec.get("trade_mode")
+        if lr_ts is None or not want_mode:
+            continue
+        for r in records:
+            if r.get("trade_mode"):
+                continue
+            r_ts = _first_ts(r)
+            if r_ts is None or abs(r_ts - lr_ts) >= 10:
+                continue
+            token = str(r.get("token") or "")
+            same = (
+                (token and token == str(log_rec.get("token") or ""))
+                or (canonical_symbol(r.get("symbol"))
+                    == canonical_symbol(log_rec.get("symbol")))
+            )
+            if same:
+                r["trade_mode"] = want_mode
+                break
+    return records
 
 
 def parse_date_logs(date_str, logs_root=None):

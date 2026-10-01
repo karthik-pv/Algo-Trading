@@ -4,12 +4,12 @@ comparison.
 
 Self-contained feature. To unplug completely, delete:
   - core/feed_capture.py (this file)
-  - templates/feedlab.html
   - the "Feed Lab" block of routes in server.py (marked block)
-  - the Feed Lab nav line in templates/base.html
+  - the Feed Lab section (markup, styles, script) of the System Audit
+    tab in templates/app.html
   - the FEED_LAB_ENABLED key in config/appconfig.json
-The FEED_LAB_ENABLED flag alone hides the tab and disables the routes
-without any code change.
+The FEED_LAB_ENABLED flag alone hides the section and disables the
+routes without any code change.
 """
 
 import os

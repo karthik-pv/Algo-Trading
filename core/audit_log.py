@@ -20,7 +20,7 @@ from datetime import datetime
 
 from loguru import logger
 
-from core.utils import DATA_DIR
+from core.utils import DATA_DIR, fetch_from_json
 
 
 AUDIT_DIR = os.path.join(DATA_DIR, "audit")
@@ -49,6 +49,22 @@ def _display_symbol(symbol):
         return s
     name, mon, year, strike, opt = m.groups()
     return f"{name}{year[2:]}{mon.upper()}{int(float(strike))}{opt.upper()}"
+
+
+def _is_option_symbol(symbol, exchange=None):
+    """OPTIONS-ONLY guard for the report - the same logic the Buy/Sell
+    grids apply to positions (core.utils.is_option_instrument, which
+    keeps stocks, ETFs and futures out). One twist: the broker's dashed
+    spelling (NIFTY-29Sep2026-22600-PE) defeats the strike+CE/PE suffix
+    regex, so the canonical app spelling is checked as well."""
+    s = str(symbol or "").strip()
+    if not s:
+        return False
+    from core.utils import is_option_instrument
+    if is_option_instrument(symbol=s, exchange=exchange):
+        return True
+    from core.audit_log_parser import canonical_symbol
+    return is_option_instrument(symbol=canonical_symbol(s), exchange=exchange)
 
 
 def _fmt_num(value, decimals=2):
@@ -145,6 +161,22 @@ class TradeAudit:
         self._persist_lock = threading.Lock()
         self._persist_pending = threading.Event()
         self._load_today()
+
+    # -------------------------------------------------------------
+    # Trading mode
+    # -------------------------------------------------------------
+    @staticmethod
+    def _current_mode():
+        """The app's trading mode at record time, bucketed to the two
+        report views: PAPER vs everything that places real orders
+        (LIVE / SIMULATION / PLAYBACK - the same branch the trade
+        watcher uses). Paper and live executions must never be mixed
+        in the report, so every record is tagged as it is created."""
+        try:
+            mode = str(fetch_from_json("appconfig.json", "MODE") or "")
+        except Exception:
+            mode = ""
+        return "PAPER" if mode.strip().upper() == "PAPER" else "LIVE"
 
     # -------------------------------------------------------------
     # Persistence
@@ -257,6 +289,7 @@ class TradeAudit:
                 "lots": lots,
                 "strategy": strategy,
                 "sell_mode": sell_mode,
+                "trade_mode": self._current_mode(),
                 "buy_click_ts": now,
                 "ltp_click": ltp,
                 # First-attempt baseline for the retry-slippage metrics.
@@ -283,6 +316,7 @@ class TradeAudit:
                     "lots": lots,
                     "strategy": "",
                     "sell_mode": "",
+                    "trade_mode": self._current_mode(),
                     "retry_count": 1 if retried else 0,
                     "retries": [],
                 }
@@ -444,6 +478,12 @@ class TradeAudit:
                 continue
             if qty <= 0 or price <= 0 or not symbol:
                 continue
+            # OPTIONS-ONLY GUARD: the report tracks options exclusively -
+            # never import (or enrich from) futures, cash-segment stocks
+            # or ETFs traded outside the app. Same rule the Buy/Sell
+            # grids apply to positions.
+            if not _is_option_symbol(symbol, order.get("exchange")):
+                continue
             ts = pd.to_datetime(
                 order.get("timestamp"), errors="coerce",
                 dayfirst=True, format="mixed"
@@ -489,10 +529,13 @@ class TradeAudit:
             # Price enrichment: the nearest same-symbol record to this
             # order's timestamp gets the fill price the logs could not
             # capture (exchange ts vs receipt ts differ by ~1-2s).
+            # Broker-book prices are live-only - paper records must
+            # never receive them.
             sym_key = canonical_symbol(symbol)
             candidates = [
                 rec for rec in records
-                if canonical_symbol(rec.get("symbol")) == sym_key
+                if str(rec.get("trade_mode") or "LIVE").upper() != "PAPER"
+                and canonical_symbol(rec.get("symbol")) == sym_key
             ]
             best_rec, best_gap = None, None
             for rec in candidates:
@@ -542,6 +585,7 @@ class TradeAudit:
                     "lots": _lots_for(symbol, order),
                     "strategy": "",
                     "sell_mode": "",
+                    "trade_mode": "LIVE",
                     "buy_exec_ts": ts_epoch,
                     "ltp_exec": order["price"],
                     "buy_avg_ts": ts_epoch,
@@ -574,6 +618,7 @@ class TradeAudit:
                         "lots": _lots_for(symbol, order),
                         "strategy": "",
                         "sell_mode": "",
+                        "trade_mode": "LIVE",
                         "sell_trigger_ts": ts_epoch,
                         "sell_trigger_ltp": order["price"],
                         "sell_trigger_source": "IMPORTED",
@@ -813,7 +858,7 @@ class TradeAudit:
             self._persist()
 
     def build_snapshot_for_date(self, date_str, broker_orders=None,
-                                lot_size_lookup=None):
+                                lot_size_lookup=None, mode="LIVE"):
         """
         Report rows for a calendar date, merged from (best fidelity
         first, later sources deduplicated against earlier ones):
@@ -822,8 +867,16 @@ class TradeAudit:
         2. trades reconstructed from that date's session logs,
         3. today's broker order book (fills missing prices + imports
            trades the other sources never saw).
+
+        `mode` picks the trade bucket: "LIVE" (default - real order
+        paths: LIVE / SIMULATION / PLAYBACK) or "PAPER" - paper and
+        live executions are never mixed in one report.
         """
         from core.audit_log_parser import parse_date_logs, canonical_symbol
+
+        want_mode = str(mode or "LIVE").strip().upper()
+        if want_mode not in ("LIVE", "PAPER"):
+            want_mode = "LIVE"
 
         try:
             target = datetime.strptime(date_str, "%Y-%m-%d").date()
@@ -853,15 +906,27 @@ class TradeAudit:
                     or r.get("sell_trigger_ts") or r.get("sell_exec_ts"))
 
         try:
-            for log_rec in parse_date_logs(date_str):
+            from core.audit_log_parser import retag_untagged
+            log_recs = parse_date_logs(date_str)
+            # Untagged persisted rows (app versions before mode
+            # tagging) inherit the mode of their log-reconstructed
+            # twin - otherwise yesterday's paper trades would default
+            # into the LIVE view forever.
+            retag_untagged(base, log_recs)
+            for log_rec in log_recs:
                 lr_ts = _first_ts(log_rec)
                 match = next(
                     (
                         r for r in base
-                        if canonical_symbol(r.get("symbol"))
-                        == canonical_symbol(log_rec.get("symbol"))
-                        and lr_ts and _first_ts(r)
+                        if lr_ts and _first_ts(r)
                         and abs(_first_ts(r) - lr_ts) < 10
+                        and (
+                            (str(r.get("token") or "")
+                             and str(r.get("token"))
+                             == str(log_rec.get("token") or ""))
+                            or canonical_symbol(r.get("symbol"))
+                            == canonical_symbol(log_rec.get("symbol"))
+                        )
                     ),
                     None,
                 )
@@ -886,6 +951,28 @@ class TradeAudit:
                 self._merge_broker_orders(base, broker_orders, lot_size_lookup)
             except Exception as e:
                 logger.error(f"Audit: broker merge failed: {e}")
+
+        # OPTIONS-ONLY GUARD: the Trade Execution Technical Report must
+        # never pick up instruments other than options - the same rule
+        # the Buy/Sell grids apply to positions. Catches rows already
+        # persisted in older audit files (imported before the merge
+        # guard existed) and anything the other sources ever slip in.
+        # Unknown-symbol rows ("?" - app trade whose symbol was lost in
+        # a restart) stay: they are the app's own trades, never foreign
+        # instruments.
+        def _foreign(r):
+            s = str(r.get("symbol") or "").strip()
+            return bool(s) and s != "?" and not _is_option_symbol(s)
+
+        base = [r for r in base if not _foreign(r)]
+
+        # PAPER / LIVE bucket filter: untagged rows (older persisted
+        # files) count as LIVE - only real-order paths existed before
+        # the tagging existed.
+        base = [
+            r for r in base
+            if str(r.get("trade_mode") or "LIVE").strip().upper() == want_mode
+        ]
 
         base.sort(
             key=lambda r: r.get("buy_click_ts") or r.get("buy_exec_ts")

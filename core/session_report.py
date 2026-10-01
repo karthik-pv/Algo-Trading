@@ -22,6 +22,8 @@ import re
 from collections import Counter
 from datetime import datetime, time as dtime
 
+from loguru import logger
+
 from core.audit_log_parser import LOG_LINE_RE, parse_date_logs
 from core.utils import DATA_DIR, resolve_data_path, fetch_from_json
 
@@ -262,14 +264,24 @@ def _scan_logs(paths, win_start=None, win_end=None):
 
 def _audit_records(date_str):
     """Audit records for the date: the persisted audit file first (has
-    click-time capture), falling back to log reconstruction."""
+    click-time capture), falling back to log reconstruction. Untagged
+    records (persisted before mode tagging existed) are retagged from
+    their log-reconstructed twins so PAPER / LIVE never mix."""
     path = os.path.join(AUDIT_DIR, f"audit_{date_str}.json")
     if os.path.isfile(path):
         try:
             with open(path, "r", encoding="utf-8", errors="replace") as fh:
                 records = json.load(fh)
             if isinstance(records, list):
-                return [r for r in records if isinstance(r, dict)]
+                records = [r for r in records if isinstance(r, dict)]
+                try:
+                    from core.audit_log_parser import (
+                        parse_date_logs, retag_untagged,
+                    )
+                    retag_untagged(records, parse_date_logs(date_str))
+                except Exception as e:
+                    logger.error(f"Session report: mode retag failed: {e}")
+                return records
         except (OSError, ValueError):
             pass
     return parse_date_logs(date_str)
@@ -588,10 +600,12 @@ def _summary(stats, records, paths):
 _REPORT_CACHE = {}
 
 
-def build_session_report(date_str):
+def build_session_report(date_str, mode="LIVE"):
     """Build the Log Report dict for YYYY-MM-DD. Cached per (date,
-    file stamps) - the Audit tab refetches on every grid reload, and
-    rescanning a multi-MB session log each time would be wasteful."""
+    file stamps, mode) - the Audit tab refetches on every grid reload,
+    and rescanning a multi-MB session log each time would be wasteful.
+    `mode` buckets the trade records (LIVE / PAPER) so the session
+    report never mixes the two."""
     paths = _log_files_for(date_str)
     if not paths:
         return {
@@ -609,12 +623,21 @@ def build_session_report(date_str):
             stamps.append((p, st.st_mtime_ns, st.st_size))
         except OSError:
             continue
-    key = (date_str, tuple(stamps))
+    key = (date_str, mode, tuple(stamps))
     cached = _REPORT_CACHE.get(key)
     if cached is not None:
         return cached
 
     records = _audit_records(date_str)
+    # PAPER / LIVE bucket filter - untagged rows (older files) count as
+    # LIVE, matching the grid's convention.
+    want_mode = str(mode or "LIVE").strip().upper()
+    if want_mode not in ("LIVE", "PAPER"):
+        want_mode = "LIVE"
+    records = [
+        r for r in records
+        if str(r.get("trade_mode") or "LIVE").strip().upper() == want_mode
+    ]
     underlying, win_start, win_end = _trading_window(records)
     win = (win_start, win_end)
     stats = _scan_logs(paths, win_start, win_end)
