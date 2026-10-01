@@ -124,15 +124,82 @@ stop_app_chrome() {
 
 # Saved app-window bounds (written by the app page) so the window
 # reopens at the user's last position/size.
+_ws_num() { grep -oE "\"$1\": *-?[0-9]+" "$WS_FILE" 2>/dev/null | grep -oE -- '-?[0-9]+' | tail -1; }
 GEOM_ARGS=()
 WS_FILE="$PROJECT_DIR/data/window_state.json"
 if [ -f "$WS_FILE" ]; then
-    _ws_num() { grep -oE "\"$1\": *-?[0-9]+" "$WS_FILE" | grep -oE -- '-?[0-9]+' | tail -1; }
     WS_X=$(_ws_num x); WS_Y=$(_ws_num y); WS_W=$(_ws_num w); WS_H=$(_ws_num h)
     if [ -n "$WS_X" ] && [ -n "$WS_Y" ] && [ -n "$WS_W" ] && [ -n "$WS_H" ]; then
         GEOM_ARGS=("--window-position=${WS_X},${WS_Y}" "--window-size=${WS_W},${WS_H}")
     fi
 fi
+
+# ----------------------------------------------------------------
+# Focus-follows-mouse for the app window. On macOS an INACTIVE
+# window shows no hover cursor and swallows the first click (the
+# click only activates the window) - after working in TradingView
+# the first app click always went to focusing the window instead
+# of the button. While the mouse dwells inside the app window's
+# bounds this watcher activates Chrome via AppKit (no Accessibility
+# permission needed). Bounds come from the page's own
+# window_state.json - the same file the reopen path reads.
+# ----------------------------------------------------------------
+FOCUS_JXA='
+ObjC.import("AppKit");
+function run(argv) {
+    var pid = parseInt(argv[0]);
+    var ws = $.NSWorkspace.sharedWorkspace;
+    var front = ws.frontmostApplication;
+    if (front && front.processIdentifier === pid) return "FRONT";
+    var wx = parseFloat(argv[1]), wy = parseFloat(argv[2]);
+    var ww = parseFloat(argv[3]), wh = parseFloat(argv[4]);
+    if (!(ww > 0 && wh > 0)) return "NOBOUNDS";
+    var m = $.NSEvent.mouseLocation;
+    var scrH = $.NSScreen.mainScreen.frame.size.height;
+    var mx = m.x, myTop = scrH - m.y;
+    if (mx >= wx && mx <= wx + ww && myTop >= wy && myTop <= wy + wh)
+        return "INSIDE";
+    return "OUTSIDE";
+}
+'
+
+activate_app_by_pid() {
+    osascript -l JavaScript -e '
+ObjC.import("AppKit");
+function run(argv) {
+    var app = $.NSRunningApplication.runningApplicationWithProcessIdentifier(
+        parseInt(argv[0]));
+    return app.activateWithOptions(3) ? "ACTIVATED" : "FAILED";
+}' "$1" >/dev/null 2>&1 || true
+}
+
+focus_watch_loop() {
+    local inside=0 app_pid res
+    while server_alive; do
+        sleep 0.2
+        app_pid="$(app_chrome_main_pids | head -1)"
+        [ -z "$app_pid" ] && { inside=0; continue; }
+        res="$(osascript -l JavaScript -e "$FOCUS_JXA" "$app_pid" \
+            "$(_ws_num x)" "$(_ws_num y)" "$(_ws_num w)" "$(_ws_num h)" \
+            2>/dev/null || true)"
+        case "$res" in
+            INSIDE)
+                # Instant focus on the first detection (~0.2s) - the
+                # user prefers no dwell; a mouse pass-through will
+                # pull the window forward.
+                activate_app_by_pid "$app_pid"
+                ;;
+            *) inside=0 ;;
+        esac
+    done
+}
+
+FOCUS_WATCH_PID=""
+start_focus_watch() {
+    focus_watch_loop &
+    FOCUS_WATCH_PID=$!
+    disown
+}
 
 # Server already running (icon double-clicked): bring the app window
 # back and exit this extra instance - no second server. The response
@@ -191,6 +258,9 @@ server_alive() { kill -0 "$SERVER_PID" 2>/dev/null; }
 # just clears any residue. Guard-path instances never set SERVER_PID
 # and so never touch the session.
 cleanup() {
+    if [ -n "${FOCUS_WATCH_PID:-}" ]; then
+        kill "$FOCUS_WATCH_PID" 2>/dev/null
+    fi
     if [ -n "${SERVER_PID:-}" ]; then
         if server_alive; then
             kill -TERM "$SERVER_PID" 2>/dev/null
@@ -202,6 +272,10 @@ cleanup() {
 trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
+
+# Hover-focus tracking: activates the app window when the mouse
+# dwells inside it (self-guards while Chrome is not open yet).
+start_focus_watch
 
 # Watchdog: the server normally stops itself when the app window
 # closes (frontend socket disconnect with a short grace period). This
