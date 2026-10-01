@@ -27,6 +27,116 @@ trap 'rm -rf "$(dirname "$STAGING")"' EXIT
 mkdir -p "$STAGING/Contents/MacOS" "$STAGING/Contents/Resources"
 
 # ---------------------------------------------------------------- icon
+# Focus-watch Swift helper: compile once per build; the launcher runs
+# it for focus-follows-mouse. A failed build disables the feature
+# gracefully (the launcher skips it when the binary is absent).
+SWIFT_SRC="$(mktemp -d)/focus_watch.swift"
+cat > "$SWIFT_SRC" <<'SWIFT'
+import AppKit
+
+// Focus-follows-mouse: activates the Chrome app window the moment the
+// mouse hovers a VISIBLE part of it. Uses CGWindowList (a direct
+// window-server query - always fresh, no permissions, no AppKit
+// notification runloop needed). NSWorkspace.frontmostApplication is
+// intentionally avoided: in a bare CLI process it caches the startup
+// value (no distributed-notification runloop) and never updates.
+//
+// args: [1] = Chrome main pid
+
+let args = CommandLine.arguments
+guard args.count >= 2, let pid = Int32(args[1]) else { exit(1) }
+guard let chrome = NSRunningApplication(processIdentifier: pid) else {
+    // Not a GUI app (supervisor matched a transient process) - exit
+    // so the supervisor re-resolves the real Chrome pid.
+    FileHandle.standardError.write(("pid \(pid) is not a GUI app - exit\n").data(using: .utf8)!)
+    exit(1)
+}
+
+var lastState = ""
+
+let tsFmt: DateFormatter = {
+    let f = DateFormatter()
+    f.dateFormat = "HH:mm:ss.SSS"
+    return f
+}()
+
+func log(_ s: String) {
+    FileHandle.standardError.write(Data(("[\(tsFmt.string(from: Date()))] " + s + "\n").utf8))
+}
+
+func isAlive(_ p: Int32) -> Bool { kill(p, 0) == 0 }
+
+// Returns (ownerPid, ownerName, bounds) of the TOPMOST on-screen
+// window under the mouse.
+func topWindowUnderMouse() -> (pid: Int, name: String, bounds: CGRect)? {
+    guard let list = CGWindowListCopyWindowInfo(
+        [.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
+        as? [[String: Any]] else { return nil }
+    let m = NSEvent.mouseLocation                 // bottom-left origin
+    guard let screen = NSScreen.main?.frame else { return nil }
+    let myTop = screen.height - m.y               // convert to top-left
+    for w in list {
+        guard let owner = w[kCGWindowOwnerPID as String] as? Int,
+              let b = w[kCGWindowBounds as String] as? [String: Any],
+              let x = (b["X"] as? NSNumber)?.doubleValue,
+              let y = (b["Y"] as? NSNumber)?.doubleValue,
+              let wd = (b["Width"] as? NSNumber)?.doubleValue,
+              let ht = (b["Height"] as? NSNumber)?.doubleValue else { continue }
+        if wd <= 1 || ht <= 1 { continue }        // menu-bar extras etc.
+        if m.x >= x, m.x <= x + wd, myTop >= y, myTop <= y + ht {
+            let name = w[kCGWindowOwnerName as String] as? String ?? "?"
+            return (owner, name, CGRect(x: x, y: y, width: wd, height: ht))
+        }
+    }
+    return nil
+}
+
+func frontPid() -> Int {
+    Int(NSWorkspace.shared.frontmostApplication?.processIdentifier ?? -1)
+}
+
+log("helper start pid=\(pid) chromeHandle=ok")
+
+while isAlive(pid) {
+    if let top = topWindowUnderMouse(), top.pid == pid {
+        if lastState != "INSIDE" {
+            log("mouse over our topmost window (name=\(top.name) bounds=\(Int(top.bounds.minX)),\(Int(top.bounds.minY)) \(Int(top.bounds.width))x\(Int(top.bounds.height))) front=\(frontPid()) - activating")
+            lastState = "INSIDE"
+        }
+        if frontPid() != pid {
+            let ok = chrome.activate(options: [.activateIgnoringOtherApps])
+            // Verify after 120ms: did Chrome actually take focus?
+            // macOS 14+ throttles external activation - the first
+            // several calls report success but are ignored; the loop
+            // keeps trying until one lands.
+            let checkDeadline = Date().addingTimeInterval(0.12)
+            while Date() < checkDeadline { usleep(10_000) }
+            let nowFront = frontPid()
+            if nowFront != pid {
+                if lastState != "ACTIVATE_FAILED" {
+                    log("activation throttled by macOS - retrying until it lands")
+                    lastState = "ACTIVATE_FAILED"
+                }
+            } else if lastState != "ACTIVE" {
+                log("activation verified - chrome is front")
+                lastState = "ACTIVE"
+            }
+        }
+    } else {
+        if lastState != "OUTSIDE" { lastState = "OUTSIDE" }
+    }
+    usleep(10_000)  // 10ms - effectively instant, ~0 CPU
+}
+log("chrome gone - helper exit")
+SWIFT
+FOCUS_BIN="$(mktemp -d)/focus_watch"
+if swiftc -O "$SWIFT_SRC" -o "$FOCUS_BIN"; then
+    cp "$FOCUS_BIN" "$STAGING/Contents/MacOS/focus_watch"
+    chmod 755 "$STAGING/Contents/MacOS/focus_watch"
+else
+    echo "WARNING: swiftc failed - focus-follows-mouse will be disabled"
+fi
+
 ICONSET="$(mktemp -d)/AppIcon.iconset"
 mkdir -p "$ICONSET"
 for size in 16 32 128 256 512; do
@@ -93,14 +203,16 @@ frontend_alive() {
 }
 
 app_chrome_main_pids() {
-    # Main browser processes of the dedicated profile (helpers all
-    # carry --type=, the main process does not).
+    # Main browser process of the dedicated profile ONLY: it carries
+    # the --app= flag (helpers/crashpad never do). A looser match once
+    # returned a transient non-GUI process and the focus watcher
+    # monitored a dead pid.
     local pid cmd
     for pid in $(pgrep -f "user-data-dir=$CHROME_PROFILE" 2>/dev/null); do
         cmd="$(ps -o command= -p "$pid" 2>/dev/null)"
         case "$cmd" in
-            *--type=*) ;;
-            *"Google Chrome"*) echo "$pid" ;;
+            *--type=*|*--crashpad*|*--utility*|*--renderer*|*--gpu*) ;;
+            *"Google Chrome"*--app=*) echo "$pid" ;;
         esac
     done
 }
@@ -139,64 +251,35 @@ fi
 # window shows no hover cursor and swallows the first click (the
 # click only activates the window) - after working in TradingView
 # the first app click always went to focusing the window instead
-# of the button. While the mouse dwells inside the app window's
-# bounds this watcher activates Chrome via AppKit (no Accessibility
-# permission needed). Bounds come from the page's own
-# window_state.json - the same file the reopen path reads.
+# of the button.
+#
+# A tiny Swift helper (compiled at build time, below) polls the
+# mouse IN-PROCESS every 10ms and activates Chrome the instant the
+# cursor enters the window bounds - effectively zero delay, ~0.1%
+# CPU, no Accessibility permission. Bounds come from the page's own
+# window_state.json. The bash supervisor restarts the helper when
+# Chrome restarts (new pid).
 # ----------------------------------------------------------------
-FOCUS_JXA='
-ObjC.import("AppKit");
-function run(argv) {
-    var pid = parseInt(argv[0]);
-    var ws = $.NSWorkspace.sharedWorkspace;
-    var front = ws.frontmostApplication;
-    if (front && front.processIdentifier === pid) return "FRONT";
-    var wx = parseFloat(argv[1]), wy = parseFloat(argv[2]);
-    var ww = parseFloat(argv[3]), wh = parseFloat(argv[4]);
-    if (!(ww > 0 && wh > 0)) return "NOBOUNDS";
-    var m = $.NSEvent.mouseLocation;
-    var scrH = $.NSScreen.mainScreen.frame.size.height;
-    var mx = m.x, myTop = scrH - m.y;
-    if (mx >= wx && mx <= wx + ww && myTop >= wy && myTop <= wy + wh)
-        return "INSIDE";
-    return "OUTSIDE";
-}
-'
-
-activate_app_by_pid() {
-    osascript -l JavaScript -e '
-ObjC.import("AppKit");
-function run(argv) {
-    var app = $.NSRunningApplication.runningApplicationWithProcessIdentifier(
-        parseInt(argv[0]));
-    return app.activateWithOptions(3) ? "ACTIVATED" : "FAILED";
-}' "$1" >/dev/null 2>&1 || true
-}
-
-focus_watch_loop() {
-    local inside=0 app_pid res
+focus_supervisor_loop() {
+    local helper="$(dirname "$0")/focus_watch"
+    [ -x "$helper" ] || return 0
     while server_alive; do
-        sleep 0.2
+        local app_pid
         app_pid="$(app_chrome_main_pids | head -1)"
-        [ -z "$app_pid" ] && { inside=0; continue; }
-        res="$(osascript -l JavaScript -e "$FOCUS_JXA" "$app_pid" \
-            "$(_ws_num x)" "$(_ws_num y)" "$(_ws_num w)" "$(_ws_num h)" \
-            2>/dev/null || true)"
-        case "$res" in
-            INSIDE)
-                # Instant focus on the first detection (~0.2s) - the
-                # user prefers no dwell; a mouse pass-through will
-                # pull the window forward.
-                activate_app_by_pid "$app_pid"
-                ;;
-            *) inside=0 ;;
-        esac
+        if [ -n "$app_pid" ]; then
+            # Blocks while Chrome lives; returns when it restarts.
+            "$helper" "$app_pid" "$PROJECT_DIR/data/window_state.json" \
+                >>"$LOG_DIR/focus_watch.log" 2>&1
+            sleep 1
+        else
+            sleep 1
+        fi
     done
 }
 
 FOCUS_WATCH_PID=""
 start_focus_watch() {
-    focus_watch_loop &
+    focus_supervisor_loop &
     FOCUS_WATCH_PID=$!
     disown
 }
