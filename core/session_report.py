@@ -16,11 +16,13 @@ Line severity is carried by a leading marker the UI colours:
 """
 
 import ast
+import bisect
+import glob
 import json
 import os
 import re
 from collections import Counter
-from datetime import datetime, time as dtime
+from datetime import datetime, time as dtime, timedelta
 
 from loguru import logger
 
@@ -520,6 +522,201 @@ def _health_section(stats):
     return {"title": "Connection & health", "lines": lines}
 
 
+def _broker_comparison_section(date_str):
+    """
+    Daily KITE vs MSTOCK feed verdict for the Audit tab, built from the
+    Feed Lab's capture files (data/feed_compare/<date>/). Present only
+    on days both feeds were captured - skipped otherwise so it never
+    duplicates the single-broker sampler stats in 'Tick feed & speed'.
+
+    Answers, with numbers: which feed delivered more, which reported
+    price changes FIRST (the latency a trade decision feels), and how
+    closely the two agree.
+    """
+    base = os.path.join(DATA_DIR, "feed_compare", date_str)
+    if not os.path.isdir(base):
+        return None
+
+    import pandas as pd
+
+    feeds = {}
+    for broker in ("kite", "mstock"):
+        paths = [
+            p for p in sorted(glob.glob(os.path.join(base, f"{broker}_*.csv")))
+            if "instruments" not in os.path.basename(p)
+        ]
+        if not paths:
+            continue
+        try:
+            df = pd.read_csv(paths[-1])   # latest capture of the day
+        except Exception as e:
+            logger.warning(f"Broker verdict: could not read {paths[-1]}: {e}")
+            continue
+        if "recv_iso" not in df.columns or "ltp" not in df.columns:
+            continue
+        df["ts"] = pd.to_datetime(df["recv_iso"], errors="coerce")
+        df = df.dropna(subset=["ts", "ltp"]).sort_values("ts")
+        if len(df) < 2:
+            continue
+        feeds[broker.upper()] = df
+
+    if not feeds:
+        return None
+
+    lines = []
+    table_rows = []
+
+    for broker in ("KITE", "MSTOCK"):
+        df = feeds.get(broker)
+        if df is None:
+            table_rows.append([broker, "not captured", "-", "-", "-", "-"])
+            continue
+        span_min = (df["ts"].max() - df["ts"].min()).total_seconds() / 60
+        rate = len(df) / span_min if span_min > 0 else 0
+        gaps = df["ts"].diff().dt.total_seconds().dropna()
+        table_rows.append([
+            broker,
+            f"{len(df):,}",
+            f"{rate:.0f}/min" if span_min > 0 else "-",
+            f"{gaps.quantile(0.5):.2f}s" if len(gaps) else "-",
+            f"{gaps.quantile(0.95):.2f}s" if len(gaps) else "-",
+            f"{gaps.max():.0f}s" if len(gaps) else "-",
+        ])
+
+    table = {
+        "headers": ["Feed", "Ticks", "Rate", "Gap p50", "Gap p95", "Max gap"],
+        "rows": table_rows,
+    }
+
+    verdict_lines = []
+
+    # --- LTP agreement (per shared symbol, 2s pairing) ---------------
+    agreements = []
+    if "KITE" in feeds and "MSTOCK" in feeds:
+        for sym in set(feeds["KITE"]["symbol"].unique()) & set(feeds["MSTOCK"]["symbol"].unique()):
+            kf = feeds["KITE"][feeds["KITE"]["symbol"] == sym][["ts", "ltp"]]
+            mf = feeds["MSTOCK"][feeds["MSTOCK"]["symbol"] == sym][["ts", "ltp"]]
+            mf_t = mf["ts"].tolist()
+            mf_p = mf["ltp"].tolist()
+            matched = agree = 0
+            for ts, px in zip(kf["ts"], kf["ltp"]):
+                j = bisect.bisect_left(mf_t, ts - timedelta(seconds=2))
+                while j < len(mf_t) and mf_t[j] <= ts + timedelta(seconds=2):
+                    if mf_p[j] == px:
+                        matched += 1
+                        agree += 1
+                        break
+                    j += 1
+                else:
+                    continue
+            if matched:
+                agreements.append(agree / matched * 100)
+
+    # --- Feed latency: cross-correlation of the price series --------
+    # Unbiased method: resample both series to a 100ms grid (ffill),
+    # roll MSTOCK by offsets in +-1s and find the offset that
+    # maximises agreement with KITE. Sign convention (verified with a
+    # synthetic jump): a POSITIVE best offset means MSTOCK's OLDER
+    # data matches KITE's current data - i.e. MSTOCK printed the
+    # price first - so MSTOCK leads. Event-matching ("same price seen
+    # earlier") is biased by dense feeds' quote churn and is not used.
+    if "KITE" in feeds and "MSTOCK" in feeds:
+        import numpy as np
+        offsets = []
+        shared = sorted(
+            set(feeds["KITE"]["symbol"].unique())
+            & set(feeds["MSTOCK"]["symbol"].unique())
+        )
+        for sym in shared:
+            kf = feeds["KITE"][feeds["KITE"]["symbol"] == sym].set_index("ts")["ltp"]
+            mf = feeds["MSTOCK"][feeds["MSTOCK"]["symbol"] == sym].set_index("ts")["ltp"]
+            start = max(kf.index.min(), mf.index.min()).round("100ms")
+            end = min(kf.index.max(), mf.index.max()).round("100ms")
+            grid = pd.date_range(start, end, freq="100ms")
+            if len(grid) < 50:
+                continue
+            ka = kf.reindex(grid, method="ffill").to_numpy()
+            ma = mf.reindex(grid, method="ffill").to_numpy()
+            best_off, best_agree = None, -1.0
+            for off in range(-10, 11):        # +-1.0s in 100ms steps
+                ms = np.roll(ma, off)
+                v = slice(abs(off), len(grid) - abs(off)) if off else slice(None)
+                agree = float(np.mean(np.abs(ka[v] - ms[v]) <= 0.05))
+                if agree > best_agree:
+                    best_agree, best_off = agree, off
+            if best_off is not None:
+                offsets.append((best_off * 0.1, best_agree))
+
+        if offsets:
+            offsets.sort()
+            median_off = offsets[len(offsets) // 2][0]
+            lines.append(
+                f"• Feed latency (cross-correlation of LTP series, "
+                f"100ms grid, {len(offsets)} instrument(s)):"
+            )
+            for off, agree in offsets:
+                if off > 0.05:
+                    lines.append(
+                        f"   MSTOCK leads by ~{off:.1f}s "
+                        f"(agreement {agree * 100:.1f}%)"
+                    )
+                elif off < -0.05:
+                    lines.append(
+                        f"   KITE leads by ~{-off:.1f}s "
+                        f"(agreement {agree * 100:.1f}%)"
+                    )
+                else:
+                    lines.append(
+                        f"   effectively simultaneous ({agree * 100:.1f}%)"
+                    )
+            med = median_off
+            if med > 0.05:
+                verdict_lines.append(
+                    f"✔ MSTOCK is the lower-latency feed "
+                    f"(price info leads KITE by ~{med:.1f}s)"
+                )
+            elif med < -0.05:
+                verdict_lines.append(
+                    f"✔ KITE is the lower-latency feed "
+                    f"(price info leads MSTOCK by ~{-med:.1f}s)"
+                )
+            else:
+                verdict_lines.append("• Feed latencies are effectively equal")
+        else:
+            lines.append("• Not enough aligned data for latency comparison")
+    else:
+        lines.append(
+            "• Only one feed captured - latency comparison needs both "
+            "brokers' Feed Lab captures"
+        )
+
+    if agreements:
+        mean_agree = sum(agreements) / len(agreements)
+        lines.append(
+            f"• LTP agreement across feeds: {mean_agree:.1f}% "
+            f"({len(agreements)} instrument(s), 2s pairing)"
+        )
+        verdict_lines.append(
+            f"✔ Feeds agree on price ({mean_agree:.1f}% of paired LTPs identical)"
+        )
+
+    k, m_ = feeds.get("KITE"), feeds.get("MSTOCK")
+    if k is not None and m_ is not None:
+        ratio = len(m_) / max(len(k), 1)
+        if ratio > 1.15:
+            verdict_lines.append(
+                f"• MSTOCK streamed {ratio:.1f}x the tick volume "
+                f"(denser quote updates)"
+            )
+        elif ratio < 0.85:
+            verdict_lines.append(
+                f"• KITE streamed {1 / ratio:.1f}x the tick volume this session"
+            )
+
+    lines.extend(verdict_lines)
+    return {"title": "Broker verdict (KITE vs MSTOCK)", "lines": lines, "table": table}
+
+
 def _verdict_section(stats, records):
     lines = []
     issues = []
@@ -647,9 +844,11 @@ def build_session_report(date_str, mode="LIVE"):
         _trade_section(records),
         _error_section(stats),
         _feed_section(stats, date_str, win),
+        _broker_comparison_section(date_str),
         _health_section(stats),
         _verdict_section(stats, records),
     ]
+    sections = [s for s in sections if s]
     report = {
         "date": date_str,
         "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
