@@ -636,61 +636,28 @@ class KiteAdapter(BrokerInterface):
             )
 
             # =========================================================
-            # EXIT ORDER FOR SELL TYPES U / D (mirrors the MStock flow)
-            #   U: SELL LIMIT at LTP + target immediately (no fill wait)
-            #   D: SELL LIMIT at executed buy price + target (fill-accurate)
-            # Sell Type T places nothing - the TP/SL watcher manages it.
+            # EXIT ORDER FOR SELL TYPES U / D (fill-gated)
+            #   The resting SELL LIMIT is placed ONLY once the BUY is
+            #   confirmed filled - via the on_order_update event (or
+            #   the send_pending sweeper). Registering the intent and
+            #   waiting replaces the old place-exit-immediately flow,
+            #   which sent an orphaned NAKED SHORT exit when the RMS
+            #   rejected the buy (2026-10-01, 181k span margin).
+            #   U anchors the click-time LTP, D the executed fill.
+            #   Sell Type T places nothing - the TP/SL watcher manages.
             # =========================================================
             if mode == "LIVE" and sell_mode in ("U", "D"):
-                if sell_mode == "D":
-                    buy_price = self.fetch_order_executed_price(order_id)
-                    if buy_price is None:
-                        buy_price = float(ltp)
-                        logger.warning(
-                            f"Executed price unavailable for order "
-                            f"{order_id}; using buy LTP {buy_price} "
-                            f"for the immediate sell"
-                        )
-                    anchor_price = buy_price
-                else:  # U
-                    anchor_price = float(ltp)
-
-                # Exit target: PERCENT of the anchor when the config
-                # runs PCT comparison (symmetric with the percent
-                # stop-loss), additive POINTS in PNT mode. Floored to
-                # the instrument tick (SELL side - never overshoot).
-                if target_profit_pct:
-                    exit_price = round_to_tick(
-                        anchor_price * (1 + float(target_profit_pct) / 100.0),
-                        tick,
-                        up=False
-                    )
-                    logger.info(
-                        f"Placing {sell_mode} exit at {exit_price} "
-                        f"(anchor {anchor_price} + {target_profit_pct}%)"
-                    )
-                    self.place_exit_limit(
-                        trading_symbol,
-                        instrument_token,
-                        grid_qty,
-                        exchange,
-                        exit_price
-                    )
-                elif target_profit > 0:
-                    exit_price = anchor_price + target_profit
-                    self.place_exit_limit(
-                        trading_symbol,
-                        instrument_token,
-                        grid_qty,
-                        exchange,
-                        exit_price
-                    )
-                else:
-                    logger.warning(
-                        f"Sell Mode {sell_mode} with target_profit "
-                        f"{target_profit}; skipping the immediate exit "
-                        f"order (watcher will manage the position)."
-                    )
+                self._trader.register_pending_exit(
+                    broker="KITE",
+                    order_id=order_id,
+                    mode=sell_mode,
+                    anchor_ltp=ltp,
+                    strategy=strategy,
+                    trading_symbol=trading_symbol,
+                    instrument_token=instrument_token,
+                    lots=grid_qty,
+                    exchange=exchange,
+                )
             elif mode == "LIVE" and sell_mode == "T":
                 logger.debug("Waiting for Trigger to raise the Sell order")
 
@@ -702,14 +669,19 @@ class KiteAdapter(BrokerInterface):
             return order_id
         except Exception as e:
             logger.error(f"Error in kite buy order {e}")
-            self._trader.frontend_data_socket.emit('status_message', {"success": False, "message": "Error placing order..."})
+            # Re-raise so handle_buy_order's unified fallbacks run
+            # (insufficient-funds smart retry, MA200 block, failure
+            # emit). The adapter no longer toasts - trade_logic owns
+            # UI messaging for order failures, exactly like the
+            # MStock adapter's error contract.
+            raise
 
     def buy_sell_units(self, trading_symbol, instrument_token, quantity, exchange, ltp, mode="", sell_mode="", target_profit=0, strategy="", target_profit_pct=None):
-        """Sell Type U entry point: BUY + immediate SELL LIMIT at LTP + target.
+        """Sell Type U entry point: BUY + fill-gated SELL LIMIT exit.
 
-        Mirrors MStock's buy_sell_units - the exit is placed aggressively
-        before the fill price is known, so the order sits in the sell
-        queue while the premium is still spiking.
+        The exit intent is registered at buy time; the resting SELL
+        LIMIT is placed once the BUY fill is confirmed (U anchors the
+        click-time LTP) - see register_pending_exit in trade_logic.
         """
         return self.buy_units(
             trading_symbol,
@@ -781,6 +753,48 @@ class KiteAdapter(BrokerInterface):
             return None
         except Exception as e:
             logger.error(f"Kite fetch_order_executed_price error for {order_id}: {e}")
+            return None
+
+    def fetch_order_status(self, order_id):
+        """Current status string of a Kite order (pending-exit sweeper)."""
+        try:
+            history = self.kite.order_history(str(order_id))
+            return str(history.get("status", "") or "").upper() or None
+        except Exception as e:
+            logger.error(f"Kite fetch_order_status error for {order_id}: {e}")
+            return None
+
+    def fetch_order_margin(self, trading_symbol, exchange, quantity, price, transaction_type="BUY"):
+        """
+        Required margin for a hypothetical order via Kite's
+        order.margins API (considers existing positions and open
+        orders) - the same math the RMS applies.
+
+        Returns the total blocked margin as a float, or None when the
+        API errors - callers must fail open.
+        """
+        try:
+            order_params = [{
+                "exchange": exchange,
+                "tradingsymbol": trading_symbol,
+                "transaction_type": transaction_type,
+                "variety": self.kite.VARIETY_REGULAR,
+                "product": self.kite.PRODUCT_MIS,
+                "order_type": self.kite.ORDER_TYPE_LIMIT,
+                "quantity": int(quantity),
+                "price": float(price),
+                "trigger_price": 0,
+            }]
+            result = self.kite.order_margins(order_params)
+            orders = (result or {}).get("orders") or []
+            if not orders:
+                return None
+            margin = orders[0].get("total")
+            if margin is None:
+                margin = orders[0].get("premium")
+            return float(margin) if margin is not None else None
+        except Exception as e:
+            logger.warning(f"Kite order margin check failed for {trading_symbol}: {e}")
             return None
 
     
@@ -1088,6 +1102,23 @@ class KiteAdapter(BrokerInterface):
             except Exception as e:
                 logger.error(f"Failed to refresh positions after Kite order update: {e}", exc_info=True)
                 return
+
+            # Fill-gated U/D exits: resolve the pending exit intent for
+            # this order. COMPLETE places the resting exit (D anchors
+            # the event's average price), REJECTED drops it - both are
+            # safe no-ops when no intent is registered. Failures here
+            # must not break the subscription refresh below.
+            try:
+                update_order_id = str(data.get("order_id") or "")
+                if update_order_id:
+                    self._trader.resolve_pending_exit(
+                        broker="KITE",
+                        order_id=update_order_id,
+                        status=str(data.get("status") or ""),
+                        fill_price=data.get("average_price"),
+                    )
+            except Exception as e:
+                logger.error(f"Failed to resolve pending exit after order update: {e}", exc_info=True)
 
             subscribe_instruments = self._trader.get_relevant_instruments_to_track()
             if subscribe_instruments:

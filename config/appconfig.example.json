@@ -59,7 +59,8 @@
     "cash": {
         "CASH_BALANCE_PAPER_TRADING": "100000",
         "FALLBACK_CASH_BALANCE": "10000",
-        "POSITION_PNL_LOG_FREQ": "60"
+        "POSITION_PNL_LOG_FREQ": "60",
+        "PRE_MARGIN_CHECK_NEEDED": "false"
     },
     "charges": {
         "BROKERAGE_PER_ORDER": "5",

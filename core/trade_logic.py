@@ -64,6 +64,20 @@ class Trader_Singleton:
     _tick_counter = 0
 
     # ---------------------------------------------------------
+    # Pending U/D exit intents (fill-gated resting exits).
+    # A U/D buy registers the intent; the resting SELL LIMIT is
+    # placed ONLY once the BUY is confirmed filled - via Kite's
+    # on_order_update event, MStock's post-buy executed-price poll,
+    # or the send_pending sweeper for late fills / missed events.
+    # Placing the exit before the fill is known is what let a
+    # RMS-rejected BUY go out as a naked short option (2026-10-01
+    # SENSEX 3100CE: the orphaned exit needed Rs.181k span margin).
+    # ---------------------------------------------------------
+    _pending_exit_intents = {}
+    _pending_exit_lock = threading.Lock()
+    _PENDING_EXIT_MAX_AGE_SECONDS = 900
+
+    # ---------------------------------------------------------
     # Per-instrument hourly tick sampler. Both websocket feeds call
     # record_tick() per wire tick; counts land in clock-hour buckets
     # and are logged + persisted at every hour boundary. Motivation:
@@ -442,6 +456,23 @@ class Trader_Singleton:
         """
         return "OFFLINE ORDERS ARE NOT ALLOWED" in str(error_message).upper()
 
+    @staticmethod
+    def _is_fund_limit_rejection(error_message):
+        """
+        True when a broker rejected an order for insufficient funds.
+
+        Matches both RMS text formats:
+          mStock: "...FUND LIMIT INSUFFICIENT, AVAILABLE FUND =<X>,..."
+          Kite:   "Insufficient funds. Margin required: 1119.00.
+                   Margin available: 1025.30. Add 93.70 to place this
+                   order."
+        """
+        msg = str(error_message).upper()
+        return (
+            "FUND LIMIT INSUFFICIENT" in msg
+            or ("INSUFFICIENT FUNDS" in msg and "MARGIN REQUIRED" in msg)
+        )
+
     def _smart_retry_lots(self, error_message, asked_lots):
         """
         Size a fund-rejection retry from the RMS shortfall numbers instead
@@ -459,6 +490,12 @@ class Trader_Singleton:
         versus one-at-a-time rejections (the RMS wanted only Rs.29 /
         Rs.157 / Rs.41 more while a whole lot was dropped each time).
 
+        Kite's rejection text carries its own numbers:
+          "Insufficient funds. Margin required: 1119.00.
+           Margin available: 1025.30. Add 93.70 to place this order."
+        Margin required scales linearly with quantity for option buys
+        (premium + charges), so the same per-lot math applies.
+
         Returns:
             >0  lots the RMS should accept
              0  even one lot cannot pass - caller must fail fast
@@ -466,6 +503,36 @@ class Trader_Singleton:
                 the decrement-by-one loop
         """
         try:
+            # Kite format first: margin required/available for the
+            # rejected order. The strict number pattern keeps the
+            # sentence period out of the capture ("Margin required:
+            # 1119.00." -> "1119.00", not "1119.00.").
+            req_match = re.search(
+                r"MARGIN REQUIRED:\s*(\d+(?:\.\d+)?)", error_message, re.IGNORECASE
+            )
+            avail_match = re.search(
+                r"MARGIN AVAILABLE:\s*(\d+(?:\.\d+)?)", error_message, re.IGNORECASE
+            )
+            if req_match and avail_match and asked_lots > 0:
+                margin_required = float(req_match.group(1))
+                available_fund = float(avail_match.group(1))
+                if margin_required <= 0:
+                    return -1
+
+                per_lot_requirement = margin_required / asked_lots
+                # Small cushion for tick-to-tick drift between the
+                # rejection and the retry reaching the RMS again.
+                affordable = int(
+                    (available_fund * 0.995) // per_lot_requirement
+                )
+
+                # Rounding could land on the asked count; the order just
+                # failed at that size, so never retry at or above it.
+                if affordable >= asked_lots:
+                    affordable = asked_lots - 1
+
+                return affordable
+
             available_match = re.search(r"AVAILABLE FUND\s*=\s*([\d.]+)", error_message)
             span_match = re.search(r"SPAN & EXPOSURE FOR ORDER\s*=\s*([\d.]+)", error_message)
             if not available_match or not span_match or asked_lots <= 0:
@@ -490,6 +557,99 @@ class Trader_Singleton:
         except Exception as e:
             logger.debug(f"Smart retry lot calculation failed: {e}")
             return -1
+
+    def _pre_margin_check_enabled(self):
+        """PRE_MARGIN_CHECK_NEEDED config toggle (hot-reloadable)."""
+        return str(
+            fetch_from_json("appconfig.json", "PRE_MARGIN_CHECK_NEEDED") or ""
+        ).strip().lower() in ("true", "1", "yes", "on")
+
+    def _pre_trade_margin_check(self, order_details, ltp):
+        """
+        Right-size order_details["lots"] against the broker's own margin
+        math (Kite order.margins - considers positions and open orders)
+        BEFORE the order goes out, so short-funds rejections never
+        round-trip. Fails open: any API error leaves the lots untouched
+        and the insufficient-funds retry remains the safety net.
+        """
+        trading_symbol = order_details.get("tradingsymbol")
+        asked_lots = int(order_details.get("lots") or 0)
+        if not trading_symbol or asked_lots <= 0:
+            return
+
+        # Mirror the adapter's order pricing: a LIMIT at LTP + the
+        # market-protection buffer is what the RMS actually quotes.
+        try:
+            order_price = float(ltp) + compute_limit_margin(ltp)
+        except (TypeError, ValueError):
+            order_price = float(ltp or 0)
+
+        try:
+            contract = self._five_weekly_option_contracts[
+                order_details["token"]
+            ]
+            lot_size = int(contract.get("lotsize") or contract.get("lot_size") or 0)
+        except (KeyError, TypeError, ValueError):
+            lot_size = 0
+        if lot_size <= 0:
+            return
+
+        # Mirror the adapter's order-quantity semantics: MCX orders are
+        # placed in LOTS (the margin engine charges price x lot_size x
+        # lots); NFO/BFO options are placed in units (lots x lot_size).
+        # order.margins quotes against the same quantity the RMS sees.
+        order_quantity = asked_lots if self._exchange == "MCX" else asked_lots * lot_size
+
+        required = self._broker.fetch_order_margin(
+            trading_symbol,
+            self._exchange,
+            order_quantity,
+            order_price,
+        )
+        if not required or required <= 0:
+            return  # API unavailable - fail open
+
+        available = float(self._fund_summary.get("cash_balance", 0) or 0)
+        per_lot = float(required) / asked_lots
+        affordable = (
+            int((available * 0.995) // per_lot) if per_lot > 0 else asked_lots
+        )
+
+        if affordable >= asked_lots:
+            logger.debug(
+                f"Pre-margin check OK for {trading_symbol}: "
+                f"{required} required for {asked_lots} lot(s), "
+                f"{available} available"
+            )
+            return
+
+        if affordable <= 0:
+            logger.warning(
+                f"Pre-margin check: insufficient funds even for 1 lot of "
+                f"{trading_symbol} (required {required}, available {available})"
+            )
+            self.frontend_data_socket.emit('buy_order_result', {
+                "success": False,
+                "tradingsymbol": trading_symbol,
+                "lots": 0,
+                "error": "Insufficient funds even for 1 lot"
+            })
+            order_details["lots"] = 0
+            return
+
+        logger.warning(
+            f"Pre-margin check: right-sizing {trading_symbol} from "
+            f"{asked_lots} to {affordable} lot(s) (required {required}, "
+            f"available {available})"
+        )
+        self.frontend_data_socket.emit('status_message', {
+            "success": False,
+            "message": (
+                f"Insufficient funds for {asked_lots} lots of "
+                f"{trading_symbol} - buying {affordable} instead"
+            )
+        })
+        order_details["lots"] = affordable
 
     def _should_log_with_frequency(self, channel: str = "default") -> bool:
         # Fetched per call so POSITION_PNL_LOG_FREQ edits apply without a restart.
@@ -638,6 +798,199 @@ class Trader_Singleton:
         # 618 and silently give away a full tick).
         tick = 0.05
         return round(int(raw / tick + 1e-9) * tick, 2)
+
+    # =========================================================
+    # PENDING U/D EXIT INTENTS (fill-gated resting exits)
+    # =========================================================
+
+    def register_pending_exit(self, broker, order_id, mode, anchor_ltp,
+                              strategy, trading_symbol, instrument_token,
+                              lots, exchange):
+        """
+        Record the intent to place the resting SELL LIMIT exit for a
+        U/D buy. Called by the adapters right after the BUY order is
+        accepted; the exit itself is placed by resolve_pending_exit()
+        once the fill is confirmed.
+        """
+        if not order_id:
+            logger.warning(
+                f"No order id for the {trading_symbol} buy - cannot "
+                f"register the {mode} exit intent (watcher will manage)"
+            )
+            return
+        key = f"{broker}:{order_id}"
+        with self._pending_exit_lock:
+            self._pending_exit_intents[key] = {
+                "broker": broker,
+                "order_id": str(order_id),
+                "mode": mode,
+                "anchor_ltp": float(anchor_ltp or 0),
+                "strategy": strategy,
+                "trading_symbol": trading_symbol,
+                "instrument_token": str(instrument_token),
+                "lots": int(lots or 0),
+                "exchange": exchange,
+                "registered_ts": time.time(),
+            }
+        logger.info(
+            f"Pending exit intent registered: {trading_symbol} "
+            f"{lots} lot(s) mode {mode} [{key}]"
+        )
+
+    def resolve_pending_exit(self, broker, order_id, status, fill_price=None):
+        """
+        Resolve a pending U/D exit intent for a BUY order.
+
+        COMPLETE      -> place the resting exit (D anchors the executed
+                         fill price, U the click-time LTP)
+        REJECTED/     -> drop the intent and alert; the buy never
+        CANCELLED        happened, so an exit would go out NAKED SHORT
+        OPEN/working  -> keep waiting (non-terminal)
+        """
+        key = f"{broker}:{order_id}"
+        with self._pending_exit_lock:
+            intent = self._pending_exit_intents.get(key)
+        if not intent:
+            return
+
+        st = str(status or "").upper()
+
+        if st in ("REJECTED", "CANCELED", "CANCELLED"):
+            with self._pending_exit_lock:
+                self._pending_exit_intents.pop(key, None)
+            logger.warning(
+                f"Pending exit dropped - buy {order_id} for "
+                f"{intent['trading_symbol']} ended {st} (an exit would "
+                f"be naked short)"
+            )
+            try:
+                self.frontend_data_socket.emit('status_message', {
+                    "success": False,
+                    "message": (
+                        f"Buy for {intent['trading_symbol']} was {st} - "
+                        f"no position opened, exit leg skipped."
+                    )
+                })
+            except Exception:
+                pass
+            return
+
+        if st not in ("COMPLETE", "TRADED"):
+            # Non-terminal (OPEN / VALIDATED / ...) - keep waiting for
+            # a terminal event or the sweeper.
+            return
+
+        with self._pending_exit_lock:
+            intent = self._pending_exit_intents.pop(key, None)
+        if not intent:
+            return
+
+        # Anchor: D mode is fill-accurate; U mode stays on the
+        # click-time LTP. Fall back to order history when the event
+        # carried no average price.
+        anchor = intent["anchor_ltp"]
+        if intent["mode"] == "D":
+            fill = float(fill_price) if fill_price else None
+            if not fill:
+                try:
+                    fill = self._broker.fetch_order_executed_price(
+                        intent["order_id"]
+                    )
+                except Exception as fetch_error:
+                    logger.warning(
+                        f"Executed-price fetch failed for {key}: "
+                        f"{fetch_error}"
+                    )
+            if fill:
+                anchor = float(fill)
+            else:
+                logger.warning(
+                    f"Executed price unavailable for buy {key}; using "
+                    f"click LTP {anchor} for the D exit anchor"
+                )
+
+        exit_price = self._exit_target_price(anchor, intent["strategy"])
+        if exit_price <= 0:
+            logger.warning(
+                f"No exit target computable for {intent['trading_symbol']} "
+                f"({intent['strategy']}) at anchor {anchor} - dropping the "
+                f"pending exit; the TP/SL watcher will manage the position."
+            )
+            return
+
+        try:
+            placed = self._broker.place_exit_limit(
+                intent["trading_symbol"],
+                intent["instrument_token"],
+                intent["lots"],
+                intent["exchange"],
+                exit_price,
+            )
+        except Exception as place_error:
+            placed = None
+            logger.error(
+                f"Pending exit placement failed for {key}: {place_error}"
+            )
+        if placed is None:
+            # Re-arm the intent so the sweeper retries the placement.
+            with self._pending_exit_lock:
+                self._pending_exit_intents.setdefault(key, intent)
+            logger.warning(f"Exit placement for {key} re-armed for the sweeper")
+            return
+
+        logger.info(
+            f"Fill-gated exit placed for {intent['trading_symbol']} "
+            f"({intent['lots']} lot(s) at {exit_price}, mode "
+            f"{intent['mode']}, anchor {anchor})"
+        )
+
+    def _sweep_pending_exits(self):
+        """
+        Resolve pending U/D exit intents whose fill event was missed or
+        arrived before registration: probe each intent's order status
+        via the broker and hand it to resolve_pending_exit. Runs on the
+        existing send_pending cycle - one status probe per intent, and
+        a no-op when nothing is pending.
+        """
+        with self._pending_exit_lock:
+            intents = list(self._pending_exit_intents.values())
+        if not intents:
+            return
+
+        if not hasattr(self._broker, "fetch_order_status"):
+            logger.warning(
+                f"{len(intents)} pending exit intent(s) but the active "
+                f"broker has no order-status probe - dropping them"
+            )
+            with self._pending_exit_lock:
+                self._pending_exit_intents.clear()
+            return
+
+        for intent in intents:
+            key = f"{intent['broker']}:{intent['order_id']}"
+            if (
+                time.time() - intent["registered_ts"]
+                > self._PENDING_EXIT_MAX_AGE_SECONDS
+            ):
+                with self._pending_exit_lock:
+                    self._pending_exit_intents.pop(key, None)
+                logger.warning(
+                    f"Dropping stale pending exit intent {key} "
+                    f"(unresolved for {self._PENDING_EXIT_MAX_AGE_SECONDS}s)"
+                )
+                continue
+            try:
+                status = self._broker.fetch_order_status(intent["order_id"])
+            except Exception as probe_error:
+                logger.warning(
+                    f"Pending-exit status probe failed for {key}: "
+                    f"{probe_error}"
+                )
+                continue
+            if status:
+                self.resolve_pending_exit(
+                    intent["broker"], intent["order_id"], status
+                )
 
     def _effective_book_profit_pct(self, strategy_type):
         """Per-strategy book-profit threshold in percent (PCT_BOOK_PROFIT_<strategy>)."""
@@ -6673,6 +7026,14 @@ class Trader_Singleton:
                 )
             self.frontend_data_socket.emit('update_pending_orders', self._broker.fetch_all_pending_orders())
 
+            # Fill-gated U/D exits: sweep pending intents so late fills
+            # (or fill events that raced the registration) still get
+            # their resting exit placed. No-op when nothing is pending.
+            try:
+                self._sweep_pending_exits()
+            except Exception as sweep_error:
+                logger.error(f"Pending-exit sweep failed: {sweep_error}", exc_info=True)
+
         @self.frontend_data_socket.on('cancel_all_pending_orders')
         def handle_cancel_all_pending_orders():
             """Cancel every pending order at the broker (Cancel All button)."""
@@ -6836,6 +7197,16 @@ class Trader_Singleton:
                             )
                         })
                         return
+                    # Optional pre-trade margin check
+                    # (PRE_MARGIN_CHECK_NEEDED): ask the broker what the
+                    # RMS would block for this order and right-size the
+                    # lots BEFORE placing, so short-funds rejections
+                    # never round-trip. Disabled by default - adds one
+                    # broker REST call (~150-500ms) to every buy.
+                    if self._pre_margin_check_enabled():
+                        self._pre_trade_margin_check(order_details, ltp)
+                        if not order_details.get("lots"):
+                            return
                     if sell_mode == "U":
                         logger.info(f"Placing Buy-Sell order as Sell Mode is set to {sell_mode} ")
                         self._broker.buy_sell_units(order_details["tradingsymbol"] , order_details["token"] , order_details["lots"] , self._exchange , ltp,self._mode,sell_mode,target_profit,strategy, target_profit_pct=target_profit_pct)
@@ -6915,7 +7286,7 @@ class Trader_Singleton:
                         })
                         return
 
-                    if "FUND LIMIT INSUFFICIENT" in error_message:
+                    if self._is_fund_limit_rejection(error_message):
 
                         smart_lots = self._smart_retry_lots(error_message, int(order_details["lots"]))
 
@@ -7052,7 +7423,7 @@ class Trader_Singleton:
                                     })
                                     return
 
-                                if "FUND LIMIT INSUFFICIENT" not in retry_error_message:
+                                if not self._is_fund_limit_rejection(retry_error_message):
                                     logger.error(
                                         f"Retry buy order failed: {retry_error}",
                                         exc_info=True
