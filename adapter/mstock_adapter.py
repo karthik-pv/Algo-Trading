@@ -8,6 +8,8 @@ import calendar
 import time
 import threading
 import os
+import select
+import socket
 import tempfile
 import ssl
 import shutil
@@ -32,21 +34,137 @@ from core.utils import (
     get_exchange_for_underlying,
     resolve_data_path,
     is_market_open,
+    is_option_instrument,
     INSTRUMENTS_SECTION_PREFIX,
 )
 from core.mstock_connector import MStockSingleton
 from interface.broker_interface import BrokerInterface
 from core.trade_logic import Trader_Singleton
 from core.audit_log import trade_audit
+from core import broker_stats
 from adapter.mstock_utils import (
     position_attribute_mgmt, fund_summary_attribute_mgmt, order_attribute_mgmt,
     instr_det_attrib_mgmt, normalize_contract_symbol, write_orders_workbook,
-    format_lakhs, apply_trade_charges,
+    format_lakhs, apply_trade_charges, apply_day_stamp_minimum,
 )
 from loguru import logger
 
 
 _SSL_CONTEXT = ssl.create_default_context()
+
+
+class _BufferedResponse:
+    """Response fully drained off the wire inside the pool lock; exposes
+    .status/.read() so http.client.HTTPResponse call sites keep working."""
+
+    def __init__(self, status, body):
+        self.status = status
+        self._body = body
+
+    def read(self):
+        return self._body
+
+
+def _stale_connection(conn):
+    """True when a pooled HTTPSConnection was dropped by the peer (idle
+    timeout / NAT / network change): socket gone, EOF pending, or in an
+    error state. Checked BEFORE a request is sent so a dead pooled
+    connection is repaired without ever re-sending a request that may
+    have already reached the server (no double-order risk)."""
+    sock = getattr(conn, "sock", None)
+    if sock is None:
+        return True
+    try:
+        readable, _, _ = select.select([sock], [], [], 0)
+        if not readable:
+            return False
+        return sock.recv(1, socket.MSG_PEEK) == b""
+    except (BlockingIOError, InterruptedError):
+        return False
+    except (OSError, ValueError):
+        # OSError: socket in an error state; ValueError: select() on a
+        # closed fd (-1). Either way the connection is dead.
+        return True
+
+
+class _KeepAliveHTTPS:
+    """
+    One warm, lock-serialised TCP+TLS connection to api.mstock.trade
+    shared by the adapter's REST calls.
+
+    The adapter used to open a fresh HTTPSConnection per request - every
+    order/exit/refresh paid a DNS+TCP+TLS handshake (~2-3 round trips,
+    60-80ms on a good link) before the request even left the machine.
+    On a scalping cadence that tax lands directly on the SL/BP exit
+    path.
+
+    Mirrors the http.client call pattern (lease() -> request() ->
+    getresponse() -> close()) so call sites change by one line. The lock
+    is held from request() through getresponse(), where the response is
+    fully drained and buffered, so concurrent threads (buy/sell sockets,
+    position-refresh timers) cannot interleave on the wire and the
+    connection stays reusable. close() returns the connection to the
+    pool instead of tearing it down. lease() must be immediately
+    followed by request(); the timeout given there applies to the next
+    request/getresponse pair.
+    """
+
+    _HOST = "api.mstock.trade"
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._conn = None
+
+    def lease(self, timeout=10, context=None):
+        self._timeout = timeout
+        self._context = context or _SSL_CONTEXT
+        return self
+
+    def request(self, method, path, body=None, headers=None):
+        self._lock.acquire()
+        try:
+            conn = self._conn
+            if conn is not None and _stale_connection(conn):
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+                conn = None
+            if conn is None:
+                conn = self._conn = http.client.HTTPSConnection(
+                    self._HOST, timeout=self._timeout, context=self._context
+                )
+            conn.timeout = self._timeout
+            conn.request(method, path, body, headers)
+        except Exception:
+            try:
+                conn.close()
+            except Exception:
+                pass
+            self._conn = None
+            self._lock.release()
+            raise
+
+    def getresponse(self):
+        try:
+            response = self._conn.getresponse()
+            raw = response.read()
+            return _BufferedResponse(response.status, raw)
+        except (http.client.HTTPException, OSError):
+            try:
+                self._conn.close()
+            except Exception:
+                pass
+            self._conn = None
+            raise
+        finally:
+            self._lock.release()
+
+    def close(self):
+        pass
+
+
+_MSTOCK_HTTP = _KeepAliveHTTPS()
 
 
 def _sanitise_closed_market_quote(response):
@@ -230,13 +348,13 @@ class MStockAdapter(BrokerInterface):
             }
 
         last_reason = "unknown error"
+        started = time.time()
+        is_order_endpoint = "/order" in endpoint.lower()
 
         for attempt in range(1, max_retries + 1):
             conn = None
             try:
-                conn = http.client.HTTPSConnection(
-                    "api.mstock.trade", context=_SSL_CONTEXT, timeout=timeout
-                )
+                conn = _MSTOCK_HTTP.lease(timeout=timeout)
                 headers = {
                     "X-Mirae-Version": "1",
                     "X-PrivateKey": self.mstock_instance._api_key,
@@ -268,10 +386,38 @@ class MStockAdapter(BrokerInterface):
                         self._session_expired_until = (
                             time.time() + self._SESSION_EXPIRED_COOLDOWN_SECONDS
                         )
+                        broker_stats.set_session(
+                            "MSTOCK", False, "broker reported invalid session"
+                        )
                         logger.warning(
                             f"M.Stock session expired (reported by "
                             f"{method} {endpoint}); API calls fail fast for "
                             f"{self._SESSION_EXPIRED_COOLDOWN_SECONDS}s"
+                        )
+                    # Broker-pill instrumentation: per-call result, latency
+                    # and rate-limit detection (M.Stock 429 / IA4xx "try
+                    # again" throttle replies).
+                    _latency_ms = round((time.time() - started) * 1000, 1)
+                    _ok = not (
+                        isinstance(parsed, dict) and parsed.get("status") is False
+                    )
+                    _err = (
+                        None if _ok
+                        else str(parsed.get("message") or parsed.get("errorcode") or "status=false")
+                    )
+                    _rate_limited = (
+                        status == 429
+                        or str(parsed.get("errorcode", "")).upper() in ("IA429", "429")
+                        or "try again" in str(parsed.get("message", "")).lower()
+                    )
+                    broker_stats.record_api(
+                        "MSTOCK", ok=_ok, latency_ms=_latency_ms,
+                        rate_limited=_rate_limited, error=_err,
+                    )
+                    if is_order_endpoint:
+                        broker_stats.record_order(
+                            "MSTOCK", ok=_ok, latency_ms=_latency_ms,
+                            rate_limited=_rate_limited, error=_err,
                         )
                     return parsed
 
@@ -293,6 +439,16 @@ class MStockAdapter(BrokerInterface):
             f"M.Stock API {method} {endpoint} failed after {max_retries} "
             f"attempts: {last_reason}"
         )
+        # All attempts exhausted: count as a broker API failure (and an
+        # order failure when it was an order-management endpoint).
+        _rate_limited = "429" in last_reason
+        broker_stats.record_api(
+            "MSTOCK", ok=False, rate_limited=_rate_limited, error=last_reason,
+        )
+        if is_order_endpoint:
+            broker_stats.record_order(
+                "MSTOCK", ok=False, rate_limited=_rate_limited, error=last_reason,
+            )
         return None
 
 
@@ -304,7 +460,7 @@ class MStockAdapter(BrokerInterface):
         # (500). One retry after a short pause recovers most of those.
         for attempt in (1, 2):
             try:
-                conn = http.client.HTTPSConnection("api.mstock.trade", context=_SSL_CONTEXT)
+                conn = _MSTOCK_HTTP.lease()
 
                 headers = {
                     "X-Mirae-Version": "1",
@@ -539,7 +695,7 @@ class MStockAdapter(BrokerInterface):
         # orders/cancelall). Whatever survives it (or any transport
         # error) is handled by the paced per-order loop below.
         try:
-            conn = http.client.HTTPSConnection("api.mstock.trade", context=_SSL_CONTEXT)
+            conn = _MSTOCK_HTTP.lease()
             headers = {
                 "X-Mirae-Version": "1",
                 "X-PrivateKey": self.mstock_instance._api_key,
@@ -607,7 +763,7 @@ class MStockAdapter(BrokerInterface):
     def fetch_all_orders(self):
         logger.info("Fetching all orders from M.Stock...")
         try:
-            conn = http.client.HTTPSConnection("api.mstock.trade", context=_SSL_CONTEXT)
+            conn = _MSTOCK_HTTP.lease()
             headers = {
                 "X-Mirae-Version": "1",
                 "X-PrivateKey": self.mstock_instance._api_key,
@@ -639,7 +795,7 @@ class MStockAdapter(BrokerInterface):
     def fetch_order_executed_price(self,orderid):
         logger.info(f"Fetching executed price for order id {orderid} from M.Stock...")
         try:
-            conn = http.client.HTTPSConnection("api.mstock.trade", context=_SSL_CONTEXT)
+            conn = _MSTOCK_HTTP.lease()
             headers = {
                 "X-Mirae-Version": "1",
                 "X-PrivateKey": self.mstock_instance._api_key,
@@ -718,7 +874,27 @@ class MStockAdapter(BrokerInterface):
                 )
                 return None
 
-            positions = position_attribute_mgmt(response.get("data"))
+            raw_positions = response.get("data") or []
+
+            # OPTIONS-ONLY GUARD: the Buy/Sell grids must never pick up
+            # stocks, ETFs or other cash-segment holdings bought outside
+            # the app, nor futures.
+            raw_count = len(raw_positions)
+            raw_positions = [
+                p for p in raw_positions
+                if is_option_instrument(
+                    symbol=p.get("symbolname") or p.get("symbol"),
+                    exchange=p.get("exchange") or p.get("exch_seg"),
+                    instrument_type=p.get("instrumenttype"),
+                )
+            ]
+            if len(raw_positions) != raw_count:
+                logger.info(
+                    f"Filtered {raw_count - len(raw_positions)} non-option "
+                    f"position(s) - Buy/Sell grids track options only."
+                )
+
+            positions = position_attribute_mgmt(raw_positions)
             #logger.info(f"Processed positions: {positions}")
             logger.debug(f"Total positions fetched: {len(positions)}")
             open_positions = [
@@ -997,7 +1173,16 @@ class MStockAdapter(BrokerInterface):
         fills = response.get("data") or []
         clubbed = {}
 
-        for fill in fills:
+        # Process fills in true exchange sequence (fillid order) so that
+        # same-second BUY/SELL pairs reach FIFO pairing chronologically.
+        # The API response order is not guaranteed to be chronological.
+        def _fill_order(fill):
+            try:
+                return int(fill.get("fillid") or 0)
+            except (TypeError, ValueError):
+                return 0
+
+        for fill in sorted(fills, key=_fill_order):
             try:
                 order_id = str(fill.get("orderid") or "")
                 side = str(fill.get("transactiontype") or "").upper()
@@ -1156,7 +1341,7 @@ class MStockAdapter(BrokerInterface):
     def fetch_expiries(self , underlying):
         logger.info(f"fetch_expiries {underlying} from M.Stock...")
         try:
-            conn = http.client.HTTPSConnection("api.mstock.trade", context=_SSL_CONTEXT)
+            conn = _MSTOCK_HTTP.lease()
             headers = {
                     "X-Mirae-Version": "1",
                     "X-PrivateKey": self.mstock_instance._api_key,
@@ -1244,7 +1429,7 @@ class MStockAdapter(BrokerInterface):
     def sell_units(self, trading_symbol, instrument_token , quantity , exchange , ltp, position_key=""):
         try:
             logger.info(f"Selling units: {quantity} of {trading_symbol} ({instrument_token}) via M.Stock...")
-            conn = http.client.HTTPSConnection("api.mstock.trade", context=_SSL_CONTEXT)
+            conn = _MSTOCK_HTTP.lease()
             headers = {
                     "X-Mirae-Version": "1",
                     "X-PrivateKey": self.mstock_instance._api_key,
@@ -1379,7 +1564,7 @@ class MStockAdapter(BrokerInterface):
     def sell_units_temp(self, trading_symbol, instrument_token , quantity , exchange , ltp,limit_market="MARKET",price=0):
         try:
             logger.info(f"Selling units: {quantity} of {trading_symbol} ({instrument_token} {limit_market} {price} ) via M.Stock...")
-            conn = http.client.HTTPSConnection("api.mstock.trade", context=_SSL_CONTEXT)
+            conn = _MSTOCK_HTTP.lease()
             headers = {
                     "X-Mirae-Version": "1",
                     "X-PrivateKey": self.mstock_instance._api_key,
@@ -1556,7 +1741,7 @@ class MStockAdapter(BrokerInterface):
                 }
                 logger.debug(f"Buy order payload: {json_data}")
 
-                conn = http.client.HTTPSConnection('api.mstock.trade', timeout=10, context=_SSL_CONTEXT)
+                conn = _MSTOCK_HTTP.lease(timeout=10)
                 headers = {
                         "X-Mirae-Version": "1",
                         "X-PrivateKey": self.mstock_instance._api_key,
@@ -1777,7 +1962,7 @@ class MStockAdapter(BrokerInterface):
                     }
                     logger.debug(f"Buy order payload: {json_data}")
 
-                    conn = http.client.HTTPSConnection('api.mstock.trade', timeout=10, context=_SSL_CONTEXT)
+                    conn = _MSTOCK_HTTP.lease(timeout=10)
                     headers = {
                             "X-Mirae-Version": "1",
                             "X-PrivateKey": self.mstock_instance._api_key,
@@ -2347,6 +2532,8 @@ class MStockAdapter(BrokerInterface):
                 "PnL_RT": pnl_rt,
             }))
             sequence += 1
+
+        apply_day_stamp_minimum(output_rows)
 
         # Section order and headers mirror the VBA final-output cell:
         # TIMELINE, ORDER ZONES, ORDER LABELS, PNL ZONES, PNL LABELS.

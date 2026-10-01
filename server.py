@@ -3,7 +3,9 @@ import threading
 import logging
 import asyncio
 import os
+import signal
 import subprocess
+import sys
 import time
 import pandas as pd
 
@@ -16,6 +18,7 @@ import pytz
 
 from core.trade_logic import Trader_Singleton
 from core.audit_log import trade_audit
+from core.session_report import build_session_report
 from interface.broker_interface import BrokerInterface
 from adapter.kite_adapter import KiteAdapter
 from adapter.mstock_adapter import MStockAdapter
@@ -26,6 +29,7 @@ from core.trading_view_handler import trading_view_handle_func
 from core.utils import is_market_open, fetch_from_json, load_json_with_retry, backup_old_logs, resolve_day_start_cash, check_internet_connectivity, clear_json_cache, UNDERLYING_TO_EXCHANGE, resolve_data_path, DATA_DIR, _flatten_config
 
 from adapter.mstock_utils import save_orders_to_xlsx, build_orders_export,write_orders_workbook
+from adapter.kite_utils import parse_kite_tradebook_csv
 
 
 
@@ -229,12 +233,14 @@ APPCONFIG_GROUPS = {
     "gating": ["TV_DATA_Validation_REQUIRED", "MARGIN_USAGE_PCT"],
     "trigger": ["COMPARISON_FUNCTION"],
     "pct": [
-        "PCT_BOOK_PROFIT", "PCT_STOP_LOSS",
-        "PCT_PROFIT_INTRA_FACTOR", "PCT_PROFIT_SCALPING_FACTOR", "PCT_PROFIT_ULTRA_SCALPING_FACTOR",
+        "PCT_BOOK_PROFIT_INTRA", "PCT_STOP_LOSS_INTRA",
+        "PCT_BOOK_PROFIT_SCALPING", "PCT_STOP_LOSS_SCALPING",
+        "PCT_BOOK_PROFIT_ULTRA_SCALPING", "PCT_STOP_LOSS_ULTRA_SCALPING",
     ],
     "pnt": [
-        "PTS_PROFIT", "PTS_LOSS",
-        "PTS_PROFIT_INTRA_FACTOR", "PTS_PROFIT_SCALPING_FACTOR", "PTS_PROFIT_ULTRA_SCALPING_FACTOR",
+        "PTS_PROFIT_INTRA", "PTS_LOSS_INTRA",
+        "PTS_PROFIT_SCALPING", "PTS_LOSS_SCALPING",
+        "PTS_PROFIT_ULTRA_SCALPING", "PTS_LOSS_ULTRA_SCALPING",
     ],
     "signals": ["INTRA_EMA", "SCALPING_EMA", "ULTRA_SCALPING_EMA", "EMA_TOLERANCE_PTS"],
     "market": [
@@ -256,6 +262,7 @@ APPCONFIG_GROUPS = {
         "OPTIONS_CTT_SELL_PCT",
         "TXN_CHARGES_NSE_PCT", "TXN_CHARGES_BSE_PCT", "TXN_CHARGES_MCX_PCT",
         "SEBI_CHARGES_PER_CRORE", "GST_PCT", "STAMP_DUTY_BUY_PCT",
+        "STAMP_DUTY_MIN",
     ],
 }
 
@@ -297,18 +304,20 @@ APPCONFIG_DEFAULTS = {
     "gating": {"TV_DATA_Validation_REQUIRED": False, "MARGIN_USAGE_PCT": "0.9"},
     "trigger": {"COMPARISON_FUNCTION": ["PCT"]},
     "pct": {
-        "PCT_BOOK_PROFIT": "3",
-        "PCT_STOP_LOSS": "3",
-        "PCT_PROFIT_INTRA_FACTOR": "4",
-        "PCT_PROFIT_SCALPING_FACTOR": "2",
-        "PCT_PROFIT_ULTRA_SCALPING_FACTOR": "1"
+        "PCT_BOOK_PROFIT_INTRA": "12",
+        "PCT_STOP_LOSS_INTRA": "12",
+        "PCT_BOOK_PROFIT_SCALPING": "6",
+        "PCT_STOP_LOSS_SCALPING": "6",
+        "PCT_BOOK_PROFIT_ULTRA_SCALPING": "3",
+        "PCT_STOP_LOSS_ULTRA_SCALPING": "3"
     },
     "pnt": {
-        "PTS_PROFIT": "1",
-        "PTS_LOSS": "5",
-        "PTS_PROFIT_INTRA_FACTOR": "10",
-        "PTS_PROFIT_SCALPING_FACTOR": "4",
-        "PTS_PROFIT_ULTRA_SCALPING_FACTOR": "2.5"
+        "PTS_PROFIT_INTRA": "10",
+        "PTS_LOSS_INTRA": "5",
+        "PTS_PROFIT_SCALPING": "4",
+        "PTS_LOSS_SCALPING": "5",
+        "PTS_PROFIT_ULTRA_SCALPING": "2.5",
+        "PTS_LOSS_ULTRA_SCALPING": "5"
     },
     "signals": {
         "INTRA_EMA": "1mEMA50",
@@ -352,7 +361,8 @@ APPCONFIG_DEFAULTS = {
         "TXN_CHARGES_MCX_PCT": "0.05",
         "SEBI_CHARGES_PER_CRORE": "10",
         "GST_PCT": "18",
-        "STAMP_DUTY_BUY_PCT": "0.003"
+        "STAMP_DUTY_BUY_PCT": "0.003",
+        "STAMP_DUTY_MIN": "1"
     }
 }
 
@@ -433,6 +443,27 @@ def save_appconfig():
             except Exception:
                 pass
             threading.Thread(target=trader.setup_woc_subscriptions, daemon=True).start()
+        # A changed paper cash balance must reach the already-open Trade
+        # page: the balance box only re-fetches on page load, trades and
+        # the refresh_fund_summary event, so without this nudge it keeps
+        # showing the stale value until a reload.
+        cash_keys = ("CASH_BALANCE_PAPER_TRADING", "FALLBACK_CASH_BALANCE")
+        if any(str(old_flat.get(k)) != str(new_flat.get(k)) for k in cash_keys):
+            try:
+                if trader.frontend_data_socket:
+                    trader.frontend_data_socket.emit('refresh_fund_summary')
+            except Exception:
+                pass
+            # In PAPER mode a new cash balance is an account reset:
+            # realized PnL from trades made under the old balance would
+            # otherwise drag the available cash (even negative) and the
+            # lot sizing would show 0 for every row.
+            paper_mode_now = str(new_flat.get("MODE") or "").upper() == "PAPER"
+            if paper_mode_now and str(old_flat.get("CASH_BALANCE_PAPER_TRADING")) != str(new_flat.get("CASH_BALANCE_PAPER_TRADING")):
+                try:
+                    trader.reset_paper_account()
+                except Exception as reset_error:
+                    logger.error(f"Paper account reset failed: {reset_error}")
         logger.info("Appconfig saved and cache cleared")
         return jsonify({"status": "success"})
     except Exception as e:
@@ -474,6 +505,25 @@ def get_orders():
     orders = broker.fetch_all_orders()
     logger.log("DATA", f"Orders: {orders}")
     return jsonify(orders if orders else {"error": "Could not fetch orders"})
+
+
+@app.route("/frontend_alive")
+def frontend_alive():
+    """
+    Liveness probe for the Dock-icon launcher: reports whether the app
+    page is genuinely rendering. Chrome background processes keep the
+    5001 socket ESTABLISHED after the window is gone, so the launcher
+    needs the page's own poll cadence (not lsof) to tell "window open"
+    from "window closed" before it reuses or relaunches the window.
+    """
+    seconds_since = trader.frontend_seconds_since_activity()
+    return jsonify({
+        "alive": bool(trader.frontend_is_alive()),
+        "seconds_since_activity": (
+            None if seconds_since == float("inf")
+            else round(seconds_since, 1)
+        ),
+    })
 
 
 @app.route("/import_executed_trades_kite", methods=["POST"])
@@ -934,27 +984,164 @@ def kite_login_callback():
     
 
 
+@app.route("/save_window_state", methods=["POST"])
+def save_window_state():
+    """
+    Frontend reports the app window bounds (position/size) so the
+    next launch can reopen the window exactly as the user left it.
+    Chrome does not reliably restore app-window bounds itself.
+    """
+    try:
+        state = request.get_json(force=True, silent=True) or {}
+        x, y = int(state["x"]), int(state["y"])
+        w, h = int(state["w"]), int(state["h"])
+        if not (-16384 <= x <= 16384 and -16384 <= y <= 16384
+                and 0 < w <= 16384 and 0 < h <= 16384):
+            raise ValueError("geometry out of range")
+        path = os.path.join(DATA_DIR, "window_state.json")
+        tmp = path + ".tmp"
+        with open(tmp, "w") as f:
+            json.dump({"x": x, "y": y, "w": w, "h": h}, f)
+        os.replace(tmp, path)
+        return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
+
+
+def _load_saved_window_geometry():
+    """Last app window bounds saved by the frontend, or None."""
+    try:
+        with open(os.path.join(DATA_DIR, "window_state.json")) as f:
+            state = json.load(f)
+        x, y = int(state["x"]), int(state["y"])
+        w, h = int(state["w"]), int(state["h"])
+        if -16384 <= x <= 16384 and -16384 <= y <= 16384 \
+                and 0 < w <= 16384 and 0 < h <= 16384:
+            return (x, y, w, h)
+    except Exception:
+        pass
+    return None
+
+
+def _stop_leftover_app_chrome(profile):
+    """
+    Gracefully stop a leftover dedicated-profile Chrome instance and
+    wait for it to fully exit (up to ~10s). Only the MAIN browser
+    process is signalled - it then shuts its helpers down cleanly.
+    Signalling the whole family at once (pkill) makes Chrome mark the
+    profile as crashed, and the next launch then opens a plain
+    new-tab-page browser window alongside the app window.
+    """
+    marker = f"user-data-dir={profile}"
+    term_sent = False
+    for _ in range(20):
+        pids = subprocess.run(
+            ["pgrep", "-f", marker], capture_output=True, text=True
+        ).stdout.split()
+        mains = []
+        for pid in pids:
+            try:
+                cmd = subprocess.run(
+                    ["ps", "-o", "command=", "-p", pid],
+                    capture_output=True, text=True, timeout=5,
+                ).stdout
+                # Helper processes all carry --type=; the main one does not.
+                if "--type=" not in cmd:
+                    mains.append(int(pid))
+            except Exception:
+                pass
+        if not mains:
+            return
+        if not term_sent:
+            for pid in mains:
+                try:
+                    os.kill(pid, signal.SIGTERM)
+                except Exception:
+                    pass
+            term_sent = True
+        time.sleep(0.5)
+    logger.warning("Leftover app Chrome did not exit within 10s.")
+
+
+def _open_app_window_macos():
+    """
+    macOS app window: Chrome in --app mode with a dedicated user-data
+    dir, so it always runs as a separate process and never collides
+    with the user's normal Chrome. Any leftover instance of that
+    profile is stopped cleanly first - launching while it runs makes
+    Chrome hand the URL off and open it as a plain browser tab instead
+    of an app window. Window size/position come from the state saved
+    by the frontend, so the window reopens as the user left it.
+    """
+    chrome = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+    if not os.path.exists(chrome):
+        import webbrowser
+        webbrowser.open("http://127.0.0.1:5000")
+        logger.info("Chrome not found; app window opened (default browser).")
+        return
+
+    profile = os.path.expanduser(
+        "~/Library/Application Support/AlgoTradingApp"
+    )
+    _stop_leftover_app_chrome(profile)
+
+    args = [
+        chrome,
+        "--app=http://127.0.0.1:5000",
+        f"--user-data-dir={profile}",
+        "--no-first-run",
+        "--no-default-browser-check",
+        "--hide-crash-restore-bubble",
+    ]
+    geom = _load_saved_window_geometry()
+    if geom:
+        x, y, w, h = geom
+        args += [
+            f"--window-position={x},{y}",
+            f"--window-size={w},{h}",
+        ]
+        logger.info(f"App window opened (Chrome app mode, {w}x{h} at {x},{y}).")
+    else:
+        logger.info("App window opened (Chrome app mode).")
+
+    subprocess.Popen(args)
+
+
 def _open_app_window_when_ready():
     """
-    Wait until the web server port answers, then open the app window
-    (Chrome/Edge in --app mode for a chrome-less window, default
-    browser as fallback). Runs in a daemon thread so it never blocks
-    startup.
+    Wait until the web server actually serves the app page, then open
+    the app window (Chrome/Edge in --app mode for a chrome-less
+    window, default browser as fallback). Runs in a daemon thread so
+    it never blocks startup.
+
+    The check is an HTTP 200 on / rather than a bare TCP connect:
+    macOS AirPlay (ControlCenter) listens on port 5000 and accepts
+    TCP connections, which would open the window on an error page
+    before Flask has bound the port.
     """
-    import socket as _socket
+    import urllib.request
 
     deadline = time.time() + 90
     while time.time() < deadline:
         try:
-            with _socket.create_connection(("127.0.0.1", 5000), timeout=1):
-                break
-        except OSError:
-            time.sleep(0.5)
+            with urllib.request.urlopen(
+                "http://127.0.0.1:5000/", timeout=2
+            ) as resp:
+                if resp.status == 200:
+                    break
+        except Exception:
+            pass
+        time.sleep(0.5)
     else:
         logger.warning("Server port never came up; app window not opened.")
         return
 
     time.sleep(0.5)
+
+    if sys.platform == "darwin":
+        _open_app_window_macos()
+        return
+
     for candidate in (
         r"C:\Program Files\Google\Chrome\Application\chrome.exe",
         r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
@@ -1115,25 +1302,69 @@ def api_audit_download():
         df = df.rename(columns=trade_audit.DISPLAY_NAMES)
         buf = io.BytesIO()
         with pd.ExcelWriter(buf, engine="xlsxwriter") as writer:
-            # Data starts at row 1; row 0 carries the merged group band
-            # (BUY / SELL / RETRY) matching the grid's caption row.
-            df.to_excel(writer, index=False, sheet_name="Audit", startrow=1)
+            # Data starts at row 2; row 0 carries the merged group band
+            # (BUY / SELL / RETRY) and row 1 the Time / Price sub band -
+            # matching the grid's two band rows.
+            df.to_excel(writer, index=False, sheet_name="Audit", startrow=2)
             worksheet = writer.sheets["Audit"]
-            group_format = writer.book.add_format({
+            book = writer.book
+            group_format = book.add_format({
                 "bold": True, "align": "center", "valign": "vcenter",
                 "bg_color": "#D9EAD3", "border": 1,
             })
+            gray_format = book.add_format({
+                "bold": True, "align": "center", "valign": "vcenter",
+                "bg_color": "#E0E0E0", "border": 1, "font_color": "#666666",
+            })
+            plain_band = book.add_format({
+                "bold": True, "align": "center", "valign": "vcenter",
+                "bg_color": "#F3F3F3", "border": 1,
+            })
+
+            # Row 0: group band. Trade / Retry / Comment vertically
+            # merge across both band rows; BUY / SELL sit above their
+            # Time / Price sub cells.
             col = 0
+            group_span = {}
             for label, span in trade_audit.COLUMN_GROUPS:
-                if span > 1:
+                group_span[label] = (col, span)
+                if label in trade_audit.SUB_GROUPS:
                     worksheet.merge_range(0, col, 0, col + span - 1, label, group_format)
+                elif span > 1:
+                    worksheet.merge_range(0, col, 1, col + span - 1, label, group_format)
                 else:
-                    worksheet.write(0, col, label, group_format)
+                    worksheet.merge_range(0, col, 1, col, label, group_format)
                 col += span
+
+            # Row 1: Time / Price sub band (gray for the Time block).
+            # Captions carry the unit: seconds / rupees.
+            sub_label_display = {"Time": "Time (s)", "Price": "Price (rs.)"}
+            for label, sub_spans in trade_audit.SUB_GROUPS.items():
+                start, _ = group_span[label]
+                offset = 0
+                for sub_label, sub_span in sub_spans:
+                    c0 = start + offset
+                    fmt = gray_format if sub_label == "Time" else plain_band
+                    shown = sub_label_display.get(sub_label, sub_label)
+                    if sub_span > 1:
+                        worksheet.merge_range(1, c0, 1, c0 + sub_span - 1, shown, fmt)
+                    elif sub_label:
+                        worksheet.write(1, c0, shown, fmt)
+                    else:
+                        worksheet.write(1, c0, "", plain_band)
+                    offset += sub_span
+
+            # Gray the Time-column captions so the export mirrors the
+            # grid's grayed latency columns.
+            for col_idx, col_name in enumerate(trade_audit.COLUMNS):
+                if col_name in trade_audit.TIME_COLUMNS:
+                    worksheet.write(2, col_idx, trade_audit.DISPLAY_NAMES.get(col_name, col_name), gray_format)
+
             # Widen the columns so the export is readable without
             # manual formatting.
             for col_idx, col_name in enumerate(trade_audit.COLUMNS):
-                width = max(len(str(col_name)) + 2, 12)
+                caption = trade_audit.DISPLAY_NAMES.get(col_name, col_name)
+                width = max(len(str(col_name)) + 2, len(str(caption)) + 2, 8)
                 width = min(width, 40)
                 worksheet.set_column(col_idx, col_idx, width)
         buf.seek(0)
@@ -1146,6 +1377,19 @@ def api_audit_download():
         )
     except Exception as e:
         logger.exception("Audit Excel download failed")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/audit/log_report")
+def api_audit_log_report():
+    """Technical session log report for the selected date: session
+    overview, trade timing, error categories, tick-feed health and a
+    verdict - generated from the datewise logs + audit records."""
+    date_str = request.args.get("date") or datetime.now().strftime("%Y-%m-%d")
+    try:
+        return jsonify(build_session_report(date_str))
+    except Exception as e:
+        logger.exception("Session log report failed")
         return jsonify({"error": str(e)}), 500
 
 
@@ -1227,6 +1471,47 @@ def convert_contract_note_rows():
         "rows": rows,
         "pine_script": pine_script,
         "trade_date": trade_date.isoformat() if trade_date else None,
+    })
+
+
+@app.route("/import_kite_tradebook_rows", methods=["POST"])
+def import_kite_tradebook_rows():
+    """
+    Convert an uploaded Kite Console tradebook CSV into the same
+    formatted rows used by the Orders grid and the Excel workbook,
+    returning them as JSON (plus the PineScript and trade date).
+
+    Kite's API serves same-day orders only, so past dates are recovered
+    from the tradebook report downloaded from Console.
+    """
+    csv_file = request.files.get("file")
+    if not csv_file:
+        return jsonify({"success": False, "error": "No CSV uploaded"}), 400
+
+    tmp_fd, tmp_csv_path = tempfile.mkstemp(suffix=".csv")
+    os.close(tmp_fd)
+
+    try:
+        csv_file.save(tmp_csv_path)
+        records, trade_dates = parse_kite_tradebook_csv(tmp_csv_path)
+        rows, pine_script = build_orders_export(records)
+        # A single-day report carries its date for the grid label and
+        # the Excel download name; multi-day reports stay undated.
+        trade_date = trade_dates[0] if len(trade_dates) == 1 else None
+    except Exception as e:
+        logger.exception("Kite tradebook CSV import failed")
+        return jsonify({"success": False, "error": str(e)}), 500
+    finally:
+        try:
+            os.unlink(tmp_csv_path)
+        except FileNotFoundError:
+            pass
+
+    return jsonify({
+        "success": True,
+        "rows": rows,
+        "pine_script": pine_script,
+        "trade_date": trade_date,
     })
 
 @app.route("/get_executed_trades", methods=["POST"])
@@ -1469,6 +1754,94 @@ def start_socket():
     except Exception as e:
         logger.error(f"Socket error: {e}")
 
+
+# ============================ Feed Lab (self-contained) ============================
+# Dual-broker (KITE + M.Stock) tick capture + performance report.
+# To unplug: delete this whole block, core/feed_capture.py,
+# templates/feedlab.html, the Feed Lab nav line in templates/base.html,
+# and the FEED_LAB_ENABLED key in config/appconfig.json.
+# Setting FEED_LAB_ENABLED to "false" in appconfig.json hides the tab and
+# disables the routes without any code change.
+
+def _feed_lab_enabled():
+    try:
+        return str(fetch_from_json("appconfig.json", "FEED_LAB_ENABLED")).strip().lower() == "true"
+    except Exception:
+        return False
+
+
+@app.context_processor
+def _feed_lab_nav():
+    return {"feed_lab_enabled": _feed_lab_enabled()}
+
+
+@app.route("/feedlab")
+def feedlab_page():
+    if not _feed_lab_enabled():
+        return redirect("/trade")
+    return render_template("feedlab.html", active_tab="feedlab")
+
+
+@app.route("/feed_compare/status")
+def feed_compare_status():
+    from core.feed_capture import feed_capture_service
+    return jsonify(feed_capture_service.status())
+
+
+@app.route("/feed_compare/start", methods=["POST"])
+def feed_compare_start():
+    if not _feed_lab_enabled():
+        return jsonify({"ok": False, "error": "Feed Lab is disabled (FEED_LAB_ENABLED)"}), 403
+    from core.feed_capture import feed_capture_service
+    payload = request.get_json(silent=True) or {}
+    underlying = str(payload.get("underlying") or "SENSEX").upper()
+    ok, error = feed_capture_service.start(underlying)
+    return jsonify({"ok": ok, "error": error})
+
+
+@app.route("/feed_compare/stop", methods=["POST"])
+def feed_compare_stop():
+    from core.feed_capture import feed_capture_service
+    ok, error = feed_capture_service.stop()
+    return jsonify({"ok": ok, "error": error})
+
+
+@app.route("/feed_compare/report")
+def feed_compare_report():
+    if not _feed_lab_enabled():
+        return jsonify({"ok": False, "error": "Feed Lab is disabled (FEED_LAB_ENABLED)"}), 403
+    from core.feed_capture import feed_capture_service
+    return jsonify(feed_capture_service.report())
+
+
+@app.route("/feed_compare/net_status")
+def feed_compare_net_status():
+    from core.feed_capture import net_status
+    return jsonify(net_status())
+
+
+@app.route("/feed_compare/feed_status")
+def feed_compare_feed_status():
+    from core.feed_capture import feed_status
+    return jsonify(feed_status())
+
+
+if _feed_lab_enabled():
+    from core.feed_capture import start_net_monitor, register_broker
+    register_broker(broker)
+    start_net_monitor()
+
+# ========================== end Feed Lab block ==========================
+
+
+# macOS Dock app: quitting the app sends SIGTERM - route it through the
+# same cleanup path as Ctrl+C. Windows has no SIGTERM delivery, so the
+# KeyboardInterrupt flow there is untouched.
+if sys.platform != "win32":
+    def _sigterm_handler(signum, frame):
+        raise KeyboardInterrupt
+
+    signal.signal(signal.SIGTERM, _sigterm_handler)
 
 if 1==1: #__name__ == "__main__":
 #if __name__ == "__main__":

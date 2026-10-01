@@ -1,5 +1,6 @@
 ﻿import struct
 import logging
+import math
 from pprint import pprint
 from loguru import logger
 import pandas as pd
@@ -253,14 +254,18 @@ def _charges_rate(key, default):
 
 def compute_option_trade_charges(transaction_type, turnover, symbol):
     """
-    Compute (brokerage, other_charges) for one F&O option order.
+    Compute (brokerage, other_charges, components) for one F&O option order.
 
     Turnover is the premium value (units x rate). Other charges bundle
     the sell-side turnover tax (STT for NFO/BFO, CTT for MCX), exchange
-    transaction charges, SEBI turnover fees, GST on (brokerage + SEBI +
+    transaction charges, SEBI turnover fees, GST on (brokerage +
     transaction) and buy-side stamp duty.
     Exercise charges (0.15% of intrinsic value on bought-and-exercised
     options) never appear as grid rows and are intentionally excluded.
+
+    "components" carries the FULL-PRECISION (unrounded) breakdown so the
+    Orders tab can bill day totals the way broker contract notes do:
+    sum each component across the day, then round once per component.
     """
     transaction_type = str(transaction_type or "").upper()
     turnover = max(0.0, float(turnover or 0.0))
@@ -277,28 +282,46 @@ def compute_option_trade_charges(transaction_type, turnover, symbol):
     txn_pct = _charges_rate(txn_key, txn_default)
 
     # Sell-side turnover tax is exchange-specific: equity/index options
-    # pay STT (NSE 0.1% for Kite / 0.15% MSTOCK), while MCX commodity
-    # options pay CTT at 0.0001% - roughly 1000x smaller. Applying the
-    # STT rate to MCX rows massively overstated the estimated charges.
+    # pay STT on sell premium (mStock bills 0.15%, Kite 0.1%), while MCX
+    # commodity options pay CTT at 0.0001% - roughly 1000x smaller.
+    # Applying the STT rate to MCX rows massively overstated the
+    # estimated charges.
     if exchange == "MCX":
         sell_tax_pct = _charges_rate("OPTIONS_CTT_SELL_PCT", 0.0001)
     else:
         sell_tax_pct = _charges_rate("OPTIONS_STT_SELL_PCT", 0.15)
 
-    sell_tax = turnover * sell_tax_pct / 100.0 if transaction_type == "SELL" else 0.0
+    sell_tax = (
+        math.floor(turnover * sell_tax_pct) / 100.0
+        if transaction_type == "SELL" else 0.0
+    )
     transaction_charges = turnover * txn_pct / 100.0
     sebi_charges = turnover * sebi_per_crore / 1e7
-    gst = (brokerage + sebi_charges + transaction_charges) * gst_pct / 100.0
+    # Broker contract notes (mStock) tax brokerage + exchange transaction
+    # charges; SEBI turnover fees sit outside the GST base.
+    gst = (brokerage + transaction_charges) * gst_pct / 100.0
     stamp_duty = turnover * stamp_buy_pct / 100.0 if transaction_type == "BUY" else 0.0
 
     other_charges = sell_tax + transaction_charges + sebi_charges + gst + stamp_duty
-    return round(brokerage, 2), round(other_charges, 2)
+    components = {
+        "stt": sell_tax,
+        "txn": transaction_charges,
+        "sebi": sebi_charges,
+        "gst": gst,
+        "stamp": stamp_duty,
+    }
+    return round(brokerage, 2), round(other_charges, 2), components
 
 
 def apply_trade_charges(row):
     """
     Attach Brokerage / Other Charges to a formatted orders row using the
     row's own TRAN / Qty. / RATE / CONT values.
+
+    The full-precision per-component breakdown is stashed under
+    "_charges" so the UI can total the day the way the broker's
+    contract note does (per-component sums, each rounded once), and
+    apply_day_stamp_minimum can enforce the daily minimum.
     """
     try:
         quantity = float(str(row.get("Qty.", "")).split("/")[0] or 0)
@@ -309,12 +332,51 @@ def apply_trade_charges(row):
     except (TypeError, ValueError):
         price = 0.0
 
-    brokerage, other_charges = compute_option_trade_charges(
+    brokerage, other_charges, components = compute_option_trade_charges(
         row.get("TRAN"), quantity * price, row.get("CONT")
     )
     row["Brokerage"] = brokerage
     row["Other Charges"] = other_charges
+    row["_charges"] = components
     return row
+
+
+def apply_day_stamp_minimum(rows):
+    """
+    Enforce the statutory Rs. 1 minimum on a day's buy-side stamp duty.
+
+    Per-row stamp is 0.003% of premium and can total well under the
+    minimum the broker actually bills (e.g. mStock notes show Rs. 1.00).
+    Top up the shortfall on the first BUY row - both in the "_charges"
+    component breakdown (kept for contract-note-exact day totals in the
+    UI) and in the rounded "Other Charges" display value.
+    """
+    if not rows:
+        return rows
+    try:
+        minimum = float(_charges_rate("STAMP_DUTY_MIN", 1.0))
+    except (TypeError, ValueError):
+        minimum = 1.0
+
+    total_stamp = sum(
+        float((row.get("_charges") or {}).get("stamp") or 0.0) for row in rows
+    )
+    first_buy = next(
+        (row for row in rows if str(row.get("TRAN", "")).upper() == "BUY"),
+        None,
+    )
+    if first_buy is not None and minimum > total_stamp:
+        shortfall = round(minimum - total_stamp, 2)
+        first_buy_components = first_buy.get("_charges")
+        if first_buy_components is not None:
+            first_buy_components["stamp"] = (
+                float(first_buy_components.get("stamp") or 0.0) + shortfall
+            )
+        first_buy["Other Charges"] = round(
+            float(first_buy.get("Other Charges") or 0.0) + shortfall, 2
+        )
+
+    return rows
 
 
 EXPORT_COLUMNS = [
@@ -421,23 +483,31 @@ def build_orders_export(order_list):
     df["quantity"] = pd.to_numeric(df["quantity"], errors="coerce")
     df["average_price"] = pd.to_numeric(df["average_price"], errors="coerce")
     df["transaction_type"] = df["transaction_type"].astype(str).str.upper()
-    df = df.dropna(subset=["timestamp", "quantity", "average_price"]).sort_values("timestamp")
+    # STABLE sort is required: a BUY and its SELL can share the same
+    # timestamp (same-second scalps). The default quicksort reordered
+    # such pairs, the SELL ran before its BUY, found no open position
+    # and the trade's P&L silently vanished from the day's totals.
+    df = df.dropna(subset=["timestamp", "quantity", "average_price"]).sort_values("timestamp", kind="stable")
 
     records = []
     for item in df.to_dict(orient="records"):
         if records and all(records[-1][key] == item[key] for key in ("timestamp", "transaction_type", "tradingsymbol")):
             previous = records[-1]
             total_quantity = previous["quantity"] + item["quantity"]
-            previous["average_price"] = round(
-                (
-                    previous["average_price"] * previous["quantity"]
-                    + item["average_price"] * item["quantity"]
-                ) / total_quantity,
-                2,
-            )
+            # Keep the clubbed average at FULL precision for P&L. The
+            # contract note pairs raw fills, so every intermediate 2dp
+            # rounding here showed up as a rupee-level gap in the day's
+            # Net P&L. The 2dp value only feeds the RATE display column.
+            previous["average_price_exact"] = (
+                (previous["average_price_exact"] * previous["quantity"])
+                + (item["average_price_exact"] * item["quantity"])
+            ) / total_quantity
+            previous["average_price"] = round(previous["average_price_exact"], 2)
             previous["quantity"] = total_quantity
         else:
-            records.append(item.copy())
+            item = item.copy()
+            item["average_price_exact"] = item["average_price"]
+            records.append(item)
 
     rows = []
     open_buys = {}
@@ -452,7 +522,7 @@ def build_orders_export(order_list):
         symbol = normalize_contract_symbol(item["tradingsymbol"])
         side = item["transaction_type"]
         quantity = float(item["quantity"])
-        price = float(item["average_price"])
+        price = float(item["average_price_exact"])
 
         # Orders recorded by the playback adapter carry quantity in LOTS
         # plus an explicit lot_size field. Live broker orders carry
@@ -495,17 +565,18 @@ def build_orders_export(order_list):
             if matched_quantity:
                 average_buy = sum(buy["price"] * taken for buy, taken in matched) / matched_quantity
                 units = matched_quantity * lot_multiplier
-                # VBA parity: pnlRate is rounded to 2 decimals BEFORE the
-                # pnl multiplication; pct uses the ROUNDED pnl and PnL_RT
-                # accumulates the rounded pnl.
-                pnl_rate_value = round(price - average_buy, 2)
+                # P&L at FULL precision - the contract note pairs raw
+                # fills, so rounding the rate before multiplying (or the
+                # pnl to whole rupees) left a rupee-level gap in the
+                # day's Net P&L. PnL_Rate stays 2dp for display only.
+                pnl_rate_value = price - average_buy
                 purchase_amount = average_buy * units
-                pnl = round(pnl_rate_value * units)
+                pnl = pnl_rate_value * units
                 cumulative_pnl += pnl
                 elapsed = max(0, int((timestamp - matched[0][0]["time"]).total_seconds()))
                 duration = f"{elapsed // 60:02d}:{elapsed % 60:02d}"
                 purchase_value = format_lakhs(purchase_amount)
-                pnl_rate = pnl_rate_value
+                pnl_rate = round(pnl_rate_value, 2)
                 pnl_pct = round((pnl / purchase_amount) * 100, 2) if purchase_amount else 0
                 pnl_rt = cumulative_pnl
 
@@ -517,7 +588,7 @@ def build_orders_export(order_list):
                     # zone label carries its own match's values.
                     pair_units = taken * lot_multiplier
                     pair_purchase = buy["price"] * pair_units
-                    pair_pnl = round((price - buy["price"]) * pair_units)
+                    pair_pnl = (price - buy["price"]) * pair_units
                     pair_pct = round((pair_pnl / pair_purchase) * 100, 2) if pair_purchase else 0
                     pair_seconds = max(0, int((timestamp - buy["time"]).total_seconds()))
                     pair_duration = f"{pair_seconds // 60:02d}:{pair_seconds % 60:02d}"
@@ -539,9 +610,11 @@ def build_orders_export(order_list):
         rows.append(apply_trade_charges({
             "ORDERDATE": timestamp.strftime("%m/%d/%Y"), "ORDERTIME": timestamp.strftime("%H:%M:%S"),
             "TRAN": side, "CONT": symbol, "Product": "MIS", "Qty.": int(quantity * lot_multiplier),
-            "RATE": price, "STATUS": str(item.get("status", "COMPLETE")), "Duration": duration,
+            "RATE": round(price, 2), "STATUS": str(item.get("status", "COMPLETE")), "Duration": duration,
             "PurValue": purchase_value, "PnL_Rate": pnl_rate, "PnL": pnl, "PnL%": pnl_pct, "PnL_RT": pnl_rt,
         }))
+
+    apply_day_stamp_minimum(rows)
 
     # Section order and headers mirror the VBA final-output cell:
     # TIMELINE, ORDER ZONES, ORDER LABELS, PNL ZONES, PNL LABELS.

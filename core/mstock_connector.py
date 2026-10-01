@@ -4,6 +4,8 @@ import json
 import asyncio
 import logging
 import socket
+import subprocess
+import sys
 import time
 import http.client
 import websockets
@@ -14,6 +16,41 @@ from loguru import logger
 
 from core.utils import fetch_from_json , write_to_json , get_exchange_for_underlying
 from adapter.mstock_utils import parse_quote_message
+from core import broker_stats
+
+
+def _prompt_otp():
+    """
+    Ask the user for the M.Stock login OTP. With a console attached
+    (Windows launcher / VSCode terminal) this reads from stdin as
+    before. Without one (macOS Dock app) stdin is EOF, so a native
+    dialog is shown instead.
+    """
+    if sys.stdin is not None and sys.stdin.isatty():
+        return input("Please enter OTP received - ")
+
+    if sys.platform != "darwin":
+        raise RuntimeError(
+            "M.Stock login needs an OTP but no console is attached"
+        )
+
+    script = (
+        "text returned of (display dialog "
+        '"M.Stock login: enter the OTP you received" '
+        'default answer "" with hidden answer '
+        'with title "Algo Trading - M.Stock OTP" '
+        'buttons {"Cancel", "OK"} default button "OK")'
+    )
+    out = subprocess.run(
+        ["osascript", "-e", script],
+        capture_output=True, text=True, timeout=300,
+    )
+    if out.returncode != 0:
+        raise RuntimeError("M.Stock OTP entry cancelled")
+    otp = out.stdout.strip()
+    if not otp:
+        raise RuntimeError("Empty M.Stock OTP entered")
+    return otp
 
 logging.basicConfig(level=logging.DEBUG)
 
@@ -57,6 +94,20 @@ class MStockSingleton:
             raise ValueError("MSTOCK_API_KEY not found in environment variables")
         self._socket_loop = None
         self._ws_cached_ips = []
+        # True while the M.Stock websocket is connected - read by
+        # feed_health() for the broker-status pills.
+        self._ws_connected = False
+        # FEED STALE plumbing: optional callback(stale, gap_seconds)
+        # fired when the quote feed goes silent / recovers, so the UI
+        # can show a feed-status badge (see trade_logic._emit_feed_status).
+        self._feed_status_callback = None
+        self._feed_stale_active = False
+
+    def set_feed_status_callback(self, callback):
+        """Register a callback(stale: bool, gap_seconds: float) invoked
+        when the quote feed goes silent (stale=True) and again on the
+        first packet after the silence (stale=False)."""
+        self._feed_status_callback = callback
 
     def create_session(self):
         logger.info("Creating M.Stock session...")
@@ -88,7 +139,7 @@ class MStockSingleton:
 
     def get_session_token(self, refresh_token):
         logger.info("Getting session token from M.Stock...")
-        otp = input("Please enter OTP received - ")
+        otp = _prompt_otp()
         conn = http.client.HTTPSConnection("api.mstock.trade")
         headers = {
             "X-Mirae-Version": "1",
@@ -178,6 +229,7 @@ class MStockSingleton:
                 async with await self._connect_ws() as ws:
                     self._socket = ws
                     self._socket_loop = asyncio.get_running_loop()
+                    self._ws_connected = True
                     logger.info("Connection successful. Logging in...")
 
                     login_message = f"LOGIN:{self._access_token}"
@@ -199,9 +251,11 @@ class MStockSingleton:
                         await self._handle_message(message)
                         # logger.info("MSTOCK WS MESSAGE RECEIVED2")
             except websockets.exceptions.ConnectionClosed as e:
+                self._ws_connected = False
                 logger.warning(f"Connection closed: {e}. Reconnecting in 5s...")
                 await asyncio.sleep(5)
             except Exception as e:
+                self._ws_connected = False
                 logger.error(f"WebSocket error: {e}. Retrying in 5s...")
                 await asyncio.sleep(5)
 
@@ -474,6 +528,25 @@ class MStockSingleton:
                     f"{packet_gap:.1f}s - grid prices were frozen "
                     f"during this window"
                 )
+                if not self._feed_stale_active:
+                    self._feed_stale_active = True
+                    if self._feed_status_callback:
+                        try:
+                            self._feed_status_callback(True, packet_gap)
+                        except Exception as feed_cb_error:
+                            logger.debug(
+                                f"feed_status callback failed: {feed_cb_error}"
+                            )
+            elif self._feed_stale_active:
+                # First packet after a stall - feed has recovered.
+                self._feed_stale_active = False
+                if self._feed_status_callback:
+                    try:
+                        self._feed_status_callback(False, packet_gap)
+                    except Exception as feed_cb_error:
+                        logger.debug(
+                            f"feed_status callback failed: {feed_cb_error}"
+                        )
             if now_ts - self._feed_stats_window_start >= 60:
                 elapsed = now_ts - self._feed_stats_window_start
                 rate = self._feed_packets / elapsed * 60
@@ -503,6 +576,15 @@ class MStockSingleton:
             token = str(market_update["token"])
             ltp = market_update["ltp"]
 
+            # Tick-quality metric for the broker pills: a quote packet
+            # with a missing/zero/unparsable LTP still counts as a tick
+            # but flags the feed as delivering junk data.
+            try:
+                bad_tick = (ltp is None or str(ltp).strip() == "" or float(ltp) <= 0)
+            except (TypeError, ValueError):
+                bad_tick = True
+            broker_stats.record_tick("MSTOCK", bad=bad_tick)
+
             # Per-instrument hourly tick sampler (see Trader_Singleton).
             self._trader.record_tick(token)
 
@@ -531,6 +613,29 @@ class MStockSingleton:
         logger.info("Setting access token for M.Stock...")
         self._access_token = access_token
         #logger.debug(f"Access token set: {access_token}")  # do not log the token
+
+    def feed_health(self):
+        """
+        Snapshot of the M.Stock websocket feed state for the broker
+        pills - same shape as KiteAdapter.feed_health(): connected
+        flag, seconds since the last 379-byte quote packet, packets in
+        the current sampler window (per-min rate) and the longest quiet
+        gap. The sampler attrs are simple ints/floats updated on the
+        socket loop thread; single reads are atomic under the GIL.
+        """
+        last_ts = self._feed_last_packet_ts
+        window_start = self._feed_stats_window_start
+        packets = self._feed_packets
+        max_gap = self._feed_max_gap
+        seconds_since_tick = (time.time() - last_ts) if last_ts else None
+        window_elapsed = (time.time() - window_start) if window_start else 0.0
+        rate_per_min = (packets / window_elapsed * 60) if window_elapsed > 0 and packets else 0.0
+        return {
+            "connected": bool(self._ws_connected),
+            "seconds_since_tick": round(seconds_since_tick, 1) if seconds_since_tick is not None else None,
+            "rate_per_min": round(rate_per_min, 1),
+            "max_gap_s": round(max_gap, 1),
+        }
 
     # development
     def initialise_for_dev(self):

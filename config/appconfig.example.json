@@ -1,4 +1,5 @@
 {
+    "FEED_LAB_ENABLED": "false",
     "session": {
         "MODE": "LIVE",
         "BROKER": "MSTOCK",
@@ -14,18 +15,20 @@
         ]
     },
     "pct": {
-        "PCT_BOOK_PROFIT": "3",
-        "PCT_STOP_LOSS": "3",
-        "PCT_PROFIT_INTRA_FACTOR": "4",
-        "PCT_PROFIT_SCALPING_FACTOR": "2",
-        "PCT_PROFIT_ULTRA_SCALPING_FACTOR": "1"
+        "PCT_BOOK_PROFIT_INTRA": "12",
+        "PCT_STOP_LOSS_INTRA": "12",
+        "PCT_BOOK_PROFIT_SCALPING": "6",
+        "PCT_STOP_LOSS_SCALPING": "6",
+        "PCT_BOOK_PROFIT_ULTRA_SCALPING": "3",
+        "PCT_STOP_LOSS_ULTRA_SCALPING": "3"
     },
     "pnt": {
-        "PTS_PROFIT": "1",
-        "PTS_LOSS": "5",
-        "PTS_PROFIT_INTRA_FACTOR": "10",
-        "PTS_PROFIT_SCALPING_FACTOR": "4",
-        "PTS_PROFIT_ULTRA_SCALPING_FACTOR": "2.5"
+        "PTS_PROFIT_INTRA": "10",
+        "PTS_LOSS_INTRA": "5",
+        "PTS_PROFIT_SCALPING": "4",
+        "PTS_LOSS_SCALPING": "5",
+        "PTS_PROFIT_ULTRA_SCALPING": "2.5",
+        "PTS_LOSS_ULTRA_SCALPING": "5"
     },
     "signals": {
         "INTRA_EMA": "1mEMA50",
@@ -69,6 +72,7 @@
         "TXN_CHARGES_MCX_PCT": "0.05",
         "SEBI_CHARGES_PER_CRORE": "10",
         "GST_PCT": "18",
-        "STAMP_DUTY_BUY_PCT": "0.003"
+        "STAMP_DUTY_BUY_PCT": "0.003",
+        "STAMP_DUTY_MIN": "1"
     }
 }

@@ -13,6 +13,7 @@ resolution when formatted) and rendered as HH:MM:SS.mmm local time.
 
 import json
 import os
+import re
 import threading
 import time
 from datetime import datetime
@@ -32,6 +33,24 @@ def _fmt_ts(ts):
     return datetime.fromtimestamp(ts).strftime("%H:%M:%S.%f")[:-3]
 
 
+# Broker display spelling NIFTY-29Sep2026-22600-PE -> the app's
+# trading-symbol code NIFTY26SEP22600PE, so imported rows render the
+# Symbol column in one uniform format. (The weekly day-of-month is not
+# part of the app code; within a session that is never ambiguous.)
+_BROKER_SYMBOL_RE = re.compile(
+    r"^([A-Z]+)-\d{1,2}([A-Za-z]{3})(\d{4})-(\d+(?:\.\d+)?)-(CE|PE)$"
+)
+
+
+def _display_symbol(symbol):
+    s = str(symbol or "")
+    m = _BROKER_SYMBOL_RE.match(s)
+    if not m:
+        return s
+    name, mon, year, strike, opt = m.groups()
+    return f"{name}{year[2:]}{mon.upper()}{int(float(strike))}{opt.upper()}"
+
+
 def _fmt_num(value, decimals=2):
     if value is None or value == "":
         return ""
@@ -45,15 +64,19 @@ class TradeAudit:
     """Thread-safe recorder + report builder for execution auditing."""
 
     # Grid / Excel column order. Shared by snapshot() (API) and the
-    # Excel download so the two can never drift apart.
+    # Excel download so the two can never drift apart. Within BUY and
+    # SELL, the time columns come first (contiguous - the sub-header
+    # band splits each group into Time / Price), then Trigger Source,
+    # then the price block.
     COLUMNS = [
         "Symbol", "Lots", "SS",
-        "Buy Click Time", "Buy Exec Time", "Buy Avg Price", "Buy Time Cost (s)",
-        "LTP @ Click", "LTP @ Exec", "Buy Slippage", "Buy Slippage %",
-        "Buy Lot Cost Slippage",
-        "Sell Trigger Time", "Trigger Source", "Sell Exec Time", "Sell Time Cost (s)",
-        "LTP @ Trigger", "LTP @ Sell Exec", "Sell Slippage", "Sell Slippage %",
-        "Sell Profit Slippage",
+        "Buy Click Time", "Buy Exec Time", "Buy Time Slippage (s)",
+        "LTP @ Click", "LTP @ Exec", "Buy Avg Price",
+        "Buy Price Slippage", "Buy Price Slippage %", "Buy Lot Cost Slippage",
+        "Sell Trigger Time", "Sell Exec Time", "Sell Time Slippage (s)",
+        "Trigger Source",
+        "LTP @ Trigger", "LTP @ Sell Exec", "Sell Avg Price",
+        "Sell Price Slippage", "Sell Price Slippage %", "Sell Profit Slippage",
         "Retries", "Retry Elapsed (s)", "First Attempt LTP",
         "Exec Slippage %", "Buy Cost Increase",
         "Comment",
@@ -71,26 +94,47 @@ class TradeAudit:
     # Column-group band: (caption, colspan) over COLUMNS - used by the
     # grid's group row and the Excel export's merged header band.
     COLUMN_GROUPS = [
-        ("Trade", 3), ("Buy", 9), ("Sell", 9), ("Retry", 5), ("Comment", 1),
+        ("Trade", 3), ("Buy", 9), ("Sell", 10), ("Retry", 5), ("Comment", 1),
     ]
 
-    # Display captions for the SECOND header row: the group band already
-    # says BUY / SELL, so the per-column "Buy"/"Sell" prefixes are
-    # stripped there. Data keys (COLUMNS) stay unique for the API.
+    # Sub-header band under the BUY / SELL group cells: a second
+    # grouping layer splitting each side into its Time block (click,
+    # exec, latency - grayed in the UI) and Price block. Spans are
+    # contiguous runs of that group's columns; groups not listed here
+    # (Trade / Retry / Comment) rowspan across the sub-header row.
+    SUB_GROUPS = {
+        "Buy": [("Time", 3), ("Price", 6)],
+        "Sell": [("Time", 3), ("", 1), ("Price", 6)],
+    }
+
+    # Columns rendered gray: the latency bookkeeping block (Time
+    # sub-groups of Buy and Sell).
+    TIME_COLUMNS = {
+        "Buy Click Time", "Buy Exec Time", "Buy Time Slippage (s)",
+        "Sell Trigger Time", "Sell Exec Time", "Sell Time Slippage (s)",
+    }
+
+    # Display captions for the THIRD row (short names - the group and
+    # sub-header bands above already say BUY / SELL and TIME / PRICE).
+    # Data keys (COLUMNS) stay unique for the API.
     DISPLAY_NAMES = {
-        "Buy Click Time": "Click Time",
-        "Buy Exec Time": "Exec Time",
-        "Buy Avg Price": "Avg Price",
-        "Buy Time Cost (s)": "Time Cost (s)",
-        "Buy Slippage": "Slippage",
-        "Buy Slippage %": "Slippage %",
-        "Buy Lot Cost Slippage": "Lot Cost Slippage",
-        "Sell Trigger Time": "Trigger Time",
-        "Sell Exec Time": "Exec Time",
-        "Sell Time Cost (s)": "Time Cost (s)",
-        "LTP @ Sell Exec": "LTP @ Exec",
-        "Sell Slippage": "Slippage",
-        "Sell Slippage %": "Slippage %",
+        "Buy Click Time": "Click",
+        "Buy Exec Time": "Exec",
+        "Buy Time Slippage (s)": "Slip",
+        "LTP @ Click": "Click",
+        "LTP @ Exec": "Exec",
+        "Buy Avg Price": "Avg",
+        "Buy Price Slippage": "Slippage",
+        "Buy Price Slippage %": "%",
+        "Buy Lot Cost Slippage": "Cost Slippage",
+        "Sell Trigger Time": "Click",
+        "Sell Exec Time": "Exec",
+        "Sell Time Slippage (s)": "Slip",
+        "LTP @ Trigger": "Click",
+        "LTP @ Sell Exec": "Exec",
+        "Sell Avg Price": "Avg",
+        "Sell Price Slippage": "Slippage",
+        "Sell Price Slippage %": "%",
         "Sell Profit Slippage": "Profit Slippage",
         "Buy Cost Increase": "Cost Increase",
     }
@@ -155,11 +199,10 @@ class TradeAudit:
         threading.Thread(target=_write, daemon=True,
                          name="audit-persist").start()
 
-    @staticmethod
-    def _write_snapshot(snapshot):
+    def _write_snapshot(self, snapshot):
         try:
             os.makedirs(AUDIT_DIR, exist_ok=True)
-            path = TradeAudit._file_path()
+            path = self._file_path()
             tmp = path + ".tmp"
             with open(tmp, "w", encoding="utf-8") as f:
                 json.dump(snapshot, f, indent=1, default=str)
@@ -172,14 +215,20 @@ class TradeAudit:
     # -------------------------------------------------------------
     def _match_open(self, token=None, symbol=None):
         """Most recent record for this token/symbol that has a buy but
-        no sell execution yet. Falls back to a symbol-prefix match."""
+        no sell execution yet. Falls back to a symbol-prefix match.
+        token also accepts a composite position key
+        (TOKEN:STRATEGY:MODE) - matched on its token prefix."""
         best = None
+        want = str(token) if token else None
         for rec in reversed(self._records):
             if rec.get("sell_exec_ts"):
                 continue
-            if token and str(rec.get("token")) == str(token):
-                return rec
-            if not token and symbol:
+            if want:
+                rec_token = str(rec.get("token"))
+                if (rec_token == want
+                        or want.startswith(rec_token + ":")):
+                    return rec
+            if not want and symbol:
                 rec_sym = str(rec.get("symbol") or "")
                 if rec_sym == symbol or rec_sym.startswith(str(symbol)):
                     best = best or rec
@@ -326,6 +375,8 @@ class TradeAudit:
                 return
             rec["sell_exec_ts"] = time.time()
             rec["sell_exec_ltp"] = fill_price
+            # The resting exit fill IS the actual sell fill price.
+            rec["sell_avg_price"] = fill_price
             rec["sell_success"] = True
             rec["sell_trigger_source"] = rec.get(
                 "sell_trigger_source") or "RESTING_EXIT"
@@ -340,11 +391,14 @@ class TradeAudit:
 
     @staticmethod
     def _covered_by(records, symbol, side, ts):
-        """True when a record already captured this order (same symbol,
-        matching side, within a few seconds - distinct rebuys of the
-        same contract sit minutes apart)."""
+        """True when a record already captured this order (same symbol
+        canonically - broker and app spellings differ -, matching side,
+        within a few seconds - distinct rebuys of the same contract sit
+        minutes apart)."""
+        from core.audit_log_parser import canonical_symbol
+        sym_key = canonical_symbol(symbol)
         for rec in records:
-            if str(rec.get("symbol") or "") != str(symbol):
+            if canonical_symbol(rec.get("symbol")) != sym_key:
                 continue
             live = (
                 rec.get("buy_exec_ts") if side == "BUY"
@@ -357,13 +411,18 @@ class TradeAudit:
     def _merge_broker_orders(self, records, orders, lot_size_lookup=None):
         """Fill execution prices from today's broker orders into
         records missing them, and import still-uncovered orders as
-        IMPORTED rows (trades placed before the audit hooks existed)."""
+        IMPORTED rows (trades placed outside the app's live audit
+        hooks - broker terminal trades or broker-side exit fills)."""
         if not orders:
             return
         try:
             import pandas as pd
         except ImportError:
             return
+        # The broker spells symbols NIFTY-29Sep2026-22600-PE while the
+        # live hooks store NIFTY26SEP22600PE - compare canonically or
+        # every broker order looks uncovered and gets duplicated.
+        from core.audit_log_parser import canonical_symbol
 
         today = datetime.now().date()
         # Deduplicate partial-fill rows of the same order id: keep the
@@ -430,9 +489,10 @@ class TradeAudit:
             # Price enrichment: the nearest same-symbol record to this
             # order's timestamp gets the fill price the logs could not
             # capture (exchange ts vs receipt ts differ by ~1-2s).
+            sym_key = canonical_symbol(symbol)
             candidates = [
                 rec for rec in records
-                if str(rec.get("symbol") or "") == str(symbol)
+                if canonical_symbol(rec.get("symbol")) == sym_key
             ]
             best_rec, best_gap = None, None
             for rec in candidates:
@@ -449,13 +509,25 @@ class TradeAudit:
                 if order["side"] == "BUY":
                     if not best_rec.get("ltp_exec"):
                         best_rec["ltp_exec"] = order["price"]
-                    # Broker average_price is the authoritative per-order
-                    # fill - it overwrites the provisional grid price.
-                    if best_rec.get("buy_avg_price") != order["price"]:
+                    # Broker average_price is authoritative ONLY for
+                    # log-reconstructed rows (no live fill capture).
+                    # Live-hook rows keep their own fill - the broker
+                    # book may hold an external same-strike order in
+                    # the match window, and overwriting would misprice
+                    # the live trade.
+                    if (best_rec.get("buy_avg_price") != order["price"]
+                            and best_rec.get("source") == "logs"):
+                        best_rec["buy_avg_price"] = order["price"]
+                        best_rec["buy_avg_ts"] = ts_epoch
+                    elif not best_rec.get("buy_avg_price"):
                         best_rec["buy_avg_price"] = order["price"]
                         best_rec["buy_avg_ts"] = ts_epoch
                 else:
-                    best_rec["sell_exec_ltp"] = order["price"]
+                    if not best_rec.get("sell_avg_price") or (
+                            best_rec.get("source") == "logs"):
+                        # Broker average_price is the actual SELL fill -
+                        # kept separate from the LTP @ Exec tick.
+                        best_rec["sell_avg_price"] = order["price"]
                 if not best_rec.get("lots") and lot_size_lookup:
                     best_rec["lots"] = _lots_for(symbol, order)
 
@@ -492,6 +564,7 @@ class TradeAudit:
                     open_buy["sell_trigger_source"] = "IMPORTED"
                     open_buy["sell_exec_ts"] = ts_epoch
                     open_buy["sell_exec_ltp"] = order["price"]
+                    open_buy["sell_avg_price"] = order["price"]
                     open_buy["sell_success"] = True
                 else:
                     records.append({
@@ -506,14 +579,16 @@ class TradeAudit:
                         "sell_trigger_source": "IMPORTED",
                         "sell_exec_ts": ts_epoch,
                         "sell_exec_ltp": order["price"],
+                        "sell_avg_price": order["price"],
                         "sell_success": True,
                     })
 
         for rec in records:
             if rec.get("imported") and not rec.get("imported_note"):
                 rec["imported_note"] = (
-                    "Imported from broker order book - no click-time capture "
-                    "for this trade (placed before the audit feature/restart)"
+                    "Imported from broker order book - placed outside the "
+                    "app's audit hooks (broker terminal trade, or an exit "
+                    "order filled broker-side)"
                 )
 
     # -------------------------------------------------------------
@@ -523,7 +598,7 @@ class TradeAudit:
     def _comment_for(out):
         """One-line execution commentary built from the computed metrics."""
         parts = []
-        btc = out.get("Buy Time Cost (s)")
+        btc = out.get("Buy Time Slippage (s)")
         if btc != "":
             btc = float(btc)
             if btc < 0.5:
@@ -534,7 +609,7 @@ class TradeAudit:
                 parts.append("Slow buy fill")
             else:
                 parts.append(f"Very slow buy fill ({btc:.1f}s)")
-        bs_pct = out.get("Buy Slippage %")
+        bs_pct = out.get("Buy Price Slippage %")
         if bs_pct != "" and bs_pct is not None:
             bs_pct = float(bs_pct)
             if bs_pct > 0.75:
@@ -548,13 +623,13 @@ class TradeAudit:
                 f"lots reduced on retry x{out.get('Retries')} "
                 f"({out.get('Exec Slippage %') or 0:+.2f}% entry cost)"
             )
-        stc = out.get("Sell Time Cost (s)")
+        stc = out.get("Sell Time Slippage (s)")
         if stc != "":
             parts.append(
                 f"sell filled in {float(stc):.2f}s "
                 f"({str(out.get('Trigger Source') or '').lower()})"
             )
-        ss_pct = out.get("Sell Slippage %")
+        ss_pct = out.get("Sell Price Slippage %")
         if ss_pct != "" and ss_pct is not None:
             ss_pct = float(ss_pct)
             if ss_pct < -0.75:
@@ -582,19 +657,22 @@ class TradeAudit:
 
     def _computed(self, rec):
         """Return a display-ready copy with derived metrics + formatted
-        times."""
+        times. Price Slippage = Avg Price - LTP @ Click (sell: Sell Avg
+        - LTP @ Trigger): how far the actual fill landed from the price
+        on screen when the trade was clicked - the real cost of the
+        click -> fill delay. Time Slippage = that latency."""
         out = {
-            "Symbol": rec.get("symbol", ""),
+            "Symbol": _display_symbol(rec.get("symbol", "")),
             "Lots": rec.get("lots", ""),
             "SS": self._ss_code(rec),
             "Buy Click Time": _fmt_ts(rec.get("buy_click_ts")),
             "Buy Exec Time": _fmt_ts(rec.get("buy_exec_ts")),
-            "Buy Avg Price": _fmt_num(rec.get("buy_avg_price")),
-            "Buy Time Cost (s)": "",
+            "Buy Time Slippage (s)": "",
             "LTP @ Click": _fmt_num(rec.get("ltp_click")),
             "LTP @ Exec": _fmt_num(rec.get("ltp_exec")),
-            "Buy Slippage": "",
-            "Buy Slippage %": "",
+            "Buy Avg Price": _fmt_num(rec.get("buy_avg_price")),
+            "Buy Price Slippage": "",
+            "Buy Price Slippage %": "",
             "Buy Lot Cost Slippage": "",
             "Sell Trigger Time": _fmt_ts(
                 rec.get("sell_trigger_ts")
@@ -602,14 +680,15 @@ class TradeAudit:
             ),
             "Trigger Source": rec.get("sell_trigger_source", ""),
             "Sell Exec Time": _fmt_ts(rec.get("sell_exec_ts")),
-            "Sell Time Cost (s)": "",
+            "Sell Time Slippage (s)": "",
             "LTP @ Trigger": _fmt_num(
                 rec.get("sell_trigger_ltp")
                 or rec.get("resting_exit_price")
             ),
             "LTP @ Sell Exec": _fmt_num(rec.get("sell_exec_ltp")),
-            "Sell Slippage": "",
-            "Sell Slippage %": "",
+            "Sell Avg Price": "",
+            "Sell Price Slippage": "",
+            "Sell Price Slippage %": "",
             "Sell Profit Slippage": "",
             "Retries": rec.get("retry_count") or 0,
             "Retry Elapsed (s)": "",
@@ -627,36 +706,48 @@ class TradeAudit:
 
         # ---- BUY metrics ----
         if rec.get("buy_click_ts") and rec.get("buy_exec_ts"):
-            btc = rec["buy_exec_ts"] - rec["buy_click_ts"]
-            out["Buy Time Cost (s)"] = _fmt_num(btc)
+            bts = rec["buy_exec_ts"] - rec["buy_click_ts"]
+            out["Buy Time Slippage (s)"] = _fmt_num(bts)
         ltp_click = rec.get("ltp_click")
         ltp_exec = rec.get("ltp_exec")
-        if ltp_exec is None:
-            # No post-fill tick logged for this row - the ACTUAL fill
-            # price (avg) is the truest LTP@Exec for slippage purposes.
-            ltp_exec = rec.get("buy_avg_price")
-            if ltp_exec is not None:
-                out["LTP @ Exec"] = _fmt_num(ltp_exec)
-        if ltp_click and ltp_exec is not None:
-            slip = float(ltp_exec) - float(ltp_click)
-            out["Buy Slippage"] = _fmt_num(slip)
-            out["Buy Slippage %"] = _fmt_num(slip / float(ltp_click) * 100)
+        if ltp_exec is None and rec.get("buy_avg_price") is not None:
+            # No post-fill tick logged for this row - show the fill
+            # price as LTP @ Exec, but slippage still keys off the
+            # click LTP below.
+            out["LTP @ Exec"] = _fmt_num(rec["buy_avg_price"])
+        buy_avg = rec.get("buy_avg_price")
+        if buy_avg is not None and ltp_click:
+            pslip = float(buy_avg) - float(ltp_click)
+            out["Buy Price Slippage"] = _fmt_num(pslip)
+            out["Buy Price Slippage %"] = _fmt_num(
+                pslip / float(ltp_click) * 100
+            )
             if lots_f is not None:
-                out["Buy Lot Cost Slippage"] = _fmt_num(slip * lots_f)
+                out["Buy Lot Cost Slippage"] = _fmt_num(pslip * lots_f)
 
         # ---- SELL metrics ----
         trig_ts = rec.get("sell_trigger_ts") or rec.get("resting_exit_placed_ts")
         if trig_ts and rec.get("sell_exec_ts") and not rec.get("imported"):
-            stc = rec["sell_exec_ts"] - trig_ts
-            out["Sell Time Cost (s)"] = _fmt_num(stc)
+            sts = rec["sell_exec_ts"] - trig_ts
+            out["Sell Time Slippage (s)"] = _fmt_num(sts)
         trig_ltp = rec.get("sell_trigger_ltp") or rec.get("resting_exit_price")
         sell_ltp = rec.get("sell_exec_ltp")
-        if trig_ltp and sell_ltp is not None:
-            sslip = float(sell_ltp) - float(trig_ltp)
-            out["Sell Slippage"] = _fmt_num(sslip)
-            out["Sell Slippage %"] = _fmt_num(sslip / float(trig_ltp) * 100)
+        # The actual sell fill: captured from the broker order book /
+        # broker-side fill hooks. Imported rows only ever knew one
+        # price - the broker's - so it doubles as the average.
+        sell_avg = rec.get("sell_avg_price")
+        if sell_avg is None and rec.get("imported"):
+            sell_avg = sell_ltp
+        if sell_avg is not None:
+            out["Sell Avg Price"] = _fmt_num(sell_avg)
+        if sell_avg is not None and trig_ltp:
+            pslip = float(sell_avg) - float(trig_ltp)
+            out["Sell Price Slippage"] = _fmt_num(pslip)
+            out["Sell Price Slippage %"] = _fmt_num(
+                pslip / float(trig_ltp) * 100
+            )
             if lots_f is not None:
-                out["Sell Profit Slippage"] = _fmt_num(sslip * lots_f)
+                out["Sell Profit Slippage"] = _fmt_num(pslip * lots_f)
 
         # ---- RETRY metrics ----
         retries = rec.get("retries") or []
@@ -753,19 +844,38 @@ class TradeAudit:
                 base = [dict(r) for r in self._load_date_file(date_str)]
 
         # Reconstructed rows: skip trades the higher-fidelity sources
-        # already captured (same symbol, buy execution within seconds -
-        # distinct rebuys of a contract sit far apart).
+        # already captured. Matching is on the record's FIRST event
+        # (click when present - so failed clicks dedupe too, not just
+        # executed ones) and distinct rebuys of a contract sit far
+        # apart.
+        def _first_ts(r):
+            return (r.get("buy_click_ts") or r.get("buy_exec_ts")
+                    or r.get("sell_trigger_ts") or r.get("sell_exec_ts"))
+
         try:
             for log_rec in parse_date_logs(date_str):
-                covered = any(
-                    canonical_symbol(r.get("symbol"))
-                    == canonical_symbol(log_rec.get("symbol"))
-                    and r.get("buy_exec_ts") and log_rec.get("buy_exec_ts")
-                    and abs(r["buy_exec_ts"] - log_rec["buy_exec_ts"]) < 10
-                    for r in base
+                lr_ts = _first_ts(log_rec)
+                match = next(
+                    (
+                        r for r in base
+                        if canonical_symbol(r.get("symbol"))
+                        == canonical_symbol(log_rec.get("symbol"))
+                        and lr_ts and _first_ts(r)
+                        and abs(_first_ts(r) - lr_ts) < 10
+                    ),
+                    None,
                 )
-                if not covered:
-                    base.append(log_rec)
+                if match is not None:
+                    # The live hooks don't flag broker rejections - fold
+                    # the log-reconstructed failure into the live row.
+                    if (not match.get("buy_exec_ts")
+                            and log_rec.get("buy_success") is False):
+                        match["buy_success"] = False
+                        match["buy_note"] = (
+                            log_rec.get("buy_note") or match.get("buy_note")
+                        )
+                    continue
+                base.append(log_rec)
         except Exception as e:
             logger.error(f"Audit: log reconstruction failed for {date_str}: {e}")
 

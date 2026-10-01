@@ -1,6 +1,7 @@
 import os
 import json
 import math
+import re
 import ijson
 import logging
 import csv
@@ -44,6 +45,7 @@ _DATA_FILES = {
     "mstock_instrument_list_reduced.json",
     "PaperTrading.txt",
     "PlaybackPrice.csv",
+    "tick_stats.json",
 }
 
 
@@ -179,6 +181,58 @@ def get_underlying_for_symbol(symbol) -> Optional[str]:
         if text.startswith(prefix):
             return prefix
     return None
+
+
+# Derivative segments that can carry options. Equity/ETF holdings live
+# in the cash segments and can never be options.
+_DERIVATIVE_EXCHANGES = ("NFO", "BFO", "MCX", "CDS")
+
+# Option symbols end with a strike immediately followed by CE/PE
+# (e.g. NIFTY26OCT25500CE, SENSEX2691774400PE, CRUDEOIL26OCT5300CE,
+# USDINR26OCT77.5CE). Requiring the strike keeps equity names that
+# merely END in "CE"/"PE" (RELIANCE) from passing as options.
+_OPTION_SYMBOL_RE = re.compile(r"\d(?:\.\d+)?(?:CE|PE)$")
+
+
+def is_option_instrument(symbol=None, exchange=None, instrument_type=None) -> bool:
+    """
+    True only for option instruments (CE/PE).
+
+    Used to keep cash-segment holdings (stocks, ETFs like LIQUIDCASE
+    bought outside the app, mutual funds etc.) and futures out of the
+    Buy/Sell grids, which track options exclusively.
+
+    `instrument_type` (broker instrument master tag, e.g. CE/PE/FUT/
+    OPTIDX) is authoritative when provided; otherwise the decision
+    falls to the symbol suffix, then the exchange segment.
+    """
+    if instrument_type:
+        itype = str(instrument_type).strip().upper()
+        if itype in ("CE", "PE", "OPTIDX", "OPTSTK", "OPTCUR", "OPTFUT"):
+            return True
+        if itype in ("FUT", "FUTIDX", "FUTSTK", "FUTCUR", "FUTIV"):
+            return False
+
+    symbol = str(symbol or "").strip().upper()
+
+    # Trust the strike+CE/PE suffix even when the exchange tag is
+    # missing or reports the cash segment (some brokers tag BSE/NSE
+    # for derivatives) - hiding a real option from the grids is worse
+    # than a stray equity row.
+    if _OPTION_SYMBOL_RE.search(symbol):
+        return True
+
+    if symbol.endswith("FUT"):
+        return False
+
+    exchange = str(exchange or "").strip().upper()
+
+    # Cash segments (NSE/BSE equity) can never hold options - this is
+    # what rejects stocks/ETFs whose names lack the option suffix.
+    if exchange and exchange not in _DERIVATIVE_EXCHANGES:
+        return False
+
+    return False
 
 
 # Instrument files that carry a meta block use this shape:

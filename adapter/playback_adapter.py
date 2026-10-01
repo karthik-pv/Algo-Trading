@@ -835,7 +835,10 @@ class PlaybackAdapter(BrokerInterface):
                 month_char = calendar.month_name[expiry.month][:3].upper()
                 dd_str = ""
             else:
-                month_char = str(expiry.month)
+                month_char = (
+                    str(expiry.month) if expiry.month <= 9
+                    else calendar.month_name[expiry.month][0].upper()
+                )
                 dd_str = f"{expiry.day:02d}"
             return f"{underlying}{yy}{month_char}{dd_str}{int(strike)}{call_or_put.upper()}"
         except Exception as error:

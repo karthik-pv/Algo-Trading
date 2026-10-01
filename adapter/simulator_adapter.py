@@ -2,6 +2,7 @@ import hashlib
 import json
 import os
 import random
+import calendar
 import threading
 import time
 from datetime import date, datetime, timedelta
@@ -366,7 +367,12 @@ class SimulatorAdapter(BrokerInterface):
         logger.info("Simulation tick engine started")
 
     def format_option_symbol(self, underlying, expiry, strike, call_or_put):
-        return f"{underlying.upper()}{expiry.year % 100}{expiry.month}{expiry.day:02d}{int(strike)}{call_or_put.upper()}"
+        underlying = underlying.upper()
+        month_char = (
+            str(expiry.month) if expiry.month <= 9
+            else calendar.month_name[expiry.month][0].upper()
+        )
+        return f"{underlying}{expiry.year % 100}{month_char}{expiry.day:02d}{int(strike)}{call_or_put.upper()}"
 
     def dev_start(self):
         return None

@@ -5,6 +5,7 @@ __pycache__/
 .vscode
 .opencode
 .github
+.DS_Store
 
 # Runtime data (logs, tokens, instrument dumps, paper trades)
 data/

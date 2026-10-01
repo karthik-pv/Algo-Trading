@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}TradeInvestAlgo{% endblock %}
+{% block title %}OptionScalper{% endblock %}
 
 {% block head_styles %}
 <style>
@@ -310,8 +310,8 @@
         min-height: 1.4rem;
         margin: 0.1rem 0;
         width: 100%;          /* left edge aligns with the grids */
-        /* Mode box lines up with the Broker box: widget border 1px
-           + widget padding 10px + toggle-container padding 12px */
+        /* Buttons/pills align with the widget content below: widget
+           border 1px + widget padding 10px + toggle-container padding 12px */
         padding-left: 23px;
         box-sizing: border-box;
     }
@@ -325,79 +325,43 @@
         min-width: 0;
     }
 
-    /* Mode label (LIVE / PAPER / SIMULATION / PLAYBACK) in the status bar.
-       Same height/format as the Broker / Underlying / Expiry labels. */
-    .mode-label {
+    /* Right zone: feed-status badge + transaction status toast, kept
+       together at the right edge of the status bar (badge reads first,
+       immediately before the toast). */
+    .status-bar-right {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        margin-left: auto;   /* pushes the whole group to the right edge */
+        flex-shrink: 0;
+    }
+
+    /* Mode label (LIVE / PAPER / SIMULATION / PLAYBACK) now lives in the
+       tab bar (base.html). The FEED STALE badge sits at the right edge of
+       the status bar (just before the transaction status toast) and
+       reuses the live-dot-blink keyframes from base.html.
+       Shown/hidden by the feed_status socket event. */
+    .feed-stale-badge {
         display: inline-flex;
         align-items: center;
-        gap: 0.35rem;
         padding: 5px 10px;
         border-radius: 4px;
-        border: 1px solid #c8c8c8;
-        background-color: hsl(0, 1%, 26%);
-        color: #fff;
+        border: 1px solid #e57373;
+        background-color: #5c1a1a;
+        color: #ffb3b3;
         font-size: 0.8rem;
         font-weight: 700;
         letter-spacing: 0.06em;
         text-transform: uppercase;
         white-space: nowrap;
         flex: 0 0 auto;
-    }
-    .mode-label::before {
-        content: "";
-        width: 0.5rem;
-        height: 0.5rem;
-        border-radius: 50%;
-        background-color: #9e9e9e;
-    }
-    /* LIVE: green box + blinking dot with expanding concentric pulse rings */
-    .mode-label[data-mode="LIVE"] {
-        position: relative;
-        border-color: #66bb6a;
-        background-color: #1b4622;
-    }
-    .mode-label[data-mode="LIVE"]::before {
-        background-color: #66bb6a;
         animation: live-dot-blink 1.6s ease-in-out infinite;
     }
-    .mode-label[data-mode="LIVE"]::after {
-        content: "";
-        position: absolute;
-        left: 0.6rem;
-        top: 50%;
-        width: 0.5rem;
-        height: 0.5rem;
-        border-radius: 50%;
-        transform: translateY(-50%);
-        pointer-events: none;
-        animation: live-pulse-rings 1.8s ease-out infinite;
-    }
-    @keyframes live-dot-blink {
-        0%, 100% { opacity: 1; }
-        50% { opacity: 0.35; }
-    }
-    @keyframes live-pulse-rings {
-        0% {
-            box-shadow: 0 0 0 0 rgba(102, 187, 106, 0.75),
-                        0 0 0 0 rgba(102, 187, 106, 0.45);
-        }
-        70% {
-            box-shadow: 0 0 0 6px rgba(102, 187, 106, 0),
-                        0 0 0 6px rgba(102, 187, 106, 0.30);
-        }
-        100% {
-            box-shadow: 0 0 0 6px rgba(102, 187, 106, 0),
-                        0 0 0 14px rgba(102, 187, 106, 0);
-        }
-    }
-    .mode-label[data-mode="PAPER"] { border-color: #42a5f5; background-color: #14304a; }
-    .mode-label[data-mode="PAPER"]::before { background-color: #42a5f5; }
-    .mode-label[data-mode="SIMULATION"] { border-color: #ffb74d; background-color: #4a3413; }
-    .mode-label[data-mode="SIMULATION"]::before { background-color: #ffb74d; }
-    .mode-label[data-mode="PLAYBACK"] { border-color: #ba68c8; background-color: #3d1f47; }
-    .mode-label[data-mode="PLAYBACK"]::before { background-color: #ba68c8; }
 
-    /* Playback controls next to the mode label */
+    /* Mode pill color variants (LIVE / PAPER / SIMULATION / PLAYBACK)
+       and their keyframes moved to base.html with the pill itself. */
+
+    /* Playback controls (PLAYBACK mode) in the status bar */
     .playback-controls {
         display: flex;
         align-items: center;
@@ -439,7 +403,6 @@
     }
 
     #orderStatusLabel {
-        margin-left: auto;
         padding: 0;
         font-size: 0.78rem;
         white-space: normal;
@@ -515,9 +478,9 @@
         font-weight: 700;
     }
 
-    /* Sell All / Cancel All sit right next to the Mode box, at the same
-       height as the Broker / Underlying / Expiry labels. Scoped here so
-       the table-row Sell buttons keep their size. */
+    /* Sell All / Cancel All / cash-balance pill sit together at the left
+       of the status bar (the Mode box moved to the tab bar in base.html).
+       Scoped here so the table-row Sell buttons keep their size. */
     .status-bar-actions .sell-button {
         padding: 5px 10px;
         font-size: 0.8rem;
@@ -529,6 +492,17 @@
         align-items: center;
         gap: 0.5rem;
         flex: 0 0 auto;
+    }
+
+    /* Cash-balance pill: same box look it had in the toggle container. */
+    .status-bar-actions .expiry-label {
+        background-color: hsl(0, 1%, 26%);
+        padding: 5px 10px;
+        border-radius: 4px;
+        border: 1px solid #c8c8c8;
+        display: inline-flex;
+        align-items: center;
+        white-space: nowrap;
     }
 </style>
 <style>
@@ -607,7 +581,13 @@
         font-weight: 700;
     }
 
-    #cashChangePct {
+    #cashGrossValue {
+        color: #fff;
+        font-weight: 700;
+    }
+
+    #cashChangePct,
+    #cashGrossPct {
         margin-left: 4px;
         padding: 2px 8px;
         border-radius: 5px;
@@ -617,13 +597,15 @@
         font-size: 0.72rem;
     }
 
-    #cashChangePct.profit {
+    #cashChangePct.profit,
+    #cashGrossPct.profit {
         color: #66bb6a;
         background: rgba(102, 187, 106, 0.12);
         border-color: rgba(102, 187, 106, 0.45);
     }
 
-    #cashChangePct.loss {
+    #cashChangePct.loss,
+    #cashGrossPct.loss {
         color: #ef5350;
         background: rgba(239, 83, 80, 0.12);
         border-color: rgba(239, 83, 80, 0.45);
@@ -638,6 +620,14 @@
     #totalOtherChargesValue {
         color: #fff;
         font-weight: 700;
+    }
+
+    /* Charge chips: "x.xx% of the day's opening cash balance" suffix */
+    .charges-summary .charges-pct {
+        color: #ff6b6b;
+        font-size: 0.72rem;
+        font-weight: 500;
+        margin-left: 2px;
     }
 
     .orders-header-right {
@@ -815,10 +805,100 @@
         font-weight: 600;
         line-height: 1.2;
     }
-    #auditRefreshBtn:hover, #auditDownloadBtn:hover { background: #444; color: #fff; }
+    #auditRefreshBtn:hover, #auditDownloadBtn:hover {
+        background: #444; color: #fff;
+    }
     #auditRefreshBtn:disabled, #auditDownloadBtn:disabled {
         color: #666; cursor: not-allowed; background: transparent;
     }
+
+    /* --- Session band: always-visible health strip above the grid,
+       expandable to the full log report (errors, feed, verdict) --- */
+    #auditSessionBand {
+        width: 100%;
+        max-width: none;
+        box-sizing: border-box;
+        border: 1px solid #2e5c33;
+        border-radius: 8px;
+        background: #16211a;
+        padding: 7px 12px;
+        margin-bottom: 8px;
+    }
+    #auditSessionBand.warn {
+        border-color: #8a6d1d;
+        background: #241f12;
+    }
+    #asbStrip { display: flex; align-items: center; gap: 10px; }
+    #asbStripText {
+        flex: 1;
+        font-size: 0.74rem;
+        line-height: 1.5;
+        color: #a5d6a7;
+        word-break: break-word;
+    }
+    #auditSessionBand.warn #asbStripText { color: #ffcc80; }
+    #asbToggleBtn {
+        flex-shrink: 0;
+        background: transparent;
+        color: #ccc;
+        border: 1px solid #666;
+        border-radius: 6px;
+        padding: 3px 9px;
+        cursor: pointer;
+        font-size: 0.72rem;
+        font-weight: 600;
+    }
+    #asbToggleBtn:hover { background: #444; color: #fff; }
+    #asbDetails {
+        border-top: 1px solid #2f3d2f;
+        margin-top: 7px;
+        padding-top: 4px;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        max-height: 420px;
+        overflow: auto;
+    }
+    #asbDetails .asb-section h4 {
+        margin: 8px 0 4px;
+        font-size: 0.78rem;
+        color: #eee;
+        border-bottom: 1px solid #2f3d2f;
+        padding-bottom: 3px;
+        letter-spacing: 0.5px;
+    }
+    #asbDetails .asb-line {
+        font-size: 0.74rem;
+        color: #ccc;
+        line-height: 1.55;
+        white-space: pre-wrap;
+        word-break: break-word;
+    }
+    #asbDetails .asb-line.ok   { color: #81c784; }
+    #asbDetails .asb-line.warn { color: #ffcc80; }
+    #asbDetails .asb-line.err  { color: #ef9a9a; }
+    #asbDetails .asb-line.indent { padding-left: 26px; color: #aaa; }
+    #asbDetails table.asb-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.7rem;
+        color: #ddd;
+        margin: 4px 0 2px;
+    }
+    #asbDetails table.asb-table th, #asbDetails table.asb-table td {
+        border: 1px solid #3a3a3a;
+        padding: 4px 7px;
+        text-align: left;
+        white-space: nowrap;
+    }
+    #asbDetails table.asb-table th {
+        background: #26332a;
+        color: #a5d6a7;
+        font-weight: 600;
+        position: sticky;
+        top: 0;
+    }
+    #asbDetails table.asb-table tbody tr:nth-child(even) { background: #20291f; }
 
     #auditGridContainer {
         max-height: 560px;
@@ -848,7 +928,7 @@
         color: #ccc;
         font-weight: 600;
         position: sticky;
-        top: 26px; /* below the sticky group band row */
+        top: 50px; /* below the sticky group + sub-header band rows */
         z-index: 2;
     }
 
@@ -862,13 +942,39 @@
         letter-spacing: 1px;
         position: sticky;
         top: 0;
-        z-index: 3;
+        z-index: 4;
     }
     #auditTable thead tr.group-row th.audit-group-buy   { background: #1b3a1e; color: #a5d6a7; }
     #auditTable thead tr.group-row th.audit-group-sell  { background: #3e1414; color: #ef9a9a; }
     #auditTable thead tr.group-row th.audit-group-retry { background: #3d2f10; color: #ffcc80; }
     #auditTable thead tr.group-row th.audit-group-trade,
     #auditTable thead tr.group-row th.audit-group-comment { color: #999; }
+
+    /* Sub-header band row: TIME / PRICE cells under BUY and SELL */
+    #auditTable thead tr.sub-row th {
+        background: #242424;
+        color: #aaa;
+        font-weight: 600;
+        font-size: 0.68rem;
+        text-align: center;
+        letter-spacing: 1px;
+        text-transform: uppercase;
+        position: sticky;
+        top: 26px; /* below the group band row */
+        z-index: 3;
+        padding: 3px 8px;
+    }
+    #auditTable thead tr.sub-row th.audit-sub-time  { background: #5f5f5f; color: #f0f0f0; }
+    #auditTable thead tr.sub-row th.audit-sub-price { background: #333333; color: #cccccc; }
+
+    /* Latency block: Time sub-group gets a gray BACKGROUND (header +
+       body) so the Time/Price split reads at a glance; Price columns
+       stay on the normal backgrounds. */
+    #auditTable thead th.time-col { background: #4b4b4b; color: #d0d0d0; }
+    #auditTable td.time-col {
+        background: rgba(128, 128, 128, 0.18); /* translucent: zebra still shows */
+        color: #cfcfcf;
+    }
     #auditTable tbody tr:nth-child(even) { background: #262626; }
     #auditTable tbody tr:hover { background: #333; }
 
@@ -1184,6 +1290,26 @@
     <section class="tab-panel" id="panel-trade" data-tab="trade">
         <main class="main-content">
 
+    <!-- === SETUP CALL PANEL (forecasting/setup_library.json -> engine -> Forecast.setup_call) === -->
+    <div class="widget-container" id="setup-call-widget" style="display:none;">
+        <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; padding:6px 4px;">
+            <span style="font-weight:700; font-size:1.05em;">Setup Call</span>
+            <span id="setup-call-badge" style="padding:2px 10px; border-radius:10px; font-weight:700; font-size:0.9em; background:#555; color:#fff;">—</span>
+            <span id="setup-call-trend" style="padding:2px 8px; border-radius:4px; font-weight:700; font-size:0.85em; background:#2a2a2a; color:#0c0;"></span>
+            <span id="setup-call-id" style="font-weight:700;"></span>
+            <span id="setup-call-name" style="color:#aaa;"></span>
+            <span id="setup-call-liner" style="color:#888; font-size:0.88em;"></span>
+            <span id="setup-call-regime" style="color:#888;"></span>
+            <span id="setup-call-price" style="color:#888;"></span>
+        </div>
+        <div id="setup-call-reason" style="padding:0 4px 4px 4px; color:#ccc; font-size:0.92em;"></div>
+        <div id="setup-call-indicators" style="padding:0 4px 4px 4px; color:#7ab; font-size:0.86em; font-family:monospace;"></div>
+        <div id="setup-call-indicators2" style="padding:0 4px 4px 4px; color:#a86; font-size:0.86em; font-family:monospace;"></div>
+        <div id="setup-call-tradecases" style="display:flex; gap:12px; flex-wrap:wrap; padding:2px 4px 6px 4px;"></div>
+        <div id="setup-call-invalidation" style="padding:0 4px 6px 4px; color:#e8a; font-size:0.88em;"></div>
+        <div id="setup-call-history" style="padding:0 4px 6px 4px; color:#777; font-size:0.82em;"></div>
+    </div>
+
     <!-- === TRADE (Sell Positions Grid + Buy Dashboard + info line + status message) === -->
     <div class="widget-container" id="sell-widget-container">
         <table class="option-table">
@@ -1196,7 +1322,6 @@
                     <th>BK%</th>
                     <th>Levels</th>
                     <th>XE</th>
-                    <th>SPrice</th>
                     <th>BPrice</th>
                     <th>MPrice</th>
                     <th>Lots</th>
@@ -1207,7 +1332,7 @@
                 </tr>
             </thead>
             <tbody id="positionsTableBody">
-                <tr><td colspan="15" class="no-options">Loading open positions...</td></tr>
+                <tr><td colspan="14" class="no-options">Loading open positions...</td></tr>
             </tbody>
         </table>
     </div>
@@ -1268,14 +1393,8 @@
 
         </div>
 
-    <!-- Right: Available Balance / Refresh / Calls / Puts -->
+    <!-- Right: Refresh / Calls / Puts (cash balance moved to the status bar) -->
     <div class="toggle-buttons">
-        <label id="availableBalance" class="expiry-label" title="Available balance to trade &#8594; Net P/L for the day (realized + open) and its % of the day's opening balance">
-            <span id="availableBalanceValue">--</span>
-            <span id="openProfitValue" class="profit" style="display: none;"></span>
-            <span id="openProfitPct" class="profit" style="display: none;"></span>
-        </label>
-
         <label class="announcement-toggle-label" title="Enable or disable voice announcement" aria-label="Voice announcement toggle">
             <input type="checkbox" id="announcementToggle" checked>
             <span aria-hidden="true">&#128266;</span>
@@ -1293,12 +1412,17 @@
 </div>
 
     <div class="status-bar">
-        <!-- Left zone: trading mode label + playback controls (same line as order status) -->
+        <!-- Left zone: Sell/Cancel actions + playback controls.
+             The trading-mode pill now lives in the tab bar (base.html). -->
         <div id="statusBarLeft" class="status-bar-left">
-            <span id="modeLabel" class="mode-label" data-mode="" title="Current trading mode">--</span>
             <div class="status-bar-actions">
                 <button id="sellAllBtn" class="sell-button" disabled title="Sell every open position leg">Sell All</button>
                 <button id="cancelAllBtn" class="sell-button cancel-btn" disabled title="Cancel every pending order">Cancel All</button>
+                <label id="availableBalance" class="expiry-label" title="Available balance to trade &#8594; Net P/L for the day (realized + open) and its % of the day's opening balance">
+                    <span id="availableBalanceValue">--</span>
+                    <span id="openProfitValue" class="profit" style="display: none;"></span>
+                    <span id="openProfitPct" class="profit" style="display: none;"></span>
+                </label>
             </div>
             <div id="playbackControls" class="playback-controls" style="display: none;">
                 <input type="datetime-local" id="playbackStartInput" step="1"
@@ -1315,7 +1439,14 @@
                 </select>
             </div>
         </div>
-        <div id="orderStatusLabel" role="status" aria-live="polite"></div>
+        <!-- Right zone: feed status sits just before the transaction
+             status toast, so both read as one right-hand group. -->
+        <div class="status-bar-right">
+            <span id="feedStaleBadge" class="feed-stale-badge"
+                  style="display: none;"
+                  title="No quote packets from the broker feed - grid prices are frozen">FEED STALE</span>
+            <div id="orderStatusLabel" role="status" aria-live="polite"></div>
+        </div>
     </div>
     <!-- === PENDING ORDERS GRID (position-grid format, pending-order semantics) === -->
     <div class="widget-container" id="pending-widget-container">
@@ -1352,7 +1483,7 @@
     <div id="ordersGridWrapper">
         <div class="orders-header">
             <div class="toggle-buttons">
-                <label id="cashSummaryLabel" class="expiry-label cash-summary" style="display: none;" title="Opening balance of the day (broker start-of-day figure where known) &#8594; Net P/L from the trades shown, with return %">
+                <label id="cashSummaryLabel" class="expiry-label cash-summary" style="display: none;" title="Opening balance of the day (broker start-of-day figure where known) &#8594; Gross P/L from the trades shown (before charges) &#8594; Net P/L after brokerage + other charges, with return %">
                     <!-- <span class="cash-caption">Cash</span>
                     <span id="cashBeginValue">--</span>
                     <span class="cash-arrow">&#8594;</span>
@@ -1361,26 +1492,32 @@
                     <span class="cash-caption">Open Balance</span>
                     <span id="cashBeginValue">--</span>
                     <span class="cash-arrow">&#8594;</span>
+                    <span class="cash-caption">Gross P/L</span>
+                    <span id="cashGrossValue">--</span>
+                    <span id="cashGrossPct">--</span>
+                    <span class="cash-arrow">&#8594;</span>
                     <span class="cash-caption">Net P/L</span>
                     <span id="cashCurrentValue">--</span>
                     <span id="cashChangePct">--</span>                    
                 </label>
-                <label id="brokerageSummaryLabel" class="expiry-label charges-summary" style="display: none;" title="Brokerage charged across the trades shown (flat per executed order)">
+                <label id="brokerageSummaryLabel" class="expiry-label charges-summary" style="display: none;" title="Brokerage charged across the trades shown (flat per executed order) - % of the day's opening cash balance">
                     <span class="cash-caption">Brokerage</span>
                     <span id="totalBrokerageValue">--</span>
+                    <span class="charges-pct" id="brokeragePctValue"></span>
                 </label>
-                <label id="otherChargesSummaryLabel" class="expiry-label charges-summary" style="display: none;" title="STT + exchange transaction + SEBI + GST + stamp duty across the trades shown">
+                <label id="otherChargesSummaryLabel" class="expiry-label charges-summary" style="display: none;" title="STT + exchange transaction + SEBI + GST + stamp duty across the trades shown - % of the day's opening cash balance">
                     <span class="cash-caption">Other Chgs</span>
                     <span id="totalOtherChargesValue">--</span>
+                    <span class="charges-pct" id="otherChargesPctValue"></span>
                 </label>
             </div>
             <div class="orders-header-right">
                 <input type="date" id="ordersDateInput" title="Trade date to load in this grid">
                 <span id="ordersCountLabel"></span>
-                <button id="ordersUploadBtn" type="button" title="Upload an M.Stock contract note PDF into this grid">&#8679; Upload</button>
+                <button id="ordersUploadBtn" type="button" title="Upload an M.Stock contract note PDF or a Kite Console tradebook CSV into this grid">&#8679; Upload</button>
                 <button id="ordersDownloadBtn" type="button" title="Download the trades shown in this grid as Excel">&#8681; Download</button>
                 <button id="ordersRefreshBtn" type="button" title="Refresh trades for the selected date">&#x21bb;</button>
-                <input type="file" id="ordersUploadInput" accept="application/pdf" style="display: none;">
+                <input type="file" id="ordersUploadInput" accept=".pdf,.csv,application/pdf,text/csv" style="display: none;">
             </div>
         </div>
         <div id="ordersGridContainer">
@@ -1429,10 +1566,18 @@
                 <button id="auditDownloadBtn" type="button" title="Download the report as Excel">&#8681; Download Excel</button>
             </div>
         </div>
+        <div id="auditSessionBand" hidden>
+            <div id="asbStrip">
+                <span id="asbStripText"></span>
+                <button id="asbToggleBtn" type="button" title="Show / hide the full session log report (errors, tick feed health, connection health, verdict)">&#x25B8; Details</button>
+            </div>
+            <div id="asbDetails" hidden></div>
+        </div>
         <div id="auditGridContainer">
             <table id="auditTable">
                 <thead>
                     <tr id="auditTableGroupHead" class="group-row"></tr>
+                    <tr id="auditTableSubHead" class="sub-row"></tr>
                     <tr id="auditTableHead"></tr>
                 </thead>
                 <tbody id="auditTableBody">
@@ -1606,7 +1751,7 @@
         <!-- ============ PROFIT / LOSS ============ -->
         <section class="card span-2">
             <div class="card-rail">
-                <span class="card-title" title="Book-profit and stop-loss triggers per strategy. Percent triggers scale by the strategy factors.">Profit / Loss</span>
+                <span class="card-title" title="Book-profit and stop-loss triggers per strategy (Intra, Scalping, Ultra Scalping).">Profit / Loss</span>
             </div>
             <div class="card-body">
                 <div class="field">
@@ -1625,41 +1770,41 @@
                 <div class="field-row">
                     <div class="field only-pct">
                         <div class="field-caption">
-                            <label class="field-label" for="PCT_BOOK_PROFIT">Book Profit</label>
-                            <span class="key-hint">PCT_BOOK_PROFIT</span>
+                            <label class="field-label" for="PCT_BOOK_PROFIT_ULTRA_SCALPING">Ultra Scalping Book Profit</label>
+                            <span class="key-hint">PCT_BOOK_PROFIT_ULTRA_SCALPING</span>
                         </div>
                         <div class="input-wrap">
-                            <input type="number" step="1" id="PCT_BOOK_PROFIT" name="PCT_BOOK_PROFIT" placeholder="3" />
+                            <input type="number" step="0.05" id="PCT_BOOK_PROFIT_ULTRA_SCALPING" name="PCT_BOOK_PROFIT_ULTRA_SCALPING" placeholder="3" />
                             <span class="suffix">%</span>
                         </div>
                     </div>
                     <div class="field only-pct">
                         <div class="field-caption">
-                            <label class="field-label" for="PCT_STOP_LOSS">Stop Loss</label>
-                            <span class="key-hint">PCT_STOP_LOSS</span>
+                            <label class="field-label" for="PCT_STOP_LOSS_ULTRA_SCALPING">Ultra Scalping Stop Loss</label>
+                            <span class="key-hint">PCT_STOP_LOSS_ULTRA_SCALPING</span>
                         </div>
                         <div class="input-wrap">
-                            <input type="number" step="1" id="PCT_STOP_LOSS" name="PCT_STOP_LOSS" placeholder="3" />
+                            <input type="number" step="0.05" id="PCT_STOP_LOSS_ULTRA_SCALPING" name="PCT_STOP_LOSS_ULTRA_SCALPING" placeholder="3" />
                             <span class="suffix">%</span>
                         </div>
                     </div>
                     <div class="field only-pnt">
                         <div class="field-caption">
-                            <label class="field-label" for="PTS_PROFIT">Book Profit</label>
-                            <span class="key-hint">PTS_PROFIT</span>
+                            <label class="field-label" for="PTS_PROFIT_ULTRA_SCALPING">Ultra Scalping Book Profit</label>
+                            <span class="key-hint">PTS_PROFIT_ULTRA_SCALPING</span>
                         </div>
                         <div class="input-wrap">
-                            <input type="number" step="1" id="PTS_PROFIT" name="PTS_PROFIT" placeholder="1" />
+                            <input type="number" step="0.05" id="PTS_PROFIT_ULTRA_SCALPING" name="PTS_PROFIT_ULTRA_SCALPING" placeholder="2.5" />
                             <span class="suffix">pts</span>
                         </div>
                     </div>
                     <div class="field only-pnt">
                         <div class="field-caption">
-                            <label class="field-label" for="PTS_LOSS">Stop Loss</label>
-                            <span class="key-hint">PTS_LOSS</span>
+                            <label class="field-label" for="PTS_LOSS_ULTRA_SCALPING">Ultra Scalping Stop Loss</label>
+                            <span class="key-hint">PTS_LOSS_ULTRA_SCALPING</span>
                         </div>
                         <div class="input-wrap">
-                            <input type="number" step="1" id="PTS_LOSS" name="PTS_LOSS" placeholder="5" />
+                            <input type="number" step="0.05" id="PTS_LOSS_ULTRA_SCALPING" name="PTS_LOSS_ULTRA_SCALPING" placeholder="5" />
                             <span class="suffix">pts</span>
                         </div>
                     </div>
@@ -1667,64 +1812,84 @@
                 <div class="field-row">
                     <div class="field only-pct">
                         <div class="field-caption">
-                            <label class="field-label" for="PCT_PROFIT_ULTRA_SCALPING_FACTOR">PCT Ultra Factor</label>
-                            <span class="key-hint">PCT_PROFIT_ULTRA_SCALPING_FACTOR</span>
+                            <label class="field-label" for="PCT_BOOK_PROFIT_SCALPING">Scalping Book Profit</label>
+                            <span class="key-hint">PCT_BOOK_PROFIT_SCALPING</span>
                         </div>
                         <div class="input-wrap">
-                            <input type="number" step="1" id="PCT_PROFIT_ULTRA_SCALPING_FACTOR" name="PCT_PROFIT_ULTRA_SCALPING_FACTOR" placeholder="1" />
-                            <span class="suffix">x</span>
+                            <input type="number" step="0.05" id="PCT_BOOK_PROFIT_SCALPING" name="PCT_BOOK_PROFIT_SCALPING" placeholder="6" />
+                            <span class="suffix">%</span>
                         </div>
                     </div>
                     <div class="field only-pct">
                         <div class="field-caption">
-                            <label class="field-label" for="PCT_PROFIT_SCALPING_FACTOR">PCT Scalping Factor</label>
-                            <span class="key-hint">PCT_PROFIT_SCALPING_FACTOR</span>
+                            <label class="field-label" for="PCT_STOP_LOSS_SCALPING">Scalping Stop Loss</label>
+                            <span class="key-hint">PCT_STOP_LOSS_SCALPING</span>
                         </div>
                         <div class="input-wrap">
-                            <input type="number" step="1" id="PCT_PROFIT_SCALPING_FACTOR" name="PCT_PROFIT_SCALPING_FACTOR" placeholder="4" />
-                            <span class="suffix">x</span>
+                            <input type="number" step="0.05" id="PCT_STOP_LOSS_SCALPING" name="PCT_STOP_LOSS_SCALPING" placeholder="6" />
+                            <span class="suffix">%</span>
                         </div>
                     </div>
-                    <div class="field only-pct">
+                    <div class="field only-pnt">
                         <div class="field-caption">
-                            <label class="field-label" for="PCT_PROFIT_INTRA_FACTOR">PCT Intra Factor</label>
-                            <span class="key-hint">PCT_PROFIT_INTRA_FACTOR</span>
+                            <label class="field-label" for="PTS_PROFIT_SCALPING">Scalping Book Profit</label>
+                            <span class="key-hint">PTS_PROFIT_SCALPING</span>
                         </div>
                         <div class="input-wrap">
-                            <input type="number" step="1" id="PCT_PROFIT_INTRA_FACTOR" name="PCT_PROFIT_INTRA_FACTOR" placeholder="10" />
-                            <span class="suffix">x</span>
+                            <input type="number" step="0.05" id="PTS_PROFIT_SCALPING" name="PTS_PROFIT_SCALPING" placeholder="4" />
+                            <span class="suffix">pts</span>
+                        </div>
+                    </div>
+                    <div class="field only-pnt">
+                        <div class="field-caption">
+                            <label class="field-label" for="PTS_LOSS_SCALPING">Scalping Stop Loss</label>
+                            <span class="key-hint">PTS_LOSS_SCALPING</span>
+                        </div>
+                        <div class="input-wrap">
+                            <input type="number" step="0.05" id="PTS_LOSS_SCALPING" name="PTS_LOSS_SCALPING" placeholder="5" />
+                            <span class="suffix">pts</span>
                         </div>
                     </div>
                 </div>
                 <div class="field-row">
-                    <div class="field only-pnt">
+                    <div class="field only-pct">
                         <div class="field-caption">
-                            <label class="field-label" for="PTS_PROFIT_ULTRA_SCALPING_FACTOR">PTS Ultra Factor</label>
-                            <span class="key-hint">PTS_PROFIT_ULTRA_SCALPING_FACTOR</span>
+                            <label class="field-label" for="PCT_BOOK_PROFIT_INTRA">Intra Book Profit</label>
+                            <span class="key-hint">PCT_BOOK_PROFIT_INTRA</span>
                         </div>
                         <div class="input-wrap">
-                            <input type="number" step="1" id="PTS_PROFIT_ULTRA_SCALPING_FACTOR" name="PTS_PROFIT_ULTRA_SCALPING_FACTOR" placeholder="2.5" />
-                            <span class="suffix">x</span>
+                            <input type="number" step="0.05" id="PCT_BOOK_PROFIT_INTRA" name="PCT_BOOK_PROFIT_INTRA" placeholder="12" />
+                            <span class="suffix">%</span>
+                        </div>
+                    </div>
+                    <div class="field only-pct">
+                        <div class="field-caption">
+                            <label class="field-label" for="PCT_STOP_LOSS_INTRA">Intra Stop Loss</label>
+                            <span class="key-hint">PCT_STOP_LOSS_INTRA</span>
+                        </div>
+                        <div class="input-wrap">
+                            <input type="number" step="0.05" id="PCT_STOP_LOSS_INTRA" name="PCT_STOP_LOSS_INTRA" placeholder="12" />
+                            <span class="suffix">%</span>
                         </div>
                     </div>
                     <div class="field only-pnt">
                         <div class="field-caption">
-                            <label class="field-label" for="PTS_PROFIT_SCALPING_FACTOR">PTS Scalping Factor</label>
-                            <span class="key-hint">PTS_PROFIT_SCALPING_FACTOR</span>
+                            <label class="field-label" for="PTS_PROFIT_INTRA">Intra Book Profit</label>
+                            <span class="key-hint">PTS_PROFIT_INTRA</span>
                         </div>
                         <div class="input-wrap">
-                            <input type="number" step="1" id="PTS_PROFIT_SCALPING_FACTOR" name="PTS_PROFIT_SCALPING_FACTOR" placeholder="4" />
-                            <span class="suffix">x</span>
+                            <input type="number" step="0.05" id="PTS_PROFIT_INTRA" name="PTS_PROFIT_INTRA" placeholder="10" />
+                            <span class="suffix">pts</span>
                         </div>
                     </div>
                     <div class="field only-pnt">
                         <div class="field-caption">
-                            <label class="field-label" for="PTS_PROFIT_INTRA_FACTOR">PTS Intra Factor</label>
-                            <span class="key-hint">PTS_PROFIT_INTRA_FACTOR</span>
+                            <label class="field-label" for="PTS_LOSS_INTRA">Intra Stop Loss</label>
+                            <span class="key-hint">PTS_LOSS_INTRA</span>
                         </div>
                         <div class="input-wrap">
-                            <input type="number" step="1" id="PTS_PROFIT_INTRA_FACTOR" name="PTS_PROFIT_INTRA_FACTOR" placeholder="10" />
-                            <span class="suffix">x</span>
+                            <input type="number" step="0.05" id="PTS_LOSS_INTRA" name="PTS_LOSS_INTRA" placeholder="5" />
+                            <span class="suffix">pts</span>
                         </div>
                     </div>
                 </div>
@@ -2040,6 +2205,15 @@
                             <input type="number" step="0.00001" min="0" id="STAMP_DUTY_BUY_PCT" name="STAMP_DUTY_BUY_PCT" placeholder="0.003" />
                         </div>
                     </div>
+                    <div class="field">
+                        <div class="field-caption">
+                            <label class="field-label" for="STAMP_DUTY_MIN">Stamp Duty Min (&#8377;/day)</label>
+                            <span class="key-hint">STAMP_DUTY_MIN</span>
+                        </div>
+                        <div class="input-wrap">
+                            <input type="number" step="0.01" min="0" id="STAMP_DUTY_MIN" name="STAMP_DUTY_MIN" placeholder="1" />
+                        </div>
+                    </div>
                 </div>
             </div>
         </section>
@@ -2077,6 +2251,44 @@
 document.addEventListener('DOMContentLoaded', function () {
     window.__appSocket = io('http://localhost:5001', { transports: ['websocket'] });
 });
+</script>
+<script>
+// --- APP WINDOW STATE REPORTER ---
+// Reports the app window bounds to the server (only when they
+// change, plus once on page hide) so the next launch reopens the
+// window at the same position/size. Chrome itself does not reliably
+// restore app-window bounds across restarts.
+(function () {
+    var lastKey = null;
+    function reportState(useBeacon) {
+        try {
+            var state = {
+                x: window.screenX,
+                y: window.screenY,
+                w: window.outerWidth,
+                h: window.outerHeight
+            };
+            var key = state.x + ',' + state.y + ',' + state.w + ',' + state.h;
+            if (key === lastKey) return;
+            lastKey = key;
+            var body = JSON.stringify(state);
+            if (useBeacon && navigator.sendBeacon) {
+                navigator.sendBeacon('/save_window_state',
+                    new Blob([body], { type: 'application/json' }));
+            } else {
+                fetch('/save_window_state', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: body
+                }).catch(function () {});
+            }
+        } catch (e) { /* never break the app over this */ }
+    }
+    window.addEventListener('resize', function () { reportState(false); });
+    window.addEventListener('pagehide', function () { reportState(true); });
+    setInterval(function () { reportState(false); }, 1500);
+    document.addEventListener('DOMContentLoaded', function () { reportState(false); });
+})();
 </script>
 <script>
 (function () {
@@ -2340,10 +2552,12 @@ document.addEventListener('DOMContentLoaded', function() {
             socket.connected
         );
         
-        // No request_weekly_options / request_open_positions emits here:
-        // the server already pushes both in setup_data on connect
-        // (handle_connect), so requesting them again only added a
-        // redundant round-trip before the tables could populate.
+        // Self-healing contract map: on initial load AND every
+        // reconnect, ask the server to re-send the current weekly
+        // option contracts. This closes the startup race where the
+        // server's setup-completion broadcast fired before this
+        // client's socket was connected (grid rows with no prices).
+        socket.emit('request_weekly_options');
         socket.emit('voice_announcement_toggle', {
             enabled: announcementToggleEl ? announcementToggleEl.checked : true
         });
@@ -2351,6 +2565,20 @@ document.addEventListener('DOMContentLoaded', function() {
         // Pending orders are NOT pushed in setup_data - request them
         // explicitly (resting U/D exit limits show here).
         socket.emit('request_pending_orders');
+    });
+
+    // FEED STALE badge: server reports quote-feed silence / recovery.
+    const feedStaleBadge = document.getElementById('feedStaleBadge');
+    socket.on('feed_status', (data) => {
+        if (!feedStaleBadge) return;
+        const stale = !!(data && data.stale);
+        if (stale) {
+            const gap = data && data.gap_seconds ? data.gap_seconds : 0;
+            feedStaleBadge.textContent = `FEED STALE (${gap}s)`;
+            feedStaleBadge.style.display = '';
+        } else {
+            feedStaleBadge.style.display = 'none';
+        }
     });
 
     // Periodic refresh so resting U/D exit orders reflect fills/cancels
@@ -2446,12 +2674,82 @@ document.addEventListener('DOMContentLoaded', function() {
     socket.on('update_trading_view_data', (payload) => {
         console.log("Received TradingView data:", payload);
 
+        // Setup Call panel: Forecast.setup_call rides every webhook emit.
+        if (payload && payload.Forecast) applySetupCall(payload.Forecast);
+
         // TradingView entry validation flags (TV_DATA_Validation_REQUIRED).
         // These gate the CE/PE Buy buttons on every webhook. The Trade
         // Setups table painting that used to live here is stashed in
         // trade_setup_pending_tabs_backup.html for later reuse.
         applyTVValidationPayload(payload);
     });
+
+    // === Setup Call panel rendering ===
+    const TC_MODES = ['ultra_scalp', 'scalp', 'intraday'];
+    function applySetupCall(forecast) {
+        const widget = document.getElementById('setup-call-widget');
+        if (!widget) return;
+        widget.style.display = '';
+        const call = forecast.setup_call;
+        const badge = document.getElementById('setup-call-badge');
+        const idEl = document.getElementById('setup-call-id');
+        const trendEl = document.getElementById('setup-call-trend');
+        const nameEl = document.getElementById('setup-call-name');
+        const linerEl = document.getElementById('setup-call-liner');
+        const regimeEl = document.getElementById('setup-call-regime');
+        const priceEl = document.getElementById('setup-call-price');
+        const reasonEl = document.getElementById('setup-call-reason');
+        const indEl = document.getElementById('setup-call-indicators');
+        const ind2El = document.getElementById('setup-call-indicators2');
+        const tcEl = document.getElementById('setup-call-tradecases');
+        const invEl = document.getElementById('setup-call-invalidation');
+        const histEl = document.getElementById('setup-call-history');
+        if (!call) {
+            badge.textContent = 'NO SETUP';
+            badge.style.background = '#555';
+            idEl.textContent = '';
+            trendEl.textContent = '';
+            nameEl.textContent = '';
+            linerEl.textContent = '';
+            regimeEl.textContent = forecast.regime || '';
+            priceEl.textContent = forecast.price ? '@ ' + forecast.price : '';
+            reasonEl.textContent = 'No predefined setup qualifies — stand aside.';
+            indEl.textContent = '';
+            ind2El.textContent = '';
+            tcEl.innerHTML = '';
+            invEl.textContent = '';
+            histEl.textContent = '';
+            return;
+        }
+        const active = call.state === 'ACTIVE';
+        badge.textContent = call.state;
+        badge.style.background = active ? '#1a7f37' : (call.state === 'WATCH' ? '#9e6a03' : '#555');
+        idEl.textContent = call.id || '';
+        trendEl.textContent = 'Trend: ' + (call.trend || '?');
+        nameEl.textContent = call.name || '';
+        linerEl.textContent = call.liner ? ('— ' + call.liner) : '';
+        regimeEl.textContent = 'regime ' + (call.regime || forecast.regime || '?');
+        priceEl.textContent = 'px ' + (call.price || forecast.price || '');
+        reasonEl.textContent = call.reason || '';
+        indEl.textContent = call.indicator_setup_1 ? ('Ind1: ' + call.indicator_setup_1) : '';
+        ind2El.textContent = call.indicator_setup_2 ? ('Ind2: ' + call.indicator_setup_2) : '';
+        invEl.textContent = call.invalidation ? ('Invalidation: ' + call.invalidation) : '';
+        histEl.textContent = (call.history && call.history.length)
+            ? ('Recent occurrences: ' + call.history.join(', '))
+            : '';
+        tcEl.innerHTML = '';
+        const tcs = call.tradecases || {};
+        TC_MODES.forEach((mode) => {
+            const tc = tcs[mode];
+            if (!tc) return;
+            const box = document.createElement('div');
+            box.style.cssText = 'flex:1; min-width:220px; border:1px solid #333; border-radius:6px; padding:6px 8px; font-size:0.88em;';
+            const rows = [['Entry', tc.entry], ['Stop', tc.stop], ['Target', tc.target]]
+                .filter(([, v]) => v).map(([k, v]) => `<div><b>${k}:</b> ${v}</div>`).join('');
+            box.innerHTML = `<div style="font-weight:700; margin-bottom:2px;">${mode.replace('_', '-')}</div>${rows}`;
+            tcEl.appendChild(box);
+        });
+    }
 
     
         
@@ -2640,6 +2938,35 @@ document.addEventListener('DOMContentLoaded', function() {
                  buyButton.dataset.lots = tick.lots;
              }
          }
+    });
+
+    // Returning to the Trade tab: the cash balance may have been
+    // changed (Settings tab) while away, and the override input only
+    // auto-syncs once a minute on ticks. Re-sync every Lots box with
+    // the current calculated lots immediately, then ask the server
+    // for a fresh re-send (it recalculates lots against the current
+    // balance even when no tick has arrived since the change).
+    function resyncLotsInputsToCalculated() {
+        for (const token in allContracts) {
+            const calculated = Number(allContracts[token].lots);
+            if (!Number.isFinite(calculated)) continue;
+            const lotsCell = document.getElementById(`lots-${token}`);
+            if (lotsCell) lotsCell.textContent = calculated;
+            const overrideInput = document.getElementById(`override-lots-${token}`);
+            if (overrideInput && document.activeElement !== overrideInput) {
+                overrideInput.placeholder = calculated;
+                overrideInput.value = calculated;
+                lotsOverrideSyncTs[token] = Date.now();
+            }
+            const buyButton = document.querySelector(`#row-${token} .buy-button`);
+            if (buyButton) buyButton.dataset.lots = calculated;
+        }
+    }
+
+    window.addEventListener('hashchange', function () {
+        if ((location.hash || '').replace(/^#/, '') !== 'trade') return;
+        resyncLotsInputsToCalculated();
+        socket.emit('request_weekly_options');
     });
 
     socket.on('price-updated-position', (tick) => {
@@ -3309,7 +3636,7 @@ filteredContracts.sort(([, a], [, b]) => {
         positionsTableBody.innerHTML = '';
         
         if (!positions || Object.keys(positions).length === 0) {
-            positionsTableBody.innerHTML = `<tr><td colspan="15" class="no-options">No open positions found.</td></tr>`;
+            positionsTableBody.innerHTML = `<tr><td colspan="14" class="no-options">No open positions found.</td></tr>`;
             if (sellAllBtn) { sellAllBtn.disabled = true; sellAllBtn.textContent = 'Sell All'; }
             return;
         }
@@ -3355,7 +3682,6 @@ filteredContracts.sort(([, a], [, b]) => {
                 <td><input type="number" class="bp-override-input" id="bp-override-${domId}" step="0.5" min="0" placeholder="%" value="${pos.override_book_profit_pct ?? ''}"></td>
                 <td>${level}</td>
                 <td>${optionType || ''}</td>
-                <td>${strikePrice || ''}</td>
                 <td id="buy-price-${domId}" class="${temporaryBuyPriceTokens.has(domId) ? 'temporary-buy-price' : ''}">
                     ${(pos.average_price || 0).toFixed(2)}
                 </td>
@@ -3737,6 +4063,10 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // --- STATE VARIABLES ---
     let ordersRowsCache = [];
+    // Day's opening cash balance for the date loaded in the Orders grid -
+    // the base for the charge chips' "% of cash balance" suffix. NaN for
+    // uploaded contract notes (no cash story for past dates).
+    let ordersDayStartCashCache = NaN;
     // Default: newest order first (descending Order Time).
     let ordersSort = { key: 'ORDERTIME', direction: -1 };
     // Grid data source: 'broker' (live trades for the selected date) or
@@ -3801,6 +4131,7 @@ document.addEventListener('DOMContentLoaded', function() {
             const dayStartCash = (dayCashData && dayCashData.success)
                 ? parseFloat(dayCashData.cash_balance)
                 : NaN;
+            ordersDayStartCashCache = dayStartCash;
 
             ordersRowsCache = data.rows || [];
             // Show the cash summary box whenever there are trades to
@@ -3965,7 +4296,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 if (column === 'PnL' || column === 'PnL_RT') {
                     const pnlValue = Number(value);
                     if (value !== '' && value !== null && value !== undefined && !Number.isNaN(pnlValue)) {
-                        displayValue = pnlValue.toLocaleString('en-IN');
+                        displayValue = pnlValue.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
                     }
                 }
                 if (column === 'PnL_Rate') {
@@ -4003,13 +4334,48 @@ document.addEventListener('DOMContentLoaded', function() {
         });
 
         if (ordersCountLabel) {
-            const sourceSuffix = ordersSource === 'upload'
-                ? ` · Contract Note${uploadedOrdersMeta && uploadedOrdersMeta.trade_date ? ' ' + uploadedOrdersMeta.trade_date : ''}`
+            const sourceLabel = ordersSource === 'upload'
+                ? ((uploadedOrdersMeta && uploadedOrdersMeta.kind === 'kite') ? 'Tradebook' : 'Contract Note')
+                : '';
+            const sourceSuffix = sourceLabel
+                ? ` · ${sourceLabel}${uploadedOrdersMeta && uploadedOrdersMeta.trade_date ? ' ' + uploadedOrdersMeta.trade_date : ''}`
                 : '';
             ordersCountLabel.textContent = `${rows.length} trade${rows.length === 1 ? '' : 's'}${sourceSuffix}`;
         }
 
         updateChargesTotals(rows);
+    }
+
+    // Contract-note-exact Other Charges day total: sum each charge
+    // component across rows at full precision, then round each component
+    // once and add up (STT is already floored per trade by the
+    // estimator). This mirrors how broker contract notes bill, so the
+    // chip matches the note to the paisa. Falls back to summing the
+    // rounded per-row "Other Charges" column when component data is
+    // absent.
+    function otherChargesDayTotal(rows) {
+        const rowsList = rows || [];
+        const componentKeys = ['stt', 'txn', 'sebi', 'gst', 'stamp'];
+        const totals = {};
+        let componentRowCount = 0;
+        rowsList.forEach(row => {
+            const charges = row._charges;
+            if (!charges || typeof charges !== 'object') return;
+            componentRowCount++;
+            componentKeys.forEach(key => {
+                const value = Number(charges[key]);
+                if (Number.isFinite(value)) totals[key] = (totals[key] || 0) + value;
+            });
+        });
+        if (!componentRowCount) {
+            return rowsList.reduce((total, row) => {
+                const value = Number(row['Other Charges']);
+                return Number.isFinite(value) ? total + value : total;
+            }, 0);
+        }
+        return Object.keys(totals).reduce((total, key) => {
+            return total + Math.round(totals[key] * 100) / 100;
+        }, 0);
     }
 
     function updateChargesTotals(rows) {
@@ -4027,10 +4393,28 @@ document.addEventListener('DOMContentLoaded', function() {
             return Number.isFinite(value) ? total + value : total;
         }, 0);
 
+        // Brokerage is flat per executed order - always whole rupees.
+        const formatRupeesWhole = (value) => '\u20B9' + Math.round(value).toLocaleString('en-IN');
         const formatRupees = (value) => '\u20B9' + value.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-        document.getElementById('totalBrokerageValue').textContent = formatRupees(sumColumn('Brokerage'));
-        document.getElementById('totalOtherChargesValue').textContent = formatRupees(sumColumn('Other Charges'));
+        // Charge chips carry a "% of the day's opening cash balance"
+        // suffix; hidden while no opening balance is available (uploaded
+        // contract notes).
+        const cashBase = ordersDayStartCashCache;
+        const hasCashBase = Number.isFinite(cashBase) && cashBase > 0;
+        const pctSuffix = (value) => {
+            if (!hasCashBase) return '';
+            const pct = (value / cashBase) * 100;
+            return `(${pct.toFixed(2)}%)`;
+        };
+
+        const brokerageTotal = sumColumn('Brokerage');
+        const otherChargesTotal = otherChargesDayTotal(rows);
+
+        document.getElementById('totalBrokerageValue').textContent = formatRupeesWhole(brokerageTotal);
+        document.getElementById('totalOtherChargesValue').textContent = formatRupees(otherChargesTotal);
+        document.getElementById('brokeragePctValue').textContent = pctSuffix(brokerageTotal);
+        document.getElementById('otherChargesPctValue').textContent = pctSuffix(otherChargesTotal);
     }
 
     // function renderOrdersCashSummary(currentCash, dayStartCash) {
@@ -4068,10 +4452,43 @@ document.addEventListener('DOMContentLoaded', function() {
             : '--';
 
         // Calculate net P/L for all executed trades shown in the grid.
-        const netPnL = (ordersRowsCache || []).reduce((total, row) => {
+        // Brokerage and Other Charges are deducted so the figure matches
+        // the broker's "Net Amount Receivable/Payable" on the contract note.
+        const grossPnL = (ordersRowsCache || []).reduce((total, row) => {
             const pnl = Number(row['PnL']);
-            return Number.isFinite(pnl) ? total + pnl : total;
+            if (!Number.isFinite(pnl)) return total;
+            return total + pnl;
         }, 0);
+        const netPnL = grossPnL
+        - (ordersRowsCache || []).reduce((sum, row) => {
+            const brokerage = Number(row['Brokerage']);
+            return Number.isFinite(brokerage) ? sum + brokerage : sum;
+        }, 0)
+        - otherChargesDayTotal(ordersRowsCache);
+
+        const cashGrossEl = document.getElementById('cashGrossValue');
+        if (cashGrossEl) {
+            cashGrossEl.textContent = Number.isFinite(grossPnL)
+                ? grossPnL.toLocaleString('en-IN', {
+                    maximumFractionDigits: 2,
+                    minimumFractionDigits: 2
+                })
+                : '--';
+            cashGrossEl.className = '';
+        }
+
+        const cashGrossPctEl = document.getElementById('cashGrossPct');
+        if (cashGrossPctEl) {
+            if (Number.isFinite(grossPnL) && Number.isFinite(dayStartCash) && dayStartCash > 0) {
+                const grossPct = (grossPnL / dayStartCash) * 100;
+                cashGrossPctEl.textContent = `${grossPct.toFixed(2)}%`;
+                cashGrossPctEl.className =
+                    grossPct > 0 ? 'profit' : (grossPct < 0 ? 'loss' : '');
+            } else {
+                cashGrossPctEl.textContent = '--';
+                cashGrossPctEl.className = '';
+            }
+        }
 
         cashCurrentEl.textContent = Number.isFinite(netPnL)
             ? netPnL.toLocaleString('en-IN', {
@@ -4149,7 +4566,10 @@ document.addEventListener('DOMContentLoaded', function() {
     async function downloadUploadedOrders() {
         const tradeDate = (uploadedOrdersMeta && uploadedOrdersMeta.trade_date) || '';
         const filenameDate = tradeDate.replaceAll('-', '_');
-        const fallbackName = `MStock_Orders_${filenameDate || 'ContractNote'}.xlsx`;
+        // Kite CSV uploads download under a Kite_ name; M.Stock contract
+        // notes keep the historical MStock_ prefix.
+        const prefix = (uploadedOrdersMeta && uploadedOrdersMeta.kind === 'kite') ? 'Kite' : 'MStock';
+        const fallbackName = `${prefix}_Orders_${filenameDate || 'ContractNote'}.xlsx`;
 
         const response = await fetch('/export_executed_trades', {
             method: 'POST',
@@ -4157,7 +4577,7 @@ document.addEventListener('DOMContentLoaded', function() {
             body: JSON.stringify({
                 rows: ordersRowsCache,
                 pine_script: (uploadedOrdersMeta && uploadedOrdersMeta.pine_script) || '',
-                filename: filenameDate ? `MStock_Orders_${filenameDate}` : 'MStock_Orders_ContractNote'
+                filename: filenameDate ? `${prefix}_Orders_${filenameDate}` : `${prefix}_Orders_ContractNote`
             })
         });
 
@@ -4199,17 +4619,20 @@ document.addEventListener('DOMContentLoaded', function() {
 
     async function uploadContractNote() {
         if (!ordersUploadInput || !ordersUploadInput.files || ordersUploadInput.files.length === 0) return;
-        const pdfFile = ordersUploadInput.files[0];
+        const uploadFile = ordersUploadInput.files[0];
+        // CSV files are Kite Console tradebook reports; PDFs stay on the
+        // M.Stock contract-note flow.
+        const isCsv = /\.csv$/i.test(uploadFile.name);
         if (ordersUploadBtn) ordersUploadBtn.disabled = true;
         if (ordersRefreshBtn) ordersRefreshBtn.disabled = true;
         try {
             const formData = new FormData();
-            formData.append("pdf", pdfFile);
+            formData.append(isCsv ? "file" : "pdf", uploadFile);
 
-            const response = await fetch('/convert_contract_note_rows', {
-                method: 'POST',
-                body: formData
-            });
+            const response = await fetch(
+                isCsv ? '/import_kite_tradebook_rows' : '/convert_contract_note_rows',
+                { method: 'POST', body: formData }
+            );
 
             const data = await response.json();
             if (!response.ok || !data.success) {
@@ -4218,16 +4641,20 @@ document.addEventListener('DOMContentLoaded', function() {
 
             ordersRowsCache = data.rows || [];
             ordersSource = 'upload';
+            // Uploaded notes are not tied to today's live cash story -
+            // drop any previously loaded date's opening balance.
+            ordersDayStartCashCache = NaN;
             uploadedOrdersMeta = {
                 pine_script: data.pine_script || '',
-                trade_date: data.trade_date || ''
+                trade_date: data.trade_date || '',
+                kind: isCsv ? 'kite' : 'mstock'
             };
             renderOrders(ordersRowsCache);
             // Uploaded data is not tied to today's live cash story.
             if (cashSummaryLabel) cashSummaryLabel.style.display = 'none';
         } catch (error) {
-            console.error("Could not upload contract note:", error);
-            alert(error.message || "Could not upload contract note");
+            console.error("Could not upload " + (isCsv ? "tradebook CSV" : "contract note") + ":", error);
+            alert(error.message || "Could not upload file");
         } finally {
             if (ordersUploadBtn) ordersUploadBtn.disabled = false;
             if (ordersRefreshBtn) ordersRefreshBtn.disabled = false;
@@ -4491,11 +4918,16 @@ document.addEventListener('DOMContentLoaded', () => {
 document.addEventListener('DOMContentLoaded', function () {
     const auditTableHead = document.getElementById('auditTableHead');
     const auditTableGroupHead = document.getElementById('auditTableGroupHead');
+    const auditTableSubHead = document.getElementById('auditTableSubHead');
     const auditTableBody = document.getElementById('auditTableBody');
     const auditCountLabel = document.getElementById('auditCountLabel');
     const auditRefreshBtn = document.getElementById('auditRefreshBtn');
     const auditDownloadBtn = document.getElementById('auditDownloadBtn');
     const auditDateInput = document.getElementById('auditDateInput');
+    const auditSessionBand = document.getElementById('auditSessionBand');
+    const asbStripText = document.getElementById('asbStripText');
+    const asbToggleBtn = document.getElementById('asbToggleBtn');
+    const asbDetails = document.getElementById('asbDetails');
 
     // Report date: defaults to today, capped at today (future dates
     // have no data).
@@ -4512,15 +4944,18 @@ document.addEventListener('DOMContentLoaded', function () {
         return iso;
     }
 
-    // Mirrors core.audit_log.TradeAudit.COLUMNS (server order).
+    // Mirrors core.audit_log.TradeAudit.COLUMNS (server order). Time
+    // columns come first in BUY/SELL so the Time sub-header band is
+    // contiguous; Trigger Source sits between the Time and Price blocks.
     const AUDIT_COLUMNS = [
         'Symbol', 'Lots', 'SS',
-        'Buy Click Time', 'Buy Exec Time', 'Buy Avg Price', 'Buy Time Cost (s)',
-        'LTP @ Click', 'LTP @ Exec', 'Buy Slippage', 'Buy Slippage %',
-        'Buy Lot Cost Slippage',
-        'Sell Trigger Time', 'Trigger Source', 'Sell Exec Time', 'Sell Time Cost (s)',
-        'LTP @ Trigger', 'LTP @ Sell Exec', 'Sell Slippage', 'Sell Slippage %',
-        'Sell Profit Slippage',
+        'Buy Click Time', 'Buy Exec Time', 'Buy Time Slippage (s)',
+        'LTP @ Click', 'LTP @ Exec', 'Buy Avg Price',
+        'Buy Price Slippage', 'Buy Price Slippage %', 'Buy Lot Cost Slippage',
+        'Sell Trigger Time', 'Sell Exec Time', 'Sell Time Slippage (s)',
+        'Trigger Source',
+        'LTP @ Trigger', 'LTP @ Sell Exec', 'Sell Avg Price',
+        'Sell Price Slippage', 'Sell Price Slippage %', 'Sell Profit Slippage',
         'Retries', 'Retry Elapsed (s)', 'First Attempt LTP',
         'Exec Slippage %', 'Buy Cost Increase',
         'Comment',
@@ -4531,20 +4966,49 @@ document.addEventListener('DOMContentLoaded', function () {
     const COLUMN_GROUP = {
         'Symbol': 'Trade', 'Lots': 'Trade', 'SS': 'Trade',
         'Buy Click Time': 'Buy', 'Buy Exec Time': 'Buy',
-        'Buy Avg Price': 'Buy', 'Buy Time Cost (s)': 'Buy',
-        'LTP @ Click': 'Buy', 'LTP @ Exec': 'Buy',
-        'Buy Slippage': 'Buy', 'Buy Slippage %': 'Buy',
+        'Buy Time Slippage (s)': 'Buy',
+        'LTP @ Click': 'Buy', 'LTP @ Exec': 'Buy', 'Buy Avg Price': 'Buy',
+        'Buy Price Slippage': 'Buy', 'Buy Price Slippage %': 'Buy',
         'Buy Lot Cost Slippage': 'Buy',
-        'Sell Trigger Time': 'Sell', 'Trigger Source': 'Sell',
-        'Sell Exec Time': 'Sell', 'Sell Time Cost (s)': 'Sell',
-        'LTP @ Trigger': 'Sell', 'LTP @ Sell Exec': 'Sell',
-        'Sell Slippage': 'Sell', 'Sell Slippage %': 'Sell',
+        'Sell Trigger Time': 'Sell', 'Sell Exec Time': 'Sell',
+        'Sell Time Slippage (s)': 'Sell', 'Trigger Source': 'Sell',
+        'LTP @ Trigger': 'Sell', 'LTP @ Sell Exec': 'Sell', 'Sell Avg Price': 'Sell',
+        'Sell Price Slippage': 'Sell', 'Sell Price Slippage %': 'Sell',
         'Sell Profit Slippage': 'Sell',
         'Retries': 'Retry', 'Retry Elapsed (s)': 'Retry',
         'First Attempt LTP': 'Retry', 'Exec Slippage %': 'Retry',
         'Buy Cost Increase': 'Retry',
         'Comment': 'Comment',
     };
+
+    // Sub-header band under the BUY / SELL group cells: Time (grayed
+    // latency block) / Price. An empty label renders an empty cell
+    // (above Trigger Source). Groups without sub-groups (Trade, Retry,
+    // Comment) rowspan across the sub-header row instead.
+    const SUB_GROUP = {
+        'Buy Click Time': 'Time', 'Buy Exec Time': 'Time',
+        'Buy Time Slippage (s)': 'Time',
+        'LTP @ Click': 'Price', 'LTP @ Exec': 'Price', 'Buy Avg Price': 'Price',
+        'Buy Price Slippage': 'Price', 'Buy Price Slippage %': 'Price',
+        'Buy Lot Cost Slippage': 'Price',
+        'Sell Trigger Time': 'Time', 'Sell Exec Time': 'Time',
+        'Sell Time Slippage (s)': 'Time',
+        'Trigger Source': '',
+        'LTP @ Trigger': 'Price', 'LTP @ Sell Exec': 'Price', 'Sell Avg Price': 'Price',
+        'Sell Price Slippage': 'Price', 'Sell Price Slippage %': 'Price',
+        'Sell Profit Slippage': 'Price',
+    };
+    const SUB_GROUP_CLASS = { 'Time': 'time', 'Price': 'price' };
+    // Sub-band display captions: values are seconds / rupees.
+    const SUB_GROUP_LABEL = { 'Time': 'Time (s)', 'Price': 'Price (rs.)' };
+    // Which group bands carry a sub-header row (everything else rowspans).
+    const SUB_GROUP_RUNS = { 'Buy': null, 'Sell': null };
+
+    // Latency block columns - grayed out in the caption row and body.
+    const TIME_COLUMNS = new Set([
+        'Buy Click Time', 'Buy Exec Time', 'Buy Time Slippage (s)',
+        'Sell Trigger Time', 'Sell Exec Time', 'Sell Time Slippage (s)',
+    ]);
     const GROUP_CLASS = {
         'Trade': 'audit-group-trade', 'Buy': 'audit-group-buy',
         'Sell': 'audit-group-sell', 'Retry': 'audit-group-retry',
@@ -4554,29 +5018,36 @@ document.addEventListener('DOMContentLoaded', function () {
     // Second header row captions: "Buy"/"Sell" prefixes stripped - the
     // group band row above already carries them.
     const DISPLAY_NAME = {
-        'Buy Click Time': 'Click Time',
-        'Buy Exec Time': 'Exec Time',
-        'Buy Avg Price': 'Avg Price',
-        'Buy Time Cost (s)': 'Time Cost (s)',
-        'Buy Slippage': 'Slippage',
-        'Buy Slippage %': 'Slippage %',
-        'Buy Lot Cost Slippage': 'Lot Cost Slippage',
-        'Sell Trigger Time': 'Trigger Time',
-        'Sell Exec Time': 'Exec Time',
-        'Sell Time Cost (s)': 'Time Cost (s)',
-        'LTP @ Sell Exec': 'LTP @ Exec',
-        'Sell Slippage': 'Slippage',
-        'Sell Slippage %': 'Slippage %',
+        // Short captions: the group + Time/Price sub-header bands
+        // above already say BUY / SELL and TIME / PRICE.
+        'Buy Click Time': 'Click',
+        'Buy Exec Time': 'Exec',
+        'Buy Time Slippage (s)': 'Slip',
+        'LTP @ Click': 'Click',
+        'LTP @ Exec': 'Exec',
+        'Buy Avg Price': 'Avg',
+        'Buy Price Slippage': 'Slippage',
+        'Buy Price Slippage %': '%',
+        'Buy Lot Cost Slippage': 'Cost Slippage',
+        'Sell Trigger Time': 'Click',
+        'Sell Exec Time': 'Exec',
+        'Sell Time Slippage (s)': 'Slip',
+        'LTP @ Trigger': 'Click',
+        'LTP @ Sell Exec': 'Exec',
+        'Sell Avg Price': 'Avg',
+        'Sell Price Slippage': 'Slippage',
+        'Sell Price Slippage %': '%',
         'Sell Profit Slippage': 'Profit Slippage',
         'Buy Cost Increase': 'Cost Increase',
     };
 
-    // Slippage colouring: BUY slippage up = paid more (bad/red),
-    // SELL slippage up = sold higher (good/green).
+    // Slippage colouring: a POSITIVE Buy Price Slippage = paid above
+    // the market LTP (bad/red); a positive Sell Price Slippage = sold
+    // above the market LTP (good/green).
     const SLIP_SIGN = {
-        'Buy Slippage': 1, 'Buy Slippage %': 1, 'Buy Lot Cost Slippage': 1,
+        'Buy Price Slippage': 1, 'Buy Price Slippage %': 1, 'Buy Lot Cost Slippage': 1,
         'Exec Slippage %': 1, 'Buy Cost Increase': 1,
-        'Sell Slippage': -1, 'Sell Slippage %': -1, 'Sell Profit Slippage': -1,
+        'Sell Price Slippage': -1, 'Sell Price Slippage %': -1, 'Sell Profit Slippage': -1,
     };
 
     function numeric(value) {
@@ -4599,6 +5070,7 @@ document.addEventListener('DOMContentLoaded', function () {
                     'Failed to load audit report: ' + (err.message || err) +
                     '</td></tr>';
             });
+        loadSessionBand();
     }
 
     function appendGroupCell(label, span) {
@@ -4607,10 +5079,16 @@ document.addEventListener('DOMContentLoaded', function () {
         th.textContent = label;
         th.className = 'audit-group-' + (GROUP_CLASS[label] || 'trade')
             .replace('audit-group-', '');
+        // Groups with no Time/Price sub-band (Trade, Retry, Comment)
+        // span the sub-header row too, so that row only exists under
+        // BUY and SELL.
+        if (!(label in SUB_GROUP_RUNS)) th.rowSpan = 2;
         if (label === 'Buy') {
-            th.title = 'Buy Click Time -> Buy Lot Cost Slippage';
+            th.title = 'Click/Exec/Slippage = trade timing (gray); '
+                + 'Avg - LTP @ Click = price slippage (cost of the delay)';
         } else if (label === 'Sell') {
-            th.title = 'Sell Trigger Time -> Sell Profit Slippage';
+            th.title = 'Trigger/Exec/Slippage = exit timing (gray); '
+                + 'Source = trigger origin; Sell Avg - LTP @ Trigger = price slippage';
         } else if (label === 'Retry') {
             th.title = 'Lots-reduction retries and their cost impact';
         }
@@ -4639,12 +5117,44 @@ document.addEventListener('DOMContentLoaded', function () {
             appendGroupCell(runLabel, runLen);
         }
 
-        // Header (prefix-free captions: the group band above already
-        // says BUY / SELL)
+        // Sub-header band row: TIME / PRICE cells over their runs
+        // within BUY and SELL (empty cell above Trigger Source).
+        // Columns absent from SUB_GROUP (Trade/Retry/Comment) get no
+        // cell here - their rowspanned group band covers them.
+        auditTableSubHead.innerHTML = '';
+        let subRun = null, subLen = 0;
+        function flushSubRun() {
+            if (subRun === null) return;
+            const th = document.createElement('th');
+            th.colSpan = subLen;
+            if (subRun) {
+                th.textContent = SUB_GROUP_LABEL[subRun] || subRun;
+                th.className = 'audit-sub-' + (SUB_GROUP_CLASS[subRun] || subRun);
+            }
+            auditTableSubHead.appendChild(th);
+        }
+        AUDIT_COLUMNS.forEach(function (col) {
+            const inMap = Object.prototype.hasOwnProperty.call(SUB_GROUP, col);
+            const label = inMap ? SUB_GROUP[col] : null;
+            if (label === subRun) {
+                subLen += 1;
+            } else {
+                flushSubRun();
+                subRun = label;
+                subLen = 1;
+            }
+        });
+        flushSubRun();
+
+        // Captions (short names: the bands above already say
+        // BUY / SELL and TIME / PRICE)
         auditTableHead.innerHTML = '';
         AUDIT_COLUMNS.forEach(function (col) {
             const th = document.createElement('th');
             th.textContent = DISPLAY_NAME[col] || col;
+            // Short caption -> full name on hover.
+            if (DISPLAY_NAME[col] && DISPLAY_NAME[col] !== col) th.title = col;
+            if (TIME_COLUMNS.has(col)) th.classList.add('time-col');
             if (col === 'SS') {
                 th.title = 'Strategy + Sell Mode: UU=Ultra Scalping + U, '
                     + 'UT=Ultra + T, UD=Ultra + D, SU/ST/SD=Scalping, '
@@ -4671,6 +5181,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 const td = document.createElement('td');
                 td.textContent = (rec[col] === 0 || rec[col]) ? String(rec[col]) : '';
                 if (col === 'Comment') td.classList.add('audit-comment');
+                if (TIME_COLUMNS.has(col)) td.classList.add('time-col');
                 const num = numeric(rec[col]);
                 if (num !== null && SLIP_SIGN[col] && num !== 0) {
                     // BUY: positive slip costs money -> red.
@@ -4702,6 +5213,115 @@ document.addEventListener('DOMContentLoaded', function () {
             encodeURIComponent(auditDate()) + '&ts=' + Date.now();
         setTimeout(function () { auditDownloadBtn.disabled = false; }, 1500);
     });
+
+    // ===== Session band: log-derived health strip above the grid =====
+    // Loads with the grid (same triggers) so the Audit tab is one
+    // integrated view: per-trade rows + session-level health. Line
+    // severity comes from the leading marker the server embeds:
+    // "✔" ok, "⚠" warn, "✖" error, leading spaces = indented detail.
+    function asbLineClass(text) {
+        const trimmed = text.replace(/^\s+/, '');
+        const indent = text[0] === ' ' ? ' indent' : '';
+        if (trimmed[0] === '✔') return 'ok' + indent;
+        if (trimmed[0] === '⚠') return 'warn' + indent;
+        if (trimmed[0] === '✖') return 'err' + indent;
+        return (indent ? indent.slice(1) : '');
+    }
+
+    function asbRenderSection(section) {
+        const wrap = document.createElement('div');
+        wrap.className = 'asb-section';
+        const h = document.createElement('h4');
+        h.textContent = section.title || '';
+        wrap.appendChild(h);
+
+        (section.lines || []).forEach(function (line) {
+            const d = document.createElement('div');
+            d.className = 'asb-line' + (asbLineClass(line)
+                ? ' ' + asbLineClass(line) : '');
+            d.textContent = line;
+            wrap.appendChild(d);
+        });
+
+        const table = section.table;
+        if (table && table.headers && table.rows && table.rows.length) {
+            const t = document.createElement('table');
+            t.className = 'asb-table';
+            const thead = document.createElement('thead');
+            const htr = document.createElement('tr');
+            table.headers.forEach(function (htxt) {
+                const th = document.createElement('th');
+                th.textContent = htxt;
+                htr.appendChild(th);
+            });
+            thead.appendChild(htr);
+            t.appendChild(thead);
+            const tbody = document.createElement('tbody');
+            table.rows.forEach(function (row) {
+                const tr = document.createElement('tr');
+                row.forEach(function (cell) {
+                    const td = document.createElement('td');
+                    td.textContent = cell;
+                    tr.appendChild(td);
+                });
+                tbody.appendChild(tr);
+            });
+            t.appendChild(tbody);
+            wrap.appendChild(t);
+        }
+        return wrap;
+    }
+
+    let asbDetailsOpen = false;
+
+    function renderSessionBand(report) {
+        if (!auditSessionBand) return;
+        const summary = (report && report.summary) || null;
+        if (!summary || !summary.parts || !summary.parts.length) {
+            auditSessionBand.hidden = true;
+            return;
+        }
+        auditSessionBand.hidden = false;
+        auditSessionBand.classList.toggle('warn', summary.ok === false);
+        asbStripText.textContent = summary.parts.join('  ·  ');
+        if (asbDetailsOpen) {
+            asbDetails.innerHTML = '';
+            (report.sections || []).forEach(function (s) {
+                asbDetails.appendChild(asbRenderSection(s));
+            });
+            asbDetails.hidden = false;
+            asbToggleBtn.innerHTML = '&#x25BE; Details';
+        } else {
+            asbDetails.hidden = true;
+            asbToggleBtn.innerHTML = '&#x25B8; Details';
+        }
+    }
+
+    function loadSessionBand() {
+        fetch('/api/audit/log_report?date=' + encodeURIComponent(auditDate()),
+              { cache: 'no-store' })
+            .then(function (r) {
+                if (!r.ok) throw new Error('HTTP ' + r.status);
+                return r.json();
+            })
+            .then(renderSessionBand)
+            .catch(function () {
+                // Grid stays authoritative; just hide the strip on failure.
+                if (auditSessionBand) auditSessionBand.hidden = true;
+            });
+    }
+
+    if (asbToggleBtn) {
+        asbToggleBtn.addEventListener('click', function () {
+            asbDetailsOpen = !asbDetailsOpen;
+            if (asbDetailsOpen) loadSessionBand();
+            else {
+                asbDetails.hidden = true;
+                asbToggleBtn.innerHTML = '&#x25B8; Details';
+            }
+        });
+    }
+
 
     // Lazy load: fetch when the Audit tab becomes visible. Covers all
     // activation paths: fresh /audit page load, page refreshed on
@@ -4792,6 +5412,10 @@ document.addEventListener('DOMContentLoaded', function () {
 
             tabLinks.forEach(function (a) {
                 a.addEventListener('click', function (e) {
+                    // No local panel for this tab (e.g. Feed Lab -> /feedlab):
+                    // fall through to normal navigation instead of blanking
+                    // the page by deactivating every panel.
+                    if (!document.getElementById('panel-' + tabNameFromLink(a))) return;
                     e.preventDefault();
                     activate(tabNameFromLink(a), false);
                 });

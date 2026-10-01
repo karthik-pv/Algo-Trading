@@ -83,6 +83,138 @@
             border-color: #2e7d32;
         }
 
+        /* --- RIGHT SIDE OF THE TAB BAR (trading-mode pill) --- */
+        .tabbar-right {
+            flex: 0 0 auto;
+            display: flex;
+            align-items: center;
+            margin-left: auto;
+        }
+        /* Mode label (LIVE / PAPER / SIMULATION / PLAYBACK), pinned to the
+           top right of the tab row. Same pill format as the Broker /
+           Underlying / Expiry labels, sized for the 48px tab bar. */
+        .mode-label {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+            padding: 4px 10px;
+            border-radius: 4px;
+            border: 1px solid #c8c8c8;
+            background-color: hsl(0, 1%, 26%);
+            color: #fff;
+            font-size: 0.75rem;
+            font-weight: 700;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            white-space: nowrap;
+            flex: 0 0 auto;
+        }
+        /* Internet-quality pill (Feed Lab): GREEN / AMBER / RED, sits
+           next to the mode label on every tab. */
+        .net-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+            margin-right: 0.5rem;
+            padding: 4px 10px;
+            border-radius: 4px;
+            font-size: 0.72rem;
+            font-weight: 700;
+            letter-spacing: 0.05em;
+            white-space: nowrap;
+            flex: 0 0 auto;
+        }
+        .net-pill::before {
+            content: "";
+            width: 0.5rem;
+            height: 0.5rem;
+            border-radius: 50%;
+            background-color: currentColor;
+        }
+        .net-pill.green { color: #9fdf9f; background: #1b4622; border: 1px solid #66bb6a; }
+        .net-pill.amber { color: #e8d49f; background: #4a3d1b; border: 1px solid #c8a94a; }
+        .net-pill.red { color: #ff9d9d; background: #4a1b1b; border: 1px solid #c85a5a; }
+        .net-pill.gray { color: #cccccc; background: #3a3a3a; border: 1px solid #555555; }
+
+        /* --- BROKER PILLS (two sections: API | WebSocket) --- */
+        /* Left half = REST API health, right half (dot) = websocket feed
+           health. Each half carries its own level color. */
+        .broker-pill {
+            display: inline-flex;
+            align-items: stretch;
+            margin-right: 0.5rem;
+            border-radius: 999px;
+            overflow: hidden;
+            cursor: default;
+            flex: 0 0 auto;
+        }
+        .pill-half {
+            display: inline-flex;
+            align-items: center;
+            padding: 4px 8px;
+            font-size: 0.72rem;
+            font-weight: 700;
+            letter-spacing: 0.05em;
+        }
+        .pill-half + .pill-half { border-left: 1px solid #1a1a1a; }
+        .pill-half.green { background: #1b4622; color: #9fdf9f; }
+        .pill-half.amber { background: #4a3d1b; color: #e8d49f; }
+        .pill-half.red { background: #4a1b1b; color: #ff9d9d; }
+        .pill-half.gray { background: #3a3a3a; color: #cccccc; }
+        .mode-label::before {
+            content: "";
+            width: 0.5rem;
+            height: 0.5rem;
+            border-radius: 50%;
+            background-color: #9e9e9e;
+        }
+        /* LIVE: green box + blinking dot with expanding concentric pulse rings */
+        .mode-label[data-mode="LIVE"] {
+            position: relative;
+            border-color: #66bb6a;
+            background-color: #1b4622;
+        }
+        .mode-label[data-mode="LIVE"]::before {
+            background-color: #66bb6a;
+            animation: live-dot-blink 1.6s ease-in-out infinite;
+        }
+        .mode-label[data-mode="LIVE"]::after {
+            content: "";
+            position: absolute;
+            left: 0.6rem;
+            top: 50%;
+            width: 0.5rem;
+            height: 0.5rem;
+            border-radius: 50%;
+            transform: translateY(-50%);
+            pointer-events: none;
+            animation: live-pulse-rings 1.8s ease-out infinite;
+        }
+        @keyframes live-dot-blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.35; }
+        }
+        @keyframes live-pulse-rings {
+            0% {
+                box-shadow: 0 0 0 0 rgba(102, 187, 106, 0.75),
+                            0 0 0 0 rgba(102, 187, 106, 0.45);
+            }
+            70% {
+                box-shadow: 0 0 0 6px rgba(102, 187, 106, 0),
+                            0 0 0 6px rgba(102, 187, 106, 0.30);
+            }
+            100% {
+                box-shadow: 0 0 0 6px rgba(102, 187, 106, 0),
+                            0 0 0 14px rgba(102, 187, 106, 0);
+            }
+        }
+        .mode-label[data-mode="PAPER"] { border-color: #42a5f5; background-color: #14304a; }
+        .mode-label[data-mode="PAPER"]::before { background-color: #42a5f5; }
+        .mode-label[data-mode="SIMULATION"] { border-color: #ffb74d; background-color: #4a3413; }
+        .mode-label[data-mode="SIMULATION"]::before { background-color: #ffb74d; }
+        .mode-label[data-mode="PLAYBACK"] { border-color: #ba68c8; background-color: #3d1f47; }
+        .mode-label[data-mode="PLAYBACK"]::before { background-color: #ba68c8; }
+
         /* --- SINGLE-PAGE TAB PANELS (app.html) --- */
         /* All tab panels live in one document; only the active one is shown.
            Switching tabs is a CSS class toggle, never a page reload. */
@@ -100,9 +232,129 @@
             <a class="app-tab {% if request.path == '/orders' %}active{% endif %}" href="/orders">Orders</a>
             <a class="app-tab {% if request.path == '/audit' %}active{% endif %}" href="/audit">Audit</a>
             <a class="app-tab {% if request.path in ('/settings', '/constants', '/appconfig') %}active{% endif %}" href="/appconfig">App Config</a>
+            {% if feed_lab_enabled %}<a class="app-tab {% if request.path == '/feedlab' %}active{% endif %}" href="/feedlab">Feed Lab</a>{% endif %}
         </div>
         <button class="tab-scroll-btn" id="tabScrollRight" type="button" title="Scroll tabs right">&#x276F;</button>
+        <div class="tabbar-right" id="tabbarRight">
+            <span id="pillI" class="net-pill" style="display:none;" title="Internet">I</span>
+            <span id="pillK" class="broker-pill" style="display:none;" title="Kite">
+                <span class="pill-half api">K</span><span class="pill-half ws">&#9679;</span>
+            </span>
+            <span id="pillM" class="broker-pill" style="display:none;" title="M.Stock">
+                <span class="pill-half api">M</span><span class="pill-half ws">&#9679;</span>
+            </span>
+            <span id="modeLabel" class="mode-label" data-mode="" title="Current trading mode">--</span>
+        </div>
     </nav>
+
+    {% if feed_lab_enabled %}
+    <script>
+        (function() {
+            const pillI = document.getElementById('pillI');
+            const pillK = document.getElementById('pillK');
+            const pillM = document.getElementById('pillM');
+
+            function hidePill(el) { el.style.display = 'none'; }
+
+            const LEVEL_LABEL = { green: 'GREEN', amber: 'AMBER', red: 'RED', idle: 'IDLE' };
+
+            function setHalf(half, level) {
+                half.className = 'pill-half ' + (half.classList.contains('api') ? 'api ' : 'ws ')
+                    + (LEVEL_LABEL[level] ? level.toLowerCase() : 'gray');
+            }
+
+            // NATIVE TOOLTIP FIX: rewriting the title attribute while the
+            // user is hovering invalidates Chrome's tooltip - it vanishes
+            // and never re-shows until a fresh mouse enter. Since the poll
+            // rewrites titles every 5s, tooltips were killed mid-read.
+            // Rules: never touch the title while hovered; otherwise only
+            // write when the content actually changed; a deferred update
+            // is applied the moment the mouse leaves.
+            let hoveredPill = null;
+            for (const el of [pillI, pillK, pillM]) {
+                el.addEventListener('mouseenter', () => { hoveredPill = el; });
+                el.addEventListener('mouseleave', () => {
+                    if (hoveredPill === el) hoveredPill = null;
+                    const pending = el.dataset.pendingTitle;
+                    if (pending !== undefined) {
+                        el.title = pending;
+                        delete el.dataset.pendingTitle;
+                    }
+                });
+            }
+            function setTooltip(el, text) {
+                if (el === hoveredPill) {
+                    if (el.title !== text) el.dataset.pendingTitle = text;
+                } else if (el.title !== text) {
+                    el.title = text;
+                }
+            }
+
+            async function pollPills() {
+                // I / K / M pills: internet speed, then per-broker
+                // API + WebSocket health (two-section pill). NOTE: no
+                // wall-clock timestamps in the tooltip text - they change
+                // every poll and would keep invalidating the tooltip.
+                try {
+                    const r = await fetch('/feed_compare/net_status');
+                    const s = await r.json();
+
+                    // I - pure internet speed (neutral targets only)
+                    const internet = s.internet || {};
+                    if (!internet.level) { hidePill(pillI); }
+                    else {
+                        pillI.className = 'net-pill ' + internet.level;
+                        pillI.style.display = '';
+                        setTooltip(pillI, 'Internet: ' + internet.level.toUpperCase()
+                            + Object.entries(internet.targets || {}).map(([u, t]) => '\n' + u.replace('https://', '') + ': ' + (t.last_ok ? t.last_latency_ms + 'ms' : 'FAIL') + ', failures: ' + (t.consec_failures || 0)).join(''));
+                    }
+
+                    // K / M - each broker pill: API half + WebSocket half.
+                    // The API half works round the clock (probed every 10s);
+                    // only the WebSocket half goes idle off-hours.
+                    for (const [el, key, label] of [[pillK, 'KITE', 'Kite'], [pillM, 'MSTOCK', 'M.Stock']]) {
+                        const b = (s.brokers || {})[key];
+                        const api = b ? (b.api || {}) : null;
+                        const ws = b ? (b.ws || {}) : null;
+                        if (!b || (!api.level && !ws.level)) { hidePill(el); continue; }
+                        el.style.display = '';
+                        const apiLvl = api.level || 'idle';
+                        const wsLvl = ws.level || 'idle';
+                        setHalf(el.querySelector('.pill-half.api'), apiLvl);
+                        setHalf(el.querySelector('.pill-half.ws'), wsLvl);
+                        const st = b.stats || {};
+                        const orders = st.orders || {};
+                        const ticks = st.ticks || {};
+                        const session = b.session || {};
+                        setTooltip(el, label + ' broker health'
+                            + '\n-- API (' + LEVEL_LABEL[apiLvl] + ') --'
+                            + '\nendpoint: ' + (b.url || '').replace('https://', '')
+                            + '\nlatency: ' + (api.last_ok ? api.last_latency_ms + 'ms' : 'FAIL')
+                            + ', consecutive failures: ' + (api.consec_failures || 0)
+                            + '\n-- WebSocket (' + LEVEL_LABEL[wsLvl] + ') --'
+                            + (ws.reason ? '\n' + ws.reason : '')
+                            + '\nconnected: ' + (ws.connected ? 'yes' : 'NO')
+                            + (ws.seconds_since_tick != null ? '\nlast tick: ' + ws.seconds_since_tick + 's ago' : '')
+                            + (ws.rate_per_min != null ? '\nrate: ' + ws.rate_per_min + '/min' : '')
+                            + (ws.max_gap_s != null ? '\nlongest gap: ' + ws.max_gap_s + 's' : '')
+                            + '\n-- Orders --'
+                            + '\nplaced: ' + (orders.placed || 0) + ', failed: ' + (orders.failed || 0)
+                            + ', rate-limited: ' + (orders.rate_limited || 0)
+                            + (orders.ack_p95_ms != null ? '\nack latency p50/p95: ' + orders.ack_p50_ms + 'ms / ' + orders.ack_p95_ms + 'ms' : '')
+                            + '\n-- Session --'
+                            + '\n' + (session.detail || (session.valid ? 'valid' : 'unknown'))
+                            + '\n-- Tick quality --'
+                            + (ticks.total ? '\n' + ticks.total.toLocaleString() + ' ticks, ' + (ticks.bad_pct || 0) + '% bad LTP' : '\nno ticks seen yet'));
+                    }
+                } catch (e) {
+                    hidePill(pillI); hidePill(pillK); hidePill(pillM);
+                }
+            }
+            pollPills();
+            setInterval(pollPills, 5000);
+        })();
+    </script>
+    {% endif %}
 
     {% block content %}{% endblock %}
 

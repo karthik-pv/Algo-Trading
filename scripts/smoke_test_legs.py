@@ -262,7 +262,7 @@ def decision(sell_type, mode, buy, ltp, strategy="ULTRA_SCALPING"):
     t._mode = "PAPER"  # restore default for other checks
     return result
 
-# U leg in SIMULATION: profit at buy + 2.5 pts (ULTRA factor x PTS_PROFIT)
+# U leg in SIMULATION: profit at buy + PTS_PROFIT_ULTRA_SCALPING (2.5 pts)
 check("U/U SIM: below target -> no exit", decision("U", "SIMULATION", 68.87, 71.0) is False)
 check("U/U SIM: at/above target -> exit", decision("U", "SIMULATION", 68.87, 71.37) is True)
 check("U/U SIM: SL branch still live", decision("U", "SIMULATION", 100.0, 90.0) is True)

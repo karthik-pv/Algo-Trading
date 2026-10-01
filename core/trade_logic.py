@@ -53,6 +53,11 @@ class Trader_Singleton:
     _five_weekly_option_contracts = {}
     _fund_summary = {}
 
+    # Set after an MA200 "Offline orders are not allowed" broker
+    # rejection: live buys are suppressed until this wallclock ts.
+    _offline_order_block_until = 0.0
+    _OFFLINE_ORDER_BLOCK_SECONDS = 300
+
     _near_month_data = {}
     _trading_watcher_thread_running = False
     _stop_event = threading.Event()
@@ -147,8 +152,21 @@ class Trader_Singleton:
     # Browser-close shutdown: connected frontend socket ids. When the
     # LAST one disconnects (browser/app window closed), the app shuts
     # itself down so the server/log console windows close with it.
+    # The grace only has to cover a page-refresh reconnect (sub-second
+    # on localhost) so it is kept tight: the red-button close must feel
+    # immediate, not sit in the Dock for 10s.
     _browser_sids = set()
-    _BROWSER_EXIT_GRACE_SECONDS = 10
+    _BROWSER_EXIT_GRACE_SECONDS = 2
+    _browser_exit_timer = None
+
+    # Frontend liveness: timestamp of the last socket event from the app
+    # page (connect or the ~15s pending-orders poll). Chrome background
+    # processes can keep the 5001 socket ESTABLISHED long after the app
+    # window is gone, so the socket alone cannot tell "window open" from
+    # "window closed" - the page's own poll cadence can. Used by the
+    # /frontend_alive endpoint the Dock-icon launcher consults.
+    _last_frontend_poll_ts = 0.0
+    _FRONTEND_ALIVE_MAX_AGE_SECONDS = 90
 
     # ---------------------------------------------------------
     # Persisted last-known real prices. Written whenever a websocket
@@ -212,6 +230,25 @@ class Trader_Singleton:
         # actually runs (SIMULATION -> SIMULATOR, PLAYBACK -> PLAYBACK),
         # not the raw appconfig BROKER value the class attribute carries.
         self._broker_string = broker.__class__.__name__.replace("Adapter", "").upper()
+        # FEED STALE badge plumbing: the M.Stock websocket connector
+        # reports quote-packet gaps; surface them to the UI.
+        connector = getattr(broker, "mstock_instance", None)
+        if connector is not None and hasattr(connector, "set_feed_status_callback"):
+            connector.set_feed_status_callback(self._emit_feed_status)
+
+    def _emit_feed_status(self, stale, gap_seconds=0.0):
+        """Push feed-stall state to every browser (FEED STALE badge).
+        Runs on the websocket loop thread - keep it emit-only."""
+        try:
+            self.frontend_data_socket.emit(
+                "feed_status",
+                {
+                    "stale": bool(stale),
+                    "gap_seconds": round(float(gap_seconds or 0.0), 1),
+                }
+            )
+        except Exception as e:
+            logger.debug(f"feed_status emit failed: {e}")
 
 
     def get_price_with_fallback(self, token, symbol):
@@ -371,6 +408,8 @@ class Trader_Singleton:
             # top of LTP (LIMIT at LTP + buffer on Kite, slippage
             # allowance for MARKET fills on M.Stock), so size
             # affordability against the buffered price, not the LTP.
+            # Same math as the LIVE branch below - no minimum-lot
+            # fallback: if the balance cannot afford one lot, show 0.
             return int(((available * margin_pct) / (price + compute_limit_margin(price))) / safe_lot_size)
 
         cash_balance = float(self._fund_summary.get("cash_balance", 0) or 0)
@@ -389,6 +428,19 @@ class Trader_Singleton:
         return int(((cash_balance * margin_pct) / (price + compute_limit_margin(price))) / safe_lot_size)
         # We dont want to return 1 lot if the computed_lots is 0. This is because we want to avoid placing orders when the cash balance is low and the computed lots is 0. Hence we will return 0 in such cases.
         #return max(1, computed_lots) 
+
+    @staticmethod
+    def _is_offline_order_rejection(error_message):
+        """
+        True when the broker rejected a live order as an "offline" order.
+
+        m.Stock's OMS routes orders it cannot send live into the offline
+        (AMO) book and rejects them with:
+          "Market is open .Offline orders are not allowed" (MA200).
+        Retrying cannot help - only the broker can clear the account
+        state - so callers must suppress further buys and alert.
+        """
+        return "OFFLINE ORDERS ARE NOT ALLOWED" in str(error_message).upper()
 
     def _smart_retry_lots(self, error_message, asked_lots):
         """
@@ -525,21 +577,30 @@ class Trader_Singleton:
        
 
     
-    def _target_profit_points(self, strategy_type):
-        """Strategy-scaled book-profit target in points (strategy factor x PTS_PROFIT)."""
-        pnt_book_profit = float(fetch_from_json("appconfig.json", "PTS_PROFIT") or 0)
+    def _strategy_threshold(self, base_key, strategy_type, default=0.0):
+        """
+        Per-strategy BP/SL lookup: reads <base_key>_<STRATEGY> (e.g.
+        PCT_BOOK_PROFIT + ULTRA_SCALPING -> PCT_BOOK_PROFIT_ULTRA_SCALPING).
+        Falls back to the plain base key so configs written before the
+        per-strategy keys existed keep working.
+        """
         strategy_type = self._normalise_strategy(strategy_type)
-        if strategy_type == "INTRA":
-            return float(fetch_from_json("appconfig.json", "PTS_PROFIT_INTRA_FACTOR") or 1) * pnt_book_profit
-        if strategy_type == "SCALPING":
-            return float(fetch_from_json("appconfig.json", "PTS_PROFIT_SCALPING_FACTOR") or 1) * pnt_book_profit
-        if strategy_type == "ULTRA_SCALPING":
-            return float(fetch_from_json("appconfig.json", "PTS_PROFIT_ULTRA_SCALPING_FACTOR") or 1) * pnt_book_profit
-        return 0.0
+        value = fetch_from_json("appconfig.json", f"{base_key}_{strategy_type}")
+        if value is None or str(value).strip() == "":
+            value = fetch_from_json("appconfig.json", base_key)
+        try:
+            return float(value or default)
+        except (TypeError, ValueError):
+            return float(default)
+
+    def _target_profit_points(self, strategy_type):
+        """Per-strategy book-profit target in points (PTS_PROFIT_<strategy>)."""
+        return self._strategy_threshold("PTS_PROFIT", strategy_type)
 
     def _exit_target_pct(self, strategy_type):
         """
-        Strategy-scaled profit target for U/D resting exits in PERCENT.
+        Per-strategy profit target for U/D resting exits in PERCENT
+        (PCT_BOOK_PROFIT_<strategy>).
 
         Honors COMPARISON_FUNCTION: with PCT configured, the resting
         exit must be percentage-based - symmetric with the percent
@@ -556,8 +617,8 @@ class Trader_Singleton:
     def _exit_target_price(self, anchor_price, strategy_type):
         """
         Exit-limit price for a U/D leg, COMPARISON_FUNCTION-aware:
-          PCT -> anchor x (1 + PCT_BOOK_PROFIT x strategy factor / 100)
-          PNT -> anchor + PTS_PROFIT x strategy factor
+          PCT -> anchor x (1 + PCT_BOOK_PROFIT_<strategy> / 100)
+          PNT -> anchor + PTS_PROFIT_<strategy>
         Floored to the 0.05 tick (SELL side - never above the target).
         Returns 0.0 when the anchor is unusable.
         """
@@ -579,18 +640,8 @@ class Trader_Singleton:
         return round(int(raw / tick + 1e-9) * tick, 2)
 
     def _effective_book_profit_pct(self, strategy_type):
-        """Strategy-scaled book-profit threshold in percent (PCT_BOOK_PROFIT x strategy factor)."""
-        pct_book_profit = float(fetch_from_json("appconfig.json", "PCT_BOOK_PROFIT") or 0)
-        strategy_type = self._normalise_strategy(strategy_type)
-        if strategy_type == "INTRA":
-            factor = float(fetch_from_json("appconfig.json", "PCT_PROFIT_INTRA_FACTOR") or 1)
-        elif strategy_type == "SCALPING":
-            factor = float(fetch_from_json("appconfig.json", "PCT_PROFIT_SCALPING_FACTOR") or 1)
-        elif strategy_type == "ULTRA_SCALPING":
-            factor = float(fetch_from_json("appconfig.json", "PCT_PROFIT_ULTRA_SCALPING_FACTOR") or 1)
-        else:
-            factor = 1
-        return pct_book_profit * factor
+        """Per-strategy book-profit threshold in percent (PCT_BOOK_PROFIT_<strategy>)."""
+        return self._strategy_threshold("PCT_BOOK_PROFIT", strategy_type)
 
     def _default_override_book_profit_pct(self, strategy_type):
         """
@@ -1983,9 +2034,13 @@ class Trader_Singleton:
 
                             if sell and not auto_sell_aborted:
                                 logger.info(f"Placing SELL order for {tradingsymbol} {instrument_token} : {qty} lots at LTP {ltp}")
-                                # AUDIT: stop-loss routine trigger.
+                                # AUDIT: stop-loss routine trigger. Pass
+                                # the RAW instrument token - the audit
+                                # records store the plain token, while
+                                # the loop variable here is the composite
+                                # position key (token:STRATEGY:MODE).
                                 trade_audit.record_sell_trigger(
-                                    token=str(token),
+                                    token=str(instrument_token),
                                     lots=qty,
                                     ltp=float(ltp or 0),
                                     source="SL_WATCHER",
@@ -1995,7 +2050,7 @@ class Trader_Singleton:
 
                                     # AUDIT: auto-sell success receipt.
                                     trade_audit.record_sell_executed(
-                                        str(token), qty, float(ltp or 0)
+                                        str(instrument_token), qty, float(ltp or 0)
                                     )
                                 except Exception as sell_error:
                                     # A failed auto-sell must not kill the
@@ -2022,13 +2077,13 @@ class Trader_Singleton:
 
                                 # AUDIT: paper auto-sell trigger + fill.
                                 trade_audit.record_sell_trigger(
-                                    token=str(token),
+                                    token=str(instrument_token),
                                     lots=qty,
                                     ltp=float(ltp or 0),
                                     source="SL_WATCHER",
                                 )
                                 trade_audit.record_sell_executed(
-                                    str(token), qty, float(ltp or 0)
+                                    str(instrument_token), qty, float(ltp or 0)
                                 )
 
                                 self.write_paper_trade(
@@ -2053,6 +2108,21 @@ class Trader_Singleton:
                                 # Recalculate paper positions so the sold
                                 # quantity disappears from the grid.
                                 self.refresh_paper_positions()
+
+                                # Paper auto-exits bypass the broker
+                                # adapter too, so notify the frontend
+                                # directly (Orders grid auto-refresh,
+                                # audit panel, sell-button reset).
+                                self.frontend_data_socket.emit(
+                                    'sell_order_result',
+                                    {
+                                        "success": True,
+                                        "tradingsymbol": tradingsymbol,
+                                        "lots": qty,
+                                        "position_key": token,
+                                        "paper": True
+                                    }
+                                )
                             except Exception as paper_sell_error:
                                 logger.error(
                                     f"PAPER auto-sell failed for {tradingsymbol}: {paper_sell_error}",
@@ -2132,22 +2202,15 @@ class Trader_Singleton:
             logger.debug(f"Deciding to sell or not: Buy Price = {buy_price}, Current Price = {current_price} and Order Strategy Type is {order_strategy_type}")
 
         # Fetched per call so config edits apply without a restart.
+        # BP/SL are per strategy (e.g. PCT_BOOK_PROFIT_INTRA).
         comparison_function = fetch_from_json("appconfig.json", "COMPARISON_FUNCTION") or []
-        PCT_BOOK_PROFIT = float(fetch_from_json("appconfig.json", "PCT_BOOK_PROFIT") or 0)
-        PCT_STOP_LOSS = float(fetch_from_json("appconfig.json", "PCT_STOP_LOSS") or 0)
-        PNT_BOOK_PROFIT = float(fetch_from_json("appconfig.json", "PTS_PROFIT") or 0)
-        PNT_STOP_LOSS = float(fetch_from_json("appconfig.json", "PTS_LOSS") or 0)
-        PROFIT_FACTOR = 1
+        PCT_BOOK_PROFIT = self._strategy_threshold("PCT_BOOK_PROFIT", order_strategy_type)
+        PCT_STOP_LOSS = self._strategy_threshold("PCT_STOP_LOSS", order_strategy_type)
+        PNT_BOOK_PROFIT = self._strategy_threshold("PTS_PROFIT", order_strategy_type)
+        PNT_STOP_LOSS = self._strategy_threshold("PTS_LOSS", order_strategy_type)
 
-        if order_strategy_type == "INTRA":
-            PROFIT_FACTOR = float(fetch_from_json("appconfig.json", "PTS_PROFIT_INTRA_FACTOR") or 1)
-        elif order_strategy_type == "SCALPING":
-            PROFIT_FACTOR = float(fetch_from_json("appconfig.json", "PTS_PROFIT_SCALPING_FACTOR") or 1)
-        elif order_strategy_type == "ULTRA_SCALPING":
-            PROFIT_FACTOR = float(fetch_from_json("appconfig.json", "PTS_PROFIT_ULTRA_SCALPING_FACTOR") or 1)
-        
         if log_enabled:
-            logger.debug(f"Profit factor is {PROFIT_FACTOR} and Compare Function is {comparison_function}")
+            logger.debug(f"Compare Function is {comparison_function}")
         
         if "PCT" in comparison_function:
             diff = self.calculate_pctg_difference(buy_price,current_price)
@@ -2170,7 +2233,7 @@ class Trader_Singleton:
                 logger.debug(f"In PNT Mode and Diff is {diff}")
             #if PNT_BOOK_PROFIT is 0, then SELL TRIGGER never triggered for PROFIT. User has to book the profit manually. Sell Trigger is only then for STOP LOSS
             if current_price > buy_price and PNT_BOOK_PROFIT > 0 :
-                if diff >= PNT_BOOK_PROFIT*PROFIT_FACTOR:
+                if diff >= PNT_BOOK_PROFIT:
                     if log_enabled:
                         logger.debug("Returning True for Booking Profit")
                     return True
@@ -2185,8 +2248,8 @@ class Trader_Singleton:
     def _pnt_sell_decision(self, buy_price, current_price, order_strategy_type, log_enabled=True, check_profit=True, override_book_profit_pct=None):
         """
         PNT (points) branch of the SL safety net - mirrors the PNT branch
-        of to_sell_or_not_to_sell: profit threshold is PTS_PROFIT scaled
-        by the strategy's PTS factor, stop loss is PTS_LOSS in points.
+        of to_sell_or_not_to_sell: profit threshold is PTS_PROFIT_<strategy>
+        and stop loss is PTS_LOSS_<strategy>, both in points.
         The per-leg BK% override stays a percent and is converted to
         points off the buy price here (0 still disables profit booking).
         """
@@ -2196,28 +2259,19 @@ class Trader_Singleton:
         except (TypeError, ValueError):
             return False
 
-        if order_strategy_type == "INTRA":
-            PNT_FACTOR = float(fetch_from_json("appconfig.json", "PTS_PROFIT_INTRA_FACTOR") or 1)
-        elif order_strategy_type == "SCALPING":
-            PNT_FACTOR = float(fetch_from_json("appconfig.json", "PTS_PROFIT_SCALPING_FACTOR") or 1)
-        elif order_strategy_type == "ULTRA_SCALPING":
-            PNT_FACTOR = float(fetch_from_json("appconfig.json", "PTS_PROFIT_ULTRA_SCALPING_FACTOR") or 1)
-        else:
-            PNT_FACTOR = 1
-
-        PNT_BOOK_PROFIT = float(fetch_from_json("appconfig.json", "PTS_PROFIT") or 0)
-        PNT_STOP_LOSS = float(fetch_from_json("appconfig.json", "PTS_LOSS") or 0)
+        PNT_BOOK_PROFIT = self._strategy_threshold("PTS_PROFIT", order_strategy_type)
+        PNT_STOP_LOSS = self._strategy_threshold("PTS_LOSS", order_strategy_type)
 
         if override_book_profit_pct is not None:
             override = max(0.0, float(override_book_profit_pct))
             BOOK_PROFIT_THRESHOLD_PTS = float(buy_price) * override / 100.0
         else:
-            BOOK_PROFIT_THRESHOLD_PTS = PNT_BOOK_PROFIT * PNT_FACTOR
+            BOOK_PROFIT_THRESHOLD_PTS = PNT_BOOK_PROFIT
         STOP_LOSS_THRESHOLD_PTS = PNT_STOP_LOSS
 
         if log_enabled:
             logger.debug(
-                f"PNT thresholds: factor {PNT_FACTOR} | Book Profit >= {BOOK_PROFIT_THRESHOLD_PTS:.2f} pts "
+                f"PNT thresholds: Book Profit >= {BOOK_PROFIT_THRESHOLD_PTS:.2f} pts "
                 f"| Stop Loss >= {STOP_LOSS_THRESHOLD_PTS:.2f} pts | check_profit={check_profit}"
             )
 
@@ -2257,8 +2311,9 @@ class Trader_Singleton:
             logger.debug(f"Deciding to sell or not for Stop Loss: Buy Price = {buy_price}, Current Price = {current_price} and Order Strategy Type is {order_strategy_type}")
 
         # The SL path must apply the thresholds the UI actually shows:
-        # PNT mode -> PTS_* points; PCT mode (and EMA, whose indicator
-        # logic lives elsewhere) keeps the PCT_* percentages below.
+        # PNT mode -> PTS_*_<strategy> points; PCT mode (and EMA, whose
+        # indicator logic lives elsewhere) keeps the PCT_*_<strategy>
+        # percentages below.
         comparison_function = fetch_from_json("appconfig.json", "COMPARISON_FUNCTION") or []
         if "PNT" in comparison_function:
             return self._pnt_sell_decision(
@@ -2266,34 +2321,24 @@ class Trader_Singleton:
                 log_enabled, check_profit, override_book_profit_pct
             )
 
-        # PCT thresholds are scaled per strategy: TP% = PCT_BOOK_PROFIT * factor and
-        # SL% = PCT_STOP_LOSS * factor. Unknown strategy types default to factor 1.
-        # Fetched per call so config edits apply without a restart.
-        if order_strategy_type == "INTRA":
-            PCT_FACTOR = float(fetch_from_json("appconfig.json", "PCT_PROFIT_INTRA_FACTOR") or 10)
-        elif order_strategy_type == "SCALPING":
-            PCT_FACTOR = float(fetch_from_json("appconfig.json", "PCT_PROFIT_SCALPING_FACTOR") or 4)
-        elif order_strategy_type == "ULTRA_SCALPING":
-            PCT_FACTOR = float(fetch_from_json("appconfig.json", "PCT_PROFIT_ULTRA_SCALPING_FACTOR") or 1)
-        else:
-            PCT_FACTOR = 1
+        # Per-strategy BP/SL thresholds (e.g. PCT_BOOK_PROFIT_INTRA,
+        # PCT_STOP_LOSS_ULTRA_SCALPING). Fetched per call so config
+        # edits apply without a restart.
+        PCT_BOOK_PROFIT = self._strategy_threshold("PCT_BOOK_PROFIT", order_strategy_type)
+        PCT_STOP_LOSS = self._strategy_threshold("PCT_STOP_LOSS", order_strategy_type)
 
-        PCT_BOOK_PROFIT = float(fetch_from_json("appconfig.json", "PCT_BOOK_PROFIT") or 0)
-        PCT_STOP_LOSS = float(fetch_from_json("appconfig.json", "PCT_STOP_LOSS") or 0)
-
-        EFFECTIVE_SL_PCT = PCT_STOP_LOSS
         # A per-position override (BK% box on the positions grid) replaces
-        # the strategy-scaled book-profit threshold; 0 disables profit
+        # the per-strategy book-profit threshold; 0 disables profit
         # booking for that leg. The stop-loss threshold is unaffected.
         if override_book_profit_pct is not None:
             BOOK_PROFIT_THRESHOLD_PCT = max(0.0, float(override_book_profit_pct))
         else:
-            BOOK_PROFIT_THRESHOLD_PCT = PCT_BOOK_PROFIT * PCT_FACTOR
-        STOP_LOSS_THRESHOLD_PCT = EFFECTIVE_SL_PCT * PCT_FACTOR
+            BOOK_PROFIT_THRESHOLD_PCT = PCT_BOOK_PROFIT
+        STOP_LOSS_THRESHOLD_PCT = PCT_STOP_LOSS
 
         if log_enabled:
             logger.debug(
-                f"PCT thresholds: factor {PCT_FACTOR} | Book Profit >= {BOOK_PROFIT_THRESHOLD_PCT}% "
+                f"PCT thresholds: Book Profit >= {BOOK_PROFIT_THRESHOLD_PCT}% "
                 f"| Stop Loss >= {STOP_LOSS_THRESHOLD_PCT}% | check_profit={check_profit}"
             )
 
@@ -2435,7 +2480,7 @@ class Trader_Singleton:
         # logger.debug("Falling back to PCT_STOP_LOSS based Stop Loss Check")
 
         # Book Profit check: sell when the position has gained at least
-        # PCT_BOOK_PROFIT * strategy factor percent over the buy price.
+        # PCT_BOOK_PROFIT_<strategy> percent over the buy price.
         # A value of 0 disables profit booking. Skipped entirely when
         # check_profit is False (U/D sell modes - their profit is
         # handled by the broker-side limit order).
@@ -2449,7 +2494,7 @@ class Trader_Singleton:
                 logger.debug(
                     f"PCT_BOOK_PROFIT based Book Profit Check. Buy Price is {buy_price} and "
                     f"Current Price is {current_price}. Profit PCT Diff is {profit_diff} "
-                    f"and Book Profit threshold is {BOOK_PROFIT_THRESHOLD_PCT} (PCT_BOOK_PROFIT {PCT_BOOK_PROFIT} x factor {PCT_FACTOR})"
+                    f"and Book Profit threshold is {BOOK_PROFIT_THRESHOLD_PCT}%"
                 )
             if profit_diff >= BOOK_PROFIT_THRESHOLD_PCT:
                 if log_enabled:
@@ -2458,7 +2503,7 @@ class Trader_Singleton:
 
         if log_enabled:
             logger.debug(f"PCT_STOP_LOSS based Stop Loss Check. Buy Price is {buy_price} and Current Price is {current_price} and Stop Loss threshold is {STOP_LOSS_THRESHOLD_PCT}")
-        if EFFECTIVE_SL_PCT > 0 and current_price < buy_price :
+        if STOP_LOSS_THRESHOLD_PCT > 0 and current_price < buy_price :
             diff = abs(self.calculate_pctg_difference(buy_price,current_price))
             if log_enabled:
                 logger.debug(f"PCT Diff between BUY and Current Market Price is {diff} and Stop Loss threshold is {STOP_LOSS_THRESHOLD_PCT}")
@@ -4574,6 +4619,71 @@ class Trader_Singleton:
 
             return
 
+    def reset_paper_account(self):
+        """
+        Cash-balance change = paper account reset: archive the whole
+        paper trade log (backed up first, nothing is lost) and start
+        from the newly configured balance. Without this, realized PnL
+        from trades made under the old balance keeps dragging the
+        available cash (even negative), so a freshly lowered balance
+        can never afford a single lot.
+        """
+
+        filename = self._PAPER_TRADE_FILENAME
+
+        with self._paper_trade_lock:
+
+            header_line = None
+            try:
+                with open(filename, "r", encoding="utf-8") as f:
+                    lines = f.readlines()
+                if lines:
+                    first_fields = lines[0].rstrip("\n").split("\t")
+                    if first_fields[0].strip() == "Time":
+                        header_line = lines[0]
+            except FileNotFoundError:
+                lines = []
+            except Exception as e:
+                logger.warning(
+                    f"Could not read {filename} for account reset: {e}"
+                )
+                return
+
+            if lines:
+                backup_path = (
+                    f"{os.path.splitext(filename)[0]}_backup_"
+                    f"{datetime.datetime.now():%Y%m%d_%H%M%S}.txt"
+                )
+                try:
+                    with open(backup_path, "w", encoding="utf-8") as f:
+                        f.writelines(lines)
+                    logger.info(
+                        f"Paper trade log backed up to {backup_path}"
+                    )
+                except Exception as e:
+                    logger.error(
+                        f"Could not back up {filename}; aborting account "
+                        f"reset so no data is lost: {e}"
+                    )
+                    return
+
+            try:
+                with open(filename, "w", encoding="utf-8") as f:
+                    if header_line is not None:
+                        f.write(header_line)
+            except Exception as e:
+                logger.error(
+                    f"Could not truncate {filename} during account "
+                    f"reset: {e}"
+                )
+                return
+
+        logger.info(
+            "Paper account reset: trade log archived, funds restart "
+            "from the configured cash balance"
+        )
+        self.refresh_paper_positions()
+
     
 
    #{'INDICATORS': {'15S': {'PVT': 0.97, 'PVTPoiseFlag': -1, 'PVTTrendFlag': 1, 'PVTCrossOverIndex': 4, 'PVTCrossUnderIndex': 5, 'Trend_1226': 1, 'X_1226': 15, 'Y_1226': 32, 
@@ -4708,6 +4818,13 @@ class Trader_Singleton:
                 "CE_REASON": self._tv_ce_reason,
                 "PE_REASON": self._tv_pe_reason
             }
+
+            # ✅ PAInsight forecasting engine (non-invasive; failure-contained)
+            try:
+                from forecasting.engine import forecast_engine
+                json_data["Forecast"] = forecast_engine.on_snapshot(data)
+            except Exception as forecast_err:
+                logger.warning("Forecast engine failed: %s" % forecast_err)
 
             # ✅ Emit event to frontend (Socket.IO)
             self.frontend_data_socket.emit("update_trading_view_data", json_data)
@@ -5559,6 +5676,53 @@ class Trader_Singleton:
 
     # In your Trader_Singleton class
 
+    def _cancel_browser_exit_timer(self):
+        """Cancel a pending close-shutdown (a client is back)."""
+        timer = self._browser_exit_timer
+        if timer is not None:
+            self._browser_exit_timer = None
+            try:
+                timer.cancel()
+            except Exception:
+                pass
+
+    def frontend_seconds_since_activity(self):
+        """
+        Seconds since the app page last reached the server (connect or
+        pending-orders poll). Zero-initialized timestamps read as an
+        arbitrarily stale page until the first poll lands.
+        """
+        if self._last_frontend_poll_ts <= 0.0:
+            return float("inf")
+        return max(0.0, time.time() - self._last_frontend_poll_ts)
+
+    def frontend_is_alive(self):
+        """
+        True when the app window is genuinely rendering (its poll is
+        current within the throttle tolerance). A minimized window polls
+        at worst once a minute and stays alive; a closed window's page
+        never polls and goes stale immediately.
+        """
+        return self.frontend_seconds_since_activity() <= self._FRONTEND_ALIVE_MAX_AGE_SECONDS
+
+    def _recalc_weekly_option_lots(self):
+        """
+        Re-size every weekly option contract's lots from its current
+        LTP. Runs before re-sending the contract map (tab switch /
+        reconnect) so the grid reflects the CURRENT cash balance even
+        when no tick has arrived since the balance changed (market
+        closed / feed stall) - lots are otherwise only re-sized on
+        LTP ticks.
+        """
+        for data in self._five_weekly_option_contracts.values():
+            try:
+                ltp = float(data.get("ltp") or 0)
+                lot_size = data.get("lotsize") or data.get("lot_size")
+                if ltp > 0 and lot_size:
+                    data["lots"] = self._calculate_option_lots(ltp, lot_size)
+            except Exception:
+                continue
+
     def _shutdown_if_no_browser(self):
         """
         Browser/app window closed and no frontend client reconnected
@@ -5584,7 +5748,11 @@ class Trader_Singleton:
 
         @self.frontend_data_socket.on('connect')
         def handle_connect():
+            # A reconnect (page refresh) cancels any pending
+            # close-shutdown so a slow refresh is never killed mid-load.
+            self._cancel_browser_exit_timer()
             self._browser_sids.add(request.sid)
+            self._last_frontend_poll_ts = time.time()
             logger.info(f"MSTOCK SOCKET CONNECTED | sid={request.sid} | browser clients={len(self._browser_sids)}")
             logger.debug(self._near_month_data)
             payload = {
@@ -5684,10 +5852,12 @@ class Trader_Singleton:
             if not self._browser_sids:
                 # Last window gone: allow brief reconnects (page
                 # refresh / tab switch) before shutting down.
-                threading.Timer(
+                self._cancel_browser_exit_timer()
+                self._browser_exit_timer = threading.Timer(
                     self._BROWSER_EXIT_GRACE_SECONDS,
                     self._shutdown_if_no_browser
-                ).start()
+                )
+                self._browser_exit_timer.start()
 
         @self.frontend_data_socket.on('voice_announcement_toggle')
         def handle_voice_announcement_toggle(payload):
@@ -5708,6 +5878,23 @@ class Trader_Singleton:
             else:
                 self.refresh_open_pos_buy_price()
             self.setup_woc_subscriptions()
+
+        @self.frontend_data_socket.on('request_weekly_options')
+        def handle_request_weekly_options():
+            """Lightweight re-send of the current contract map (page
+            load / socket reconnect). Unlike refresh-options-table this
+            performs NO REST fetch or re-subscription - the map is
+            already in memory. No-op when setup has not populated it
+            yet; the setup-completion broadcast covers that case."""
+            logger.info("Frontend requested weekly options re-send")
+            if self._five_weekly_option_contracts:
+                # Re-size lots against the current cash balance first -
+                # the balance may have changed since the last LTP tick.
+                self._recalc_weekly_option_lots()
+                self.frontend_data_socket.emit(
+                    "update_weekly_options",
+                    self._five_weekly_option_contracts
+                )
 
         # =========================================================
         # PLAYBACK CONTROLS
@@ -5827,6 +6014,9 @@ class Trader_Singleton:
             logger.info(
                 "Received 'request_weekly_options' from client. Sending weekly contracts..."
             )
+            # Re-size lots against the current cash balance first - the
+            # balance may have changed since the last LTP tick.
+            self._recalc_weekly_option_lots()
             self.frontend_data_socket.emit(
                 'update_weekly_options',
                 self._five_weekly_option_contracts
@@ -6563,10 +6753,37 @@ class Trader_Singleton:
                             f"SellMode={sell_mode}"
                         )
 
-                    logger.info("Calling refresh_paper_positions() after BUY...")                    
+                    logger.info("Calling refresh_paper_positions() after BUY...")
                     self.refresh_paper_positions()
                     logger.info(f"After BUY refresh, position_data = {self._position_data}")
+
+                    # Paper fills never reach the broker adapter, so the
+                    # adapter-side buy_order_result emit never happens.
+                    # Emit it here - the Orders grid, audit panel and
+                    # fund/PnL boxes all refresh on this event.
+                    self.frontend_data_socket.emit('buy_order_result', {
+                        "success": True,
+                        "tradingsymbol": order_details["tradingsymbol"],
+                        "lots": order_details.get("lots", 0),
+                        "paper": True
+                    })
                 else:
+                    now_ts = time.time()
+                    if now_ts < self._offline_order_block_until:
+                        remaining = int(self._offline_order_block_until - now_ts)
+                        logger.warning(
+                            f"Buy for {order_details['tradingsymbol']} suppressed - "
+                            f"broker is rejecting orders as offline (MA200), "
+                            f"{remaining}s left on the cooldown"
+                        )
+                        self.frontend_data_socket.emit('status_message', {
+                            "success": False,
+                            "message": (
+                                f"Buy blocked: broker rejecting orders as offline (MA200). "
+                                f"Cooldown {remaining}s - check your mStock account/F&O segment."
+                            )
+                        })
+                        return
                     if sell_mode == "U":
                         logger.info(f"Placing Buy-Sell order as Sell Mode is set to {sell_mode} ")
                         self._broker.buy_sell_units(order_details["tradingsymbol"] , order_details["token"] , order_details["lots"] , self._exchange , ltp,self._mode,sell_mode,target_profit,strategy, target_profit_pct=target_profit_pct)
@@ -6615,6 +6832,35 @@ class Trader_Singleton:
                             "warning": "BUY executed but the resting exit could not be placed - position is open without an exit limit."
                         })
 
+                        return
+
+                    if self._is_offline_order_rejection(error_message):
+                        # Broker is rejecting every live order as an
+                        # offline order (MA200). Retrying just hammers
+                        # the broker while the strategy re-signals -
+                        # pause live buys for a cooldown and alert.
+                        self._offline_order_block_until = time.time() + self._OFFLINE_ORDER_BLOCK_SECONDS
+                        logger.error(
+                            f"NON-RETRYABLE: broker rejected "
+                            f"{order_details['tradingsymbol']} as an offline "
+                            f"order (MA200) - live buys paused for "
+                            f"{self._OFFLINE_ORDER_BLOCK_SECONDS}s. Check the "
+                            f"mStock account/F&O segment or contact support."
+                        )
+                        self.frontend_data_socket.emit('status_message', {
+                            "success": False,
+                            "message": (
+                                "Broker rejected the order as OFFLINE (MA200). "
+                                f"Live buys paused for {self._OFFLINE_ORDER_BLOCK_SECONDS}s - "
+                                "check your mStock account/F&O segment or contact support."
+                            )
+                        })
+                        self.frontend_data_socket.emit('buy_order_result', {
+                            "success": False,
+                            "tradingsymbol": order_details["tradingsymbol"],
+                            "lots": order_details["lots"],
+                            "error": str(e)
+                        })
                         return
 
                     if "FUND LIMIT INSUFFICIENT" in error_message:
@@ -6728,6 +6974,30 @@ class Trader_Singleton:
                                         "warning": "BUY executed but the resting exit could not be placed - position is open without an exit limit."
                                     })
 
+                                    return
+
+                                if self._is_offline_order_rejection(retry_error_message):
+                                    self._offline_order_block_until = time.time() + self._OFFLINE_ORDER_BLOCK_SECONDS
+                                    logger.error(
+                                        f"NON-RETRYABLE: retry buy for "
+                                        f"{order_details['tradingsymbol']} rejected as "
+                                        f"an offline order (MA200) - live buys paused "
+                                        f"for {self._OFFLINE_ORDER_BLOCK_SECONDS}s."
+                                    )
+                                    self.frontend_data_socket.emit('status_message', {
+                                        "success": False,
+                                        "message": (
+                                            "Broker rejected the order as OFFLINE (MA200). "
+                                            f"Live buys paused for {self._OFFLINE_ORDER_BLOCK_SECONDS}s - "
+                                            "check your mStock account/F&O segment or contact support."
+                                        )
+                                    })
+                                    self.frontend_data_socket.emit('buy_order_result', {
+                                        "success": False,
+                                        "tradingsymbol": order_details["tradingsymbol"],
+                                        "lots": retry_lots,
+                                        "error": str(retry_error)
+                                    })
                                     return
 
                                 if "FUND LIMIT INSUFFICIENT" not in retry_error_message:

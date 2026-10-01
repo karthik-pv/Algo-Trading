@@ -1,0 +1,481 @@
+{
+  "version": "0.1-draft",
+  "note": "Pre-defined Setup Library + Setup->TradeCase matrix. DRAFT v0.1 for user tweaking. HTF context = 1m/5m/30m/2h/D/W/M/Q structure; trigger = what the 15s tape shows when the setup is live. Detection priority = array order (first match wins).",
+  "setups": [
+    {
+      "id": "TDY",
+      "trend": "UT / DT",
+      "name": "Trend Day Ride",
+      "liner": "Full regime alignment all day - ride the move, buy every shallow dip (or sell every rip).",
+      "indicator_setup_1": "3PM with trend + 5PM holding + CV on VWAP side + 3S rolling back into trend",
+      "indicator_setup_2": "DPM = 2PM (same sign) + DS and WS aligned in trend direction",
+      "direction": "with-regime",
+      "htf_context": {
+        "regime": "D|2H|30 full alignment (all + or all -)",
+        "structure": "1m/5m EMA stack fully ordered (E9>E21>E50>E100>E200 or mirror); price on VWAP side; D/W/M/Q backdrop aligned",
+        "session": "usually established by 10:30; VWAP held since open"
+      },
+      "trigger_15s": "Every shallow pullback holds 1m EMA50/VWAP; 15s PVT zero-cross + MACD_2452 cross back in trend direction = continuation entry window",
+      "invalidation": "1m close through 1m EMA200 or VWAP loss with PVT flip; or 30m PVT sign flip",
+      "tradecases": {
+        "ultra_scalp": {
+          "entry": "15s pullback stall at 1m EMA50/E100",
+          "stop": "beyond pullback 15s swing",
+          "target": "next micro level (Round50/100, 1m EMA extension)",
+          "notes": "DRAFT - user to define"
+        },
+        "scalp": {
+          "entry": "1m close back in trend off EMA50",
+          "stop": "1m EMA200",
+          "target": "5m EMA extension / next Round100",
+          "notes": "DRAFT - user to define"
+        },
+        "intraday": {
+          "entry": "hold runner from scalp; add on 5m EMA50 touches",
+          "stop": "VWAP",
+          "target": "PDH/PDL or 2h EMA",
+          "notes": "DRAFT - user to define"
+        }
+      },
+      "history": [
+        "2026-07-22",
+        "2026-07-22",
+        "2026-07-22",
+        "2026-07-14",
+        "2026-07-14",
+        "2026-07-14",
+        "2026-07-14",
+        "2026-07-14"
+      ],
+      "history_note": "heuristic v0.1 occurrences mined from data/insight/csv (1m file span); eyeball these dates on TradingView to verify the signature"
+    },
+    {
+      "id": "TCP",
+      "trend": "UT / DT",
+      "name": "Trend Continuation Pullback",
+      "liner": "Trend pauses into a 5m EMA cluster, then resumes in the regime direction.",
+      "indicator_setup_1": "3PM with regime + price into 5m EMA50/100/200 band + 5PM PVT not crossed against + 3S resetting from pullback",
+      "indicator_setup_2": "DPM/2PM aligned (2-of context) + DS not against regime",
+      "direction": "with-regime",
+      "htf_context": {
+        "regime": "2 of {D,2H,30} aligned; 30m may be counter",
+        "structure": "5m/30m trend intact (5m EMA50/100 slope); price pulls back into 5m EMA50-200 cluster or 30m E21/E50",
+        "session": "any time after first impulse leg"
+      },
+      "trigger_15s": "Pullback stalls at the HTF level; 15s PVT zero-cross + MACD_2452 cross back with trend; stoch K/D resets from extreme",
+      "invalidation": "15s/1m close beyond the pullback origin swing; 5m PVT flips",
+      "tradecases": {
+        "ultra_scalp": {
+          "entry": "15s cross back with trend at level",
+          "stop": "level -/+ buffer",
+          "target": "prior swing high/low",
+          "notes": "DRAFT - user to define"
+        },
+        "scalp": {
+          "entry": "1m confirmation close",
+          "stop": "5m EMA100",
+          "target": "session extreme",
+          "notes": "DRAFT - user to define"
+        },
+        "intraday": {
+          "entry": "scale in on retest",
+          "stop": "30m E50",
+          "target": "next HTF level",
+          "notes": "DRAFT - user to define"
+        }
+      },
+      "history": [
+        "2026-07-23",
+        "2026-07-22",
+        "2026-07-22",
+        "2026-07-21",
+        "2026-07-15",
+        "2026-07-15",
+        "2026-07-14",
+        "2026-07-14"
+      ],
+      "history_note": "heuristic v0.1 occurrences mined from data/insight/csv (1m file span); eyeball these dates on TradingView to verify the signature"
+    },
+    {
+      "id": "VWR",
+      "trend": "RT (in DT)",
+      "name": "VWAP Reject Fade",
+      "liner": "Bear regime: rally into VWAP fails - fade the reject back down.",
+      "indicator_setup_1": "3PM- + CV at VWAP from below + 5PM green (Setup A) or crossing down (Setup B) + 3S rolling from overbought",
+      "indicator_setup_2": "DPM- or 2PM- + DS bearish/rolling over; WS lean bearish",
+      "direction": "short-from-below (mirror for long-from-above in bear day = VWH)",
+      "htf_context": {
+        "regime": "D- or D+|2H-; 30m PVT<0 dominant (per store: VWAP reject-from-below rises ~20pp per bearish factor)",
+        "structure": "price below session VWAP; rally into VWAP under a falling 30m/2h EMA stack",
+        "session": "strongest after 10:00 when VWAP has slope"
+      },
+      "trigger_15s": "15s PVT zero-cross down + MACD_2452 cross-down AT the VWAP touch (research Setup A: 5m PVT stays green ~59-73% reject at 1m E50; Setup B: 5m PVT crosses too ~83-100%)",
+      "invalidation": "1m close above VWAP with PVT flip up; 30m close above VWAP kills the fade",
+      "tradecases": {
+        "ultra_scalp": {
+          "entry": "15s cross-down at VWAP",
+          "stop": "above VWAP touch + few pts",
+          "target": "1m EMA200 then Round100 below",
+          "notes": "DRAFT - user to define"
+        },
+        "scalp": {
+          "entry": "1m close back below VWAP",
+          "stop": "30m E21/VWAP",
+          "target": "PDL/PDC",
+          "notes": "DRAFT - user to define"
+        },
+        "intraday": {
+          "entry": "hold short while 30m PVT<0",
+          "stop": "2h E50",
+          "target": "day low extension",
+          "notes": "DRAFT - user to define"
+        }
+      },
+      "history": [
+        "2026-07-16",
+        "2026-07-16",
+        "2026-07-16",
+        "2026-07-16",
+        "2026-07-15",
+        "2026-07-15",
+        "2026-07-14",
+        "2026-07-14"
+      ],
+      "history_note": "heuristic v0.1 occurrences mined from data/insight/csv (1m file span); eyeball these dates on TradingView to verify the signature"
+    },
+    {
+      "id": "VWH",
+      "trend": "RD (in UT)",
+      "name": "VWAP Hold Bounce",
+      "liner": "Bull regime: dip into VWAP holds - bounce long back up.",
+      "indicator_setup_1": "3PM+ + CV at VWAP from above + 5PM stays green + 3S turning up from oversold",
+      "indicator_setup_2": "DPM+ or 2PM+ + DS bullish/turning up; WS lean bullish",
+      "direction": "long-from-above (mirror of VWR)",
+      "htf_context": {
+        "regime": "D+ or D-|2H+; 30m PVT>=0 (store: VWAP hold-from-above 60% in full bull)",
+        "structure": "price above session VWAP; dip into VWAP with rising 30m/2h EMAs below",
+        "session": "first 1-2 tests of VWAP are the highest-quality"
+      },
+      "trigger_15s": "15s PVT zero-cross up + MACD_2452 cross-up at the VWAP touch; 5m PVT stays green",
+      "invalidation": "1m close below VWAP with PVT flip down",
+      "tradecases": {
+        "ultra_scalp": {
+          "entry": "15s cross-up at VWAP",
+          "stop": "below VWAP touch",
+          "target": "1m EMA extension / Round100 above",
+          "notes": "DRAFT - user to define"
+        },
+        "scalp": {
+          "entry": "1m close back above VWAP",
+          "stop": "30m E21/VWAP",
+          "target": "PDH/PDC",
+          "notes": "DRAFT - user to define"
+        },
+        "intraday": {
+          "entry": "hold long while 30m PVT>=0",
+          "stop": "VWAP",
+          "target": "day high extension",
+          "notes": "DRAFT - user to define"
+        }
+      },
+      "history": [
+        "2026-07-17",
+        "2026-07-17",
+        "2026-07-17",
+        "2026-07-16",
+        "2026-07-16",
+        "2026-07-16",
+        "2026-07-15",
+        "2026-07-15"
+      ],
+      "history_note": "heuristic v0.1 occurrences mined from data/insight/csv (1m file span); eyeball these dates on TradingView to verify the signature"
+    },
+    {
+      "id": "ORB",
+      "trend": "UT / DT",
+      "name": "Opening Range Breakout",
+      "liner": "First 30-minute range breaks with momentum - trade the expansion.",
+      "indicator_setup_1": "15S close beyond OR edge + 3PM agreeing with break + CV flipped to break side of VWAP",
+      "indicator_setup_2": "DPM/2PM lean in break direction + DS not against",
+      "direction": "break direction",
+      "htf_context": {
+        "regime": "any; D+ favors upside break follow-through (54% up-day)",
+        "structure": "09:15-09:45 high/low defines OR; EMAs still converging",
+        "session": "time-gated: only 09:15-10:30"
+      },
+      "trigger_15s": "15s close beyond OR high/low with PVT+MACD_2452 agreeing; retest of the OR edge holds",
+      "invalidation": "15s close back inside OR range = TRP instead",
+      "tradecases": {
+        "ultra_scalp": {
+          "entry": "15s break close",
+          "stop": "inside OR mid",
+          "target": "measured move of OR width",
+          "notes": "DRAFT - user to define"
+        },
+        "scalp": {
+          "entry": "retest of OR edge",
+          "stop": "OR mid",
+          "target": "Round100 / PDH-PDL",
+          "notes": "DRAFT - user to define"
+        },
+        "intraday": {
+          "entry": "trail from scalp",
+          "stop": "OR far edge",
+          "target": "rest-of-day trend",
+          "notes": "DRAFT - user to define"
+        }
+      },
+      "history": [
+        "2026-08-04",
+        "2026-07-28",
+        "2026-07-24",
+        "2026-07-22",
+        "2026-07-21",
+        "2026-07-17",
+        "2026-07-16",
+        "2026-07-14"
+      ],
+      "history_note": "heuristic v0.1 occurrences mined from data/insight/csv (1m file span); eyeball these dates on TradingView to verify the signature"
+    },
+    {
+      "id": "PDX",
+      "trend": "RT / RD",
+      "name": "PDH/PDL Sweep & Reclaim",
+      "liner": "Prior-day extreme gets swept then reclaimed - trap reversal back inside the range.",
+      "indicator_setup_1": "CV rejection at PDH/PDL + 2S/3S resetting from sweep extreme + 5PM cross flips against the sweep",
+      "indicator_setup_2": "DPM context (sweep against DPM = higher conviction) + DS/2S at extreme during sweep",
+      "direction": "reclaim direction (counter to sweep)",
+      "htf_context": {
+        "regime": "any; sweep against regime is the higher-conviction variant",
+        "structure": "price spikes through PDH/PDL/PDC, fails to accept beyond",
+        "session": "any; often at open or into 12:00 lull"
+      },
+      "trigger_15s": "15s closes back inside the prior-day extreme right after the sweep; PVT cross flips against the sweep",
+      "invalidation": "1m close beyond the level with acceptance (two consecutive 1m closes beyond)",
+      "tradecases": {
+        "ultra_scalp": {
+          "entry": "15s reclaim close",
+          "stop": "sweep extreme",
+          "target": "VWAP / Round100 inside range",
+          "notes": "DRAFT - user to define"
+        },
+        "scalp": {
+          "entry": "1m reclaim close",
+          "stop": "sweep extreme",
+          "target": "opposite day extreme",
+          "notes": "DRAFT - user to define"
+        },
+        "intraday": {
+          "entry": "scale on VWAP retest",
+          "stop": "beyond sweep",
+          "target": "full range traverse",
+          "notes": "DRAFT - user to define"
+        }
+      },
+      "history": [
+        "2026-08-10",
+        "2026-08-07",
+        "2026-08-06",
+        "2026-08-05",
+        "2026-08-04",
+        "2026-07-24",
+        "2026-07-15",
+        "2026-07-13"
+      ],
+      "history_note": "heuristic v0.1 occurrences mined from data/insight/csv (1m file span); eyeball these dates on TradingView to verify the signature"
+    },
+    {
+      "id": "SQZ",
+      "trend": "UT / DT",
+      "name": "Squeeze / Compression Breakout",
+      "liner": "Tight EMA coil releases - trade the expansion out of the squeeze.",
+      "indicator_setup_1": "5PM flat near zero + CV pinned to VWAP + 3S mid-range; break = 5PM zero-cross out + CV escaping coil",
+      "indicator_setup_2": "2PM vs DPM conflict or neutral (coil fuel) + DS mid-range",
+      "direction": "break direction",
+      "htf_context": {
+        "regime": "mixed regime (D/2H/30 conflicting); often pre-event or lunch coil",
+        "structure": "1m/5m EMA ribbon flat and tight (all EMAs within a few points); price chopping across EMA50",
+        "session": "11:00-13:30 coil typical"
+      },
+      "trigger_15s": "15s expansion out of the coil: close beyond coil edge + PVT zero-cross out + MACD_2452 hist expanding",
+      "invalidation": "15s close back inside the coil body",
+      "tradecases": {
+        "ultra_scalp": {
+          "entry": "15s expansion close",
+          "stop": "coil edge",
+          "target": "coil height projection",
+          "notes": "DRAFT - user to define"
+        },
+        "scalp": {
+          "entry": "first pullback to coil edge",
+          "stop": "coil mid",
+          "target": "next HTF level",
+          "notes": "DRAFT - user to define"
+        },
+        "intraday": {
+          "entry": "hold if 30m PVT joins",
+          "stop": "coil far edge",
+          "target": "trend day criteria check",
+          "notes": "DRAFT - user to define"
+        }
+      },
+      "history": [
+        "2026-07-16",
+        "2026-07-16",
+        "2026-07-15",
+        "2026-07-15",
+        "2026-07-14",
+        "2026-07-14",
+        "2026-07-14",
+        "2026-07-13"
+      ],
+      "history_note": "heuristic v0.1 occurrences mined from data/insight/csv (1m file span); eyeball these dates on TradingView to verify the signature"
+    },
+    {
+      "id": "TRP",
+      "trend": "RD / RT",
+      "name": "Failed Breakout / Trap Reversal",
+      "liner": "Level breaks but fails to hold - trade the snap-back against the failed break.",
+      "indicator_setup_1": "5PM PVT flips against the break + CV failing back inside the level + 3S recross against",
+      "indicator_setup_2": "2PM against the break direction (counter-trend breaks fail most) + DPM context noted",
+      "direction": "against the failed break",
+      "htf_context": {
+        "regime": "counter-trend breaks in aligned regimes fail most (store: mixed regimes = failed breakouts)",
+        "structure": "break of OR edge / Round100 / PDH-PDL fails to hold",
+        "session": "any"
+      },
+      "trigger_15s": "15s closes back inside the broken level within a few bars of the break; PVT cross flips against the break",
+      "invalidation": "renewed acceptance beyond the level",
+      "tradecases": {
+        "ultra_scalp": {
+          "entry": "15s back-inside close",
+          "stop": "break extreme",
+          "target": "level origin / VWAP",
+          "notes": "DRAFT - user to define"
+        },
+        "scalp": {
+          "entry": "1m back-inside close",
+          "stop": "break extreme",
+          "target": "opposite side of structure",
+          "notes": "DRAFT - user to define"
+        },
+        "intraday": {
+          "entry": "scale on first pullback",
+          "stop": "beyond break",
+          "target": "regime-implied extreme",
+          "notes": "DRAFT - user to define"
+        }
+      },
+      "history": [
+        "2026-08-11",
+        "2026-08-10",
+        "2026-08-07",
+        "2026-08-06",
+        "2026-08-04",
+        "2026-07-28",
+        "2026-07-17",
+        "2026-07-14"
+      ],
+      "history_note": "heuristic v0.1 occurrences mined from data/insight/csv (1m file span); eyeball these dates on TradingView to verify the signature"
+    },
+    {
+      "id": "RNG",
+      "trend": "- (no trend)",
+      "name": "Range Fade",
+      "liner": "2H/30 conflict pins price in a range - fade the edges back to mid.",
+      "indicator_setup_1": "3PM vs 5PM mixed + CV oscillating around VWAP + 3S at range extreme (fade zone)",
+      "indicator_setup_2": "2PM vs DPM conflict (opposite signs) + DS mid-range",
+      "direction": "fade at edges",
+      "htf_context": {
+        "regime": "D+|2H-|30+ / D-|2H+|30- style conflict; 2H and 30 disagree",
+        "structure": "established intraday range between Round100/PDH/PDL references; no EMA follow-through",
+        "session": "typically after 10:30 failure to trend"
+      },
+      "trigger_15s": "15s stall + PVT/MACD roll at range edge (Round100 or day extreme), no acceptance beyond",
+      "invalidation": "15s acceptance beyond range edge (2 consecutive closes) -> becomes ORB/TRP",
+      "tradecases": {
+        "ultra_scalp": {
+          "entry": "15s edge stall",
+          "stop": "edge + buffer",
+          "target": "range mid (VWAP)",
+          "notes": "DRAFT - user to define"
+        },
+        "scalp": {
+          "entry": "1m edge rejection",
+          "stop": "beyond edge",
+          "target": "opposite edge",
+          "notes": "DRAFT - user to define"
+        },
+        "intraday": {
+          "entry": "avoid or half-size",
+          "stop": "beyond edge",
+          "target": "opposite edge",
+          "notes": "DRAFT - user to define"
+        }
+      },
+      "history": [
+        "2026-08-31",
+        "2026-08-21",
+        "2026-08-17",
+        "2026-08-12",
+        "2026-08-10",
+        "2026-08-10",
+        "2026-08-07"
+      ],
+      "history_note": "heuristic v0.1 occurrences mined from data/insight/csv (1m file span); eyeball these dates on TradingView to verify the signature"
+    },
+    {
+      "id": "GAP",
+      "trend": "UT / DT",
+      "name": "Gap Fill",
+      "liner": "Displaced open returns toward prior close - trade the move toward the fill.",
+      "indicator_setup_1": "CV into fill zone (PDC/PDOpen) + 3S stall at zone + 5PM cross against gap direction",
+      "indicator_setup_2": "gap against DPM fills most often (DPM with gap tends to extend) + DS context",
+      "direction": "toward prev close",
+      "htf_context": {
+        "regime": "gap against regime fills most often; gap with regime tends to extend instead",
+        "structure": "opening price displaced from PDC; first approach back to PDC/PDOpen",
+        "session": "morning only; 09:15-11:00"
+      },
+      "trigger_15s": "15s momentum stall near PDC/PDOpen + PVT cross against the gap direction",
+      "invalidation": "acceptance on the far side of PDC without stall",
+      "tradecases": {
+        "ultra_scalp": {
+          "entry": "15s stall cross",
+          "stop": "local swing",
+          "target": "PDC then PDOpen",
+          "notes": "DRAFT - user to define"
+        },
+        "scalp": {
+          "entry": "1m stall close",
+          "stop": "gap extreme",
+          "target": "full fill",
+          "notes": "DRAFT - user to define"
+        },
+        "intraday": {
+          "entry": "hold toward fill",
+          "stop": "gap extreme",
+          "target": "PDC / day structure",
+          "notes": "DRAFT - user to define"
+        }
+      },
+      "history": [
+        "2026-08-05",
+        "2026-07-28",
+        "2026-07-27",
+        "2026-07-23",
+        "2026-07-20",
+        "2026-07-15",
+        "2026-07-14",
+        "2026-07-13"
+      ],
+      "history_note": "heuristic v0.1 occurrences mined from data/insight/csv (1m file span); eyeball these dates on TradingView to verify the signature"
+    }
+  ],
+  "states": {
+    "ACTIVE": "preconditions + trigger both satisfied right now",
+    "WATCH": "preconditions set, waiting for 15s trigger",
+    "NONE": "no setup qualifies; default is stand-aside"
+  },
+  "legend": "DPM=Daily PVT/MACD, WPM=Weekly PVT/MACD, 2PM=2H PVT/MACD, 3PM=30m PVT/MACD, 5PM=5m PVT/MACD, DS=Daily Stoch, 2S=2H Stoch, 3S=30m Stoch, WS=Weekly Stoch, CV=Close vs VWAP. IndicatorSetUp-1 = execution layer (5PM/CV/3S/3PM/2S); IndicatorSetUp-2 = context layer (2PM/DS/DPM/WS/WPM). MACD = MACD_2452 vs Signal_2452."
+}

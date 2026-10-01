@@ -7,7 +7,7 @@ import time
 from pprint import pprint
 from loguru import logger
 
-from core.utils import get_trading_symbols_from_json , find_matching_row_in_csv , fetch_from_json , compute_limit_margin , round_to_tick , get_exchange_for_underlying , resolve_data_path
+from core.utils import get_trading_symbols_from_json , find_matching_row_in_csv , fetch_from_json , compute_limit_margin , round_to_tick , get_exchange_for_underlying , resolve_data_path , is_option_instrument
 from core.kite_connector import KiteSingleton
 from interface.broker_interface import BrokerInterface
 from core.trade_logic import Trader_Singleton
@@ -18,10 +18,92 @@ import pandas as pd
 import json
 
 from core.utils import is_market_open
-
+from core import broker_stats
 from core import shared_state
 
 import os
+
+
+# Order-flow methods of KiteConnect worth recording for the broker
+# pills: latency, ok/fail and rate-limit (429) hits. Everything else
+# (constants, quotes, socket helpers) passes through untouched.
+_KITE_INSTRUMENTED_METHODS = (
+    "place_order", "cancel_order", "orders", "order_info", "order_history", "positions",
+)
+_KITE_ORDER_ENDPOINTS = ("place_order", "cancel_order")
+
+
+def _is_token_rejection(error):
+    """
+    True when Kite rejected the session/token and a fresh login can
+    fix it. Two shapes observed (2026-10-01):
+      - TokenException 'Incorrect api_key or access_token' (expiry /
+        invalidation)
+      - InputException 'Invalid api_key or access_token' (blank token)
+      - PermissionException 'Insufficient permission for that call'
+        on CORE endpoints (margins/orders/positions) - a wedged token
+        answered every core endpoint with the permission error while
+        the same key worked instantly with a fresh token.
+    Genuine bad-input InputExceptions (message without api_key /
+    access_token) stay out of the login path.
+    """
+    name = type(error).__name__
+    if name in ("TokenException", "PermissionException"):
+        return True
+    if name == "InputException":
+        message = str(error)
+        return "api_key" in message or "access_token" in message
+    return False
+
+
+def _instrument_kite_api(kite):
+    """
+    Instance-level wrapper around the order-flow methods of a
+    KiteConnect object so the broker pills get API/order counts, ack
+    latency and rate-limit hits without touching the 7+ call sites.
+    Idempotent (guarded by a marker attribute); failures to patch are
+    silently ignored - the pills degrade gracefully.
+    """
+    for name in _KITE_INSTRUMENTED_METHODS:
+        fn = getattr(kite, name, None)
+        if fn is None or getattr(fn, "_broker_stats_wrapped", False):
+            continue
+        is_order = name in _KITE_ORDER_ENDPOINTS
+
+        def make_wrapper(base_fn, order_flow):
+            def recorded(*args, **kwargs):
+                started = time.time()
+                try:
+                    result = base_fn(*args, **kwargs)
+                except Exception as e:
+                    code = getattr(e, "code", None)
+                    rate_limited = (code == 429 or "429" in str(e))
+                    error = f"{type(e).__name__}: {e}"
+                    broker_stats.record_api(
+                        "KITE", ok=False, rate_limited=rate_limited, error=error
+                    )
+                    if order_flow:
+                        broker_stats.record_order(
+                            "KITE", ok=False, rate_limited=rate_limited, error=error
+                        )
+                    if _is_token_rejection(e):
+                        broker_stats.set_session(
+                            "KITE", False, "Token rejected - login needed"
+                        )
+                    raise
+                latency_ms = (time.time() - started) * 1000.0
+                broker_stats.record_api("KITE", ok=True, latency_ms=latency_ms)
+                if order_flow:
+                    broker_stats.record_order("KITE", ok=True, latency_ms=latency_ms)
+                return result
+            recorded._broker_stats_wrapped = True
+            return recorded
+
+        try:
+            setattr(kite, name, make_wrapper(fn, is_order))
+        except Exception:
+            pass
+    return kite
 
 
 
@@ -31,7 +113,7 @@ class KiteAdapter(BrokerInterface):
     def __init__(self):
         self._trader = Trader_Singleton()
         self.kite_instance = KiteSingleton()
-        self.kite = self.kite_instance.get_kite()
+        self.kite = _instrument_kite_api(self.kite_instance.get_kite())
         self._underlying = fetch_from_json("appconfig.json" , "UNDERLYING")
 
         self._instrument_cache = {}       # stores processed instruments keyed by tradingsymbol
@@ -52,6 +134,35 @@ class KiteAdapter(BrokerInterface):
         self._feed_last_tick_ts = 0.0
         self._feed_max_gap = 0.0
         self._feed_lock = threading.Lock()
+
+    def feed_health(self):
+        """
+        Snapshot of the live Kite websocket feed state for the Feed Lab
+        pill: seconds since the last tick, ticks in the current sampler
+        window and whether the ticker socket is connected. Read-only and
+        lock-guarded, so it is safe to call from any thread.
+        """
+        with self._feed_lock:
+            last_tick_ts = self._feed_last_tick_ts
+            packets = self._feed_packets
+            window_start = self._feed_stats_window_start
+            max_gap = self._feed_max_gap
+        connected = False
+        try:
+            socket = self.kite_instance.get_kite_socket_connection()
+            connected = bool(socket.is_connected())
+        except Exception:
+            connected = False
+        seconds_since_tick = (time.time() - last_tick_ts) if last_tick_ts else None
+        window_elapsed = (time.time() - window_start) if window_start else 0.0
+        rate_per_min = (packets / window_elapsed * 60) if window_elapsed > 0 and packets else 0.0
+        return {
+            "connected": connected,
+            "seconds_since_tick": round(seconds_since_tick, 1) if seconds_since_tick is not None else None,
+            "ticks_in_window": packets,
+            "rate_per_min": round(rate_per_min, 1),
+            "max_gap_s": round(max_gap, 1),
+        }
 
     def _get_order_freeze_limit(self):
         # Fetched per order so ORDER_FREEZE_LIMIT edits apply without a restart.
@@ -156,22 +267,57 @@ class KiteAdapter(BrokerInterface):
     def fetch_expiries(self , underlying):
         logger.info(f"fetch_expiries {underlying} from M.Stock...")
     
+    def _call_with_relogin(self, fn, *args, **kwargs):
+        """
+        Run a Kite API call; on a token rejection (403 in any of the
+        shapes Kite uses - see _is_token_rejection) retry once, then
+        run ONE bounded re-login and retry again. This is what lets
+        the app self-heal when Kite invalidates a same-day token -
+        without it the pill stays inactive and the grids empty until
+        the next app restart.
+        """
+        try:
+            return fn(*args, **kwargs)
+        except Exception as e:
+            if not _is_token_rejection(e):
+                raise
+            broker_stats.set_session("KITE", False, "Token rejected - login needed")
+            # One immediate retry: Kite nodes occasionally answer a
+            # good token with a transient 403.
+            try:
+                return fn(*args, **kwargs)
+            except Exception:
+                pass
+            if not self.kite_instance.ensure_fresh_session():
+                raise
+            try:
+                result = fn(*args, **kwargs)
+            except Exception as retry_error:
+                broker_stats.set_session(
+                    "KITE", False, "Kite re-login did not fix the token - restart the app to login"
+                )
+                raise retry_error
+            broker_stats.set_session("KITE", True, "Kite re-login ok")
+            return result
+
     def fetch_all_orders(self):
         try:
-            orders = orders_attribute_mgmt(self.kite.orders())
+            orders = orders_attribute_mgmt(
+                self._call_with_relogin(self.kite.orders)
+            )
             #logger.debug(f"Fetched Orders: {orders}")
             return orders
         except Exception as e:
             logger.error(f"Kite fetch_all_orders error: {e}")
             return []
-        
+
     def fetch_all_orders_for_export(self):
         """
         Fetch orders from Kite and normalize fields
         to match mStock structure.
         """
         try:
-            orders = self.kite.orders()
+            orders = self._call_with_relogin(self.kite.orders)
 
             normalized = []
 
@@ -203,7 +349,7 @@ class KiteAdapter(BrokerInterface):
 
     def fetch_all_positions(self):
         try:
-            raw_positions = self.kite.positions()
+            raw_positions = self._call_with_relogin(self.kite.positions)
             if isinstance(raw_positions, dict):
                 positions = raw_positions.get("net", [])
             else:
@@ -218,6 +364,23 @@ class KiteAdapter(BrokerInterface):
                 p for p in positions
                 if float(p.get("quantity", 0) or 0) > 0
             ]
+
+            # OPTIONS-ONLY GUARD: the Buy/Sell grids must never pick up
+            # stocks, ETFs (e.g. LIQUIDCASE) or other cash-segment
+            # holdings bought outside the app, nor futures.
+            raw_count = len(positions)
+            positions = [
+                p for p in positions
+                if is_option_instrument(
+                    symbol=p.get("tradingsymbol") or p.get("symbol"),
+                    exchange=p.get("exchange"),
+                )
+            ]
+            if len(positions) != raw_count:
+                logger.info(
+                    f"Filtered {raw_count - len(positions)} non-option "
+                    f"position(s) - Buy/Sell grids track options only."
+                )
 
             for position in positions:
                 tradingsymbol = position.get("tradingsymbol") or position.get("symbol")
@@ -265,7 +428,9 @@ class KiteAdapter(BrokerInterface):
     def fetch_fund_summary(self):
         logger.info("Calling fetch_fund_summary of Kite Connect")
         try:
-            fund_summary = fund_summary_attribute_mgmt(self.kite.margins())
+            fund_summary = fund_summary_attribute_mgmt(
+                self._call_with_relogin(self.kite.margins)
+            )
             return fund_summary
         except Exception as e:
             logger.error(f"Kite fund summary error : {e}")
@@ -274,7 +439,7 @@ class KiteAdapter(BrokerInterface):
     def fetch_day_start_cash(self):
         logger.info("Fetching start-of-day cash (opening_balance) from Kite...")
         try:
-            margins = self.kite.margins() or {}
+            margins = self._call_with_relogin(self.kite.margins) or {}
             opening_balance = (
                 margins.get("equity", {}).get("available", {}) or {}
             ).get("opening_balance")
@@ -349,9 +514,14 @@ class KiteAdapter(BrokerInterface):
                 month_char = calendar.month_name[expiry.month][:3].upper()
                 dd_str=""
             else:
-                #month_char = calendar.month_name[expiry.month][0].upper()
-                month_char = str(expiry.month)
-                dd_str = f"{expiry.day:02d}"        
+                # Kite weekly (non-monthly) symbols encode the month as a
+                # single char: digit 1-9 for Jan-Sep, O/N/D for Oct/Nov/Dec
+                # (e.g. SENSEX26O0172500CE expires 2026-10-01).
+                if expiry.month <= 9:
+                    month_char = str(expiry.month)
+                else:
+                    month_char = calendar.month_name[expiry.month][0].upper()
+                dd_str = f"{expiry.day:02d}"
 
             logger.info(f"{underlying}{yy}{month_char}{dd_str}{strike}{call_or_put}")
             return f"{underlying}{yy}{month_char}{dd_str}{strike}{call_or_put}"
@@ -825,6 +995,13 @@ class KiteAdapter(BrokerInterface):
                 instrument_token = tick["instrument_token"]
                 price = tick["last_price"]
                 ohlc = tick.get("ohlc") or {}
+                # Tick-quality metric for the broker pills: zero/missing
+                # LTP still counts as a tick but flags junk data.
+                try:
+                    bad_tick = (price is None or float(price) <= 0)
+                except (TypeError, ValueError):
+                    bad_tick = True
+                broker_stats.record_tick("KITE", bad=bad_tick)
                 # Per-instrument hourly tick sampler (see Trader_Singleton).
                 self._trader.record_tick(str(instrument_token))
                 self._trader.set_latest_price(
@@ -1263,7 +1440,7 @@ class KiteAdapter(BrokerInterface):
     def fetch_all_pending_orders(self):
         logger.info("Fetching pending orders from Kite API...")
         try:
-            orders = self.kite.orders() or []
+            orders = self._call_with_relogin(self.kite.orders) or []
 
             terminal_statuses = ("COMPLETE", "REJECTED", "CANCELLED")
             pending_orders = [
