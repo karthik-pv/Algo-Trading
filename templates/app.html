@@ -2013,6 +2013,17 @@
                     </div>
                     <div class="field">
                         <div class="field-caption">
+                            <label class="field-label" for="PRE_MARGIN_CHECK_NEEDED">Pre-Margin Check</label>
+                            <span class="key-hint">PRE_MARGIN_CHECK_NEEDED</span>
+                        </div>
+                        <label class="switch-row" title="When ON: every buy first asks the broker what margin it would block (Kite order.margins; M.Stock estimated from premium + charges) and right-sizes or rejects the order BEFORE placing - no more RMS short-funds rejections. Adds ~150-500ms to each buy.">
+                            <input type="checkbox" name="PRE_MARGIN_CHECK_NEEDED" id="PRE_MARGIN_CHECK_NEEDED">
+                            <span class="switch"></span>
+                            <span class="switch-text">Check funds before buys</span>
+                        </label>
+                    </div>
+                    <div class="field">
+                        <div class="field-caption">
                             <label class="field-label" for="MARGIN_USAGE_PCT">Margin Usage (0&ndash;1)</label>
                             <span class="key-hint">MARGIN_USAGE_PCT</span>
                         </div>
@@ -4831,11 +4842,15 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
 
-        // FormData omits unchecked checkboxes; add the toggle explicitly
+        // FormData omits unchecked checkboxes; add the toggles explicitly
         // so toggling OFF is persisted too (backend merges into appconfig.json).
         const tvValidationToggle = document.getElementById('TV_DATA_Validation_REQUIRED');
         if (tvValidationToggle) {
             data['TV_DATA_Validation_REQUIRED'] = tvValidationToggle.checked;
+        }
+        const preMarginToggle = document.getElementById('PRE_MARGIN_CHECK_NEEDED');
+        if (preMarginToggle) {
+            data['PRE_MARGIN_CHECK_NEEDED'] = preMarginToggle.checked;
         }
 
         return data;

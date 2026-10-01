@@ -230,7 +230,7 @@ APPCONFIG_FILE = resolve_data_path("appconfig.json")
 # SELL_MODE) are preserved at the top level.
 APPCONFIG_GROUPS = {
     "session": ["MODE", "BROKER", "UNDERLYING"],
-    "gating": ["TV_DATA_Validation_REQUIRED", "MARGIN_USAGE_PCT"],
+    "gating": ["TV_DATA_Validation_REQUIRED", "MARGIN_USAGE_PCT", "PRE_MARGIN_CHECK_NEEDED"],
     "trigger": ["COMPARISON_FUNCTION"],
     "pct": [
         "PCT_BOOK_PROFIT_INTRA", "PCT_STOP_LOSS_INTRA",

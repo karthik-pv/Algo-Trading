@@ -567,11 +567,17 @@ class Trader_Singleton:
     def _pre_trade_margin_check(self, order_details, ltp):
         """
         Right-size order_details["lots"] against the broker's own margin
-        math (Kite order.margins - considers positions and open orders)
-        BEFORE the order goes out, so short-funds rejections never
-        round-trip. Fails open: any API error leaves the lots untouched
-        and the insufficient-funds retry remains the safety net.
+        math BEFORE the order goes out, so short-funds rejections never
+        round-trip.
+
+        Kite:   exact requirement via order.margins (positions-aware).
+        MStock: estimate = premium turnover + contract-note charges
+                (the TypeB API has no order-margin endpoint).
+        Fails open: any API error leaves the lots untouched and the
+        insufficient-funds retry remains the safety net.
         """
+        if not hasattr(self._broker, "fetch_order_margin"):
+            return
         trading_symbol = order_details.get("tradingsymbol")
         asked_lots = int(order_details.get("lots") or 0)
         if not trading_symbol or asked_lots <= 0:

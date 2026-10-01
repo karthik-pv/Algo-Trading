@@ -46,6 +46,7 @@ from adapter.mstock_utils import (
     position_attribute_mgmt, fund_summary_attribute_mgmt, order_attribute_mgmt,
     instr_det_attrib_mgmt, normalize_contract_symbol, write_orders_workbook,
     format_lakhs, apply_trade_charges, apply_day_stamp_minimum,
+    compute_option_trade_charges,
 )
 from loguru import logger
 
@@ -1335,6 +1336,32 @@ class MStockAdapter(BrokerInterface):
         self._trader.update_fund_summary(fund_summary)
 
         return fund_summary
+
+    def fetch_order_margin(self, trading_symbol, exchange, quantity, price, transaction_type="BUY"):
+        """
+        Estimated required funds for a hypothetical order.
+
+        M.Stock's TypeB API has no order-margin endpoint (unlike Kite's
+        order.margins), so the requirement is ESTIMATED: premium
+        turnover + brokerage + the other contract-note charges from the
+        configured charges model. The comparison against available
+        funds happens in the caller, which reads the trader's fund
+        summary (kept fresh from this same funds API).
+
+        Returns the float estimate, or None when inputs are unusable -
+        callers must fail open.
+        """
+        try:
+            turnover = float(price) * int(quantity)
+            if turnover <= 0:
+                return None
+            brokerage, other_charges, _ = compute_option_trade_charges(
+                transaction_type, turnover, trading_symbol
+            )
+            return float(turnover) + float(brokerage) + float(other_charges)
+        except Exception as e:
+            logger.warning(f"M.Stock order margin estimate failed for {trading_symbol}: {e}")
+            return None
 
     def fetch_day_start_cash(self):
         logger.info("Fetching start-of-day cash (LIMIT_SOD) from M.Stock...")
