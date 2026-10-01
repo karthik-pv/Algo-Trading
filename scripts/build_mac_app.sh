@@ -53,6 +53,8 @@ guard let chrome = NSRunningApplication(processIdentifier: pid) else {
 }
 
 var lastState = ""
+var throttleLogged = false
+var verifiedLogged = false
 
 let tsFmt: DateFormatter = {
     let f = DateFormatter()
@@ -102,28 +104,30 @@ while isAlive(pid) {
         if lastState != "INSIDE" {
             log("mouse over our topmost window (name=\(top.name) bounds=\(Int(top.bounds.minX)),\(Int(top.bounds.minY)) \(Int(top.bounds.width))x\(Int(top.bounds.height))) front=\(frontPid()) - activating")
             lastState = "INSIDE"
+            throttleLogged = false
+            verifiedLogged = false
         }
         if frontPid() != pid {
-            let ok = chrome.activate(options: [.activateIgnoringOtherApps])
-            // Verify after 120ms: did Chrome actually take focus?
             // macOS 14+ throttles external activation - the first
-            // several calls report success but are ignored; the loop
-            // keeps trying until one lands.
+            // several calls report success but are ignored; keep
+            // trying until one lands (log once per episode).
+            _ = chrome.activate(options: [.activateIgnoringOtherApps])
             let checkDeadline = Date().addingTimeInterval(0.12)
             while Date() < checkDeadline { usleep(10_000) }
-            let nowFront = frontPid()
-            if nowFront != pid {
-                if lastState != "ACTIVATE_FAILED" {
+            if frontPid() != pid {
+                if !throttleLogged {
                     log("activation throttled by macOS - retrying until it lands")
-                    lastState = "ACTIVATE_FAILED"
+                    throttleLogged = true
                 }
-            } else if lastState != "ACTIVE" {
+            } else if !verifiedLogged {
                 log("activation verified - chrome is front")
-                lastState = "ACTIVE"
+                verifiedLogged = true
             }
         }
     } else {
         if lastState != "OUTSIDE" { lastState = "OUTSIDE" }
+        throttleLogged = false
+        verifiedLogged = false
     }
     usleep(10_000)  // 10ms - effectively instant, ~0 CPU
 }
