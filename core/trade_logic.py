@@ -6,6 +6,7 @@ import logging
 import queue
 import datetime
 import os
+from collections import deque
 from flask import Flask,request
 from typing import Optional , Dict , Any
 from flask_socketio import SocketIO
@@ -6091,12 +6092,27 @@ class Trader_Singleton:
         spaces (e.g. after switching BROKER or UNDERLYING); adding
         strategy/sell type to the key keeps each position leg separate
         so same-contract trades with different strategies show as
-        distinct rows. Sells reduce the matching leg first.
+        distinct rows.
+
+        Buys/sells are matched FIFO: a SELL consumes the oldest open
+        BUY lots first (and vice versa for shorts). The open position's
+        average price therefore reflects only the UNCONSUMED buys - the
+        true entry price of the live lot. (The old cumulative average -
+        every buy of the day divided by every buy quantity - kept
+        closed round-trips in the number: re-entering at 328.15 showed
+        a 313.87 average from four buys of the day and a phantom ~5K
+        "profit" on the grid vs the true ~710.)
+
+        Exposes per leg:
+          buy_quantity / buy_value / sell_quantity / sell_value  day totals
+          open_quantity   signed FIFO net (long + / short -)
+          open_long_quantity / open_long_value  the unconsumed BUY lots
         """
 
         trades = self.fetch_paper_trades()
 
         positions = {}
+        lots_by_key = {}   # position_key -> deque of [qty, side, price]
 
         for trade in trades:
 
@@ -6133,18 +6149,48 @@ class Trader_Singleton:
                     "buy_value": 0.0,
                     "sell_value": 0.0,
                 }
+                lots_by_key[position_key] = deque()
 
             position = positions[position_key]
+            lots = lots_by_key[position_key]
 
-            if transaction_type == "BUY":
+            side = 1 if transaction_type == "BUY" else -1
 
+            # Day totals (display/log parity with the old behaviour).
+            if side == 1:
                 position["buy_quantity"] += qty
                 position["buy_value"] += qty * price
-
-            elif transaction_type == "SELL":
-
+            else:
                 position["sell_quantity"] += qty
                 position["sell_value"] += qty * price
+
+            # FIFO ladder: consume the opposite side first, then keep
+            # the remainder as this side's open lot.
+            remaining = qty
+            while remaining > 0 and lots:
+                lot_qty, lot_side, lot_price = lots[0]
+                if lot_side == side:
+                    break          # front is the same side - stop
+                consumed = min(lot_qty, remaining)
+                remaining -= consumed
+                lot_qty -= consumed
+                if lot_qty > 0:
+                    lots[0] = [lot_qty, lot_side, lot_price]
+                else:
+                    lots.popleft()
+            if remaining > 0:
+                lots.append([remaining, side, price])
+
+        # Fold the FIFO ladders into the position dicts.
+        for key, position in positions.items():
+            lots = lots_by_key[key]
+            position["open_quantity"] = sum(l[1] * l[0] for l in lots)
+            position["open_long_quantity"] = sum(
+                l[0] for l in lots if l[1] == 1
+            )
+            position["open_long_value"] = sum(
+                l[0] * l[2] for l in lots if l[1] == 1
+            )
 
         return positions
 
@@ -6238,9 +6284,11 @@ class Trader_Singleton:
         for position_key, position in paper_positions.items():
 
             symbol = position["tradingsymbol"]
+            # FIFO net (signed): sells consumed the oldest buys, so
+            # this is the true open quantity - shorts/closed legs are
+            # <= 0 and skipped, same as before.
             net_quantity = (
-                position["buy_quantity"]
-                - position["sell_quantity"]
+                position["open_quantity"]
             )
 
             logger.debug(
@@ -6255,9 +6303,12 @@ class Trader_Singleton:
             if net_quantity <= 0:
                 continue
 
+            # True entry price: only the UNCONSUMED buys (FIFO), not
+            # the day's cumulative average which kept closed round-
+            # trips in the number.
             average_buy_price = (
-                position["buy_value"]
-                / position["buy_quantity"]
+                position["open_long_value"]
+                / position["open_long_quantity"]
             )
 
             # ---------------------------------------------------------

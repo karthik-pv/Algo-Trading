@@ -892,6 +892,46 @@ def cell_paper_engine():
     )
     out.append(check("paper engine: buy time resolved for the open leg",
                      bool(buy_time), f"buy_time={buy_time}"))
+
+    # P5: FIFO average - round-trips on the same instrument must NOT
+    # dilute the open position's entry price (the phantom-5K bug: a
+    # 328.15 re-entry showed a 313.87 average from four buys of the
+    # day and a ~5,422 unrealized vs the true ~710).
+    fifo_file = paper_file + ".fifo"
+    t._PAPER_TRADE_FILENAME = fifo_file
+    open(fifo_file, "w").close()
+    for side, qty, px in (("BUY", 35, 302.45), ("SELL", 35, 301.15),
+                          ("BUY", 35, 299.50), ("SELL", 35, 303.05),
+                          ("BUY", 32, 327.35), ("SELL", 32, 321.85),
+                          ("BUY", 33, 328.15)):
+        t.write_paper_trade(transaction_type=side, tradingsymbol=cfg["symbol"],
+                            token=cfg["token"], qty=qty, ltp=px, product="MIS",
+                            strategy="INTRA", sell_type="T")
+    t.refresh_paper_positions()
+    # Token-agnostic: the active broker's instrument master may re-bind
+    # the leg to a different token space than the test's synthetic one.
+    fifo_key = next((k for k, v in t._position_data.items()
+                     if abs(float(v.get("average_price", 0) or 0) - 328.15) < 0.01
+                     and int(v.get("net_quantity", 0) or 0) == 33), None)
+    out.append(check(
+        "paper engine: FIFO entry price after round-trips",
+        fifo_key is not None
+        and abs(t._position_data[fifo_key]["average_price"] - 328.15) < 0.01
+        and int(t._position_data[fifo_key]["net_quantity"]) == 33,
+        f"avg={t._position_data.get(fifo_key, {}).get('average_price')}"
+    ))
+    leg = t._position_data[fifo_key]
+    leg["latest_price"] = 330.30
+    t._update_leg_pl(fifo_key)
+    # Use the leg's own lotsize (the active broker re-binds it): the
+    # check's point is the TRUE entry price vs the phantom average.
+    fifo_lot = int(leg.get("lotsize", 1) or 1)
+    out.append(check(
+        "paper engine: unrealized PnL vs true entry (not phantom)",
+        abs(t._position_data[fifo_key]["total_pl"] - (330.30 - 328.15) * 33 * fifo_lot) < 1,
+        f"total_pl={t._position_data[fifo_key]['total_pl']} lot={fifo_lot}"
+    ))
+    t._PAPER_TRADE_FILENAME = paper_file
     return out
 
 
