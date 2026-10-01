@@ -498,9 +498,14 @@ def build_orders_export(order_list):
             # contract note pairs raw fills, so every intermediate 2dp
             # rounding here showed up as a rupee-level gap in the day's
             # Net P&L. The 2dp value only feeds the RATE display column.
+            # `item` has not been through the else branch below, so its
+            # exact price is its (2dp) average_price - identical to what
+            # appending it would have assigned. (This used to KeyError
+            # on item["average_price_exact"] and take the whole Orders
+            # tab down whenever two same-side rows shared a second.)
             previous["average_price_exact"] = (
                 (previous["average_price_exact"] * previous["quantity"])
-                + (item["average_price_exact"] * item["quantity"])
+                + (float(item["average_price"]) * item["quantity"])
             ) / total_quantity
             previous["average_price"] = round(previous["average_price_exact"], 2)
             previous["quantity"] = total_quantity

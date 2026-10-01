@@ -78,6 +78,18 @@ class Trader_Singleton:
     _PENDING_EXIT_MAX_AGE_SECONDS = 900
 
     # ---------------------------------------------------------
+    # PAPER pending exits (virtual resting U/D orders). PAPER mode
+    # places no broker orders, so a U/D paper buy registers a virtual
+    # resting SELL LIMIT here: it merges into the Orders panel's
+    # pending list and "fills" when the LTP crosses the exit price -
+    # mirroring the LIVE resting-exit flow. Cancelled when squared off
+    # manually (fully -> cancelled, partially -> reduced), dropped when
+    # the SL watcher closes the leg first.
+    # ---------------------------------------------------------
+    _paper_pending_exits = {}
+    _paper_exit_seq = 0
+
+    # ---------------------------------------------------------
     # Per-instrument hourly tick sampler. Both websocket feeds call
     # record_tick() per wire tick; counts land in clock-hour buckets
     # and are logged + persisted at every hour boundary. Motivation:
@@ -997,6 +1009,276 @@ class Trader_Singleton:
                 self.resolve_pending_exit(
                     intent["broker"], intent["order_id"], status
                 )
+
+    # =========================================================
+    # PAPER PENDING EXITS (virtual resting U/D orders)
+    # =========================================================
+
+    def register_paper_pending_exit(self, tradingsymbol, token, lots,
+                                    exit_price, strategy, sell_mode):
+        """
+        Register the virtual resting SELL LIMIT exit for a PAPER U/D
+        buy. The exit shows in the Orders panel (PAPER mode) and fills
+        when the LTP crosses exit_price - see _check_paper_pending_exits.
+        """
+        lots = int(lots or 0)
+        exit_price = float(exit_price or 0)
+        if lots <= 0 or exit_price <= 0:
+            logger.warning(
+                f"No paper exit registered for {tradingsymbol} "
+                f"(lots={lots}, exit_price={exit_price}) - the TP/SL "
+                f"watcher will manage the position."
+            )
+            return
+        Trader_Singleton._paper_exit_seq += 1
+        order_id = f"PAPER-{Trader_Singleton._paper_exit_seq}-{token}"
+        self._paper_pending_exits[order_id] = {
+            "order_id": order_id,
+            "tradingsymbol": tradingsymbol,
+            "token": str(token),
+            "lots": lots,
+            "exit_price": exit_price,
+            "strategy": strategy,
+            "sell_mode": sell_mode,
+            "registered_ts": time.time(),
+        }
+        logger.info(
+            f"Paper pending exit registered: {tradingsymbol} {lots} "
+            f"lot(s) SELL LIMIT {exit_price} [{order_id}]"
+        )
+        try:
+            self.frontend_data_socket.emit(
+                'update_pending_orders', self._merged_pending_orders()
+            )
+        except Exception:
+            pass
+
+    def _paper_pending_exit_rows(self):
+        """Orders-panel rows for the virtual paper exits (same shape as
+        the broker's fetch_all_pending_orders rows)."""
+        rows = []
+        for ex in list(self._paper_pending_exits.values()):
+            contract = self._five_weekly_option_contracts.get(ex["token"]) or {}
+            lot_size = int(
+                contract.get("lotsize") or contract.get("lot_size") or 1
+            )
+            quantity = (
+                ex["lots"] if self._exchange == "MCX"
+                else ex["lots"] * lot_size
+            )
+            rows.append({
+                "order_id": ex["order_id"],
+                "tradingsymbol": ex["tradingsymbol"],
+                "token": ex["token"],
+                "exchange": self._exchange,
+                "quantity": quantity,
+                "transaction_type": "SELL",
+                "order_type": "LIMIT",
+                "price": ex["exit_price"],
+                "average_price": 0,
+                "status": "OPEN",
+                "order_timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+            })
+        return rows
+
+    def _merged_pending_orders(self):
+        """Broker pending orders + virtual paper exits (PAPER only)."""
+        pending = self._broker.fetch_all_pending_orders()
+        if self._mode == "PAPER":
+            pending = list(pending or []) + self._paper_pending_exit_rows()
+        return pending
+
+    def cancel_paper_pending_exit(self, order_id):
+        """Cancel one virtual paper exit. True when it existed."""
+        existed = self._paper_pending_exits.pop(order_id, None) is not None
+        if existed:
+            logger.info(f"Paper pending exit cancelled: [{order_id}]")
+        return existed
+
+    def _register_paper_exit_after_buy(self, tradingsymbol, token, lots,
+                                       ltp, strategy, sell_mode):
+        """Paper mirror of the LIVE U/D resting exit: paper fills
+        execute at the click LTP, so U and D anchor identically -
+        register the virtual pending SELL LIMIT so the Orders panel
+        shows it and the watcher fills it when the target is crossed.
+        Called from handle_buy_order's paper branch."""
+        if sell_mode not in ("U", "D"):
+            return
+        exit_price = self._exit_target_price(float(ltp or 0), strategy)
+        self.register_paper_pending_exit(
+            tradingsymbol=tradingsymbol,
+            token=token,
+            lots=lots,
+            exit_price=exit_price,
+            strategy=strategy,
+            sell_mode=sell_mode,
+        )
+
+    def _reduce_paper_exits_after_manual_sell(self, token, held_lots,
+                                              sell_lots):
+        """Mirror the LIVE partial-sell behavior after a manual paper
+        sell: the virtual pending exit for this leg is reduced to the
+        remaining lots, or cancelled when the leg is fully closed
+        (LIVE re-places the resting exit for the remainder - same net
+        effect)."""
+        remaining_lots = int(held_lots) - int(sell_lots)
+        for paper_order_id, ex in list(self._paper_pending_exits.items()):
+            if ex["token"] != str(token):
+                continue
+            if remaining_lots <= 0:
+                self._paper_pending_exits.pop(paper_order_id, None)
+                logger.info(
+                    f"Paper pending exit cancelled - leg fully "
+                    f"closed: {ex['tradingsymbol']} [{paper_order_id}]"
+                )
+            else:
+                ex["lots"] = remaining_lots
+                logger.info(
+                    f"Paper pending exit reduced to "
+                    f"{remaining_lots} lot(s): "
+                    f"{ex['tradingsymbol']} [{paper_order_id}]"
+                )
+
+    @staticmethod
+    def _paper_sell_file_tags(position_key, position):
+        """File-tag (STRATEGY, SELL_MODE) for a paper SELL row.
+
+        Derived from the composite position KEY (token:STRATEGY:MODE) -
+        the identity the paper file's aggregation knows. The in-memory
+        order_strategy field can be retagged mid-trade (strategy radio
+        change); a mismatched tag would file the SELL under a NEW leg
+        (phantom short) instead of closing the BUY's leg.
+        """
+        key_parts = str(position_key or "").split(":")
+        fallback_strategy = (
+            position.get("order_strategy", "ULTRA_SCALPING")
+            if isinstance(position, dict) else "ULTRA_SCALPING"
+        )
+        fallback_mode = (
+            position.get("sell_mode", "T")
+            if isinstance(position, dict) else "T"
+        )
+        strategy = key_parts[1] if len(key_parts) >= 2 else fallback_strategy
+        sell_mode = key_parts[2] if len(key_parts) >= 3 else fallback_mode
+        return strategy, sell_mode
+
+    def _paper_exit_leg_key(self, token):
+        """Composite position-leg key for a paper exit's token, or None
+        when no leg exists any more."""
+        for key in self._position_data:
+            if str(key).split(":", 1)[0] == str(token):
+                return key
+        return None
+
+    def _cancel_paper_exits_for_token(self, token, reason):
+        """Drop every virtual exit for a token (leg fully closed)."""
+        for order_id, ex in list(self._paper_pending_exits.items()):
+            if ex["token"] == str(token):
+                self._paper_pending_exits.pop(order_id, None)
+                logger.info(
+                    f"Paper pending exit dropped ({reason}): "
+                    f"{ex['tradingsymbol']} [{order_id}]"
+                )
+
+    def _check_paper_pending_exits(self):
+        """
+        Fill virtual paper exits whose exit price is crossed, and drop
+        exits whose position leg is already gone. Runs every watcher
+        cycle (PAPER watches 24/7). A SELL LIMIT fills at its limit
+        price - never above - so the paper SELL is written at
+        exit_price exactly like a broker fill would report.
+        """
+        if not self._paper_pending_exits:
+            return
+
+        for order_id, ex in list(self._paper_pending_exits.items()):
+            token = ex["token"]
+            leg_key = self._paper_exit_leg_key(token)
+            if leg_key is None:
+                # Leg closed by a manual sell or the SL watcher while
+                # the exit was pending - drop it.
+                self._paper_pending_exits.pop(order_id, None)
+                logger.info(
+                    f"Paper pending exit dropped - position already "
+                    f"closed: {ex['tradingsymbol']} [{order_id}]"
+                )
+                continue
+
+            ltp = (
+                self._five_weekly_option_contracts.get(token) or {}
+            ).get("ltp")
+            if not ltp or float(ltp) < float(ex["exit_price"]):
+                continue
+
+            # FILL: SELL LIMIT fills at its limit price.
+            self._paper_pending_exits.pop(order_id, None)
+            leg = self._position_data.get(leg_key) or {}
+
+            # AUDIT: paper resting-exit trigger + fill (mirrors the
+            # SL-watcher's paper audit trail).
+            trade_audit.record_sell_trigger(
+                token=str(token),
+                lots=ex["lots"],
+                ltp=float(ex["exit_price"]),
+                source="PAPER_RESTING_EXIT",
+            )
+            trade_audit.record_sell_executed(
+                str(token), ex["lots"], float(ex["exit_price"])
+            )
+
+            try:
+                buy_time = self.get_open_position_buy_time(
+                    token,
+                    tradingsymbol=ex["tradingsymbol"],
+                    strategy=ex["strategy"],
+                    sell_type=ex["sell_mode"],
+                )
+            except Exception:
+                buy_time = None
+
+            self.write_paper_trade(
+                transaction_type="SELL",
+                tradingsymbol=ex["tradingsymbol"],
+                token=token,
+                qty=ex["lots"],
+                ltp=ex["exit_price"],
+                product="MIS",
+                buy_price=leg.get("average_price"),
+                lot_size=leg.get("lotsize", 1),
+                buy_time=buy_time,
+                strategy=ex["strategy"],
+                sell_type=ex["sell_mode"],
+            )
+            logger.info(
+                f"PAPER: resting exit FILLED for {ex['tradingsymbol']} "
+                f"{ex['lots']} lot(s) at {ex['exit_price']} [{order_id}]"
+            )
+
+            try:
+                self.refresh_paper_positions()
+            except Exception as refresh_error:
+                logger.error(
+                    f"Paper position refresh after exit fill failed: "
+                    f"{refresh_error}",
+                    exc_info=True,
+                )
+
+            try:
+                self.frontend_data_socket.emit(
+                    'sell_order_result',
+                    {
+                        "success": True,
+                        "tradingsymbol": ex["tradingsymbol"],
+                        "lots": ex["lots"],
+                        "position_key": leg_key,
+                        "paper": True,
+                    },
+                )
+                self.frontend_data_socket.emit(
+                    'update_pending_orders', self._merged_pending_orders()
+                )
+            except Exception:
+                pass
 
     def _effective_book_profit_pct(self, strategy_type):
         """Per-strategy book-profit threshold in percent (PCT_BOOK_PROFIT_<strategy>)."""
@@ -2305,6 +2587,18 @@ class Trader_Singleton:
                 logger.info("Market open. Stop-loss watcher is now monitoring positions.")
                 market_closed_logged = False
 
+            # PAPER: fill virtual resting U/D exits whose target price
+            # is crossed (mirrors the LIVE resting exit sitting at the
+            # broker), and drop exits whose leg was closed by a manual
+            # sell or the SL watcher. Cheap no-op when nothing pending.
+            try:
+                self._check_paper_pending_exits()
+            except Exception as paper_exit_error:
+                logger.error(
+                    f"Paper pending-exit check failed: {paper_exit_error}",
+                    exc_info=True,
+                )
+
             for token , data in list(self._position_data.items()):
                 # One bad row (or one failing decision) must not kill
                 # the watcher thread - a silent death here disables the
@@ -2493,6 +2787,20 @@ class Trader_Singleton:
                                     str(instrument_token), qty, float(ltp or 0)
                                 )
 
+                                # File tags come from the composite leg
+                                # KEY (see _paper_sell_file_tags) - the
+                                # identity the paper file knows. The
+                                # in-memory order_strategy can be
+                                # retagged mid-trade (strategy radio);
+                                # a mismatched tag would file this SELL
+                                # under a NEW leg (phantom short)
+                                # instead of closing the BUY's leg.
+                                # Threshold decisions above keep using
+                                # the retagged strategy on purpose.
+                                file_strategy, file_sell_type = (
+                                    self._paper_sell_file_tags(token, data)
+                                )
+
                                 self.write_paper_trade(
                                     transaction_type="SELL",
                                     tradingsymbol=tradingsymbol,
@@ -2505,16 +2813,25 @@ class Trader_Singleton:
                                     buy_time=self.get_open_position_buy_time(
                                         instrument_token,
                                         tradingsymbol=tradingsymbol,
-                                        strategy=order_strategy_type,
-                                        sell_type=sell_type
+                                        strategy=file_strategy,
+                                        sell_type=file_sell_type
                                     ),
-                                    strategy=order_strategy_type,
-                                    sell_type=sell_type
+                                    strategy=file_strategy,
+                                    sell_type=file_sell_type
                                 )
 
                                 # Recalculate paper positions so the sold
                                 # quantity disappears from the grid.
                                 self.refresh_paper_positions()
+
+                                # The leg is fully closed - drop any
+                                # virtual pending exit for the token
+                                # (the LIVE branch cancels the broker's
+                                # resting exit before selling).
+                                self._cancel_paper_exits_for_token(
+                                    instrument_token,
+                                    reason="leg closed by SL watcher",
+                                )
 
                                 # Paper auto-exits bypass the broker
                                 # adapter too, so notify the frontend
@@ -6792,8 +7109,11 @@ class Trader_Singleton:
 
                     buy_price = position["average_price"]
                     lot_size = position["lotsize"]
-                    leg_strategy = position.get("order_strategy", "ULTRA_SCALPING")
-                    leg_sell_mode = position.get("sell_mode", "T")
+                    # Tag the SELL with the leg identity the paper file
+                    # knows (see _paper_sell_file_tags).
+                    leg_strategy, leg_sell_mode = self._paper_sell_file_tags(
+                        position_key, position
+                    )
                     buy_time = self.get_open_position_buy_time(
                         position_key.split(":", 1)[0],
                         tradingsymbol=order_details["tradingsymbol"],
@@ -6819,6 +7139,15 @@ class Trader_Singleton:
                         f"{order_details['tradingsymbol']} "
                         f"[{position_key}] "
                         f"({sell_lots} lots) @ {ltp}"
+                    )
+
+                    # Mirror the LIVE partial-sell behavior: the virtual
+                    # pending exit for this leg is reduced to the
+                    # remaining lots, or cancelled when the leg is fully
+                    # closed (LIVE re-places the resting exit for the
+                    # remainder - same net effect).
+                    self._reduce_paper_exits_after_manual_sell(
+                        str(order_details["token"]), held_lots, sell_lots
                     )
 
                     # Recalculate paper positions
@@ -7030,7 +7359,7 @@ class Trader_Singleton:
                     f"(expected ~15s) - browser timer throttling "
                     f"(window minimized/background) or socket stall suspected."
                 )
-            self.frontend_data_socket.emit('update_pending_orders', self._broker.fetch_all_pending_orders())
+            self.frontend_data_socket.emit('update_pending_orders', self._merged_pending_orders())
 
             # Fill-gated U/D exits: sweep pending intents so late fills
             # (or fill events that raced the registration) still get
@@ -7045,6 +7374,10 @@ class Trader_Singleton:
             """Cancel every pending order at the broker (Cancel All button)."""
             try:
                 cancelled = self._broker.cancel_all_pending_orders()
+                # Virtual paper exits are cancelled alongside so the
+                # panel empties in PAPER mode too.
+                cancelled += len(self._paper_pending_exits)
+                self._paper_pending_exits.clear()
                 logger.info(f"Cancel All: {cancelled} pending order(s) cancelled")
 
                 self.frontend_data_socket.emit(
@@ -7061,7 +7394,7 @@ class Trader_Singleton:
             # Re-fetch and re-render the grid either way so the button
             # re-enables and the rows reflect reality.
             try:
-                pending_orders = self._broker.fetch_all_pending_orders()
+                pending_orders = self._merged_pending_orders()
                 self.frontend_data_socket.emit('update_pending_orders', pending_orders)
             except Exception as e:
                 logger.error(f"Cancel All: could not refresh pending orders: {e}")
@@ -7077,17 +7410,26 @@ class Trader_Singleton:
 
                 logger.info(f"Received request to cancel pending order: {order_id}")
 
-                # Call your adapter function
-                success = self._broker.cancel_order(order_id)
-
-                if success:
-                    self.frontend_data_socket.emit('status_message', {"success": True,"message": f"Order {order_id} cancelled"})
+                # Virtual paper exits never reach the broker - cancel
+                # them in the paper registry.
+                if str(order_id).startswith("PAPER-"):
+                    if self.cancel_paper_pending_exit(str(order_id)):
+                        self.frontend_data_socket.emit('status_message', {"success": True,"message": f"Order {order_id} cancelled"})
+                    else:
+                        self.frontend_data_socket.emit('status_message', {"success": False,"message": f"Failed to cancel order {order_id}"})
+                        return
                 else:
-                    self.frontend_data_socket.emit('status_message', {"success": False,"message": f"Failed to cancel order {order_id}"})
-                    return
+                    # Call your adapter function
+                    success = self._broker.cancel_order(order_id)
+
+                    if success:
+                        self.frontend_data_socket.emit('status_message', {"success": True,"message": f"Order {order_id} cancelled"})
+                    else:
+                        self.frontend_data_socket.emit('status_message', {"success": False,"message": f"Failed to cancel order {order_id}"})
+                        return
 
                 # Fetch latest pending orders again
-                pending_orders = self._broker.fetch_all_pending_orders()
+                pending_orders = self._merged_pending_orders()
 
                 # Send updated pending orders to UI
                 self.frontend_data_socket.emit('update_pending_orders', pending_orders)
@@ -7175,6 +7517,20 @@ class Trader_Singleton:
                     logger.info("Calling refresh_paper_positions() after BUY...")
                     self.refresh_paper_positions()
                     logger.info(f"After BUY refresh, position_data = {self._position_data}")
+
+                    # Mirror the LIVE U/D resting exit: paper fills
+                    # execute at the click LTP, so U and D anchor
+                    # identically - register the virtual pending SELL
+                    # LIMIT so the Orders panel shows it and the
+                    # watcher fills it when the target is crossed.
+                    self._register_paper_exit_after_buy(
+                        tradingsymbol=order_details["tradingsymbol"],
+                        token=str(order_details["token"]),
+                        lots=int(order_details["lots"] or 0),
+                        ltp=ltp,
+                        strategy=strategy,
+                        sell_mode=sell_mode,
+                    )
 
                     # Paper fills never reach the broker adapter, so the
                     # adapter-side buy_order_result emit never happens.
