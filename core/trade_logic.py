@@ -1054,6 +1054,48 @@ class Trader_Singleton:
 
                 self.frontend_data_socket.emit('refresh_fund_summary')
 
+            # The broker's cash can settle a booked profit a beat after
+            # the fill, so the fetch above may still carry the pre-trade
+            # balance. One single-flight delayed re-check closes that
+            # gap; without it the UI balance sticks at the stale value
+            # until a page reload.
+            if not getattr(self, "_fund_reverify_pending", False):
+                self._fund_reverify_pending = True
+
+                def _reverify_fund_summary():
+                    time.sleep(4)
+                    try:
+                        refreshed = self._broker.fetch_fund_summary()
+                        if isinstance(refreshed, dict) and refreshed:
+                            changed = any(
+                                float(refreshed.get(k, 0) or 0)
+                                != float(self._fund_summary.get(k, 0) or 0)
+                                for k in refreshed
+                            )
+                            for key, value in refreshed.items():
+                                self._fund_summary[key] = float(value)
+                            if changed and self.frontend_data_socket:
+                                logger.info(
+                                    "Delayed fund summary re-check picked up "
+                                    "a settled balance change - notifying UI"
+                                )
+                                self.frontend_data_socket.emit(
+                                    'refresh_fund_summary'
+                                )
+                    except Exception as reverify_error:
+                        logger.warning(
+                            f"Delayed fund summary re-verify failed: "
+                            f"{reverify_error}"
+                        )
+                    finally:
+                        self._fund_reverify_pending = False
+
+                threading.Thread(
+                    target=_reverify_fund_summary,
+                    daemon=True,
+                    name="fund-summary-reverify"
+                ).start()
+
         except Exception as e:
             logger.error(
                 f"Fund Summary fetch failed. "
@@ -2052,6 +2094,12 @@ class Trader_Singleton:
                                     trade_audit.record_sell_executed(
                                         str(instrument_token), qty, float(ltp or 0)
                                     )
+
+                                    # A booked position must reach the UI
+                                    # balance box without a page reload:
+                                    # refresh positions + funds and push
+                                    # the fund summary to the frontend.
+                                    self.refresh_open_pos_buy_price()
                                 except Exception as sell_error:
                                     # A failed auto-sell must not kill the
                                     # watcher thread; the next cycle retries.
@@ -6593,6 +6641,10 @@ class Trader_Singleton:
                                     f"{remaining_lots} lots will be managed by "
                                     f"the stop-loss watcher only."
                                 )
+                    # A booked position must reach the UI balance box
+                    # without a page reload: refresh positions + funds
+                    # and push the fund summary to the frontend.
+                    self.refresh_open_pos_buy_price()
                     #self.frontend_data_socket.emit('sell_order_result',{"success": True, "tradingsymbol": order_details["tradingsymbol"], "lots": order_details["lots"]})
             except Exception as e:
                 logger.error(f"Error placing sell order: {e}", exc_info=False)

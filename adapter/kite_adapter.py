@@ -527,7 +527,7 @@ class KiteAdapter(BrokerInterface):
             return f"{underlying}{yy}{month_char}{dd_str}{strike}{call_or_put}"
     
     #self._broker.buy_units(order_details["tradingsymbol"] , order_details["token"] , order_details["lots"] , self._exchange , ltp,self._mode,sell_mode,target_profit)
-    def buy_units(self, trading_symbol, instrument_token, quantity , exchange , ltp,mode="",sell_mode="",target_profit=0,strategy=""):
+    def buy_units(self, trading_symbol, instrument_token, quantity , exchange , ltp,mode="",sell_mode="",target_profit=0,strategy="", target_profit_pct=None):
         logger.info(f"Buying units: {quantity} of {trading_symbol} ({instrument_token}) via KiteAPI...Current LTP: {ltp}...Mode is {mode}. Sell Mode is {sell_mode}, target_profit is {target_profit}")
         #logger.debug(f"Inside Buy Units trading symbol: {trading_symbol} instrument token: {instrument_token}, quantity: {quantity} lots, exchange: {exchange}, ltp: {ltp}" )
         # data = shared_state.latest_tradingview_data
@@ -954,17 +954,46 @@ class KiteAdapter(BrokerInterface):
                 self._feed_packets = 0
                 self._feed_max_gap = 0.0
 
-    def _start_feed_stall_watchdog(self, shutdown_event):
+    def _start_feed_stall_watchdog(self, shutdown_event, socket=None):
         """
-        Detect ONGOING feed silence. The sampler inside on_ticks can
-        only flag a stall after the feed resumes (the gap is measured
-        when the next tick lands) - if the websocket dies completely,
-        nothing would ever be logged. This watchdog wakes every 10s and
-        warns while the silence continues. Market-closed periods are
-        skipped so off-hours sessions do not raise false alarms.
+        Detect ONGOING feed silence and self-heal. The sampler inside
+        on_ticks can only flag a stall after the feed resumes - and if
+        the websocket dies silently (network blip, NAT timeout) no
+        close/error callback ever fires, so KiteTicker's built-in
+        reconnect never triggers either. This watchdog wakes every 10s
+        and, while the market is open, forces the dead transport closed
+        once the silence crosses RECONNECT_AFTER seconds; that fires
+        clientConnectionLost and hands over to the library's
+        ReconnectingClientFactory, which retries with backoff and
+        resubscribes automatically on the new connection. Market-closed
+        periods are skipped so off-hours sessions do not raise false
+        alarms.
         """
 
+        RECONNECT_AFTER = 20  # seconds of silence before forcing a reconnect
+        REFORCE_EVERY = 30    # never force more often than this
+
+        def _force_reconnect(silent_for):
+            logger.warning(
+                f"KITE FEED WATCHDOG | no tick for {silent_for:.0f}s - "
+                f"forcing Kite websocket reconnect"
+            )
+            try:
+                from twisted.internet import reactor
+                transport = getattr(getattr(socket, "ws", None), "transport", None)
+                if transport is not None:
+                    # Thread-safe abort: tears the dead connection down
+                    # locally, which fires clientConnectionLost and starts
+                    # KiteTicker's auto-retry + resubscribe cycle.
+                    reactor.callFromThread(transport.abortConnection)
+                else:
+                    socket.close()
+                    socket.connect(threaded=True)
+            except Exception as e:
+                logger.error(f"Kite feed watchdog reconnect failed: {e}")
+
         def _watch():
+            last_force_ts = 0.0
             while not shutdown_event.is_set():
                 shutdown_event.wait(timeout=10)
                 if shutdown_event.is_set():
@@ -976,11 +1005,17 @@ class KiteAdapter(BrokerInterface):
                 if not last_ts:
                     continue
                 silent_for = time.time() - last_ts
-                if silent_for > 10:
+                if silent_for > RECONNECT_AFTER:
                     logger.warning(
                         f"KITE FEED STALL | no tick for {silent_for:.0f}s "
                         f"(ongoing) - prices on the grid are frozen"
                     )
+                    if (
+                        socket is not None
+                        and time.time() - last_force_ts >= REFORCE_EVERY
+                    ):
+                        last_force_ts = time.time()
+                        _force_reconnect(silent_for)
 
         threading.Thread(
             target=_watch, daemon=True, name="kite-feed-watchdog"
@@ -1027,6 +1062,12 @@ class KiteAdapter(BrokerInterface):
         def on_close(ws, code, reason):
             logger.warning(f"Kite WebSocket closed: {code}, {reason}")
 
+        def on_error(ws, code, reason):
+            logger.error(f"Kite WebSocket error: {code}, {reason}")
+
+        def on_reconnect(ws, attempts):
+            logger.warning(f"Kite WebSocket reconnecting (attempt {attempts})")
+
         # def on_order_update(ws, data):
         #     logger.info(f"Kite Order update: {data}")
         #     self._trader.refresh_open_pos_buy_price()
@@ -1060,14 +1101,16 @@ class KiteAdapter(BrokerInterface):
         socket.on_ticks = on_ticks
         socket.on_connect = on_connect
         socket.on_close = on_close
+        socket.on_error = on_error
+        socket.on_reconnect = on_reconnect
         socket.on_order_update = on_order_update
 
         socket.connect(threaded=True)
 
         # Ongoing-stall watchdog: the in-on_ticks sampler only reports a
         # stall once the feed has resumed; this one warns while the
-        # silence continues.
-        self._start_feed_stall_watchdog(shutdown_event or threading.Event())
+        # silence continues and forces a reconnect if it persists.
+        self._start_feed_stall_watchdog(shutdown_event or threading.Event(), socket)
         # if shutdown_event:
         #     shutdown_event.wait()
         #socket.close()

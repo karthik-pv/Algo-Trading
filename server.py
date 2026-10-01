@@ -870,6 +870,23 @@ def get_fund_summary():
             > FUND_SUMMARY_REFRESH_INTERVAL_SECONDS
         ):
             _refresh_fund_summary_background()
+        else:
+            # The trader holds a broker-sourced copy refreshed right
+            # after position updates (e.g. a booked profit). When it
+            # disagrees with this cache, reconcile now - otherwise the
+            # UI would be served the pre-trade value with nothing left
+            # to trigger a re-fetch until a manual page reload.
+            try:
+                trader_cash = float(
+                    (getattr(trader, "_fund_summary", {}) or {}).get(
+                        "cash_balance", 0
+                    ) or 0
+                )
+                cached_cash = float(cached.get("cash_balance", 0) or 0)
+                if trader_cash and abs(trader_cash - cached_cash) > 0.01:
+                    _refresh_fund_summary_background()
+            except (TypeError, ValueError):
+                pass
         logger.log("DATA", f"Fund Summary (cached): {cached}")
         return jsonify({"data": cached})
 
