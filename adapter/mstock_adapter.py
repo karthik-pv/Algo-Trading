@@ -872,6 +872,23 @@ class MStockAdapter(BrokerInterface):
             logger.error(f"M.Stock fetch_order_status error for {orderid}: {e}")
             return None
 
+    def feed_health(self):
+        """WS-feed health snapshot for the Feed Lab pills - delegates
+        to the websocket singleton. WITHOUT this hook _ws_health_for()
+        sees no feed_health attr on the adapter and reports the M pill
+        as idle ('socket not running') even while the socket streams
+        hundreds of packets per minute (2026-10-06)."""
+        try:
+            return self.mstock_instance.feed_health()
+        except Exception as e:
+            logger.warning(f"M.Stock feed_health read failed: {e}")
+            return {
+                "connected": False,
+                "seconds_since_tick": None,
+                "rate_per_min": 0.0,
+                "max_gap_s": None,
+            }
+
     def place_exit_limit(self, trading_symbol, instrument_token, quantity, exchange, price):
         """Place a resting SELL LIMIT exit. quantity is in LOTS.
 
@@ -879,11 +896,10 @@ class MStockAdapter(BrokerInterface):
         resolver; wraps sell_units_temp.
         """
         try:
-            self.sell_units_temp(
+            return self.sell_units_temp(
                 trading_symbol, instrument_token, quantity, exchange,
                 ltp=price, limit_market="LIMIT", price=price
             )
-            return True
         except Exception as e:
             logger.error(f"M.Stock place_exit_limit failed for {trading_symbol}: {e}")
             return None
@@ -1209,7 +1225,9 @@ class MStockAdapter(BrokerInterface):
                 else "No valid response"
             )
             logger.error(f"M.Stock trade history error for {trade_date}: {message}")
-            return []
+            # None = fetch FAILED (route falls back to audit records);
+            # [] stays reserved for a genuinely trade-less day.
+            return None
 
         fills = response.get("data") or []
         clubbed = {}
@@ -1736,7 +1754,16 @@ class MStockAdapter(BrokerInterface):
             self._trader.refresh_open_pos_buy_price()
             self._schedule_post_sell_fund_refresh()
 
-            return True
+            # Return the broker order id (truthy) so the caller can
+            # register the exit for fill-tracking. All callers only
+            # test truthiness - the old `return True` is preserved as
+            # a fallback when the response carries no order id.
+            exit_data = res_json.get("data") or {}
+            exit_order_id = (
+                str(exit_data.get("orderid") or "")
+                if isinstance(exit_data, dict) else ""
+            )
+            return exit_order_id or True
             
         except Exception as e:
             logger.error(f"Error selling units {e}")
@@ -1912,6 +1939,7 @@ class MStockAdapter(BrokerInterface):
                                         instrument_token=instrument_token,
                                         lots=buy_quantity,
                                         exchange=exchange,
+                                        override_book_profit_pct=target_profit_pct,
                                     )
                                     fill_price = None
                                     for _ in range(3):
@@ -2100,6 +2128,7 @@ class MStockAdapter(BrokerInterface):
                                 instrument_token=instrument_token,
                                 lots=int(qty) // int(lotsize),
                                 exchange=exchange,
+                                override_book_profit_pct=target_profit_pct,
                             )
                             fill_price = None
                             for _ in range(3):
@@ -2660,7 +2689,13 @@ class MStockAdapter(BrokerInterface):
             else:
                 #month_char = calendar.month_name[expiry.month][0].upper() 
                 #Since Jan 2026 first weekly expiry the above code stopped working and the below code is put in place
-                month_char = str(expiry.month)
+                # M.Stock weekly (non-monthly) symbols encode the month as a
+                # single char: digit 1-9 for Jan-Sep, O/N/D for Oct/Nov/Dec
+                # (e.g. NIFTY26O0622500CE expires 2026-10-06).
+                if expiry.month <= 9:
+                    month_char = str(expiry.month)
+                else:
+                    month_char = calendar.month_name[expiry.month][0].upper()
                 dd_str = f"{expiry.day:02d}"  
 
             logger.info(f"{underlying}{yy}{month_char}{dd_str}{strike}{call_or_put.upper()}")

@@ -89,8 +89,8 @@ _EVENT_CACHE = {}
 
 def canonical_symbol(symbol):
     """Reduce the broker's symbol spellings to one pairing key:
-    NIFTY-22Sep2026-23600-CE / NIFTY2692223600CE / NIFTY26SEP23600CE all
-    become NIFTY23600CE."""
+    NIFTY-22Sep2026-23600-CE / NIFTY2692223600CE / NIFTY26SEP23600CE /
+    NIFTY26O0622800CE all become NIFTY23600CE."""
     s = str(symbol or "").upper().replace(" ", "")
     m = re.search(
         r"(NIFTY|SENSEX)-\d{1,2}[A-Z]{3}\d{4}-(\d+(?:\.\d+)?)-(CE|PE)", s
@@ -98,6 +98,15 @@ def canonical_symbol(symbol):
     if m:
         return f"{m.group(1)}{int(float(m.group(2)))}{m.group(3)}"
     m = re.search(r"(NIFTY|SENSEX)\d{2}[A-Z]{3}(\d+(?:\.\d+)?)(CE|PE)$", s)
+    if m:
+        return f"{m.group(1)}{int(float(m.group(2)))}{m.group(3)}"
+    # Weekly single-letter month-code form: NIFTY26O0622800CE
+    # (26 | O = Oct month code | 06 day | 22800 | CE) - the app's
+    # exchange-format spelling. It MUST reduce to the same key as the
+    # dashed broker form, or every broker order looks uncovered by the
+    # app's own record and gets duplicated as an IMPORTED row
+    # (2026-10-06: every app trade gained a phantom import).
+    m = re.search(r"(NIFTY|SENSEX)\d{2}[1-9OND]\d{2}(\d+(?:\.\d+)?)(CE|PE)$", s)
     if m:
         return f"{m.group(1)}{int(float(m.group(2)))}{m.group(3)}"
     # Weekly numeric-expiry form: NIFTY2692223600CE (26|9|22 expiry)

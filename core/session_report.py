@@ -17,6 +17,7 @@ Line severity is carried by a leading marker the UI colours:
 
 import ast
 import bisect
+import csv
 import glob
 import json
 import os
@@ -26,7 +27,7 @@ from datetime import datetime, time as dtime, timedelta
 
 from loguru import logger
 
-from core.audit_log_parser import LOG_LINE_RE, parse_date_logs
+from core.audit_log_parser import LOG_LINE_RE, parse_date_logs, retag_untagged
 from core.utils import DATA_DIR, resolve_data_path, fetch_from_json
 
 LOGS_ROOT = os.path.join(DATA_DIR, "logs")
@@ -277,9 +278,6 @@ def _audit_records(date_str):
             if isinstance(records, list):
                 records = [r for r in records if isinstance(r, dict)]
                 try:
-                    from core.audit_log_parser import (
-                        parse_date_logs, retag_untagged,
-                    )
                     retag_untagged(records, parse_date_logs(date_str))
                 except Exception as e:
                     logger.error(f"Session report: mode retag failed: {e}")
@@ -548,9 +546,11 @@ def _broker_comparison_section(date_str):
         if not paths:
             continue
         try:
-            df = pd.read_csv(paths[-1])   # latest capture of the day
+            # Concatenate EVERY capture file of the day (chain, manual,
+            # position) - the per-symbol stats below need full coverage.
+            df = pd.concat([pd.read_csv(p) for p in paths], ignore_index=True)
         except Exception as e:
-            logger.warning(f"Broker verdict: could not read {paths[-1]}: {e}")
+            logger.warning(f"Broker verdict: could not read {broker} CSVs: {e}")
             continue
         if "recv_iso" not in df.columns or "ltp" not in df.columns:
             continue
@@ -797,6 +797,170 @@ def _summary(stats, records, paths):
 _REPORT_CACHE = {}
 
 
+def _position_norm_symbol(symbol):
+    """Same normalization the capture supervisor applies to leg symbols
+    (broker dashed / Excel compact -> exchange weekly format)."""
+    sym = str(symbol or "").upper().strip()
+    if not sym:
+        return None
+    m = re.match(r"^([A-Z]+)(\d{2})([A-Z]{3})(\d{4})(\d+)(CE|PE)$", sym)
+    if not m:
+        m = re.match(r"^([A-Z]+)-(\d{1,2})([A-Z]{3})(\d{4})-(\d+)-(CE|PE)$", sym)
+    if not m:
+        return sym
+    u, dd, mon, yyyy, strike, typ = m.groups()
+    month_code = {"JAN": "1", "FEB": "2", "MAR": "3", "APR": "4", "MAY": "5",
+                  "JUN": "6", "JUL": "7", "AUG": "8", "SEP": "9", "OCT": "O",
+                  "NOV": "N", "DEC": "D"}.get(mon)
+    if not month_code:
+        return sym
+    return f"{u}{yyyy[-2:]}{month_code}{dd.zfill(2)}{strike}{typ}"
+
+
+def _position_capture_csvs(date_str):
+    """All position/Feed-Lab tick CSVs for the date, per broker."""
+    out = {"MSTOCK": [], "KITE": []}
+    for broker in out:
+        out[broker] = sorted(glob.glob(os.path.join(
+            DATA_DIR, "feed_compare", date_str,
+            f"{broker.lower()}_*.csv")))
+    return out
+
+
+def _load_broker_tick_rows(paths):
+    """[(recv_ns, symbol, ltp)] merged + sorted from a broker's CSVs.
+
+    Delegates to core.tick_peak's loader - the ONE implementation
+    shared with the Audit grid's peak columns (stamp-cached, so
+    repeated polls during live flushes re-read only changed files)."""
+    from core.tick_peak import load_rows
+    return load_rows(paths)
+
+
+def _position_tick_section(records, date_str):
+    """Per-position tick counts AND holding-window peak from BOTH
+    brokers while holding.
+
+    Reads rows in the day's capture CSVs
+    (data/feed_compare/YYYY-MM-DD/{mstock,kite}_*.csv - the always-on
+    chain capture, the position-scoped capture, and any manual Feed
+    Lab run all write here) whose recv_ns timestamp falls inside the
+    trade's [buy_exec_ts, sell_exec_ts] window and whose symbol matches
+    the trade's (normalized) symbol. Ticks/min = ticks / holding
+    seconds. Peak = max LTP seen from either broker inside the window
+    -> unrealized profit at that instant in points and % of the buy
+    average price, plus the wall-clock time it was seen.
+    """
+    now_ts = datetime.now().timestamp()
+    trades = []
+    for r in records:
+        buy_exec = r.get("buy_exec_ts")
+        if not buy_exec:
+            continue
+        symbol = _position_norm_symbol(r.get("symbol"))
+        if not symbol:
+            continue
+        sell_exec = r.get("sell_exec_ts")
+        open_pos = not sell_exec
+        end_ts = float(sell_exec or now_ts)
+        if end_ts < float(buy_exec):
+            continue
+        trades.append((symbol, float(buy_exec), end_ts, open_pos, r))
+
+    if not trades:
+        return None
+
+    broker_rows = {b: _load_broker_tick_rows(_position_capture_csvs(date_str)[b])
+                   for b in ("MSTOCK", "KITE")}
+    broker_ns = {b: [t[0] for t in rows] for b, rows in broker_rows.items()}
+
+    # Last captured tick per symbol across both brokers: an OPEN
+    # position's analysis window ends there (a stale audit row whose
+    # exit happened outside the app's hooks must not swallow the rest
+    # of the day's ticks as "profit while holding").
+    last_tick_ns = {}
+    for rows in broker_rows.values():
+        for ns, sym, _ in rows:
+            if sym:
+                last_tick_ns[sym] = max(last_tick_ns.get(sym, 0), ns)
+
+    def _window_slice(broker, symbol, start, end):
+        rows = broker_rows[broker]
+        ns_list = broker_ns[broker]
+        lo = bisect.bisect_left(ns_list, int(start * 1e9))
+        hi = bisect.bisect_right(ns_list, int(end * 1e9))
+        # Exact symbol match - with chain + position captures writing
+        # many symbols a day, empty-symbol rows no longer exist and
+        # counting them toward every trade would inflate the numbers.
+        return [t for t in rows[lo:hi] if t[1] == symbol]
+
+    rows_out = []
+    for symbol, start, end, open_pos, rec in trades:
+        dur = max(end - start, 0.001)
+        # Peak/tick analysis window: for OPEN positions cap at the
+        # symbol's last captured tick (display duration stays real).
+        peak_end = end
+        if open_pos and symbol in last_tick_ns:
+            peak_end = min(end, last_tick_ns[symbol] / 1e9)
+        m_rows = _window_slice("MSTOCK", symbol, start, peak_end)
+        k_rows = _window_slice("KITE", symbol, start, peak_end)
+        m_ticks, k_ticks = len(m_rows), len(k_rows)
+
+        # Holding-window peak from both feeds (same NSE/MFO/BFO prints;
+        # whichever broker's socket delivered the extreme first wins)
+        # via the shared peak helper - the Audit grid's peak columns
+        # use the same implementation.
+        from core.tick_peak import peak_from_rows
+        peak = peak_from_rows(
+            m_rows + k_rows, symbol, start, peak_end,
+            buy_avg=(rec.get("buy_avg_price") or rec.get("ltp_exec")),
+        )
+        if peak:
+            peak_txt = f"{peak['peak_ltp']:g}"
+            pts_txt = (f"{peak['peak_pts']:+.2f}"
+                       if peak["peak_pts"] is not None else "-")
+            pct_txt = (f"{peak['peak_pct']:+.2f}%"
+                       if peak["peak_pct"] is not None else "-")
+            peak_at = peak["peak_at"]
+        else:
+            peak_txt = pts_txt = pct_txt = peak_at = "-"
+
+        rows_out.append([
+            symbol,
+            f"{datetime.fromtimestamp(start).strftime('%H:%M:%S')} -> "
+            + ("OPEN" if open_pos else datetime.fromtimestamp(end).strftime('%H:%M:%S')),
+            f"{dur:.0f}s",
+            str(m_ticks) if broker_rows["MSTOCK"] else "-",
+            f"{m_ticks / dur * 60:.0f}" if m_ticks else "-",
+            str(k_ticks) if broker_rows["KITE"] else "-",
+            f"{k_ticks / dur * 60:.0f}" if k_ticks else "-",
+            peak_txt, pts_txt, pct_txt, peak_at,
+        ])
+
+    lines = []
+    if not broker_rows["MSTOCK"] and not broker_rows["KITE"]:
+        lines.append(
+            "⚠ No tick-capture CSVs found for this date - the chain/position "
+            "capture writes only while the app runs (restart the app once "
+            "after this feature lands)")
+    if not broker_rows["KITE"]:
+        lines.append(
+            "⚠ KITE ticks not captured - no Kite session/token today; "
+            "MSTOCK counts are complete")
+
+    return {
+        "title": "Position tick capture + holding-window peak (MSTOCK vs KITE)",
+        "lines": lines,
+        "table": {
+            "headers": ["Symbol", "Holding window", "Duration",
+                        "MSTOCK ticks", "MSTOCK /min",
+                        "KITE ticks", "KITE /min",
+                        "Peak LTP", "Peak pts", "Peak %", "Peak at"],
+            "rows": rows_out,
+        },
+    }
+
+
 def build_session_report(date_str, mode="LIVE"):
     """Build the Log Report dict for YYYY-MM-DD. Cached per (date,
     file stamps, mode) - the Audit tab refetches on every grid reload,
@@ -815,6 +979,15 @@ def build_session_report(date_str, mode="LIVE"):
         }
     stamps = []
     for p in paths + [resolve_data_path("tick_stats.json")]:
+        try:
+            st = os.stat(p)
+            stamps.append((p, st.st_mtime_ns, st.st_size))
+        except OSError:
+            continue
+    # Position tick-capture CSVs change while positions are open - a
+    # live report must pick up new ticks, so they partake in the
+    # cache key too.
+    for p in sum(_position_capture_csvs(date_str).values(), []):
         try:
             st = os.stat(p)
             stamps.append((p, st.st_mtime_ns, st.st_size))
@@ -842,6 +1015,7 @@ def build_session_report(date_str, mode="LIVE"):
     sections = [
         _session_section(stats, paths, underlying, win),
         _trade_section(records),
+        _position_tick_section(records, date_str),
         _error_section(stats),
         _feed_section(stats, date_str, win),
         _broker_comparison_section(date_str),
@@ -861,3 +1035,184 @@ def build_session_report(date_str, mode="LIVE"):
     while len(_REPORT_CACHE) > 8:
         _REPORT_CACHE.pop(next(iter(_REPORT_CACHE)))
     return report
+
+
+# ------------------------------------------------------------------
+# ERRORS & WARNINGS GRID
+#
+# Every ERROR / WARNING line from the date's session logs, in
+# chronological order, with a running index - the Audit tab's dedicated
+# error grid. Separate from the session report's Errors section (which
+# only summarizes categories): this returns each individual line so a
+# failed order or a feed drop can be read in place, with its time.
+# ------------------------------------------------------------------
+
+_ERROR_GRID_CACHE = {}
+_ERROR_GRID_LIMIT = 5000     # rows served per request (oldest first)
+
+# Market-hours window for the grid (the NIFTY/SENSEX equity session,
+# matching feed_capture.MARKET_WINDOWS - deliberately NOT the CRUDEOIL
+# analysis window, so MCX evening prints are bucketed as non-market
+# hours, not lost). Rows outside it are hidden unless the Audit tab's
+# "non-market hours" checkbox is ticked.
+_ERROR_GRID_MH = ((9, 15), (15, 45))
+
+# Human-friendly "what happened" labels for the grid's Type column and
+# its occurrence summary. Ordered most-specific first; first match wins.
+# Patterns are drawn from the day's real log content (RMS rejections,
+# session-expired polls, feed stalls, ...).
+_FRIENDLY_PATTERNS = [
+    ("Offline orders are not allowed", "Broker rejected order (offline-not-allowed)"),
+    ("RMS", "Order rejected by broker (RMS margin/rules)"),
+    ("Insufficient funds", "Insufficient funds - lots reduced on retry"),
+    ("insufficient funds even for 1 lot", "Pre-margin: can't afford even 1 lot"),
+    ("Invalid App Code", "Kite 2FA code rejected (lock risk)"),
+    ("Automated Kite login failed", "Kite auto-login failed"),
+    ("Pre-margin check: right-sizing", "Pre-margin right-sizing of lots"),
+    ("Resting exit", "Resting exit CANCELLED - position unprotected"),
+    ("Zero/invalid cash balance", "Cash balance unavailable - fallback lots"),
+    ("positions_from_broker is None or empty", "Broker positions list empty (transient)"),
+    ("Frontend pending-orders poll gap", "Browser tab throttled - poll gap"),
+    ("MSTOCK FEED STALL", "M.Stock feed stall - grid prices frozen"),
+    ("Feed Lab: Kite websocket closed", "Feed Lab: Kite capture socket closed"),
+    ("Closed-market sanitise", "Closed-market quotes normalised to close"),
+    ("Fund summary API error", "Fund summary failed (invalid session)"),
+    ("Error fetching pending orders", "Pending-orders fetch failed"),
+    ("fetch_all_pending_orders", "Pending-orders fetch failed"),
+    ("pending orders", "Pending-orders fetch failed"),
+    ("server rejected WebSocket connection", "M.Stock feed socket rejected (HTTP 403)"),
+    ("Connection closed: no close frame", "Socket closed uncleanly - reconnecting"),
+    ("WebSocket", "WebSocket drop/retry"),
+    ("M.Stock API GET /openapi/typeb/orders attempt", "M.Stock orders poll retry failing"),
+    ("M.Stock API GET /openapi/typeb/orders failed", "M.Stock orders poll failed (session?)"),
+    ("instruments/quote attempt", "M.Stock quote API retry failing"),
+    ("instruments/quote failed", "M.Stock quote API failed"),
+    ("batch quote failed", "M.Stock batch quote failed"),
+    ("no valid response from M.Stock", "M.Stock API returned no valid response"),
+    ("gaierror", "Network / DNS failure"),
+    ("Network is unreachable", "Network / DNS failure"),
+]
+
+
+def _friendly_what(msg):
+    """Short human-readable label for one log line's message (first
+    pattern match wins; 'Other' when nothing matches)."""
+    for pat, label in _FRIENDLY_PATTERNS:
+        if pat in msg:
+            return label
+    return "Other"
+
+
+def build_error_grid(date_str, limit=_ERROR_GRID_LIMIT):
+    """{'ok', 'rows': [{i, time, level, source, message, mh}],
+    'errors', 'warnings' (market-hours counts), 'nmh_errors',
+    'nmh_warnings', 'total', 'truncated'} for the date's logs.
+
+    Every row carries `mh` (in market hours); the grid defaults to
+    market-hours-only and the checkbox flips to the rest."""
+    paths = _log_files_for(date_str)
+    if not paths:
+        return {"ok": False, "rows": [], "errors": 0, "warnings": 0,
+                "nmh_errors": 0, "nmh_warnings": 0,
+                "total": 0, "truncated": False,
+                "error": f"No session logs found for {date_str}"}
+
+    stamps = []
+    for p in paths:
+        try:
+            st = os.stat(p)
+            stamps.append((p, st.st_mtime_ns, st.st_size))
+        except OSError:
+            continue
+    key = (date_str, tuple(stamps))
+    cached = _ERROR_GRID_CACHE.get(key)
+    if cached is not None:
+        return cached
+
+    mh_start = _ERROR_GRID_MH[0][0] * 60 + _ERROR_GRID_MH[0][1]
+    mh_end = _ERROR_GRID_MH[1][0] * 60 + _ERROR_GRID_MH[1][1]
+
+    entries = []
+    lines_seen = 0
+    merged = 0
+    # One broker RMS rejection is logged as 2-4 ERROR lines (API error,
+    # order error, parse error, handler error) that all cite the same
+    # RMS:<orderid>. Collapse them into ONE grid row - the event count,
+    # not the log-line count, is what the summary should show. The row
+    # keeps the first line's time and the LONGEST message (the handler
+    # line carries the full AVAILABLE/REQUIRED FUND detail).
+    seen_rms = {}
+    for path in paths:
+        try:
+            with open(path, "r", encoding="utf-8", errors="replace") as fh:
+                for raw in fh:
+                    m = LOG_LINE_RE.match(raw)
+                    if not m:
+                        continue
+                    date_part, millis, level, fname, func, msg = m.groups()
+                    lvl = str(level or "").strip().upper()
+                    if lvl not in ("ERROR", "WARNING"):
+                        continue
+                    try:
+                        ts = datetime.strptime(
+                            date_part, "%Y-%m-%d %H:%M:%S")
+                        ts = ts.replace(microsecond=int(millis) * 1000)
+                    except ValueError:
+                        continue
+                    minute_of_day = ts.hour * 60 + ts.minute
+                    mh = mh_start <= minute_of_day <= mh_end
+                    lines_seen += 1
+                    text = str(msg or "").strip()
+                    rid = re.search(r"RMS:(\d+):", text)
+                    if rid and rid.group(1) in seen_rms:
+                        # Same rejection, another line - merge into the
+                        # canonical row instead of adding one.
+                        canonical = entries[seen_rms[rid.group(1)]]
+                        if len(text) > len(canonical[4]):
+                            canonical[4] = text
+                        merged += 1
+                        continue
+                    if rid:
+                        seen_rms[rid.group(1)] = len(entries)
+                    entries.append([ts, lvl, str(fname or ""), str(func or ""),
+                                    text, mh])
+        except OSError as read_error:
+            logger.warning(f"Error grid: could not read {path}: {read_error}")
+
+    # Multiple log files per day (one per app run) - chronological
+    # across restarts; Python's sort is stable so same-timestamp lines
+    # keep file order.
+    entries.sort(key=lambda e: e[0])
+
+    n_err = sum(1 for e in entries if e[1] == "ERROR" and e[5])
+    n_warn = sum(1 for e in entries if e[1] == "WARNING" and e[5])
+    n_nmh_err = sum(1 for e in entries if e[1] == "ERROR" and not e[5])
+    n_nmh_warn = sum(1 for e in entries if e[1] == "WARNING" and not e[5])
+    rows = [
+        {
+            "i": i + 1,
+            "time": e[0].strftime("%H:%M:%S.%f")[:-3],
+            "level": e[1],
+            "what": _friendly_what(e[4]),
+            "source": f"{e[2]}:{e[3]}" if e[3] else e[2],
+            "message": e[4][:2000],
+            "mh": e[5],
+        }
+        for i, e in enumerate(entries[:limit])
+    ]
+    result = {
+        "ok": True,
+        "rows": rows,
+        "errors": n_err,
+        "warnings": n_warn,
+        "nmh_errors": n_nmh_err,
+        "nmh_warnings": n_nmh_warn,
+        "total": len(entries),
+        "lines_seen": lines_seen,
+        "merged": merged,
+        "truncated": len(entries) > limit,
+    }
+    _ERROR_GRID_CACHE[key] = result
+    while len(_ERROR_GRID_CACHE) > 8:
+        _ERROR_GRID_CACHE.pop(next(iter(_ERROR_GRID_CACHE)))
+    return result

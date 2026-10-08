@@ -109,58 +109,57 @@
             white-space: nowrap;
             flex: 0 0 auto;
         }
-        /* Internet-quality pill (Feed Lab): GREEN / AMBER / RED, sits
-           next to the mode label on every tab. */
-        .net-pill {
-            display: inline-flex;
-            align-items: center;
-            gap: 0.35rem;
-            margin-right: 0.5rem;
-            padding: 4px 10px;
-            border-radius: 4px;
-            font-size: 0.72rem;
-            font-weight: 700;
-            letter-spacing: 0.05em;
-            white-space: nowrap;
-            flex: 0 0 auto;
-        }
-        .net-pill::before {
-            content: "";
-            width: 0.5rem;
-            height: 0.5rem;
-            border-radius: 50%;
-            background-color: currentColor;
-        }
-        .net-pill.green { color: #9fdf9f; background: #1b4622; border: 1px solid #66bb6a; }
-        .net-pill.amber { color: #e8d49f; background: #4a3d1b; border: 1px solid #c8a94a; }
-        .net-pill.red { color: #ff9d9d; background: #4a1b1b; border: 1px solid #c85a5a; }
-        .net-pill.gray { color: #cccccc; background: #3a3a3a; border: 1px solid #555555; }
-
-        /* --- BROKER PILLS (two sections: API | WebSocket) --- */
-        /* Left half = REST API health, right half (dot) = websocket feed
-           health. Each half carries its own level color. */
-        .broker-pill {
+        /* --- HEALTH PILLS (right-hand side of the tab bar) --- */
+        /* Three bordered boxes: Internet, Kite, M.Stock. Each box holds
+           its letter (I / K / M) on the left plus its status pill(s) to
+           the right of the letter - Internet has one (speed), each
+           broker two (an API pill and a WebSocket pill). Every status
+           pill is independently hoverable with its own tooltip. A box
+           shows only while at least one pill inside it has data
+           (syncHealthBox in the poll below). */
+        .health-pill {
             display: inline-flex;
             align-items: stretch;
             margin-right: 0.5rem;
+            border: 1px solid #555555;
             border-radius: 999px;
             overflow: hidden;
-            cursor: default;
             flex: 0 0 auto;
         }
-        .pill-half {
+        .health-seg {
             display: inline-flex;
             align-items: center;
             padding: 4px 8px;
             font-size: 0.72rem;
             font-weight: 700;
             letter-spacing: 0.05em;
+            white-space: nowrap;
+            cursor: default;
         }
-        .pill-half + .pill-half { border-left: 1px solid #1a1a1a; }
-        .pill-half.green { background: #1b4622; color: #9fdf9f; }
-        .pill-half.amber { background: #4a3d1b; color: #e8d49f; }
-        .pill-half.red { background: #4a1b1b; color: #ff9d9d; }
-        .pill-half.gray { background: #3a3a3a; color: #cccccc; }
+        .health-seg + .health-seg { border-left: 1px solid #1a1a1a; }
+        /* Letter inside its box: a neutral identity label (I / K / M) -
+           the health state is carried by the status pill(s) to its
+           right. */
+        .health-seg.broker-name { background: #3a3a3a; color: #cccccc; }
+        /* One status dot per pill, identical everywhere. Every status
+           pill is dot-only - the dot is the entire content. CSS-drawn
+           so size and alignment match across all pills; a font glyph
+           would sit differently. */
+        .health-seg.net::before,
+        .health-seg.api::before,
+        .health-seg.ws::before {
+            content: "";
+            width: 0.5rem;
+            height: 0.5rem;
+            border-radius: 50%;
+            background-color: currentColor;
+        }
+        /* Level tints shared by every segment (net, api, ws). */
+        .health-seg.green { color: #9fdf9f; background: #1b4622; }
+        .health-seg.amber { color: #e8d49f; background: #4a3d1b; }
+        .health-seg.red   { color: #ff9d9d; background: #4a1b1b; }
+        .health-seg.gray  { color: #cccccc; background: #3a3a3a; }
+        .health-seg.idle  { color: #cccccc; background: #3a3a3a; }
         .mode-label::before {
             content: "";
             width: 0.5rem;
@@ -237,12 +236,23 @@
         </div>
         <button class="tab-scroll-btn" id="tabScrollRight" type="button" title="Scroll tabs right">&#x276F;</button>
         <div class="tabbar-right" id="tabbarRight">
-            <span id="pillI" class="net-pill" style="display:none;" title="Internet">I</span>
-            <span id="pillK" class="broker-pill" style="display:none;" title="Kite">
-                <span class="pill-half api">K</span><span class="pill-half ws">&#9679;</span>
+            <!-- Health pills, right-hand side: each box holds its letter
+               (I / K / M) with its status pill(s) to the right of it -
+               Internet speed for I, API + WebSocket for K and M - each
+               pill hoverable on its own. -->
+            <span id="pillI" class="health-pill" style="display:none;">
+                <span class="health-seg broker-name">I</span>
+                <span id="pillISeg" class="health-seg net" style="display:none;" title="Internet"></span>
             </span>
-            <span id="pillM" class="broker-pill" style="display:none;" title="M.Stock">
-                <span class="pill-half api">M</span><span class="pill-half ws">&#9679;</span>
+            <span id="pillKBox" class="health-pill" style="display:none;">
+                <span class="health-seg broker-name">K</span>
+                <span id="pillKApi" class="health-seg api" style="display:none;" title="Kite API"></span>
+                <span id="pillKWs" class="health-seg ws" style="display:none;" title="Kite feed"></span>
+            </span>
+            <span id="pillMBox" class="health-pill" style="display:none;">
+                <span class="health-seg broker-name">M</span>
+                <span id="pillMApi" class="health-seg api" style="display:none;" title="M.Stock API"></span>
+                <span id="pillMWs" class="health-seg ws" style="display:none;" title="M.Stock feed"></span>
             </span>
             <span id="modeLabel" class="mode-label" data-mode="" title="Current trading mode">--</span>
         </div>
@@ -251,18 +261,31 @@
     {% if feed_lab_enabled %}
     <script>
         (function() {
-            const pillI = document.getElementById('pillI');
-            const pillK = document.getElementById('pillK');
-            const pillM = document.getElementById('pillM');
+            const pillIBox = document.getElementById('pillI');
+            const pillISeg = document.getElementById('pillISeg');
+            const pillKBox = document.getElementById('pillKBox');
+            const pillKApi = document.getElementById('pillKApi');
+            const pillKWs = document.getElementById('pillKWs');
+            const pillMBox = document.getElementById('pillMBox');
+            const pillMApi = document.getElementById('pillMApi');
+            const pillMWs = document.getElementById('pillMWs');
 
             function hidePill(el) { el.style.display = 'none'; }
 
-            const LEVEL_LABEL = { green: 'GREEN', amber: 'AMBER', red: 'RED', idle: 'IDLE' };
-
-            function setHalf(half, level) {
-                half.className = 'pill-half ' + (half.classList.contains('api') ? 'api ' : 'ws ')
-                    + (LEVEL_LABEL[level] ? level.toLowerCase() : 'gray');
+            // Each box renders only while at least one pill inside it
+            // has data - an empty bordered box looks broken.
+            function syncHealthBox() {
+                pillIBox.style.display = pillISeg.style.display === 'none' ? 'none' : '';
+                pillKBox.style.display = [pillKApi, pillKWs].some(el => el.style.display !== 'none') ? '' : 'none';
+                pillMBox.style.display = [pillMApi, pillMWs].some(el => el.style.display !== 'none') ? '' : 'none';
             }
+
+            const LEVEL_LABEL = { green: 'GREEN', amber: 'AMBER', red: 'RED', idle: 'IDLE' };
+            // Class map for tinted pills: only the three real health
+            // levels get their own tint; idle/unknown levels all render
+            // as the gray IDLE state (.health-seg.idle in CSS) - an
+            // unstyled pill next to tinted ones looked broken.
+            const LEVEL_CLASS = { green: 'green', amber: 'amber', red: 'red' };
 
             // NATIVE TOOLTIP FIX: rewriting the title attribute while the
             // user is hovering invalidates Chrome's tooltip - it vanishes
@@ -272,7 +295,7 @@
             // write when the content actually changed; a deferred update
             // is applied the moment the mouse leaves.
             let hoveredPill = null;
-            for (const el of [pillI, pillK, pillM]) {
+            for (const el of [pillISeg, pillKApi, pillKWs, pillMApi, pillMWs]) {
                 el.addEventListener('mouseenter', () => { hoveredPill = el; });
                 el.addEventListener('mouseleave', () => {
                     if (hoveredPill === el) hoveredPill = null;
@@ -292,8 +315,8 @@
             }
 
             async function pollPills() {
-                // I / K / M pills: internet speed, then per-broker
-                // API + WebSocket health (two-section pill). NOTE: no
+                // I / K / M pills: internet speed, then per-broker API
+                // and WebSocket pills (independently hoverable). NOTE: no
                 // wall-clock timestamps in the tooltip text - they change
                 // every poll and would keep invalidating the tooltip.
                 try {
@@ -302,54 +325,73 @@
 
                     // I - pure internet speed (neutral targets only)
                     const internet = s.internet || {};
-                    if (!internet.level) { hidePill(pillI); }
+                    if (!internet.level) { hidePill(pillISeg); }
                     else {
-                        pillI.className = 'net-pill ' + internet.level;
-                        pillI.style.display = '';
-                        setTooltip(pillI, 'Internet: ' + internet.level.toUpperCase()
+                        pillISeg.className = 'health-seg net ' + (LEVEL_LABEL[internet.level] ? internet.level : 'idle');
+                        pillISeg.style.display = '';
+                        setTooltip(pillISeg, 'Internet: ' + internet.level.toUpperCase()
                             + Object.entries(internet.targets || {}).map(([u, t]) => '\n' + u.replace('https://', '') + ': ' + (t.last_ok ? t.last_latency_ms + 'ms' : 'FAIL') + ', failures: ' + (t.consec_failures || 0)).join(''));
                     }
 
-                    // K / M - each broker pill: API half + WebSocket half.
-                    // The API half works round the clock (probed every 10s);
-                    // only the WebSocket half goes idle off-hours.
-                    for (const [el, key, label] of [[pillK, 'KITE', 'Kite'], [pillM, 'MSTOCK', 'M.Stock']]) {
+                    // K / M - each broker gets TWO pills on the right:
+                    // an API pill (dot + letter) and a WebSocket pill
+                    // (dot). Each is hoverable on its own - the API pill
+                    // shows API health details (works round the clock,
+                    // probed every 10s), the WebSocket pill shows feed
+                    // health details (goes idle off-hours).
+                    for (const [apiEl, wsEl, key, label] of [
+                        [pillKApi, pillKWs, 'KITE', 'Kite'],
+                        [pillMApi, pillMWs, 'MSTOCK', 'M.Stock'],
+                    ]) {
                         const b = (s.brokers || {})[key];
                         const api = b ? (b.api || {}) : null;
                         const ws = b ? (b.ws || {}) : null;
-                        if (!b || (!api.level && !ws.level)) { hidePill(el); continue; }
-                        el.style.display = '';
-                        const apiLvl = api.level || 'idle';
-                        const wsLvl = ws.level || 'idle';
-                        setHalf(el.querySelector('.pill-half.api'), apiLvl);
-                        setHalf(el.querySelector('.pill-half.ws'), wsLvl);
-                        const st = b.stats || {};
-                        const orders = st.orders || {};
-                        const ticks = st.ticks || {};
-                        const session = b.session || {};
-                        setTooltip(el, label + ' broker health'
-                            + '\n-- API (' + LEVEL_LABEL[apiLvl] + ') --'
-                            + '\nendpoint: ' + (b.url || '').replace('https://', '')
-                            + '\nlatency: ' + (api.last_ok ? api.last_latency_ms + 'ms' : 'FAIL')
-                            + ', consecutive failures: ' + (api.consec_failures || 0)
-                            + '\n-- WebSocket (' + LEVEL_LABEL[wsLvl] + ') --'
-                            + (ws.reason ? '\n' + ws.reason : '')
-                            + '\nconnected: ' + (ws.connected ? 'yes' : 'NO')
-                            + (ws.seconds_since_tick != null ? '\nlast tick: ' + ws.seconds_since_tick + 's ago' : '')
-                            + (ws.rate_per_min != null ? '\nrate: ' + ws.rate_per_min + '/min' : '')
-                            + (ws.max_gap_s != null ? '\nlongest gap: ' + ws.max_gap_s + 's' : '')
-                            + '\n-- Orders --'
-                            + '\nplaced: ' + (orders.placed || 0) + ', failed: ' + (orders.failed || 0)
-                            + ', rate-limited: ' + (orders.rate_limited || 0)
-                            + (orders.ack_p95_ms != null ? '\nack latency p50/p95: ' + orders.ack_p50_ms + 'ms / ' + orders.ack_p95_ms + 'ms' : '')
-                            + '\n-- Session --'
-                            + '\n' + (session.detail || (session.valid ? 'valid' : 'unknown'))
-                            + '\n-- Tick quality --'
-                            + (ticks.total ? '\n' + ticks.total.toLocaleString() + ' ticks, ' + (ticks.bad_pct || 0) + '% bad LTP' : '\nno ticks seen yet'));
+                        const st = b ? (b.stats || {}) : {};
+                        const session = b ? (b.session || {}) : {};
+
+                        // API pill: endpoint probe + order flow + session.
+                        const apiLvl = (api && api.level) || null;
+                        if (!apiLvl) { hidePill(apiEl); }
+                        else {
+                            apiEl.className = 'health-seg api ' + (LEVEL_CLASS[apiLvl] || 'idle');
+                            apiEl.style.display = '';
+                            const orders = st.orders || {};
+                            setTooltip(apiEl, label + ' API health'
+                                + '\nlevel: ' + (LEVEL_LABEL[apiLvl] || 'IDLE')
+                                + '\nendpoint: ' + (b.url || '').replace('https://', '')
+                                + '\nlatency: ' + (api.last_ok ? api.last_latency_ms + 'ms' : 'FAIL')
+                                + ', consecutive failures: ' + (api.consec_failures || 0)
+                                + '\n-- Orders --'
+                                + '\nplaced: ' + (orders.placed || 0) + ', failed: ' + (orders.failed || 0)
+                                + ', rate-limited: ' + (orders.rate_limited || 0)
+                                + (orders.ack_p95_ms != null ? '\nack latency p50/p95: ' + orders.ack_p50_ms + 'ms / ' + orders.ack_p95_ms + 'ms' : '')
+                                + '\n-- Session --'
+                                + '\n' + (session.detail || (session.valid ? 'valid' : 'unknown')));
+                        }
+
+                        // WebSocket pill: live feed health + tick quality.
+                        const wsLvl = (ws && ws.level) || null;
+                        if (!wsLvl) { hidePill(wsEl); }
+                        else {
+                            wsEl.className = 'health-seg ws ' + (LEVEL_CLASS[wsLvl] || 'idle');
+                            wsEl.style.display = '';
+                            const ticks = st.ticks || {};
+                            setTooltip(wsEl, label + ' WebSocket health'
+                                + '\nlevel: ' + (LEVEL_LABEL[wsLvl] || 'IDLE')
+                                + (ws.reason ? '\n' + ws.reason : '')
+                                + '\nconnected: ' + (ws.connected ? 'yes' : 'NO')
+                                + (ws.seconds_since_tick != null ? '\nlast tick: ' + ws.seconds_since_tick + 's ago' : '')
+                                + (ws.rate_per_min != null ? '\nrate: ' + ws.rate_per_min + '/min' : '')
+                                + (ws.max_gap_s != null ? '\nlongest gap: ' + ws.max_gap_s + 's' : '')
+                                + '\n-- Tick quality --'
+                                + (ticks.total ? '\n' + ticks.total.toLocaleString() + ' ticks, ' + (ticks.bad_pct || 0) + '% bad LTP' : '\nno ticks seen yet'));
+                        }
                     }
                 } catch (e) {
-                    hidePill(pillI); hidePill(pillK); hidePill(pillM);
+                    hidePill(pillISeg); hidePill(pillKApi); hidePill(pillKWs);
+                    hidePill(pillMApi); hidePill(pillMWs);
                 }
+                syncHealthBox();
             }
             pollPills();
             setInterval(pollPills, 5000);

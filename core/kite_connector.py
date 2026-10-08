@@ -68,7 +68,7 @@ def _prompt_kite_2fa(twofa_type, attempts_left=None):
         "text returned of (display dialog "
         f'"Kite login: enter the 6-digit {label}" '
         'default answer "" with hidden answer '
-        'with title "Algo Trading - Zerodha 2FA" '
+        'with title "AlgoOptionScalper - Zerodha 2FA" '
         'buttons {"Cancel", "OK"} default button "OK")'
     )
     out = subprocess.run(

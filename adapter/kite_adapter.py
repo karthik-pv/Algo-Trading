@@ -657,6 +657,7 @@ class KiteAdapter(BrokerInterface):
                     instrument_token=instrument_token,
                     lots=grid_qty,
                     exchange=exchange,
+                    override_book_profit_pct=target_profit_pct,
                 )
             elif mode == "LIVE" and sell_mode == "T":
                 logger.debug("Waiting for Trigger to raise the Sell order")

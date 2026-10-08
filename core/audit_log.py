@@ -93,6 +93,7 @@ class TradeAudit:
         "Trigger Source",
         "LTP @ Trigger", "LTP @ Sell Exec", "Sell Avg Price",
         "Sell Price Slippage", "Sell Price Slippage %", "Sell Profit Slippage",
+        "Peak LTP (hold)", "Peak Profit (pts)", "Peak Profit %", "Peak At",
         "Retries", "Retry Elapsed (s)", "First Attempt LTP",
         "Exec Slippage %", "Buy Cost Increase",
         "Comment",
@@ -110,7 +111,8 @@ class TradeAudit:
     # Column-group band: (caption, colspan) over COLUMNS - used by the
     # grid's group row and the Excel export's merged header band.
     COLUMN_GROUPS = [
-        ("Trade", 3), ("Buy", 9), ("Sell", 10), ("Retry", 5), ("Comment", 1),
+        ("Trade", 3), ("Buy", 9), ("Sell", 10), ("Peak", 4),
+        ("Retry", 5), ("Comment", 1),
     ]
 
     # Sub-header band under the BUY / SELL group cells: a second
@@ -200,6 +202,14 @@ class TradeAudit:
         except Exception as e:
             logger.error(f"Audit log: could not load {path}: {e}")
             self._records = []
+
+    def today_records(self):
+        """Read-only copy of today's audit records. Used by the WOC
+        rebuild to restore feed coverage for contracts traded earlier
+        today (an app restart re-resolves the window from the current
+        ATM, orphaning morning trades' Orders rows)."""
+        with self._lock:
+            return [dict(r) for r in self._records]
 
     def _persist(self, snapshot=None):
         """Write the records to disk in a BACKGROUND thread - order
@@ -700,12 +710,14 @@ class TradeAudit:
         mode_code = mode if mode in ("U", "D", "T") else (mode or "?")
         return f"{strat_code}{mode_code}"
 
-    def _computed(self, rec):
+    def _computed(self, rec, date_str=None):
         """Return a display-ready copy with derived metrics + formatted
         times. Price Slippage = Avg Price - LTP @ Click (sell: Sell Avg
         - LTP @ Trigger): how far the actual fill landed from the price
         on screen when the trade was clicked - the real cost of the
-        click -> fill delay. Time Slippage = that latency."""
+        click -> fill delay. Time Slippage = that latency.
+        `date_str` selects the day's tick-capture CSVs for the peak
+        columns (defaults to today)."""
         out = {
             "Symbol": _display_symbol(rec.get("symbol", "")),
             "Lots": rec.get("lots", ""),
@@ -735,6 +747,10 @@ class TradeAudit:
             "Sell Price Slippage": "",
             "Sell Price Slippage %": "",
             "Sell Profit Slippage": "",
+            "Peak LTP (hold)": "",
+            "Peak Profit (pts)": "",
+            "Peak Profit %": "",
+            "Peak At": "",
             "Retries": rec.get("retry_count") or 0,
             "Retry Elapsed (s)": "",
             "First Attempt LTP": _fmt_num(rec.get("first_attempt_ltp")),
@@ -793,6 +809,33 @@ class TradeAudit:
             )
             if lots_f is not None:
                 out["Sell Profit Slippage"] = _fmt_num(pslip * lots_f)
+
+        # ---- PEAK metrics (holding-window max from the dual-broker
+        # tick capture: chain + manual + position files merged). The
+        # highest LTP seen by either broker between the buy fill and
+        # the sell fill - what the trade WAS worth at its best, vs
+        # what the exit actually realized. Points x lots = rupees at
+        # the peak; % keys off the buy average.
+        if rec.get("buy_exec_ts"):
+            try:
+                from core.tick_peak import peak_for_trade
+                end_ts = rec.get("sell_exec_ts") or datetime.now().timestamp()
+                peak = peak_for_trade(
+                    rec.get("symbol"),
+                    float(rec["buy_exec_ts"]),
+                    float(end_ts),
+                    buy_avg=rec.get("buy_avg_price") or rec.get("ltp_exec"),
+                    date_str=date_str,
+                )
+            except Exception as peak_error:
+                logger.warning(f"Audit: peak lookup failed: {peak_error}")
+                peak = None
+            if peak:
+                out["Peak LTP (hold)"] = _fmt_num(peak["peak_ltp"])
+                if peak["peak_pts"] is not None:
+                    out["Peak Profit (pts)"] = _fmt_num(peak["peak_pts"])
+                    out["Peak Profit %"] = _fmt_num(peak["peak_pct"])
+                out["Peak At"] = peak["peak_at"]
 
         # ---- RETRY metrics ----
         retries = rec.get("retries") or []
@@ -966,6 +1009,22 @@ class TradeAudit:
 
         base = [r for r in base if not _foreign(r)]
 
+        # Imported rows that an app record already covers (same event,
+        # symbol + side + <15s) are duplicates persisted by earlier
+        # builds whose canonical pairing missed the weekly format -
+        # drop them so the grid shows one row per real trade.
+        live_rows = [r for r in base if not r.get("imported")]
+        base = [
+            r for r in base
+            if not r.get("imported")
+            or not self._covered_by(
+                live_rows,
+                r.get("symbol"),
+                "BUY" if r.get("buy_exec_ts") else "SELL",
+                r.get("buy_exec_ts") or r.get("sell_exec_ts") or 0,
+            )
+        ]
+
         # PAPER / LIVE bucket filter: untagged rows (older persisted
         # files) count as LIVE - only real-order paths existed before
         # the tagging existed.
@@ -978,7 +1037,7 @@ class TradeAudit:
             key=lambda r: r.get("buy_click_ts") or r.get("buy_exec_ts")
             or r.get("sell_exec_ts") or 0
         )
-        return [self._computed(r) for r in base]
+        return [self._computed(r, date_str) for r in base]
 
 
 # Module-level singleton shared by trade_logic and the adapters.

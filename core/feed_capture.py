@@ -15,6 +15,7 @@ routes without any code change.
 import os
 import csv
 import json
+import re
 import time
 import base64
 import socket as pysocket
@@ -55,6 +56,20 @@ MARKET_WINDOWS = {
     "CRUDEOIL": ((9, 0), (11, 30)),
     "CRUDEOILM": ((9, 0), (11, 30)),
 }
+
+# ------------------------------------------------------------------
+# CHAIN CAPTURE (always-on, market hours): per underlying, capture the
+# near-month FUT plus every CE and PE at ATM +/- CHAIN_STRIKES strikes
+# from BOTH brokers - so any trade's holding-window peak (max LTP
+# between buy and sell) is reconstructable from disk afterwards, even
+# after app restarts. Runs for every underlying in CHAIN_UNDERLYINGS
+# simultaneously; the manual Feed Lab capture and the position-scoped
+# capture continue to exist alongside it.
+# ------------------------------------------------------------------
+CHAIN_UNDERLYINGS = ("NIFTY", "SENSEX")
+CHAIN_STRIKES = 5          # ATM +/- 5 strikes -> 11 strikes x CE & PE
+_CHAIN_POLL_S = 30.0       # supervisor poll interval
+_CHAIN_TAG_PREFIX = "chain"
 
 # A silence longer than this between consecutive captured rows means
 # the capture itself was not running (app closed/restarted or capture
@@ -557,6 +572,10 @@ class FeedCaptureService:
         self._underlying = None
         self._session = None
         self._last_error = None
+        # Rate-limits the repeated "chain session resolution failed"
+        # error while the supervisor retries every poll (e.g. a stale
+        # Kite token would otherwise log every 30s for hours).
+        self._resolve_fail_logged_at = None
         self._kite_ticker = None
         # Per-broker WS stats for the CAPTURE sockets (the app's own
         # feed socket is tracked by the adapters' samplers) - read by
@@ -790,6 +809,290 @@ class FeedCaptureService:
         return session
 
     # ------------------------------------------------------------------
+    # CHAIN session resolution (ATM +/- N strikes, both CE & PE, + FUT)
+    # ------------------------------------------------------------------
+
+    def _chain_session_file(self, underlying, day=None):
+        """Per-underlying lock file - the single session.json can only
+        hold ONE underlying, and NIFTY + SENSEX chain captures run
+        simultaneously."""
+        return os.path.join(_day_dir(day), f"session_{str(underlying).upper()}.json")
+
+    def _fut_ltp(self, underlying, day_dir, kite_fut_sym=None, ms_fut=None):
+        """Near-month future's last traded price, for anchoring the
+        ATM. Primary source: Kite REST quote. Fallback (no Kite token):
+        M.Stock's quote API, but ONLY when a fresh JWT already exists -
+        the supervisor must never trigger an OTP dialog."""
+        cfg = UNDERLYING_CONFIG[str(underlying).upper()]
+        exchange = cfg["exchange"]
+        try:
+            kite = KiteSingleton().get_kite()
+            ltp_resp = kite.ltp([f"{exchange}:{kite_fut_sym}"])
+            return float(list(ltp_resp.values())[0]["last_price"]), "KITE"
+        except Exception as kite_error:
+            logger.debug(f"Feed Lab: Kite fut LTP unavailable ({kite_error})")
+        if ms_fut and _mstock_jwt_fresh(fetch_from_json("access_token.json", "mstock_jwt_token") or ""):
+            try:
+                resp = requests.post(
+                    "https://api.mstock.trade/openapi/typeb/instruments/quote",
+                    headers={
+                        "X-Mirae-Version": "1",
+                        "X-PrivateKey": fetch_from_json("access_token.json", "mstock_api_key") or _mstock_api_key_fallback(),
+                        "Authorization": f"Bearer {self._mstock_jwt()}",
+                    },
+                    json={"mode": "OHLC", "exchangeTokens": {
+                        cfg["mstock_seg"]: [str(ms_fut["token"])]}},
+                    timeout=15,
+                )
+                resp.raise_for_status()
+                fetched = resp.json().get("data", {}).get("fetched", [])
+                for q in fetched:
+                    if q.get("ltp") is not None:
+                        return float(q["ltp"]), "MSTOCK"
+            except Exception as ms_error:
+                logger.debug(f"Feed Lab: M.Stock fut LTP unavailable ({ms_error})")
+        return None, None
+
+    def _resolve_chain_session(self, underlying):
+        """Resolve/refresh the chain session for one underlying: FUT +
+        every CE and PE at ATM +/- CHAIN_STRIKES, both brokers, common
+        weekly expiry. Strikes already captured today are UNIONED in so
+        an ATM drift never orphans a contract that was held earlier in
+        the session. Writes session_<UNDERLYING>.json."""
+        underlying = str(underlying).upper()
+        cfg = UNDERLYING_CONFIG[underlying]
+        exchange = cfg["exchange"]
+        step = cfg["step"]
+        day_dir = _day_dir()
+        today = date.today()
+
+        kite_csv = self._ensure_kite_instrument_csv(exchange, day_dir)
+        with open(kite_csv, newline="") as f:
+            kite_rows = list(csv.DictReader(f))
+
+        fut_rows = [
+            r for r in kite_rows
+            if str(r.get("instrument_type", "")) == "FUT"
+            and str(r.get("name", "")).upper() == underlying
+            and _parse_expiry(r.get("expiry")) and _parse_expiry(r.get("expiry")) >= today
+        ]
+        if not fut_rows:
+            raise RuntimeError(f"No Kite {exchange} futures found for {underlying}")
+        fut = min(fut_rows, key=lambda r: _parse_expiry(r.get("expiry")))
+
+        # Previously locked strikes (same day) are unioned in - a held
+        # contract must not fall out of scope because the ATM moved.
+        old_strikes = set()
+        session_path = self._chain_session_file(underlying)
+        try:
+            with open(session_path) as f:
+                prev = json.load(f)
+            if prev.get("date") == today.isoformat() and prev.get("strikes"):
+                old_strikes = {int(s) for s in prev["strikes"]}
+        except (FileNotFoundError, json.JSONDecodeError, TypeError, ValueError):
+            pass
+
+        fut_ltp, anchor = self._fut_ltp(
+            underlying, day_dir,
+            kite_fut_sym=_kite_symbol_sym(fut),
+            ms_fut=None,
+        )
+        if fut_ltp is None:
+            raise RuntimeError("no fut LTP from either broker (Kite token missing/stale?)")
+        atm_strike = int(round(fut_ltp / step) * step)
+        new_strikes = {atm_strike + i * step for i in range(-CHAIN_STRIKES, CHAIN_STRIKES + 1)}
+        strikes = sorted(old_strikes | new_strikes)
+
+        # Expiry: the first weekly expiry both brokers share at the ATM.
+        kite_atm = [
+            r for r in kite_rows
+            if str(r.get("name", "")).upper() == underlying
+            and str(r.get("instrument_type", "")) in ("CE", "PE")
+            and int(float(r.get("strike", 0) or 0)) == atm_strike
+            and _parse_expiry(r.get("expiry")) and _parse_expiry(r.get("expiry")) >= today
+        ]
+        kite_expiries = {_parse_expiry(r.get("expiry")) for r in kite_atm}
+
+        mstock_master = self._ensure_mstock_master(underlying, day_dir)
+        with open(mstock_master) as f:
+            ms_rows = json.load(f)
+        ms_rows = ms_rows if isinstance(ms_rows, list) else ms_rows.get("data", [])
+        seg = cfg["mstock_seg"]
+
+        def ms_ce_rows(strike_s):
+            """MStock OPTIDX rows for one strike (CE side, for expiry
+            matching) - master stores strike as number or numeric
+            string, so normalise both sides to float."""
+            out = []
+            for r in ms_rows:
+                if str(r.get("instrumenttype", "")).upper() != "OPTIDX":
+                    continue
+                if str(r.get("symbol", "")).upper() != underlying:
+                    continue
+                if str(r.get("exch_seg", "")).upper() != seg:
+                    continue
+                try:
+                    if abs(float(r.get("strike", 0) or 0) - float(strike_s)) > 1e-6:
+                        continue
+                except (TypeError, ValueError):
+                    continue
+                if not (_mstock_expiry_date(r) and _mstock_expiry_date(r) >= today):
+                    continue
+                out.append(r)
+            return out
+
+        ms_ce_atm = [r for r in ms_ce_rows(atm_strike)
+                     if str(r.get("name", "")).upper().endswith("CE")]
+        mstock_expiries = {_mstock_expiry_date(r) for r in ms_ce_atm}
+        common_expiries = sorted(kite_expiries & mstock_expiries)
+        if not common_expiries:
+            raise RuntimeError(
+                f"Kite and M.Stock share no ATM {atm_strike} expiry for {underlying}"
+            )
+        chosen_expiry = common_expiries[0]
+
+        session = {
+            "date": today.isoformat(),
+            "underlying": underlying,
+            "tag": f"{_CHAIN_TAG_PREFIX}_{underlying}",
+            "atm_strike": atm_strike,
+            "strikes": [str(s) for s in strikes],
+            "expiry": chosen_expiry.isoformat(),
+            "fut_symbol": _kite_symbol_sym(fut),
+            "fut_ltp_at_lock": fut_ltp,
+            "atm_anchor": anchor,
+            "locked_at": datetime.now().isoformat(),
+            "KITE": {},
+            "MSTOCK": {},
+        }
+
+        # Kite side: FUT + every CE/PE at each strike for the chosen expiry.
+        kite_strikes = {float(s) for s in strikes}
+        for r in kite_rows:
+            if str(r.get("name", "")).upper() != underlying:
+                continue
+            typ = str(r.get("instrument_type", ""))
+            if typ not in ("CE", "PE", "FUT"):
+                continue
+            try:
+                if typ == "FUT":
+                    if r is not fut:
+                        continue
+                else:
+                    if float(r.get("strike", 0) or 0) not in kite_strikes:
+                        continue
+                    if _parse_expiry(r.get("expiry")) != chosen_expiry:
+                        continue
+            except (TypeError, ValueError):
+                continue
+            tok = str(r["instrument_token"])
+            sym = _kite_symbol_sym(r)
+            session["KITE"][tok] = {"symbol": sym, "token": tok}
+
+        # MStock side: same slice from its own master (name = exchange
+        # format symbol; token = MStock token).
+        ms_futs = [
+            r for r in ms_rows
+            if str(r.get("instrumenttype", "")).upper() == "FUTIDX"
+            and str(r.get("symbol", "")).upper() == underlying
+            and str(r.get("exch_seg", "")).upper() == seg
+            and _mstock_expiry_date(r) and _mstock_expiry_date(r) >= today
+        ]
+        ms_fut = min(ms_futs, key=_mstock_expiry_date) if ms_futs else None
+        if ms_fut:
+            session["MSTOCK"][str(ms_fut["token"])] = {
+                "symbol": str(ms_fut["name"]), "token": str(ms_fut["token"])}
+        ms_strikes = {float(s) for s in strikes}
+        for r in ms_rows:
+            if str(r.get("instrumenttype", "")).upper() != "OPTIDX":
+                continue
+            if str(r.get("symbol", "")).upper() != underlying:
+                continue
+            if str(r.get("exch_seg", "")).upper() != seg:
+                continue
+            try:
+                if float(r.get("strike", 0) or 0) not in ms_strikes:
+                    continue
+            except (TypeError, ValueError):
+                continue
+            if _mstock_expiry_date(r) != chosen_expiry:
+                continue
+            tok = str(r.get("token", ""))
+            sym = str(r.get("name", ""))
+            if tok and sym:
+                session["MSTOCK"][tok] = {"symbol": sym, "token": tok}
+
+        if not session["KITE"] and not session["MSTOCK"]:
+            raise RuntimeError(f"chain session for {underlying} resolved to zero instruments")
+
+        with open(session_path, "w") as f:
+            json.dump(session, f, indent=2)
+        logger.info(
+            f"Feed Lab: chain session locked - {underlying} ATM {atm_strike} "
+            f"{chosen_expiry} ({len(strikes)} strikes x CE+PE + FUT; "
+            f"kite={len(session['KITE'])}, mstock={len(session['MSTOCK'])}; "
+            f"anchor {anchor} fut LTP {fut_ltp})"
+        )
+        return session
+
+    def start_chain(self, underlying):
+        """Start the market-hours chain capture for one underlying
+        (FUT + ATM +/- CHAIN_STRIKES CE/PE on BOTH brokers). Safe to
+        call repeatedly - the supervisor does. Requires a valid Kite
+        token today (ATM anchoring) and a fresh M.Stock JWT for the
+        MStock socket; a missing MStock JWT degrades to Kite-only with
+        a note, never an OTP prompt from the supervisor."""
+        with self._lock:
+            if self._running:
+                return True, None
+            underlying = str(underlying or "").upper()
+            if underlying not in UNDERLYING_CONFIG:
+                return False, f"Unsupported underlying: {underlying}"
+            try:
+                session = self._resolve_chain_session(underlying)
+                self._resolve_fail_logged_at = None
+            except Exception as e:
+                # The supervisor retries every _CHAIN_POLL_S, so the
+                # same failure (stale Kite token) would log 2+ lines
+                # per poll for hours. Log the first occurrence, then
+                # repeat at most every 5 minutes.
+                now = time.monotonic()
+                if (self._resolve_fail_logged_at is None
+                        or now - self._resolve_fail_logged_at >= 300):
+                    logger.error(f"Feed Lab: chain session resolution failed for {underlying}: {e}")
+                    self._resolve_fail_logged_at = now
+                return False, str(e)
+
+            self._stop_event.clear()
+            self._counts = {"KITE": 0, "MSTOCK": 0}
+            self._started_at = datetime.now().isoformat()
+            self._underlying = underlying
+            self._session = session
+            self._last_error = None
+
+            threads = []
+            if session["KITE"]:
+                threads.append(threading.Thread(
+                    target=self._kite_worker, args=(session,),
+                    daemon=True, name=f"feedlab-kite-chain-{underlying}"))
+            if session["MSTOCK"]:
+                threads.append(threading.Thread(
+                    target=self._mstock_worker, args=(session,),
+                    daemon=True, name=f"feedlab-mstock-chain-{underlying}"))
+            for i, t in enumerate(threads):
+                t.start()
+                if i == 0:
+                    time.sleep(0.5)
+            self._threads = threads
+            self._running = True
+            logger.info(
+                f"Feed Lab: CHAIN capture STARTED for {underlying} "
+                f"(ATM {session['atm_strike']} {session['expiry']}; "
+                f"kite={len(session['KITE'])}, mstock={len(session['MSTOCK'])})"
+            )
+            return True, None
+
+    # ------------------------------------------------------------------
     # MStock auth
     # ------------------------------------------------------------------
 
@@ -826,7 +1129,9 @@ class FeedCaptureService:
 
     def _kite_worker(self, session):
         broker = "KITE"
-        path = os.path.join(_day_dir(date.fromisoformat(session["date"])), f"{broker.lower()}_{session['underlying']}.csv")
+        path = os.path.join(
+            _day_dir(date.fromisoformat(session["date"])),
+            f"{broker.lower()}_{session.get('tag') or session['underlying']}.csv")
         buffer = []
         state = {"last_flush": time.time()}
         tokens = [int(v["token"]) for v in session[broker].values() if v.get("token")]
@@ -883,7 +1188,9 @@ class FeedCaptureService:
     def _mstock_worker(self, session):
         broker = "MSTOCK"
         day_dir = _day_dir(date.fromisoformat(session["date"]))
-        path = os.path.join(day_dir, f"{broker.lower()}_{session['underlying']}.csv")
+        path = os.path.join(
+            day_dir,
+            f"{broker.lower()}_{session.get('tag') or session['underlying']}.csv")
         buffer = []
         state = {"last_flush": time.time()}
         tokens_by_extype = {}
@@ -985,11 +1292,16 @@ class FeedCaptureService:
         with self._lock:
             if self._running:
                 return False, "Capture is already running"
-            broker = str(fetch_from_json("appconfig.json", "BROKER") or "").upper()
-            if broker != "KITE":
+            # Broker-independent since the position-tick capture proved
+            # both sockets coexist with any login: the Kite worker needs
+            # a valid Kite token for the day (its own websocket), and the
+            # MStock worker opens a SEPARATE websocket that never touches
+            # the trading feed - the old "must run on broker KITE" gate
+            # blocked MStock users for no technical reason.
+            if not _kite_token():
                 return False, (
-                    "Feed Lab needs the app running on broker KITE (PAPER or LIVE mode both fine) "
-                    "- it must reuse the app's Kite session and must not fight an M.Stock socket."
+                    "Feed Lab needs a Kite login for today (no valid Kite "
+                    "token) - generate the Kite session, then retry."
                 )
             underlying = str(underlying or "SENSEX").upper()
             if underlying not in UNDERLYING_CONFIG:
@@ -999,6 +1311,13 @@ class FeedCaptureService:
             except Exception as e:
                 logger.error(f"Feed Lab: session resolution failed: {e}")
                 return False, str(e)
+
+            # One capture at a time: the manual capture supersedes a
+            # running position capture (same instruments, ATM-scoped) -
+            # the supervisor restarts the position capture after this
+            # stops.
+            if _position_capture_service._running:
+                _position_capture_service.stop()
 
             self._stop_event.clear()
             self._counts = {"KITE": 0, "MSTOCK": 0}
@@ -1030,6 +1349,148 @@ class FeedCaptureService:
         logger.info("Feed Lab: capture STOPPED")
         return True, None
 
+    def start_position_capture(self, underlying, symbols):
+        """Capture BOTH brokers' ticks for explicit symbols (the held
+        positions) - no ATM resolution, no active-broker gate.
+
+        Unlike start() this works under any broker login: the Kite
+        worker needs only a valid Kite access token for the day (the
+        report marks KITE 'no session' when it is absent); the MStock
+        worker needs a fresh JWT - both are independent sockets that
+        never touch the trading feed. Ticks stream into the day dir as
+        kite_position.csv / mstock_position.csv (same CSV_HEADER as the
+        manual Feed Lab capture), so the EOD report counts per-position
+        ticks by time-window without any live bookkeeping.
+
+        Returns (ok, error_or_skip_note)."""
+        with self._lock:
+            if self._running:
+                return True, None  # already capturing - caller re-checks the symbol set
+            underlying = str(underlying or "NIFTY").upper()
+            try:
+                session = {
+                    "date": date.today().isoformat(),
+                    "underlying": underlying,
+                    "tag": "position",
+                    "KITE": {},
+                    "MSTOCK": {},
+                }
+                skip_note = None
+                exchange = UNDERLYING_CONFIG[underlying]["exchange"]
+                trader = _position_trader_ref
+
+                # MStock tokens: the trader's weekly-contract window maps
+                # name -> MStock token, but ONLY under an MStock login -
+                # under Kite the same window carries KITE tokens (it is
+                # built from the ACTIVE broker's instrument meta). So:
+                # use it under MStock, and resolve anything left over
+                # from the MStock instrument master (name = exchange-
+                # format symbol, token = MStock token) - that file is
+                # broker-independent.
+                active_broker_name = type(
+                    getattr(trader, "_broker", None)
+                ).__name__.lower()
+                contracts = getattr(
+                    trader, "_five_weekly_option_contracts", {}) or {}
+                unresolved = set(symbols)
+                if "mstock" in active_broker_name:
+                    for sym in list(unresolved):
+                        tok = None
+                        for tok_, c in contracts.items():
+                            if str(c.get("name", "")).upper() == sym:
+                                tok = str(tok_)
+                                break
+                        if tok:
+                            session["MSTOCK"][tok] = {"symbol": sym, "token": tok}
+                            unresolved.discard(sym)
+                if unresolved:
+                    try:
+                        master_path = resolve_data_path(
+                            "mstock_instrument_list_reduced.json")
+                        with open(master_path) as f:
+                            master = json.load(f)
+                        ms_rows = (master.get("instruments")
+                                   if isinstance(master, dict) else master)
+                        for sym in list(unresolved):
+                            for row in ms_rows or []:
+                                if str(row.get("name", "")).upper() == sym:
+                                    tok = str(row.get("token", ""))
+                                    if tok:
+                                        session["MSTOCK"][tok] = {
+                                            "symbol": sym, "token": tok}
+                                    break
+                            unresolved.discard(sym)
+                    except Exception as master_error:
+                        logger.warning(
+                            f"Feed Lab: MStock master token resolution "
+                            f"failed: {master_error}")
+
+                # Kite tokens: resolved from the instrument dump by
+                # tradingsymbol. Needs a valid Kite token today.
+                try:
+                    if not _kite_token():
+                        raise RuntimeError("no Kite access token for today")
+                    kite_csv = self._ensure_kite_instrument_csv(exchange, _day_dir())
+                    with open(kite_csv, newline="") as f:
+                        for row in csv.DictReader(f):
+                            ksym = str(row.get("tradingsymbol", "")).upper()
+                            if ksym in symbols:
+                                ktok = str(row.get("instrument_token", ""))
+                                if ktok:
+                                    session["KITE"][ktok] = {"symbol": ksym, "token": ktok}
+                except Exception as kite_error:
+                    skip_note = f"KITE ticks not captured: {kite_error}"
+                    logger.warning(f"Feed Lab: {skip_note}")
+
+                if not session["MSTOCK"] and not session["KITE"]:
+                    return False, "no held symbol could be resolved on either broker"
+
+                self._stop_event.clear()
+                self._counts = {"KITE": 0, "MSTOCK": 0}
+                self._started_at = datetime.now().isoformat()
+                self._underlying = underlying
+                self._session = session
+                self._last_error = None
+
+                threads = []
+                if session["KITE"]:
+                    threads.append(threading.Thread(
+                        target=self._kite_worker, args=(session,),
+                        daemon=True, name="feedlab-kite-position"))
+                if session["MSTOCK"]:
+                    threads.append(threading.Thread(
+                        target=self._mstock_worker, args=(session,),
+                        daemon=True, name="feedlab-mstock-position"))
+                for i, t in enumerate(threads):
+                    t.start()
+                    if i == 0:
+                        time.sleep(0.5)
+                self._threads = threads
+                self._running = True
+                logger.info(
+                    f"Feed Lab: POSITION capture STARTED for {underlying} "
+                    f"({len(symbols)} symbol(s); "
+                    f"kite={len(session['KITE'])}, mstock={len(session['MSTOCK'])})"
+                )
+                return True, skip_note
+            except Exception as e:
+                self._last_error = str(e)
+                logger.error(f"Feed Lab: position capture start failed: {e}")
+                return False, str(e)
+
+    def running_symbols(self):
+        """Set of symbols this capture is currently streaming (empty when
+        stopped) - lets the supervisor detect a held-symbol change."""
+        session = self._session
+        if not self._running or not session:
+            return set()
+        syms = set()
+        for broker in ("KITE", "MSTOCK"):
+            for v in (session.get(broker) or {}).values():
+                if v.get("symbol"):
+                    syms.add(str(v["symbol"]).upper())
+        return syms
+
     def status(self):
         with self._lock:
             running = self._running
@@ -1038,6 +1499,11 @@ class FeedCaptureService:
             session = json.loads(json.dumps(self._session)) if self._session else None
             last_error = self._last_error
         broker = str(fetch_from_json("appconfig.json", "BROKER") or "").upper()
+        try:
+            chain = chain_status()
+        except Exception as chain_error:
+            logger.warning(f"Feed Lab: chain status failed: {chain_error}")
+            chain = {}
         return {
             "enabled": feed_lab_enabled(),
             "running": running,
@@ -1046,6 +1512,7 @@ class FeedCaptureService:
             "started_at": started_at,
             "counts": counts,
             "net": net_status(),
+            "chain": chain,
             "session": {
                 "atm_strike": session.get("atm_strike"),
                 "expiry": session.get("expiry"),
@@ -1061,14 +1528,20 @@ class FeedCaptureService:
 
     def report(self):
         day_dir = _day_dir()
-        kite_csv = None
-        mstock_csv = None
-        for f in sorted(os.listdir(day_dir)):
-            if f.startswith("kite_") and f.endswith(".csv") and not f.startswith("kite_instruments"):
-                kite_csv = os.path.join(day_dir, f)
-            if f.startswith("mstock_") and f.endswith(".csv") and not f.startswith("mstock_master"):
-                mstock_csv = os.path.join(day_dir, f)
-        if not kite_csv or not mstock_csv:
+        # Merge EVERY tick CSV captured today (manual, chain, position)
+        # per broker - the analysis is per-symbol, so files from
+        # different sessions simply add coverage.
+        def _tick_csvs(prefix, exclude):
+            return [
+                os.path.join(day_dir, f)
+                for f in sorted(os.listdir(day_dir))
+                if f.startswith(prefix) and f.endswith(".csv")
+                and not f.startswith(exclude)
+            ]
+
+        kite_csvs = _tick_csvs("kite_", "kite_instruments")
+        mstock_csvs = _tick_csvs("mstock_", "mstock_master")
+        if not kite_csvs or not mstock_csvs:
             return {"ok": False, "error": "No captured data for today yet - press Start and let it run during market hours."}
 
         session = self._load_locked_session() or {}
@@ -1103,8 +1576,10 @@ class FeedCaptureService:
         per_broker = {}
         # Capture-run spans per broker, crossed over so a hole on one
         # broker can be checked against "did the other keep flowing".
-        kite_df = _filter_market_hours(pd.read_csv(kite_csv), "recv_ns", window)
-        mstock_df = _filter_market_hours(pd.read_csv(mstock_csv), "recv_ns", window)
+        kite_df = _filter_market_hours(pd.concat(
+            [pd.read_csv(p) for p in kite_csvs], ignore_index=True), "recv_ns", window)
+        mstock_df = _filter_market_hours(pd.concat(
+            [pd.read_csv(p) for p in mstock_csvs], ignore_index=True), "recv_ns", window)
         runs_by_broker = {
             "KITE": _ns_runs(kite_df["recv_ns"]) if not kite_df.empty else [],
             "MSTOCK": _ns_runs(mstock_df["recv_ns"]) if not mstock_df.empty else [],
@@ -1126,6 +1601,7 @@ class FeedCaptureService:
                 "underlying": underlying,
                 "atm_strike": session.get("atm_strike"),
                 "expiry": session.get("expiry"),
+                "chain": chain_status(),
                 "market_window": window_label,
                 "app_restarts": restarts,
                 "internet_down_min": internet_down_min,
@@ -1199,6 +1675,7 @@ class FeedCaptureService:
             "underlying": underlying,
             "atm_strike": session.get("atm_strike"),
             "expiry": session.get("expiry"),
+            "chain": chain_status(),
             "market_window": window_label,
             "app_restarts": restarts,
             "internet_down_min": internet_down_min,
@@ -1587,3 +2064,289 @@ def feed_lab_enabled():
 
 
 feed_capture_service = FeedCaptureService()
+
+
+# ------------------------------------------------------------------
+# POSITION-SCOPED DUAL-BROKER TICK CAPTURE
+#
+# While the user HOLDS a position, capture ticks for the held symbols
+# from BOTH brokers (MStock + Kite) regardless of which one the app is
+# logged into - the Kite capture socket needs only a valid Kite token
+# for the day, and the MStock capture socket its own JWT; neither
+# touches the trading feed. The EOD technical report then counts, per
+# held position, how many ticks arrived from each broker during the
+# holding window (see session_report._position_tick_section).
+# ------------------------------------------------------------------
+
+# Symbol formats seen in position legs that never equal the chain's
+# exchange-format names ("NIFTY26O0622800CE"):
+#   broker position rows:  "NIFTY-06Oct2026-22800-CE"
+# Cross-broker token resolution keys off the exchange format, so
+# normalize every leg symbol before use.
+_POSITION_SYMBOL_RE = re.compile(
+    r"^(?P<u>[A-Z]+)-?(?P<dd>\d{1,2})(?P<mon>[A-Z]{3})(?P<yyyy>\d{4})"
+    r"-?(?P<strike>\d+)-?(?P<typ>CE|PE)$"
+)
+_MONTH_CODES = {"JAN": "1", "FEB": "2", "MAR": "3", "APR": "4",
+                "MAY": "5", "JUN": "6", "JUL": "7", "AUG": "8",
+                "SEP": "9", "OCT": "O", "NOV": "N", "DEC": "D"}
+
+
+def _normalize_position_symbol(symbol):
+    """'NIFTY-06Oct2026-22800-CE' / 'NIFTY06OCT202622800CE' ->
+    'NIFTY26O0622800CE' (exchange weekly format). Unknown formats
+    return uppercased input unchanged."""
+    sym = str(symbol or "").upper().strip()
+    if not sym:
+        return sym
+    m = _POSITION_SYMBOL_RE.match(sym)
+    if not m:
+        return sym
+    mc = _MONTH_CODES.get(m.group("mon"))
+    if not mc:
+        return sym
+    return (f"{m.group('u')}{m.group('yyyy')[-2:]}{mc}"
+            f"{m.group('dd').zfill(2)}{m.group('strike')}{m.group('typ')}")
+
+
+_position_trader_ref = None
+_position_capture_service = FeedCaptureService()
+_pos_supervisor_stop = threading.Event()
+_POSITION_GRACE_S = 120.0      # keep capturing 2 min after the last close
+_POSITION_POLL_S = 3.0
+
+
+def register_trader(trader):
+    """Give the position-capture supervisor a read handle on open
+    positions (Trader_Singleton; call once at startup)."""
+    global _position_trader_ref
+    _position_trader_ref = trader
+
+
+def _held_symbols():
+    """Exchange-format symbols of every currently-open position leg."""
+    trader = _position_trader_ref
+    if trader is None:
+        return set()
+    position_map = getattr(trader, "_position_data", {}) or {}
+    legs = (position_map.values() if hasattr(position_map, "values")
+            else position_map)
+    out = set()
+    for leg in list(legs):
+        if not isinstance(leg, dict):
+            continue
+        sym = _normalize_position_symbol(
+            leg.get("tradingsymbol") or leg.get("symbol") or ""
+        )
+        if sym:
+            out.add(sym)
+    return out
+
+
+def _position_capture_supervisor():
+    """Start the dual-broker capture when a position opens, restart it
+    when the held-symbol set changes, and stop it after a grace period
+    once the last position closes (quick re-entries must not lose the
+    first ticks)."""
+    grace_until = None
+    while not _pos_supervisor_stop.is_set():
+        try:
+            symbols = _held_symbols()
+            # A manual Feed Lab capture or an always-on chain capture
+            # may already cover some held symbols - only capture what
+            # NEITHER covers (it is user-started / automatic ATM-scoped;
+            # never leave a held symbol uncaptured just because it
+            # trades on a different underlying than the manual session
+            # - 2026-10-06 13:12 a NIFTY position went uncounted while
+            # a SENSEX manual capture ran).
+            covered = feed_capture_service.running_symbols()
+            for chain_svc in _chain_services.values():
+                covered |= chain_svc.running_symbols()
+            symbols = symbols - covered
+            if symbols:
+                grace_until = None
+                if _position_capture_service.running_symbols() != symbols:
+                    if _position_capture_service._running:
+                        _position_capture_service.stop()
+                    underlying = str(
+                        fetch_from_json("appconfig.json", "UNDERLYING") or "NIFTY"
+                    ).upper()
+                    ok, note = _position_capture_service.start_position_capture(
+                        underlying, symbols
+                    )
+                    if note:
+                        logger.info(f"Feed Lab: position capture note - {note}")
+            elif _position_capture_service._running:
+                if grace_until is None:
+                    grace_until = time.time() + _POSITION_GRACE_S
+                elif time.time() > grace_until:
+                    _position_capture_service.stop()
+                    grace_until = None
+        except Exception as sup_error:
+            logger.warning(f"Feed Lab: position-capture supervisor: {sup_error}")
+        _pos_supervisor_stop.wait(_POSITION_POLL_S)
+
+
+def start_position_capture_monitor():
+    _pos_supervisor_stop.clear()
+    threading.Thread(
+        target=_position_capture_supervisor, daemon=True,
+        name="feedlab-position-capture").start()
+    logger.info("Feed Lab: position tick-capture monitor started")
+
+
+# ------------------------------------------------------------------
+# CHAIN CAPTURE SUPERVISOR (always-on market-hours capture)
+#
+# Keeps one FeedCaptureService per underlying in CHAIN_UNDERLYINGS
+# running for the whole market window of that underlying. Each service
+# streams FUT + ATM +/- CHAIN_STRIKES CE/PE from BOTH brokers. On app
+# restart the next poll restarts the captures; when the ATM drifts
+# beyond the captured strikes the session is re-resolved with the
+# strikes UNIONED (an already-held contract never falls out of scope).
+# The manual Feed Lab capture takes precedence over the same
+# underlying's chain capture (no duplicate symbol rows for the
+# agreement analysis) - the other underlying keeps streaming.
+# ------------------------------------------------------------------
+
+_chain_services = {}
+_chain_supervisor_stop = threading.Event()
+# Underlying -> last monotonic time the "chain capture note" warning
+# was logged (rate-limited by the supervisor).
+_chain_note_logged = {}
+_drift_note_logged = {}
+
+
+def _chain_service(underlying):
+    svc = _chain_services.get(underlying)
+    if svc is None:
+        svc = FeedCaptureService()
+        _chain_services[underlying] = svc
+    return svc
+
+
+def _in_market_hours(underlying):
+    start, end = _market_window(underlying)
+    now = datetime.now().time()
+    return start <= (now.hour, now.minute) <= end
+
+
+def _chain_atm_drifted(svc, underlying):
+    """True when the current ATM's +/- CHAIN_STRIKES window is no
+    longer fully inside the captured strike span (or the chosen expiry
+    has rolled over) - time to re-resolve."""
+    session = svc._session
+    if not session:
+        return False
+    strikes = [int(s) for s in session.get("strikes", [])]
+    if not strikes:
+        return True
+    # Expiry roll: yesterday's lock must not survive into a new expiry.
+    try:
+        if date.fromisoformat(str(session.get("expiry"))) < date.today():
+            return True
+    except (TypeError, ValueError):
+        pass
+    cfg = UNDERLYING_CONFIG[underlying]
+    step = cfg["step"]
+    fut_sym = session.get("fut_symbol")
+    if not fut_sym:
+        return False
+    fut_ltp, _ = svc._fut_ltp(underlying, _day_dir(), kite_fut_sym=fut_sym)
+    if fut_ltp is None:
+        # Unreachable anchor (Kite token lost mid-day) is logged once
+        # per underlying per hour, then silently retried.
+        last = _drift_note_logged.get(underlying, 0)
+        if time.time() - last > 3600:
+            _drift_note_logged[underlying] = time.time()
+            logger.warning(f"Feed Lab: chain drift check for {underlying} skipped - no fut LTP")
+        return False
+    new_atm = int(round(fut_ltp / step) * step)
+    span_lo, span_hi = min(strikes), max(strikes)
+    # Re-resolve the moment the ATM's own +/- CHAIN_STRIKES window
+    # pokes out of the captured span (union policy keeps widening it).
+    return (new_atm - CHAIN_STRIKES * step < span_lo
+            or new_atm + CHAIN_STRIKES * step > span_hi)
+
+
+def _chain_capture_supervisor():
+    while not _chain_supervisor_stop.is_set():
+        try:
+            for underlying in CHAIN_UNDERLYINGS:
+                if not _in_market_hours(underlying):
+                    svc = _chain_services.get(underlying)
+                    if svc is not None and svc._running:
+                        svc.stop()
+                        logger.info(f"Feed Lab: CHAIN capture for {underlying} stopped (outside market window)")
+                    continue
+                svc = _chain_service(underlying)
+                manual_u = str(
+                    (feed_capture_service._session or {}).get("underlying") or ""
+                ).upper() if feed_capture_service._running else None
+                if manual_u == underlying:
+                    # Manual capture owns this underlying's slice today -
+                    # pause the chain capture to avoid duplicate rows.
+                    if svc._running:
+                        svc.stop()
+                        logger.info(
+                            f"Feed Lab: CHAIN capture for {underlying} paused "
+                            f"(manual capture running for {underlying})")
+                    continue
+                if svc._running:
+                    if _chain_atm_drifted(svc, underlying):
+                        logger.info(f"Feed Lab: chain re-resolving {underlying} (ATM drift/expiry roll)")
+                        svc.stop()
+                        ok, note = svc.start_chain(underlying)
+                        if note:
+                            logger.warning(f"Feed Lab: chain re-resolve note for {underlying}: {note}")
+                    continue
+                ok, note = svc.start_chain(underlying)
+                if ok:
+                    _chain_note_logged.pop(underlying, None)
+                elif note:
+                    # Pairs with the rate-limited error inside
+                    # start_chain - repeat the note at most every 5
+                    # minutes instead of every poll.
+                    now = time.monotonic()
+                    if now - _chain_note_logged.get(underlying, 0.0) >= 300:
+                        logger.warning(f"Feed Lab: chain capture note for {underlying}: {note}")
+                        _chain_note_logged[underlying] = now
+        except Exception as chain_error:
+            logger.warning(f"Feed Lab: chain-capture supervisor: {chain_error}")
+        _chain_supervisor_stop.wait(_CHAIN_POLL_S)
+
+
+def start_chain_capture_monitor():
+    _chain_supervisor_stop.clear()
+    threading.Thread(
+        target=_chain_capture_supervisor, daemon=True,
+        name="feedlab-chain-capture").start()
+    logger.info(
+        f"Feed Lab: chain tick-capture monitor started "
+        f"({', '.join(CHAIN_UNDERLYINGS)}; FUT + ATM +/- {CHAIN_STRIKES} CE/PE, both brokers)")
+
+
+def chain_status():
+    """Status payload for the audit tab: one entry per chain underlying."""
+    out = {}
+    for underlying in CHAIN_UNDERLYINGS:
+        svc = _chain_services.get(underlying)
+        entry = {"running": False, "counts": {"KITE": 0, "MSTOCK": 0}}
+        if svc is not None:
+            session = svc._session if svc._running else None
+            entry.update({
+                "running": bool(svc._running),
+                "started_at": svc._started_at,
+                "counts": dict(svc._counts),
+                "last_error": svc._last_error,
+                "atm_strike": (session or {}).get("atm_strike"),
+                "strikes": (session or {}).get("strikes"),
+                "expiry": (session or {}).get("expiry"),
+                "instruments": {
+                    b: {v["symbol"] for v in (session or {}).get(b, {}).values()}
+                    for b in ("KITE", "MSTOCK")
+                } if session else None,
+            })
+        out[underlying] = entry
+    return out
+

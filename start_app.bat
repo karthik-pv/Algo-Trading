@@ -1,6 +1,6 @@
 @echo off
 cd /d "C:\Users\phvra\Desktop\Algo-Trading - 1.8"
-title Algo Trading Server
+title AlgoOptionScalper Server
 
 REM Single-window launcher:
 REM   - this window IS the server (loguru logs print here)

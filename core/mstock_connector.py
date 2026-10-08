@@ -1,7 +1,9 @@
 import os
 import rel
 import json
+import base64
 import asyncio
+import contextlib
 import logging
 import socket
 import subprocess
@@ -14,7 +16,7 @@ import datetime
 from dotenv import load_dotenv
 from loguru import logger
 
-from core.utils import fetch_from_json , write_to_json , get_exchange_for_underlying
+from core.utils import fetch_from_json , write_to_json , get_exchange_for_underlying , is_market_open
 from adapter.mstock_utils import parse_quote_message
 from core import broker_stats
 
@@ -38,7 +40,7 @@ def _prompt_otp():
         "text returned of (display dialog "
         '"M.Stock login: enter the OTP you received" '
         'default answer "" with hidden answer '
-        'with title "Algo Trading - M.Stock OTP" '
+        'with title "AlgoOptionScalper - M.Stock OTP" '
         'buttons {"Cancel", "OK"} default button "OK")'
     )
     out = subprocess.run(
@@ -116,26 +118,67 @@ class MStockSingleton:
 
     def login(self):
         logger.info("Logging in to M.Stock...")
-        conn = http.client.HTTPSConnection("api.mstock.trade")
-        headers = {
-            "X-Mirae-Version": "1",
-            "Content-Type": "application/json",
-        }
-        json_data = {
-            "clientcode": MSTOCK_CLIENT_CODE,
-            "password": MSTOCK_CLIENT_PASSWORD,
-            "totp": "",
-            "state": "",
-        }
-        conn.request(
-            "POST",
-            "/openapi/typeb/connect/login",
-            json.dumps(json_data),
-            headers,
-        )
-        response = json.loads(conn.getresponse().read().decode("utf-8"))
-        #logger.debug("Login response: {response}", response=response)  # prints jwtToken/refreshToken/feedToken
-        return response["data"]["refreshToken"]
+        # The login endpoint answers 502/503 with an HTML error page
+        # during broker outages (2026-10-07 07:46 pre-market: the Dock
+        # app died on JSONDecodeError). Retry transient failures and
+        # never let a non-JSON body crash the app.
+        last_error = None
+        for attempt in range(1, 5):
+            conn = http.client.HTTPSConnection("api.mstock.trade", timeout=15)
+            headers = {
+                "X-Mirae-Version": "1",
+                "Content-Type": "application/json",
+            }
+            json_data = {
+                "clientcode": MSTOCK_CLIENT_CODE,
+                "password": MSTOCK_CLIENT_PASSWORD,
+                "totp": "",
+                "state": "",
+            }
+            try:
+                conn.request(
+                    "POST",
+                    "/openapi/typeb/connect/login",
+                    json.dumps(json_data),
+                    headers,
+                )
+                resp = conn.getresponse()
+                body = resp.read().decode("utf-8", errors="replace")
+                try:
+                    response = json.loads(body)
+                except json.JSONDecodeError:
+                    last_error = RuntimeError(
+                        f"M.Stock login API returned HTTP {resp.status} "
+                        f"(non-JSON body) - broker may be down"
+                    )
+                    logger.warning(f"{last_error} (attempt {attempt}/4)")
+                    if attempt < 4:
+                        time.sleep(10)
+                    continue
+                data = response.get("data") if isinstance(response, dict) else None
+                if not data or not data.get("refreshToken"):
+                    last_error = RuntimeError(
+                        f"M.Stock login rejected: "
+                        f"{response.get('message') or response.get('error') or response}"
+                    )
+                    logger.warning(f"{last_error} (attempt {attempt}/4)")
+                    if attempt < 4:
+                        time.sleep(10)
+                    continue
+                return data["refreshToken"]
+            except (OSError, socket.timeout) as net_error:
+                last_error = RuntimeError(
+                    f"M.Stock login unreachable: {net_error} (attempt {attempt}/4)"
+                )
+                logger.warning(f"{last_error}")
+                if attempt < 4:
+                    time.sleep(10)
+            finally:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+        raise last_error or RuntimeError("M.Stock login failed")
 
     def get_session_token(self, refresh_token):
         logger.info("Getting session token from M.Stock...")
@@ -157,9 +200,20 @@ class MStockSingleton:
             headers,
         )
         response = json.loads(conn.getresponse().read().decode("utf-8"))
-        #logger.debug("Session token response: {response}", response=response)
-        
-        access_token = response["data"]["jwtToken"]
+        logger.debug(f"Session token response: {response}")
+
+        data = response.get("data") if isinstance(response, dict) else None
+        if not data or not data.get("jwtToken"):
+            # Surface the broker's actual error instead of crashing on
+            # a None subscript - e.g. wrong/expired OTP, reused OTP, or
+            # too many attempts.
+            error = (
+                response.get("message") or response.get("error") or response
+                if isinstance(response, dict)
+                else response
+            )
+            raise RuntimeError(f"M.Stock OTP login rejected by API: {error}")
+        access_token = data["jwtToken"]
         #logger.debug(f"Access token: {access_token}")
         
 
@@ -216,6 +270,56 @@ class MStockSingleton:
                 server_hostname=WS_HOST,
             )
 
+    async def _feed_watchdog(self, ws, shutdown_event):
+        """
+        Force a reconnect when the quote feed goes silent too long.
+
+        `_handle_message` detects gaps only retroactively - it runs
+        when a packet ARRIVES. If the TCP connection dies silently
+        (half-open NAT, idle timeout, broker-side hang), `async for`
+        blocks forever and the grid freezes with no recovery. This
+        task polls the last-quote-packet age every 5s and closes the
+        socket after 45s of silence, which raises ConnectionClosed
+        into start_socket_connection's normal reconnect path (fresh
+        connect + login + re-subscribe).
+
+        Thresholds (measured 2026-10-06 09:39-09:48): MStock's feed
+        routinely pauses 10-21s between bursts while healthy, so the
+        threshold sits well above that and only fires on a genuinely
+        dead feed. Gated to market hours - outside market hours the
+        feed is legitimately silent.
+        """
+        stall_limit_s = 45.0
+        poll_s = 5.0
+        warned = False
+        while not shutdown_event.is_set():
+            await asyncio.sleep(poll_s)
+            if not self._ws_connected or not self._feed_last_packet_ts:
+                continue
+            gap = time.time() - self._feed_last_packet_ts
+            if gap <= stall_limit_s:
+                warned = False
+                continue
+            if not is_market_open():
+                continue
+            if not warned:
+                warned = True
+                logger.warning(
+                    f"MSTOCK FEED WATCHDOG | no quote packet for "
+                    f"{gap:.0f}s while market is open - forcing "
+                    f"socket reconnect"
+                )
+            try:
+                await ws.close()
+            except Exception as close_error:
+                logger.debug(
+                    f"MSTOCK FEED WATCHDOG | socket close already "
+                    f"failed: {close_error}"
+                )
+            # start_socket_connection re-creates the watchdog for the
+            # new socket; this task's job is done.
+            return
+
     async def start_socket_connection(self, shutdown_event, trader_instance):
         # logger.info("Starting M.Stock WebSocket connection...")
         """Starts the WebSocket connection and handles automatic reconnection."""
@@ -239,6 +343,12 @@ class MStockSingleton:
                     
                     await self._subscribe_to_instruments(trader_instance.get_relevant_instruments_to_track())
 
+                    # Fresh stall anchor for the watchdog: without this,
+                    # seconds-since-last-packet is measured from the
+                    # PREVIOUS session's last tick (or epoch 0) and the
+                    # watchdog would fire instantly after a reconnect.
+                    self._feed_last_packet_ts = time.time()
+
                     try:
                         logger.info("Bootstrapping M.Stock weekly option contracts in background thread...")
                         await asyncio.to_thread(trader_instance.setup_woc_subscriptions)
@@ -246,10 +356,29 @@ class MStockSingleton:
                         logger.exception(f"M.Stock options bootstrap failed after socket connect: {e}")
                     # logger.info("MSTOCK WS RECEIVE LOOP STARTED")
                     # logger.info("MSTOCK WS WAITING FOR NEXT MESSAGE")
-                    async for message in ws:
-                        # logger.info("MSTOCK WS MESSAGE RECEIVED1")
-                        await self._handle_message(message)
-                        # logger.info("MSTOCK WS MESSAGE RECEIVED2")
+                    # Active stall watchdog: `async for` below blocks
+                    # forever, so a half-open TCP connection (NAT/idle
+                    # drop) freezes the feed permanently - the passive
+                    # gap detector in _handle_message only runs when a
+                    # packet arrives. The watchdog force-closes the
+                    # socket after a prolonged market-hours silence,
+                    # raising ConnectionClosed into the loop and hitting
+                    # the normal reconnect path. Short upstream silences
+                    # (MStock routinely goes quiet 10-20s between
+                    # bursts) never reach the threshold, so this cannot
+                    # churn the connection.
+                    watchdog_task = asyncio.create_task(
+                        self._feed_watchdog(ws, shutdown_event)
+                    )
+                    try:
+                        async for message in ws:
+                            # logger.info("MSTOCK WS MESSAGE RECEIVED1")
+                            await self._handle_message(message)
+                            # logger.info("MSTOCK WS MESSAGE RECEIVED2")
+                    finally:
+                        watchdog_task.cancel()
+                        with contextlib.suppress(asyncio.CancelledError):
+                            await watchdog_task
             except websockets.exceptions.ConnectionClosed as e:
                 self._ws_connected = False
                 logger.warning(f"Connection closed: {e}. Reconnecting in 5s...")
@@ -652,10 +781,78 @@ class MStockSingleton:
         last_update_datetime = datetime.datetime.fromisoformat(last_updated_date)
         today_date = datetime.datetime.now().date()
         if not last_update_datetime.date() == today_date:
-            self.create_session()
-            logger.debug("MStock session created for production.")
+            try:
+                self.create_session()
+                logger.debug("MStock session created for production.")
+            except Exception as session_error:
+                # Broker login API down (e.g. 502 during a morning
+                # outage) or login rejected - the app must still come
+                # up from the Dock. Fall back to the stored JWT when it
+                # is still valid; otherwise start DEGRADED (UI up,
+                # trading down) and self-heal in the background: retry
+                # the login every 5 min - the OTP prompt appears only
+                # once the API is reachable again.
+                if self._stored_jwt_fresh():
+                    logger.error(
+                        f"M.Stock login failed ({session_error}) - "
+                        f"starting with the stored (still-valid) session "
+                        f"token."
+                    )
+                    self.set_access_token(
+                        fetch_from_json("access_token.json", "mstock_jwt_token")
+                    )
+                else:
+                    logger.critical(
+                        f"M.Stock login failed ({session_error}) and the "
+                        f"stored session token is expired - starting "
+                        f"DEGRADED with no broker session. Orders will "
+                        f"fail until the login retries succeed."
+                    )
+                    threading.Thread(
+                        target=self._login_retry_loop,
+                        args=(str(session_error),),
+                        daemon=True,
+                        name="mstock-login-retry",
+                    ).start()
         else:
             access_token = fetch_from_json("access_token.json", "mstock_jwt_token")
             #logger.debug(access_token)  # do not log the token
             logger.info("Fetched access token from JSON for production.")
             self.set_access_token(access_token)
+
+    def _stored_jwt_fresh(self, min_seconds_left: int = 300) -> bool:
+        """True when the stored mstock_jwt_token decodes to an expiry
+        comfortably in the future (same check feed_capture uses)."""
+        try:
+            jwt_token = fetch_from_json("access_token.json", "mstock_jwt_token")
+            payload_b64 = str(jwt_token).split(".")[1]
+            payload_b64 += "=" * ((8 - len(payload_b64) % 8) % 8)
+            payload = json.loads(base64.urlsafe_b64decode(payload_b64))
+            return int(payload.get("exp", 0)) - time.time() > min_seconds_left
+        except Exception as e:
+            logger.warning(f"Stored M.Stock JWT unusable: {e}")
+            return False
+
+    def _login_retry_loop(self, initial_error: str):
+        """Background self-heal for a degraded start: retry the login
+        every 5 minutes. login()'s own retries absorb transient 502s,
+        so the OTP dialog only pops once the API is actually back."""
+        attempt = 0
+        while True:
+            attempt += 1
+            time.sleep(300)
+            try:
+                logger.info(
+                    f"M.Stock degraded-start recovery: login retry "
+                    f"#{attempt} (initial error: {initial_error})"
+                )
+                self.create_session()
+                logger.info(
+                    "M.Stock session recovered after degraded start - "
+                    "trading paths are live again."
+                )
+                return
+            except Exception as retry_error:
+                logger.warning(
+                    f"M.Stock login retry #{attempt} failed: {retry_error}"
+                )

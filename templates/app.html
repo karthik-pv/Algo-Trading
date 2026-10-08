@@ -251,6 +251,10 @@
     .no-options { text-align: center; color: #888; margin: 0; padding: 6px; border: 1px dashed #555; border-radius: 8px; background-color: #333; }
     .flash { animation: price-flash 0.7s ease-out; }
     @keyframes price-flash { from { background-color: rgba(76, 175, 80, 0.5); } to { background-color: transparent; } }
+    .flash-up { animation: price-flash-up 0.7s ease-out; }
+    @keyframes price-flash-up { from { background-color: rgba(76, 175, 80, 0.55); } to { background-color: transparent; } }
+    .flash-down { animation: price-flash-down 0.7s ease-out; }
+    @keyframes price-flash-down { from { background-color: rgba(244, 67, 54, 0.55); } to { background-color: transparent; } }
     .lots-override-input {
         width: 60px; padding: 0.5rem; background-color: #1a1a1a;
         border: 1px solid #555; color: white; border-radius: 4px;
@@ -268,6 +272,11 @@
         border: 1px solid #555; color: #ffd75e; border-radius: 4px;
         font-size: 0.85rem; text-align: center; box-sizing: border-box;
     }
+    /* BK% box: clicks are shortcuts (+3 left / -3 right), so the native
+       number spinners are hidden to keep every click unambiguous. */
+    .bp-override-input::-webkit-outer-spin-button,
+    .bp-override-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+    .bp-override-input { -moz-appearance: textfield; appearance: textfield; }
 
     /* --- MEDIA QUERIES --- */
     @media (max-width: 1200px) {
@@ -637,8 +646,11 @@
     }
 
     #ordersCountLabel {
-        font-size: 0.78rem;
-        color: #aaa;
+        /* Inherits the header font exactly - must render identical to
+           the Trades-stats span beside it. */
+        font-size: inherit;
+        color: inherit;
+        font-weight: inherit;
     }
 
     #ordersRefreshBtn, #ordersDownloadBtn, #ordersUploadBtn {
@@ -750,6 +762,9 @@
 
     #ordersTable .pnl-pos { background: #92D050 !important; color: #000000; font-weight: 700; }
     #ordersTable .pnl-neg { background: #FF6666 !important; color: #000000; font-weight: 700; }
+    /* Strategy tag column (last): SS_BP#SL - kept right aligned. */
+    #ordersTable th:last-child,
+    #ordersTable td:last-child { text-align: right; white-space: nowrap; }
 </style>
 <style>
 /* ===== AUDIT TAB (Trade Execution Technical Report) ===== */
@@ -947,6 +962,7 @@
     }
     #auditTable thead tr.group-row th.audit-group-buy   { background: #1b3a1e; color: #a5d6a7; }
     #auditTable thead tr.group-row th.audit-group-sell  { background: #3e1414; color: #ef9a9a; }
+    #auditTable thead tr.group-row th.audit-group-peak  { background: #16304f; color: #a8c8f0; }
     #auditTable thead tr.group-row th.audit-group-retry { background: #3d2f10; color: #ffcc80; }
     #auditTable thead tr.group-row th.audit-group-trade,
     #auditTable thead tr.group-row th.audit-group-comment { color: #999; }
@@ -977,6 +993,27 @@
         color: #cfcfcf;
     }
     #auditTable tbody tr:nth-child(even) { background: #262626; }
+
+    /* Errors & Warnings grid: level coloring + readable messages. */
+    #errTable td { text-align: left; vertical-align: top; }
+    #errTable td.err-idx, #errTable td.err-time { color: #999; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    #errTable td.err-level { font-weight: 700; white-space: nowrap; }
+    #errTable td.err-what { font-weight: 600; color: #ccc; }
+    #errTable td.err-msg { word-break: break-word; color: #ddd; }
+    #errTable tr.err-row-ERROR td.err-level, #errTable tr.err-row-ERROR td.err-idx, #errTable tr.err-row-ERROR td.err-time { color: #ff9d9d; }
+    #errTable tr.err-row-WARNING td.err-level, #errTable tr.err-row-WARNING td.err-idx, #errTable tr.err-row-WARNING td.err-time { color: #ffcc80; }
+    #errTable tr.err-row-ERROR td.err-msg { color: #f3c1c1; }
+    /* Header row stays pinned while the body scrolls. */
+    #errTable thead th { position: sticky; top: 0; z-index: 2; }
+    /* Occurrence summary table above the grid - compact, no wrapping. */
+    #errSummaryTable td { text-align: left; white-space: nowrap; }
+    #errSummaryTable td.es-cnt { font-weight: 700; font-variant-numeric: tabular-nums; color: #ddd; }
+    #errSummaryTable td.es-share { font-variant-numeric: tabular-nums; color: #999; white-space: nowrap; }
+    #errSummaryTable .es-bar { display: inline-block; vertical-align: middle; background: #3d6a8f; height: 9px; border-radius: 3px; margin-right: 6px; }
+    #errSummaryTable tr.err-row-ERROR td.err-level { color: #ff9d9d; }
+    #errSummaryTable tr.err-row-WARNING td.err-level { color: #ffcc80; }
+    #errSummaryTable tr.err-row-ERROR td.es-what { color: #f3c1c1; }
+    #errSummaryTable tr.err-row-WARNING td.es-what { color: #ffdd9e; }
     #auditTable tbody tr:hover { background: #333; }
 
     /* Column-group tints keep the buy / sell / retry blocks scannable */
@@ -1552,12 +1589,12 @@
                     <span id="cashChangePct">--</span>                    
                 </label>
                 <label id="brokerageSummaryLabel" class="expiry-label charges-summary" style="display: none;" title="Brokerage charged across the trades shown (flat per executed order) - % of the day's opening cash balance">
-                    <span class="cash-caption">Brokerage</span>
+                    <span class="cash-caption">Brok</span>
                     <span id="totalBrokerageValue">--</span>
                     <span class="charges-pct" id="brokeragePctValue"></span>
                 </label>
                 <label id="otherChargesSummaryLabel" class="expiry-label charges-summary" style="display: none;" title="STT + exchange transaction + SEBI + GST + stamp duty across the trades shown - % of the day's opening cash balance">
-                    <span class="cash-caption">Other Chgs</span>
+                    <span class="cash-caption">OChg</span>
                     <span id="totalOtherChargesValue">--</span>
                     <span class="charges-pct" id="otherChargesPctValue"></span>
                 </label>
@@ -1565,6 +1602,7 @@
             <div class="orders-header-right">
                 <input type="date" id="ordersDateInput" title="Trade date to load in this grid">
                 <span id="ordersCountLabel"></span>
+                <span id="ordersTradeStats" title="Completed (SELL) trades: total · profitable · losing"></span>
                 <button id="ordersUploadBtn" type="button" title="Upload an M.Stock contract note PDF or a Kite Console tradebook CSV into this grid">&#8679; Upload</button>
                 <button id="ordersDownloadBtn" type="button" title="Download the trades shown in this grid as Excel">&#8681; Download</button>
                 <button id="ordersRefreshBtn" type="button" title="Refresh trades for the selected date">&#x21bb;</button>
@@ -1575,25 +1613,26 @@
             <table id="ordersTable">
                 <thead>
                     <tr>
-                        <th data-sort-key="ORDERDATE">OrderDate</th>
-                        <th data-sort-key="ORDERTIME">OrderTime</th>
+                        <th data-sort-key="ORDERDATE">Date</th>
+                        <th data-sort-key="ORDERTIME">Time</th>
                         <th data-sort-key="TRAN">Tran</th>
                         <th data-sort-key="CONT">Cont</th>
                         <th data-sort-key="Type">Type</th>
-                        <th data-sort-key="Qty.">Qty.</th>
+                        <th data-sort-key="Qty." title="Position size in lots - hover a cell for the actual quantity">Lots</th>
                         <th data-sort-key="RATE">Rate</th>
+                        <th data-sort-key="LTP">LTP</th>
                         <th data-sort-key="Duration">Duration</th>
-                        <th data-sort-key="PurValue">PurValue</th>
-                        <th data-sort-key="PnL_Rate">PnL_Rate</th>
+                        <th data-sort-key="PurValue">PurV</th>
+                        <th data-sort-key="PnL_Rate">PnLR</th>
                         <th data-sort-key="PnL">PnL</th>
                         <th data-sort-key="PnL%">PnL%</th>
                         <th data-sort-key="PnL_RT">PnL_RT</th>
-                        <th data-sort-key="Brokerage">Brokerage</th>
-                        <th data-sort-key="Other Charges">Other Chgs</th>
+                        <th data-sort-key="Other Charges">OChg</th>
+                        <th title="Strategy type + Sell type + Book profit % + Stop loss % (e.g. UU_3#3 = Ultra scalping, U exit, BP 3% / SL 3%)">Strategy</th>
                     </tr>
                 </thead>
                 <tbody id="ordersTableBody">
-                    <tr><td colspan="15" class="no-options">No trades for the selected date.</td></tr>
+                    <tr><td colspan="16" class="no-options">No trades for the selected date.</td></tr>
                 </tbody>
             </table>
         </div>
@@ -1603,12 +1642,6 @@
     </section>
     <section class="tab-panel" id="panel-audit" data-tab="audit">
         <main class="main-content">
-
-    <!-- ============ SYSTEM AUDIT / SECTION 1: AUDIT ============ -->
-    <div class="sysaudit-section-header" id="section-audit">
-        <span class="ssh-title">Audit</span>
-        <span class="ssh-sub">Trade execution technical report &#8212; click timing, slippage, retries</span>
-    </div>
 
     <!-- === AUDIT GRID (Trade Execution Technical Report) === -->
     <div id="auditGridWrapper">
@@ -1648,6 +1681,59 @@
         </div>
     </div>
 
+    <!-- === ERRORS & WARNINGS GRID (session log) === -->
+    <div class="feedlab-card" id="errGridCard">
+        <h3>Errors &amp; Warnings &mdash; session log
+            <span class="feedlab-pill off" id="errPillErr" title="ERROR lines in the selected date's logs">&#10007; 0</span>
+            <span class="feedlab-pill off" id="errPillWarn" title="WARNING lines in the selected date's logs">&#9888; 0</span>
+        </h3>
+        <div class="feedlab-row">
+            <select class="feedlab-select" id="errLevelFilter" title="Filter the grid by level">
+                <option value="ALL" selected>All</option>
+                <option value="ERROR">Errors only</option>
+                <option value="WARNING">Warnings only</option>
+            </select>
+            <label style="display: flex; align-items: center; gap: 0.4rem; font-size: 0.85rem; color: #ccc; cursor: pointer;"
+                   title="Tick to show only the errors/warnings logged OUTSIDE market hours (09:15-15:45); unticked shows market hours only">
+                <input type="checkbox" id="errNonMktChk" style="cursor: pointer;">
+                Non-market hours only
+            </label>
+            <button class="feedlab-btn" id="errRefreshBtn" type="button" title="Reload the error grid for the selected date">&#x21bb; Refresh</button>
+            <span class="feedlab-status" id="errGridHint">Every ERROR / WARNING line from the selected date's session logs, chronological.</span>
+        </div>
+        <table class="feedlab-table" id="errSummaryTable" style="width: auto; min-width: 560px; max-width: 780px; margin-bottom: 0.6rem;">
+            <thead>
+                <tr>
+                    <th style="width:9%" title="Number of times this type occurred in the current view">Count</th>
+                    <th style="width:12%">Level</th>
+                    <th style="width:44%">Type</th>
+                    <th style="width:20%" title="First and last time seen in the current view">First &rarr; Last</th>
+                    <th style="width:15%">Share</th>
+                </tr>
+            </thead>
+            <tbody id="errSummaryBody">
+                <tr><td colspan="5" class="no-options">Loading summary...</td></tr>
+            </tbody>
+        </table>
+        <div id="errGridContainer" style="max-height: 480px; overflow-y: auto;">
+            <table class="feedlab-table" id="errTable">
+                <thead>
+                    <tr>
+                        <th style="width:4%">#</th>
+                        <th style="width:11%">Time</th>
+                        <th style="width:7%">Level</th>
+                        <th style="width:19%">What</th>
+                        <th style="width:17%">Source</th>
+                        <th>Message</th>
+                    </tr>
+                </thead>
+                <tbody id="errTableBody">
+                    <tr><td colspan="6" class="no-options">Loading error grid...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
     {% if feed_lab_enabled %}
     <!-- ============ SYSTEM AUDIT / SECTION 2: FEED LAB ============ -->
     <div class="sysaudit-section-header" id="section-feedlab">
@@ -1660,15 +1746,14 @@
             <h3>Dual-broker feed capture <span class="feedlab-pill off" id="flState">IDLE</span></h3>
             <div class="feedlab-row">
                 <select class="feedlab-select" id="flUnderlying">
-                    <option value="SENSEX" selected>SENSEX</option>
-                    <option value="NIFTY">NIFTY</option>
-                    <option value="CRUDEOILM">CRUDEOILM</option>
+                    <option value="CRUDEOILM" selected>CRUDEOILM</option>
                 </select>
                 <button class="feedlab-btn start" id="flStart">Start capture</button>
                 <button class="feedlab-btn stop" id="flStop" disabled>Stop</button>
                 <span class="feedlab-counts" id="flCounts"></span>
             </div>
             <div class="feedlab-status" id="flStatus" style="margin-top: 0.6rem;"></div>
+            <div class="feedlab-status" id="flChainLine" style="margin-top: 0.4rem;"></div>
             <div class="feedlab-status" id="flFeedLine"></div>
             <div class="feedlab-error" id="flError"></div>
         </div>
@@ -2393,7 +2478,16 @@ document.addEventListener('DOMContentLoaded', function () {
         } catch (e) { /* never break the app over this */ }
     }
     window.addEventListener('resize', function () { reportState(false); });
-    window.addEventListener('pagehide', function () { reportState(true); });
+    window.addEventListener('pagehide', function () {
+        reportState(true);
+        // Tell the server the window went away. Chrome background
+        // processes can keep the 5001 socket ESTABLISHED long after
+        // close, so the socket disconnect may never fire and the app
+        // (plus its Dock icons) would linger for minutes. The server
+        // arms a short shutdown timer that a page-refresh reconnect
+        // cancels.
+        try { navigator.sendBeacon('/window_closing'); } catch (e) { /* ignore */ }
+    });
     setInterval(function () { reportState(false); }, 1500);
     document.addEventListener('DOMContentLoaded', function () { reportState(false); });
 })();
@@ -2510,6 +2604,12 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // --- STATE VARIABLES ---
     let allContracts = {};
+    // Symbol-keyed fallback cache (normalized exchange-format symbol ->
+    // token / lotsize / lots / last LTP). Feeds the Orders grid when a
+    // contract drops out of the live chain snapshot (WOC factor change
+    // / ATM drift rebuild): the row keeps its lot size and last real
+    // price instead of showing blank LTP / raw units.
+    const chainLtpCache = {};
     // Per-token timestamps of the last auto-sync of the lots override
     // box with the recalculated quantity. Ticks used to overwrite the
     // box on every update, clobbering manual entries; the sync now
@@ -2906,6 +3006,23 @@ document.addEventListener('DOMContentLoaded', function() {
         // reconnects/LTP re-sends stay silent.
         const chainChanged = Object.keys(allContracts).length > 0 &&
             chainSignature(allContracts) !== chainSignature(contracts);
+        // Cache BOTH sides of the swap: the outgoing contracts (whose
+        // symbols may vanish from the chain) and the incoming ones.
+        // __contractLtpLookup falls back to this cache for dropped
+        // symbols so Orders rows keep pricing.
+        for (const snapshot of [allContracts, contracts]) {
+            for (const tok in (snapshot || {})) {
+                const c = snapshot[tok] || {};
+                const nm = window.__normalizeContractSymbol(c.name);
+                if (!nm) continue;
+                const entry = chainLtpCache[nm] || (chainLtpCache[nm] = {});
+                entry.token = String(tok);
+                if (Number(c.lotsize) > 0) entry.lotsize = Number(c.lotsize);
+                if (c.lots !== undefined) entry.lots = c.lots;
+                if (Number(c.ltp) > 0) entry.ltp = Number(c.ltp);
+                entry.ts = Date.now();
+            }
+        }
         allContracts = contracts;
         
         populateOptionsTable(allContracts, callBtn.classList.contains('active-toggle') ? 'CE' : 'PE');
@@ -2915,6 +3032,12 @@ document.addEventListener('DOMContentLoaded', function() {
         if (Object.keys(openPositions).length > 0 && positionsTableBody) {
             populatePositionsTable(openPositions);
         }
+        // NOTE: deliberately NO Orders-grid re-render here - this event
+        // fires PER TICK (set_latest_price), and a full grid re-render
+        // at tick rate would thrash the DOM. The Orders LTP column
+        // instead gets patched cell-by-cell by the price-updated-order
+        // handler via data-ltp-symbol (works even when the grid
+        // rendered before the chain arrived).
         if (chainChanged) {
             const message = 'Option chain updated - new WOC factors applied';
             if (document.hidden) {
@@ -2923,6 +3046,27 @@ document.addEventListener('DOMContentLoaded', function() {
                 showInlineStatus(message, 'success', 6000);
             }
         }
+    });
+
+    socket.on('update_retired_contracts', (retired) => {
+        // Dropped-but-still-priced contracts (WOC rebuilds, restarts
+        // restoring today's trades): merge into the fallback cache so
+        // render-time joins - Strategy tag, lots, LTP stamp - resolve
+        // without waiting for a tick.
+        for (const tok in (retired || {})) {
+            const c = retired[tok] || {};
+            const nm = window.__normalizeContractSymbol(c.name);
+            if (!nm) continue;
+            const entry = chainLtpCache[nm] || (chainLtpCache[nm] = {});
+            entry.token = String(tok);
+            if (Number(c.lotsize) > 0) entry.lotsize = Number(c.lotsize);
+            if (c.lots !== undefined) entry.lots = c.lots;
+            if (Number(c.ltp) > 0) entry.ltp = Number(c.ltp);
+            entry.ts = Date.now();
+        }
+        // Rows already rendered with '--' / raw units need one
+        // re-render now that the cache can resolve them.
+        if (window.__refreshOrdersLtp) window.__refreshOrdersLtp();
     });
 
     socket.on('update_open_positions', (positions) => {
@@ -2981,6 +3125,71 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 
 
+    // Shared with the Orders-page script (a separate IIFE, so the chain
+    // snapshot is otherwise private): resolve an order row's
+    // tradingsymbol to its live token + LTP for the Orders LTP column.
+    // Broker/Excel symbol formats that never equal the chain's
+    // exchange-format names ("NIFTY26O0622800CE"):
+    //   executed-trades rows: "NIFTY06OCT202622800CE"
+    //   broker/audit rows:    "NIFTY-06Oct2026-22800-CE"
+    // Normalize both to the exchange format; unknown formats pass
+    // through unchanged.
+    window.__normalizeContractSymbol = function (symbol) {
+        const wanted = String(symbol || '').toUpperCase();
+        const m = wanted.match(/^([A-Z]+)(\d{2})([A-Z]{3})(\d{4})(\d+)(CE|PE)$/) ||
+                  wanted.match(/^([A-Z]+)-(\d{1,2})([A-Z]{3})(\d{4})-(\d+)-(CE|PE)$/);
+        if (!m) return wanted;
+        const g = m.slice(1);  // [underlying, dd, MON, yyyy, strike, type]
+        const monthCode = { JAN: '1', FEB: '2', MAR: '3', APR: '4',
+                            MAY: '5', JUN: '6', JUL: '7', AUG: '8',
+                            SEP: '9', OCT: 'O', NOV: 'N', DEC: 'D' }[g[2]];
+        if (!monthCode) return wanted;
+        return `${g[0]}${g[3].slice(-2)}${monthCode}${g[1].padStart(2, '0')}${g[4]}${g[5]}`;
+    };
+
+    window.__contractLtpLookup = function (symbol) {
+        const wanted = String(symbol || '').toUpperCase();
+        if (!wanted) return { token: '', ltp: NaN, lotsize: 0 };
+        // Try the normalized (exchange-format) name first, then the raw.
+        const candidates = [window.__normalizeContractSymbol(wanted), wanted];
+        for (const name of candidates) {
+            for (const token in allContracts) {
+                if (String((allContracts[token] || {}).name || '').toUpperCase() === name) {
+                    const ltp = Number(allContracts[token].ltp);
+                    const lotsize = Number(allContracts[token].lotsize);
+                    return {
+                        token: token,
+                        ltp: Number.isFinite(ltp) && ltp > 0 ? ltp : NaN,
+                        lotsize: Number.isFinite(lotsize) && lotsize > 0 ? lotsize : 0,
+                    };
+                }
+            }
+        }
+        // Not in the live chain - the contract dropped out of the
+        // window (WOC factor change / ATM drift) or the chain has not
+        // loaded yet. Fall back to the tick-fed cache so Orders rows
+        // keep their lot size and last real price instead of going
+        // blank.
+        for (const name of candidates) {
+            const c = chainLtpCache[name];
+            if (c && (Number(c.lotsize) > 0 || Number(c.ltp) > 0)) {
+                return {
+                    token: c.token || '',
+                    ltp: Number(c.ltp) > 0 ? Number(c.ltp) : NaN,
+                    lotsize: Number(c.lotsize) > 0 ? Number(c.lotsize) : 0,
+                };
+            }
+        }
+        return { token: '', ltp: NaN, lotsize: 0 };
+    };
+
+    // Shared with the Orders-page script (a separate IIFE): the token ->
+    // strategy / sell-mode mappings from setup_data, so the Orders grid
+    // can tag each executed row with its SS code + BP/SL thresholds.
+    window.__orderTagMappings = function () {
+        return { strategies: orderStrategyMapping, sellModes: orderSellModeMapping };
+    };
+
    socket.on('price-updated-order', (tick) => {
         console.log('MSTOCK BROWSER RECEIVED price-updated-order:', new Date().toISOString(), tick);
 
@@ -2992,6 +3201,22 @@ document.addEventListener('DOMContentLoaded', function() {
         const token = String(tick.token);
         const ltp = Number(tick.ltp);
         if (!Number.isFinite(ltp)) return;
+
+        // Refresh the symbol fallback cache on every tick (also covers
+        // retired tokens no longer in allContracts): symbols dropped
+        // from the chain later still hold their last price + lots.
+        const cacheSym = window.__normalizeContractSymbol(tick.name);
+        if (cacheSym) {
+            const entry = chainLtpCache[cacheSym] || (chainLtpCache[cacheSym] = {});
+            entry.token = String(token);
+            entry.ltp = ltp;
+            entry.ts = Date.now();
+            if (tick.lots !== undefined) entry.lots = tick.lots;
+            if (Number(tick.lotsize) > 0) entry.lotsize = Number(tick.lotsize);
+            if (allContracts[token] && Number(allContracts[token].lotsize) > 0) {
+                entry.lotsize = Number(allContracts[token].lotsize);
+            }
+        }
 
         if (allContracts[token]) {
             if (tick.prev_close !== undefined && Number(tick.prev_close) > 0) {
@@ -3046,6 +3271,31 @@ document.addEventListener('DOMContentLoaded', function() {
                  buyButton.dataset.lots = tick.lots;
              }
          }
+        // Orders-grid LTP column: patch every order row for this
+        // contract off the same tick that drives the chain grid.
+        // Matched by token (rows rendered after the chain resolved)
+        // OR by normalized symbol (rows rendered before it - the
+        // stamp lets their first tick fill and upgrade them to
+        // token-tagged). Flash shows DIRECTION: green on an up-tick,
+        // red on a down-tick, nothing on unchanged price.
+        const symbolName = String(tick.name || '').toUpperCase();
+        document.querySelectorAll(
+            `#ordersTableBody td.order-ltp-cell[data-ltp-token="${token}"],` +
+            `#ordersTableBody td.order-ltp-cell[data-ltp-symbol="${symbolName}"]`
+        ).forEach(cell => {
+            const prevLtp = Number(cell.textContent);
+            cell.textContent = ltp.toFixed(2);
+            cell.dataset.ltpToken = token;
+            const flashClass = Number.isFinite(prevLtp) && prevLtp > 0
+                ? (ltp > prevLtp ? 'flash-up' : (ltp < prevLtp ? 'flash-down' : null))
+                : 'flash';
+            if (flashClass) {
+                cell.classList.remove('flash-up', 'flash-down');
+                void cell.offsetWidth;  // restart the animation on consecutive ticks
+                cell.classList.add(flashClass);
+                setTimeout(() => cell.classList.remove(flashClass), 700);
+            }
+        });
     });
 
     // Returning to the Trade tab: the cash balance may have been
@@ -3522,6 +3772,23 @@ filteredContracts.sort(([, a], [, b]) => {
         }
     });
 
+    // Auto-sell stuck in a broker margin-rejection loop (RMS FUND LIMIT
+    // INSUFFICIENT): the watcher stopped re-firing and is backing off -
+    // the position is open with NO exit protection until this clears.
+    // Red toast + stays until acted on (this is not a transient notice).
+    socket.on('auto_sell_stuck', function (info) {
+        const req = (info && info.required != null)
+            ? 'Rs.' + Number(info.required).toLocaleString('en-IN') : 'full short-margin';
+        const avail = (info && info.available != null)
+            ? 'Rs.' + Number(info.available).toLocaleString('en-IN') : 'near-zero';
+        showInlineStatus(
+            `UNPROTECTED POSITION: auto-sell BLOCKED for ${info.symbol} - broker demands ${req} to sell ${info.qty} qty (available ${avail}). The exit is being treated as an opening short - exit manually or call the broker.`,
+            'error',
+            30000
+        );
+        console.error('AUTO-SELL STUCK:', info);
+    });
+
     socket.on('buy_order_result', function (result) {
         if (result.success) {
             if (result.warning) {
@@ -3531,8 +3798,7 @@ filteredContracts.sort(([, a], [, b]) => {
                     `Buy order successful for ${result.tradingsymbol} (${result.lots} lots) - ${result.warning}`,
                     'error',
                     8000
-                );
-            } else if (result.note && result.requested_lots !== undefined &&
+                );            } else if (result.note && result.requested_lots !== undefined &&
                        Number(result.lots) !== Number(result.requested_lots)) {
                 showTransactionSuccess(
                     `Buy order successful for ${result.tradingsymbol} (${result.lots} lots, requested ${result.requested_lots})`
@@ -3858,27 +4124,52 @@ filteredContracts.sort(([, a], [, b]) => {
     }
 
     // --- STRATEGY RADIO LISTENERS ---
+    const BOOK_PROFIT_CLICK_STEP_PCT = 3;
+
     function addBookProfitInputListeners() {
         if (!positionsTableBody) return;
         positionsTableBody.querySelectorAll('.bp-override-input').forEach(input => {
             input.removeEventListener('change', handleBookProfitInputChange);
             input.addEventListener('change', handleBookProfitInputChange);
+            // Click shortcuts: every left click adds 3% and every right
+            // click deducts 3% (floored at 0 = no auto booking).
+            input.removeEventListener('click', handleBookProfitClickAdjust);
+            input.addEventListener('click', handleBookProfitClickAdjust);
+            input.removeEventListener('contextmenu', handleBookProfitClickAdjust);
+            input.addEventListener('contextmenu', handleBookProfitClickAdjust);
         });
     }
 
-    function handleBookProfitInputChange(event) {
+    function emitBookProfitUpdate(input) {
         // Recover the position key from the row's sell button; a cleared
         // / invalid entry means 0 = no auto profit-booking for this leg.
-        const row = event.target.closest('tr');
+        const row = input.closest('tr');
         const sellBtn = row ? row.querySelector('.sell-button[data-positionkey]') : null;
         if (!sellBtn) return;
-        const raw = parseFloat(event.target.value);
+        const raw = parseFloat(input.value);
         const bp = isFinite(raw) && raw > 0 ? raw : 0;
         socket.emit('position_book_profit_updated', {
             position_key: sellBtn.dataset.positionkey || '',
             instrument_token: sellBtn.dataset.token || '',
             book_profit_pct: bp
         });
+    }
+
+    function handleBookProfitInputChange(event) {
+        emitBookProfitUpdate(event.target);
+    }
+
+    function handleBookProfitClickAdjust(event) {
+        const input = event.currentTarget;
+        const delta = event.type === 'click' ? BOOK_PROFIT_CLICK_STEP_PCT : -BOOK_PROFIT_CLICK_STEP_PCT;
+        if (event.type === 'contextmenu') {
+            // Right click is a shortcut, not a browser menu request.
+            event.preventDefault();
+        }
+        const raw = parseFloat(input.value);
+        const current = isFinite(raw) && raw > 0 ? raw : 0;
+        input.value = Math.max(0, Math.round((current + delta) * 100) / 100);
+        emitBookProfitUpdate(input);
     }
 
     function addStrategyRadioListeners() {
@@ -4183,6 +4474,38 @@ document.addEventListener('DOMContentLoaded', function() {
     let uploadedOrdersMeta = null;
     let ordersRefreshTimer = null;
 
+    // Compact strategy code - mirrors audit_log.STRATEGY_CODES (UU =
+    // Ultra scalping + U sell mode, SD = Scalping + D, IT = Intra + T).
+    const STRATEGY_CODES = { ULTRA_SCALPING: 'U', SCALPING: 'S', INTRA: 'I' };
+
+    // Per-strategy BP/SL percent thresholds (PCT_BOOK_PROFIT_<strategy> /
+    // PCT_STOP_LOSS_<strategy>) for the Strategy column's "SS_BP#SL"
+    // tag. Re-fetched with every grid load so App Config edits show up
+    // on the next refresh; base keys back-stop pre-per-strategy configs.
+    let strategyThresholds = {};
+    async function loadStrategyThresholds() {
+        try {
+            const res = await fetch('/load_appconfig');
+            if (!res.ok) return;
+            const cfg = await res.json() || {};
+            const num = (v) => {
+                const n = parseFloat(v);
+                return Number.isFinite(n) ? Number(n.toFixed(2)) : null;
+            };
+            const pick = (base, strategy) =>
+                num(cfg[base + '_' + strategy]) !== null
+                    ? num(cfg[base + '_' + strategy])
+                    : num(cfg[base]);
+            strategyThresholds = {};
+            for (const s of ['ULTRA_SCALPING', 'SCALPING', 'INTRA']) {
+                strategyThresholds[s] = {
+                    bp: pick('PCT_BOOK_PROFIT', s),
+                    sl: pick('PCT_STOP_LOSS', s),
+                };
+            }
+        } catch (e) { /* keep previous values; tag degrades to '?' parts */ }
+    }
+
     // --- ORDERS GRID: current day executed trades ---
     function getTodayTradeDate() {
         const now = new Date();
@@ -4209,6 +4532,10 @@ document.addEventListener('DOMContentLoaded', function() {
         if (ordersRefreshBtn) ordersRefreshBtn.disabled = true;
         const tradeDate = getSelectedTradeDate();
         try {
+            // Fresh BP/SL thresholds for the Strategy column (App Config
+            // edits show up on the next grid refresh).
+            await loadStrategyThresholds();
+
             const tradesPromise = fetch('/get_executed_trades', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -4254,8 +4581,10 @@ document.addEventListener('DOMContentLoaded', function() {
             renderOrdersCashSummary(dayStartCash);
         } catch (error) {
             console.error("Could not load trades:", error);
-            ordersTableBody.innerHTML = `<tr><td colspan="15" class="no-options">Failed to load trades: ${error.message || 'Unknown error'}</td></tr>`;
+            ordersTableBody.innerHTML = `<tr><td colspan="16" class="no-options">Failed to load trades: ${error.message || 'Unknown error'}</td></tr>`;
             if (ordersCountLabel) ordersCountLabel.textContent = '';
+            const statsEl = document.getElementById('ordersTradeStats');
+            if (statsEl) statsEl.innerHTML = '';
             if (cashSummaryLabel) cashSummaryLabel.style.display = 'none';
         } finally {
             if (ordersRefreshBtn) ordersRefreshBtn.disabled = false;
@@ -4279,13 +4608,19 @@ document.addEventListener('DOMContentLoaded', function() {
         return `${prefix} ${match[1]}`;
     }
 
-    const ORDERS_NUMERIC_SORT_COLUMNS = ['ORDERDATE', 'ORDERTIME', 'Qty.', 'RATE', 'Duration', 'PurValue', 'PnL_Rate', 'PnL', 'PnL%', 'PnL_RT', 'Brokerage', 'Other Charges'];
+    const ORDERS_NUMERIC_SORT_COLUMNS = ['ORDERDATE', 'ORDERTIME', 'Qty.', 'RATE', 'LTP', 'Duration', 'PurValue', 'PnL_Rate', 'PnL', 'PnL%', 'PnL_RT', 'Brokerage', 'Other Charges'];
 
     function getOrdersSortValue(row, column) {
         if (column === 'Type') {
             const contractSymbol = String(row['CONT'] || '').toUpperCase();
             const typeMatch = contractSymbol.match(/(CE|PE)$/);
             return typeMatch ? typeMatch[1] : '';
+        }
+        if (column === 'LTP') {
+            // LTP is not stored on the order rows; sort on the live
+            // tick value resolved through the chain snapshot.
+            const info = getOrderLtpInfo(row['CONT']);
+            return Number.isFinite(info.ltp) ? info.ltp : '';
         }
         const raw = row[column];
         if (raw === null || raw === undefined) return '';
@@ -4360,21 +4695,46 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
+    // Orders rows carry only the tradingsymbol (CONT); the Trade-page
+    // script exposes a lookup on window (separate IIFE, so its chain
+    // snapshot is otherwise private) that resolves the symbol to the
+    // live token + LTP so this grid can keep an LTP column fresh.
+    function getOrderLtpInfo(symbol) {
+        const lookup = window.__contractLtpLookup;
+        return lookup ? lookup(symbol) : { token: '', ltp: NaN };
+    }
+
+    // Date display: DD MON (e.g. 07 Oct) - parses the backend's
+    // MM/DD/YYYY and ISO YYYY-MM-DD; unknown formats pass through
+    // unchanged so uploads from other sources never break.
+    const ORDER_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                          'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    function formatOrderDateDisplay(value) {
+        const s = String(value || '').trim();
+        let m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+        if (m) return `${m[3]} ${ORDER_MONTHS[Number(m[2]) - 1] || m[2]}`;
+        m = s.match(/^(\d{2})\/(\d{2})\/\d{4}/);
+        if (m) return `${m[2]} ${ORDER_MONTHS[Number(m[1]) - 1] || m[1]}`;
+        return s;
+    }
+
     function renderOrders(rows) {
         ordersTableBody.innerHTML = '';
         updateOrdersSortIndicators();
 
         if (!rows || rows.length === 0) {
-            ordersTableBody.innerHTML = `<tr><td colspan="15" class="no-options">No trades for the selected date.</td></tr>`;
+            ordersTableBody.innerHTML = `<tr><td colspan="16" class="no-options">No trades for the selected date.</td></tr>`;
             if (ordersCountLabel) ordersCountLabel.textContent = '';
+            const statsEl = document.getElementById('ordersTradeStats');
+            if (statsEl) statsEl.innerHTML = '';
             updateChargesTotals(rows);
             return;
         }
 
         const columns = [
-            'ORDERDATE', 'ORDERTIME', 'TRAN', 'CONT', 'Type', 'Qty.', 'RATE',
+            'ORDERDATE', 'ORDERTIME', 'TRAN', 'CONT', 'Type', 'Qty.', 'RATE', 'LTP',
             'Duration', 'PurValue', 'PnL_Rate', 'PnL', 'PnL%', 'PnL_RT',
-            'Brokerage', 'Other Charges'
+            'Other Charges', 'STRAT_TAG'
         ];
 
         sortOrdersRows(rows).forEach(row => {
@@ -4389,10 +4749,53 @@ document.addEventListener('DOMContentLoaded', function() {
                 const value = row[column];
                 let displayValue = (value === null || value === undefined) ? '' : value;
                 if (column === 'Qty.' && displayValue !== '') {
-                    displayValue = String(displayValue).split('/')[0];
+                    // The row's Qty. is ACTUAL units; the grid shows LOTS
+                    // (units / chain lot size) and puts the real quantity
+                    // on hover. Rows whose contract is not in the loaded
+                    // chain (past dates, FUT, uploads) have no lot size -
+                    // they keep showing units.
+                    const qtyUnits = Number(String(displayValue).split('/')[0]) || 0;
+                    const lotSize = getOrderLtpInfo(row['CONT']).lotsize || 0;
+                    if (lotSize > 1) {
+                        const lots = qtyUnits / lotSize;
+                        displayValue = Number(lots.toFixed(2));
+                        td.title = qtyUnits.toLocaleString('en-IN')
+                            + ' units (' + lots + ' lots x ' + lotSize + ')';
+                    } else {
+                        displayValue = qtyUnits;
+                        td.title = qtyUnits.toLocaleString('en-IN') + ' units (lot size unknown)';
+                    }
                 }
                 if (column === 'CONT' && displayValue !== '') {
                     displayValue = formatInstrumentDisplay(displayValue);
+                }
+                if (column === 'ORDERDATE') {
+                    // DD/MMM display (e.g. 07/Oct) - the raw value stays
+                    // in the row for sorting (numeric/ISO compare).
+                    if (displayValue !== '') {
+                        displayValue = formatOrderDateDisplay(displayValue);
+                    }
+                }
+                if (column === 'RATE') {
+                    // Uniform 2-decimal rate display (e.g. 123.40).
+                    const rateValue = Number(value);
+                    if (value !== '' && value !== null && value !== undefined && !Number.isNaN(rateValue)) {
+                        displayValue = rateValue.toFixed(2);
+                    }
+                }
+                if (column === 'LTP') {
+                    // Live last-traded price for the row's contract.
+                    // Stamped with the normalized symbol ALWAYS (the
+                    // tick handler matches this when the chain was not
+                    // loaded at render time) and with the token when
+                    // the chain already resolves the row.
+                    td.classList.add('order-ltp-cell');
+                    td.dataset.ltpSymbol = window.__normalizeContractSymbol(row['CONT']);
+                    const info = getOrderLtpInfo(row['CONT']);
+                    if (info.token) {
+                        td.dataset.ltpToken = info.token;
+                    }
+                    displayValue = Number.isFinite(info.ltp) ? info.ltp.toFixed(2) : '';
                 }
                 if (column === 'Type') {
                     const contractSymbol = String(row['CONT'] || '').toUpperCase();
@@ -4404,7 +4807,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 if (column === 'PnL' || column === 'PnL_RT') {
                     const pnlValue = Number(value);
                     if (value !== '' && value !== null && value !== undefined && !Number.isNaN(pnlValue)) {
-                        displayValue = pnlValue.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                        // Whole rupees - no decimals.
+                        displayValue = pnlValue.toLocaleString('en-IN', { maximumFractionDigits: 0 });
                     }
                 }
                 if (column === 'PnL_Rate') {
@@ -4423,6 +4827,26 @@ document.addEventListener('DOMContentLoaded', function() {
                     const chargeValue = Number(value);
                     if (value !== '' && value !== null && value !== undefined && !Number.isNaN(chargeValue)) {
                         displayValue = chargeValue.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                    }
+                }
+                if (column === 'STRAT_TAG') {
+                    // "SS_BP#SL": strategy type + sell type code (UU / SD /
+                    // IT - mirrors the Audit tab's SS column) followed by
+                    // the strategy's Book profit % and Stop Loss %. Rows
+                    // whose contract is not in the loaded chain (uploads,
+                    // past dates) cannot be joined to a token -> '--'.
+                    const mappings = window.__orderTagMappings
+                        ? window.__orderTagMappings() : null;
+                    const token = mappings ? getOrderLtpInfo(row['CONT']).token : '';
+                    if (!mappings || !token) {
+                        displayValue = '--';
+                    } else {
+                        const strategy = mappings.strategies[token] || 'ULTRA_SCALPING';
+                        const sellMode = String(mappings.sellModes[token] || 'T').toUpperCase();
+                        const th = strategyThresholds[strategy] || {};
+                        const fmtPct = (n) => (n === null || n === undefined) ? '?' : String(n);
+                        displayValue = (STRATEGY_CODES[strategy] || '?') + sellMode.charAt(0)
+                            + '_' + fmtPct(th.bp) + '#' + fmtPct(th.sl);
                     }
                 }
                 td.textContent = displayValue;
@@ -4446,13 +4870,46 @@ document.addEventListener('DOMContentLoaded', function() {
                 ? ((uploadedOrdersMeta && uploadedOrdersMeta.kind === 'kite') ? 'Tradebook' : 'Contract Note')
                 : '';
             const sourceSuffix = sourceLabel
-                ? ` · ${sourceLabel}${uploadedOrdersMeta && uploadedOrdersMeta.trade_date ? ' ' + uploadedOrdersMeta.trade_date : ''}`
+                ? ` · ${sourceLabel}${uploadedOrdersMeta && uploadedOrdersMeta.trade_date ? ' ' + formatOrderDateDisplay(uploadedOrdersMeta.trade_date) : ''}`
                 : '';
-            ordersCountLabel.textContent = `${rows.length} trade${rows.length === 1 ? '' : 's'}${sourceSuffix}`;
+            ordersCountLabel.textContent = `Orders: ${rows.length}${sourceSuffix}`;
+        }
+        // Trade stats over COMPLETED (SELL) trades - a BUY row carries
+        // no PnL until its exit is matched. Format: x total, y
+        // profitable (green), z losing (red); flat trades only count
+        // toward the total.
+        const statsEl = document.getElementById('ordersTradeStats');
+        if (statsEl) {
+            let completed = 0, wins = 0, losses = 0;
+            rows.forEach(row => {
+                if (String(row['TRAN'] || '').toUpperCase() !== 'SELL') return;
+                const pnl = Number(row['PnL']);
+                if (!Number.isFinite(pnl)) return;
+                completed++;
+                if (pnl > 0) wins++;
+                else if (pnl < 0) losses++;
+            });
+            statsEl.innerHTML = completed
+                ? 'Trades: ' + completed
+                    + ' <span style="color:#2e7d32;font-weight:700">' + wins + '</span>'
+                    + ' <span style="color:#c62828;font-weight:700">' + losses + '</span>'
+                : '';
         }
 
         updateChargesTotals(rows);
     }
+
+    // Re-render the grid from cached rows on demand. The chain snapshot
+    // (allContracts) usually arrives AFTER the initial loadOrders()
+    // render, which left every LTP cell blank and untagged - the tick
+    // handler only patches tagged cells, so the column stayed empty and
+    // never flashed. The chain handler (update_weekly_options) and the
+    // Orders tab activation call this once contracts are in.
+    window.__refreshOrdersLtp = function () {
+        if (ordersRowsCache && ordersRowsCache.length) {
+            renderOrders(ordersRowsCache);
+        }
+    };
 
     // Contract-note-exact Other Charges day total: sum each charge
     // component across rows at full precision, then round each component
@@ -4520,7 +4977,9 @@ document.addEventListener('DOMContentLoaded', function() {
         const otherChargesTotal = otherChargesDayTotal(rows);
 
         document.getElementById('totalBrokerageValue').textContent = formatRupeesWhole(brokerageTotal);
-        document.getElementById('totalOtherChargesValue').textContent = formatRupees(otherChargesTotal);
+        // Whole rupees like Brok - the paisa detail lives in the
+        // contract-note components, not the header chip.
+        document.getElementById('totalOtherChargesValue').textContent = formatRupeesWhole(otherChargesTotal);
         document.getElementById('brokeragePctValue').textContent = pctSuffix(brokerageTotal);
         document.getElementById('otherChargesPctValue').textContent = pctSuffix(otherChargesTotal);
     }
@@ -4576,10 +5035,10 @@ document.addEventListener('DOMContentLoaded', function() {
 
         const cashGrossEl = document.getElementById('cashGrossValue');
         if (cashGrossEl) {
+            // Rupee symbol + whole rupees - same look as the Brok/OChg chips.
             cashGrossEl.textContent = Number.isFinite(grossPnL)
-                ? grossPnL.toLocaleString('en-IN', {
-                    maximumFractionDigits: 2,
-                    minimumFractionDigits: 2
+                ? '\u20B9' + grossPnL.toLocaleString('en-IN', {
+                    maximumFractionDigits: 0
                 })
                 : '--';
             cashGrossEl.className = '';
@@ -4599,9 +5058,8 @@ document.addEventListener('DOMContentLoaded', function() {
         }
 
         cashCurrentEl.textContent = Number.isFinite(netPnL)
-            ? netPnL.toLocaleString('en-IN', {
-                maximumFractionDigits: 2,
-                minimumFractionDigits: 2
+            ? '\u20B9' + netPnL.toLocaleString('en-IN', {
+                maximumFractionDigits: 0
             })
             : '--';
 
@@ -5069,6 +5527,7 @@ document.addEventListener('DOMContentLoaded', function () {
         'Trigger Source',
         'LTP @ Trigger', 'LTP @ Sell Exec', 'Sell Avg Price',
         'Sell Price Slippage', 'Sell Price Slippage %', 'Sell Profit Slippage',
+        'Peak LTP (hold)', 'Peak Profit (pts)', 'Peak Profit %', 'Peak At',
         'Retries', 'Retry Elapsed (s)', 'First Attempt LTP',
         'Exec Slippage %', 'Buy Cost Increase',
         'Comment',
@@ -5088,6 +5547,8 @@ document.addEventListener('DOMContentLoaded', function () {
         'LTP @ Trigger': 'Sell', 'LTP @ Sell Exec': 'Sell', 'Sell Avg Price': 'Sell',
         'Sell Price Slippage': 'Sell', 'Sell Price Slippage %': 'Sell',
         'Sell Profit Slippage': 'Sell',
+        'Peak LTP (hold)': 'Peak', 'Peak Profit (pts)': 'Peak',
+        'Peak Profit %': 'Peak', 'Peak At': 'Peak',
         'Retries': 'Retry', 'Retry Elapsed (s)': 'Retry',
         'First Attempt LTP': 'Retry', 'Exec Slippage %': 'Retry',
         'Buy Cost Increase': 'Retry',
@@ -5124,7 +5585,8 @@ document.addEventListener('DOMContentLoaded', function () {
     ]);
     const GROUP_CLASS = {
         'Trade': 'audit-group-trade', 'Buy': 'audit-group-buy',
-        'Sell': 'audit-group-sell', 'Retry': 'audit-group-retry',
+        'Sell': 'audit-group-sell', 'Peak': 'audit-group-peak',
+        'Retry': 'audit-group-retry',
         'Comment': 'audit-group-comment',
     };
 
@@ -5189,6 +5651,7 @@ document.addEventListener('DOMContentLoaded', function () {
                     '</td></tr>';
             });
         loadSessionBand();
+        loadErrorGrid();
     }
 
     function appendGroupCell(label, span) {
@@ -5207,6 +5670,10 @@ document.addEventListener('DOMContentLoaded', function () {
         } else if (label === 'Sell') {
             th.title = 'Trigger/Exec/Slippage = exit timing (gray); '
                 + 'Source = trigger origin; Sell Avg - LTP @ Trigger = price slippage';
+        } else if (label === 'Peak') {
+            th.title = 'Highest LTP seen by either broker between the buy '
+                + 'and sell fills (from the dual-broker tick capture) - '
+                + 'what the trade was worth at its best';
         } else if (label === 'Retry') {
             th.title = 'Lots-reduction retries and their cost impact';
         }
@@ -5446,6 +5913,197 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     }
 
+    // ===== ERRORS & WARNINGS GRID (session log) =====
+    // Every ERROR / WARNING line from the selected date's logs,
+    // chronological, with a running index. Loads with the Audit tab
+    // (same lifecycle as the grid + session band) and on Refresh;
+    // date changes flow through loadAuditIfVisible.
+    // NOTE: declared BEFORE the top-level loadAudit() call below (the
+    // fresh-/audit-page path) - its consts must exist by then.
+    const errTableBody = document.getElementById('errTableBody');
+    const errLevelFilter = document.getElementById('errLevelFilter');
+    const errNonMktChk = document.getElementById('errNonMktChk');
+    const errGridHint = document.getElementById('errGridHint');
+    const errPillErr = document.getElementById('errPillErr');
+    const errPillWarn = document.getElementById('errPillWarn');
+    let errRows = [];
+    let errMeta = null;
+
+    function errRender() {
+        if (!errTableBody) return;
+        const f = errLevelFilter ? errLevelFilter.value : 'ALL';
+        const nonMkt = !!(errNonMktChk && errNonMktChk.checked);
+        // Default: market hours only. Checkbox: non-market hours only.
+        // The two buckets never mix, so every line is reachable.
+        const view = errRows.filter(function (r) {
+            return (nonMkt ? !r.mh : r.mh) && (f === 'ALL' || r.level === f);
+        });
+        errTableBody.innerHTML = '';
+        if (!view.length) {
+            errTableBody.innerHTML =
+                '<tr><td colspan="5" class="no-options">'
+                + (errRows.length
+                   ? 'No lines in this bucket.'
+                   : 'No errors or warnings logged - clean session.')
+                + '</td></tr>';
+        } else {
+            const frag = document.createDocumentFragment();
+            view.forEach(function (r, vi) {
+                const tr = document.createElement('tr');
+                tr.className = 'err-row-' + r.level;
+                const idx = document.createElement('td');
+                idx.className = 'err-idx';
+                idx.textContent = vi + 1;
+                const time = document.createElement('td');
+                time.className = 'err-time';
+                time.textContent = r.time;
+                const lvl = document.createElement('td');
+                lvl.className = 'err-level';
+                lvl.textContent = r.level;
+                const what = document.createElement('td');
+                what.className = 'err-what';
+                what.textContent = r.what || r.level;
+                const src = document.createElement('td');
+                src.textContent = r.source;
+                const msg = document.createElement('td');
+                msg.className = 'err-msg';
+                msg.textContent = r.message;
+                tr.appendChild(idx); tr.appendChild(time); tr.appendChild(lvl);
+                tr.appendChild(what); tr.appendChild(src); tr.appendChild(msg);
+                frag.appendChild(tr);
+            });
+            errTableBody.appendChild(frag);
+        }
+        errRenderSummary(view, nonMkt);
+        // Pills reflect the bucket on screen.
+        const vErr = view.filter(function (r) { return r.level === 'ERROR'; }).length;
+        const vWarn = view.length - vErr;
+        if (errPillErr) {
+            errPillErr.textContent = '\u2717 ' + vErr;
+            errPillErr.className = 'feedlab-pill ' + (vErr ? 'on' : 'off');
+            errPillErr.style.background = vErr ? '#5a2222' : '';
+            errPillErr.style.color = vErr ? '#ef9a9a' : '';
+        }
+        if (errPillWarn) {
+            errPillWarn.textContent = '\u26A0 ' + vWarn;
+            errPillWarn.className = 'feedlab-pill ' + (vWarn ? 'on' : 'off');
+            errPillWarn.style.background = vWarn ? '#4a3a10' : '';
+            errPillWarn.style.color = vWarn ? '#ffcc80' : '';
+        }
+        if (errGridHint && errMeta) {
+            errGridHint.textContent = (nonMkt ? 'Non-market hours: ' : 'Market hours: ')
+                + vErr + ' errors \u00B7 ' + vWarn + ' warnings'
+                + '  |  ' + (nonMkt
+                             ? 'market hours: ' + errMeta.errors + ' E \u00B7 ' + errMeta.warnings + ' W'
+                             : 'non-market: ' + errMeta.nmh_errors + ' E \u00B7 ' + errMeta.nmh_warnings + ' W')
+                + (errMeta.merged > 0
+                   ? '  |  ' + errMeta.lines_seen + ' log lines collapsed to ' + errMeta.total + ' events (multi-line rejections merged)'
+                   : '')
+                + (errMeta.truncated ? '  |  showing first ' + errRows.length + ' of ' + errMeta.total : '');
+        }
+    }
+
+    function loadErrorGrid() {
+        if (!errTableBody) return;
+        fetch('/api/audit/error_grid?date=' + encodeURIComponent(auditDate()),
+              { cache: 'no-store' })
+            .then(function (r) {
+                if (!r.ok) throw new Error('HTTP ' + r.status);
+                return r.json();
+            })
+            .then(function (data) {
+                if (!data || !data.ok) {
+                    errRows = [];
+                    errMeta = null;
+                    if (errGridHint) errGridHint.textContent =
+                        (data && data.error) || 'Error grid unavailable.';
+                    errRender();
+                    return;
+                }
+                errRows = data.rows || [];
+                errMeta = data;
+                errRender();
+            })
+            .catch(function () {
+                if (errGridHint) errGridHint.textContent = 'Failed to load error grid.';
+            });
+    }
+
+    // Occurrence summary above the grid: count per (level, type) from
+    // the CURRENT view (respects the level filter + market-hours
+    // checkbox), most frequent first, with first/last seen + share bar.
+    function errRenderSummary(view, nonMkt) {
+        const body = document.getElementById('errSummaryBody');
+        if (!body) return;
+        body.innerHTML = '';
+        if (!view.length) {
+            body.innerHTML = '<tr><td colspan="5" class="no-options">Nothing to summarize.</td></tr>';
+            return;
+        }
+        const groups = {};
+        view.forEach(function (r) {
+            const k = r.level + '||' + (r.what || r.level);
+            if (!groups[k]) groups[k] = { level: r.level, what: r.what || r.level, count: 0, first: r.time, last: r.time };
+            groups[k].count += 1;
+            if (r.time < groups[k].first) groups[k].first = r.time;
+            if (r.time > groups[k].last) groups[k].last = r.time;
+        });
+        const items = Object.values(groups).sort(function (a, b) { return b.count - a.count; });
+        const SHOW = 12;
+        const shown = items.slice(0, SHOW);
+        const frag = document.createDocumentFragment();
+        shown.forEach(function (g) {
+            const tr = document.createElement('tr');
+            tr.className = 'err-row-' + g.level;
+            const cnt = document.createElement('td');
+            cnt.className = 'es-cnt';
+            cnt.textContent = g.count;
+            const lvl = document.createElement('td');
+            lvl.className = 'err-level';
+            lvl.textContent = g.level;
+            const what = document.createElement('td');
+            what.className = 'es-what';
+            what.textContent = g.what;
+            const seen = document.createElement('td');
+            seen.className = 'err-time';
+            seen.textContent = g.first.slice(0, 8) + ' \u2192 ' + g.last.slice(0, 8);
+            const share = document.createElement('td');
+            share.className = 'es-share';
+            const pct = (g.count / view.length * 100).toFixed(0) + '%';
+            const bar = document.createElement('div');
+            bar.className = 'es-bar';
+            bar.style.width = Math.max(3, g.count / view.length * 50) + 'px';
+            share.appendChild(bar);
+            share.appendChild(document.createTextNode(pct));
+            tr.appendChild(cnt); tr.appendChild(lvl); tr.appendChild(what);
+            tr.appendChild(seen); tr.appendChild(share);
+            frag.appendChild(tr);
+        });
+        if (items.length > SHOW) {
+            const tr = document.createElement('tr');
+            const td = document.createElement('td');
+            td.colSpan = 5;
+            td.className = 'no-options';
+            td.textContent = '+ ' + (items.length - SHOW) + ' more type(s) - narrow the level filter or the time bucket to see them.';
+            tr.appendChild(td);
+            frag.appendChild(tr);
+        }
+        body.appendChild(frag);
+    }
+
+    if (errLevelFilter) {
+        errLevelFilter.addEventListener('change', errRender);
+    }
+    if (errNonMktChk) {
+        errNonMktChk.addEventListener('change', errRender);
+    }
+    const errRefreshBtn = document.getElementById('errRefreshBtn');
+    if (errRefreshBtn) {
+        errRefreshBtn.addEventListener('click', function () {
+            loadErrorGrid();
+        });
+    }
+
 
     // Lazy load: fetch when the Audit tab becomes visible. Covers all
     // activation paths: fresh /audit page load, page refreshed on
@@ -5539,7 +6197,21 @@ document.addEventListener('DOMContentLoaded', function () {
         } else if (s.locked_session_today) {
             flStatus.textContent = "Today's ATM session is locked - starting will reuse it.";
         } else {
-            flStatus.textContent = 'Starting locks the SENSEX ATM strike for the whole day.';
+            flStatus.textContent = 'Manual capture is for CRUDEOILM chains and off-hours testing only - NIFTY and SENSEX are captured automatically (see below).';
+        }
+        // Always-on chain capture (NIFTY + SENSEX, FUT + ATM +/- 5 CE/PE,
+        // both brokers) - runs during market hours with no user action;
+        // shown here so a silently-dead recorder is visible.
+        const chainLine = document.getElementById('flChainLine');
+        if (chainLine) {
+            const chain = s.chain || {};
+            const parts = Object.entries(chain).map(([u, c]) => {
+                const state = c.running
+                    ? `<b style="color:#9fdf9f">RUNNING</b> · K ${c.counts.KITE.toLocaleString()} / M ${c.counts.MSTOCK.toLocaleString()} ticks · ATM ${c.atm_strike ?? '-'} ${c.expiry || ''}`
+                    : '<b style="color:#ccc">IDLE</b>' + (c.last_error ? ` · ${c.last_error}` : '');
+                return `${u}: ${state}`;
+            }).join('<br>');
+            chainLine.innerHTML = 'Chain capture (auto, market hours):<br>' + (parts || 'n/a');
         }
         if (s.net) {
             // Internet speed (neutral targets) - separate from broker API health
@@ -5550,14 +6222,17 @@ document.addEventListener('DOMContentLoaded', function () {
                     `${u.replace('https://', '')}: ${t.last_ok ? t.last_latency_ms + 'ms' : 'FAIL'}`).join(' &middot; ');
                 flStatus.innerHTML += `<br>Internet: <b style="text-transform:uppercase">${net.level}</b> &middot; ${lines}`;
             }
-            // Per-broker health (the K / M pills): API + WebSocket halves
+            // Per-broker health (the K / M pills): API + WebSocket halves.
+            // Display names match the pill tooltips (Kite / M.Stock), not
+            // the raw KITE / MSTOCK payload keys.
             const brokers = s.net.brokers || {};
+            const BROKER_LABEL = { KITE: 'Kite', MSTOCK: 'M.Stock' };
             const brokerLines = Object.entries(brokers).map(([b, t]) => {
                 const api = t.api || {}, ws = t.ws || {};
                 const apiTxt = api.level ? api.level.toUpperCase() : 'IDLE';
                 const apiLat = api.last_ok ? api.last_latency_ms + 'ms' : 'FAIL';
                 const wsTxt = ws.level ? ws.level.toUpperCase() : 'IDLE';
-                return `${b}: ${apiTxt} ${apiLat} &middot; WS ${wsTxt}`;
+                return `${BROKER_LABEL[b] || b}: ${apiTxt} ${apiLat} &middot; WS ${wsTxt}`;
             }).join(' &middot; ');
             if (brokerLines) {
                 flStatus.innerHTML += `<br>Broker API: ${brokerLines}`;
@@ -5571,8 +6246,12 @@ document.addEventListener('DOMContentLoaded', function () {
             const r = await fetch('/feed_compare/status');
             const s = await r.json();
             flRenderStatus(s);
-            if (s.running && !flTimer) flTimer = setInterval(flPoll, 2000);
-            if (!s.running && flTimer) { clearInterval(flTimer); flTimer = null; }
+            // Keep polling while ANY capture runs (manual or always-on
+            // chain) so tick counts and the chain line stay live.
+            const anyRunning = s.running
+                || Object.values(s.chain || {}).some(function (c) { return c.running; });
+            if (anyRunning && !flTimer) flTimer = setInterval(flPoll, 2000);
+            if (!anyRunning && flTimer) { clearInterval(flTimer); flTimer = null; }
             const rf = await fetch('/feed_compare/feed_status');
             const f = await rf.json();
             const h = f.health || {};
@@ -5623,6 +6302,15 @@ document.addEventListener('DOMContentLoaded', function () {
             if (!rep.ok) { flReport.innerHTML = `<div class="feedlab-error">${rep.error}</div>`; return; }
             let html = `<div class="feedlab-verdict">${rep.verdict}</div>`;
             html += `<div class="feedlab-status">Captured ${rep.day} &middot; ${rep.underlying} ATM ${rep.atm_strike} ${rep.expiry}</div>`;
+            // The report merges EVERY capture file of the day (chain,
+            // manual, position) - say so, since the verdict's rate /
+            // gap / agreement numbers span all of them.
+            if (rep.chain) {
+                const chainTxt = Object.entries(rep.chain)
+                    .map(([u, c]) => `${u}${c.running ? ' (live)' : ''}: ATM ${c.atm_strike ?? '-'}${c.expiry ? ' ' + c.expiry : ''}`)
+                    .join(' &middot; ');
+                html += `<div class="feedlab-status">Merged sources: always-on chains + manual + position captures &middot; ${chainTxt}</div>`;
+            }
             if (rep.market_window || rep.app_restarts) {
                 const r = rep.app_restarts || {};
                 const rTxt = (r.total == null) ? 'n/a' : `${r.market_hours ?? r.total} in market hours (${r.total} today)`;
@@ -5694,6 +6382,12 @@ document.addEventListener('DOMContentLoaded', function () {
                 if (!skipHash && location.hash !== '#' + name) {
                     location.hash = name; // history entry so Back/Forward moves between tabs
                 }
+                // Returning to the Orders tab: re-render from cached rows
+                // so the live LTP column reflects the current chain (a
+                // grid rendered before the chain arrived stays blank).
+                if (name === 'orders' && window.__refreshOrdersLtp) {
+                    window.__refreshOrdersLtp();
+                }
             }
 
             tabLinks.forEach(function (a) {
@@ -5726,4 +6420,41 @@ document.addEventListener('DOMContentLoaded', function () {
             activate(initial, true);
         });
     </script>
+<script>
+// ===== IN-APP ZOOM: Ctrl/Cmd +/-/0 =====
+// The server opens this UI as a Chrome --app window, and app-mode windows
+// don't process the browser zoom shortcuts (no toolbar/menu either), so
+// Ctrl+- does nothing there even though it works on normal tabs like
+// TradingView. Implement it here: scale the root element via CSS zoom and
+// remember the level in localStorage (per dedicated app profile).
+(function () {
+    var ZOOM_KEY = 'appUiZoom';
+    var MIN = 0.5, MAX = 2.0, STEP = 0.1;
+
+    function applyZoom(z) {
+        z = Math.min(MAX, Math.max(MIN, Math.round(z * 100) / 100));
+        if (z === 1) {
+            document.documentElement.style.removeProperty('zoom');
+            localStorage.removeItem(ZOOM_KEY);
+        } else {
+            document.documentElement.style.zoom = z;
+            localStorage.setItem(ZOOM_KEY, String(z));
+        }
+        return z;
+    }
+
+    var saved = parseFloat(localStorage.getItem(ZOOM_KEY));
+    if (saved > 0) applyZoom(saved);
+
+    document.addEventListener('keydown', function (e) {
+        if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
+        var key = e.key.toLowerCase();
+        if (key !== '-' && key !== '=' && key !== '+' && key !== '0') return;
+        e.preventDefault();
+        var current = parseFloat(getComputedStyle(document.documentElement).zoom) || 1;
+        if (key === '0') applyZoom(1);
+        else applyZoom(current + (key === '-' ? -STEP : STEP));
+    });
+})();
+</script>
 {% endblock %}

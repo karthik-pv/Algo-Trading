@@ -18,7 +18,7 @@ import pytz
 
 from core.trade_logic import Trader_Singleton
 from core.audit_log import trade_audit
-from core.session_report import build_session_report
+from core.session_report import build_session_report, build_error_grid
 from interface.broker_interface import BrokerInterface
 from adapter.kite_adapter import KiteAdapter
 from adapter.mstock_adapter import MStockAdapter
@@ -132,6 +132,12 @@ logger.level("DATA", no=25, color="<yellow>", icon="📊")
 
 logger.info("Logger initialized successfully")
 
+
+# Local web server port. 5000 conflicts with macOS AirPlay Receiver
+# (ControlCenter), which squats on 5000 and makes the Dock icon appear
+# dead (Flask bind fails with Errno 48). Keep in sync with SERVER_PORT
+# in scripts/build_mac_app.sh.
+SERVER_PORT = 5050
 
 app = Flask(__name__)
 CORS(app)
@@ -671,6 +677,10 @@ def import_executed_trades_route():
             all_orders = trader.fetch_paper_orders()
         elif mstock_is_past_date and hasattr(broker, "fetch_trades_for_date"):
             all_orders = broker.fetch_trades_for_date(trade_date)
+            # Same audit fallback as the grid route - a broker-side
+            # failure must not erase a past day from the Excel export.
+            if not all_orders:
+                all_orders = _orders_from_audit(trade_date)
         elif mstock_is_past_date:
             return jsonify({
                 "success": False,
@@ -1025,6 +1035,19 @@ def save_window_state():
         return jsonify({"ok": False, "error": str(e)}), 400
 
 
+@app.route("/window_closing", methods=["POST"])
+def window_closing():
+    """
+    pagehide beacon from the app page: the window was closed (or the
+    page navigated). The socket disconnect cannot be relied on -
+    Chrome background processes keep the 5001 socket ESTABLISHED
+    after the window is gone - so this beacon arms the fast
+    shutdown. A page refresh reconnects within ~1s and cancels it.
+    """
+    trader.window_closing_beacon()
+    return jsonify({"ok": True})
+
+
 def _load_saved_window_geometry():
     """Last app window bounds saved by the frontend, or None."""
     try:
@@ -1093,7 +1116,7 @@ def _open_app_window_macos():
     chrome = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
     if not os.path.exists(chrome):
         import webbrowser
-        webbrowser.open("http://127.0.0.1:5000")
+        webbrowser.open(f"http://127.0.0.1:{SERVER_PORT}")
         logger.info("Chrome not found; app window opened (default browser).")
         return
 
@@ -1104,7 +1127,7 @@ def _open_app_window_macos():
 
     args = [
         chrome,
-        "--app=http://127.0.0.1:5000",
+        f"--app=http://127.0.0.1:{SERVER_PORT}",
         f"--user-data-dir={profile}",
         "--no-first-run",
         "--no-default-browser-check",
@@ -1132,8 +1155,9 @@ def _open_app_window_when_ready():
     it never blocks startup.
 
     The check is an HTTP 200 on / rather than a bare TCP connect:
-    macOS AirPlay (ControlCenter) listens on port 5000 and accepts
-    TCP connections, which would open the window on an error page
+    any port squatter (AirPlay/ControlCenter listens on 5000, the
+    port this app used before moving to 5050) accepts TCP
+    connections, which would open the window on an error page
     before Flask has bound the port.
     """
     import urllib.request
@@ -1142,7 +1166,7 @@ def _open_app_window_when_ready():
     while time.time() < deadline:
         try:
             with urllib.request.urlopen(
-                "http://127.0.0.1:5000/", timeout=2
+                f"http://127.0.0.1:{SERVER_PORT}/", timeout=2
             ) as resp:
                 if resp.status == 200:
                     break
@@ -1166,12 +1190,12 @@ def _open_app_window_when_ready():
         r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
     ):
         if os.path.exists(candidate):
-            subprocess.Popen([candidate, "--app=http://127.0.0.1:5000"])
+            subprocess.Popen([candidate, f"--app=http://127.0.0.1:{SERVER_PORT}"])
             logger.info("App window opened.")
             return
 
     import webbrowser
-    webbrowser.open("http://127.0.0.1:5000")
+    webbrowser.open(f"http://127.0.0.1:{SERVER_PORT}")
     logger.info("App window opened (default browser).")
 
 
@@ -1181,7 +1205,8 @@ def run_flask_app():
     app.run(
         debug=True,
         use_reloader=False,
-        threaded=True
+        threaded=True,
+        port=SERVER_PORT
     )
 
 # Default landing page: the consolidated Trade page.
@@ -1257,6 +1282,65 @@ def _audit_lot_size(symbol):
 
 _broker_orders_cache = {"ts": 0.0, "orders": None}
 _BROKER_ORDERS_TTL = 15  # seconds
+
+
+def _orders_from_audit(date_str):
+    """Past-day order rows from the app's own audit file. The broker's
+    trade-history endpoint can fail (invalid session, API outage) - the
+    audit file already persisted every executed trade, so the Orders
+    grid must never render a past day as silently empty. Emits the
+    M.Stock order-book shape consumed by build_orders_export."""
+    from datetime import datetime as _dt
+    rows = []
+    try:
+        records = trade_audit._load_date_file(date_str) or []
+    except Exception as e:
+        logger.warning(f"Audit order fallback: could not load {date_str}: {e}")
+        return rows
+
+    for r in records:
+        if str(r.get("trade_mode") or "LIVE").upper() == "PAPER":
+            continue
+        sym = r.get("symbol") or ""
+        if not sym or sym == "?":
+            continue
+        try:
+            lots_f = float(r.get("lots") or 0)
+        except (TypeError, ValueError):
+            lots_f = 0
+        lot = _audit_lot_size(sym) or 0
+        # "lots" is a lot count on NFO/BFO legs but equals raw quantity
+        # on MCX legs - normalize to units either way.
+        qty = int(lots_f * lot) if 0 < lots_f <= 50 and lot else int(lots_f)
+
+        def _ts_str(ts):
+            try:
+                return _dt.fromtimestamp(float(ts)).strftime("%Y-%m-%d %H:%M:%S")
+            except (TypeError, ValueError, OSError, OverflowError):
+                return ""
+
+        if r.get("buy_exec_ts"):
+            rows.append({
+                "timestamp": _ts_str(r["buy_exec_ts"]),
+                "tradingsymbol": sym,
+                "transaction_type": "BUY",
+                "quantity": qty,
+                "average_price": r.get("buy_avg_price") or r.get("ltp_exec") or 0,
+                "order_id": f"{r.get('token') or sym}:B",
+                "order_status": "COMPLETE",
+            })
+        if r.get("sell_exec_ts"):
+            rows.append({
+                "timestamp": _ts_str(r["sell_exec_ts"]),
+                "tradingsymbol": sym,
+                "transaction_type": "SELL",
+                "quantity": qty,
+                "average_price": r.get("sell_avg_price") or r.get("sell_exec_ltp") or 0,
+                "order_id": f"{r.get('token') or sym}:S",
+                "order_status": "COMPLETE",
+            })
+    rows.sort(key=lambda x: x["timestamp"])
+    return rows
 
 
 def _audit_broker_orders():
@@ -1403,6 +1487,15 @@ def api_audit_download():
     except Exception as e:
         logger.exception("Audit Excel download failed")
         return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/audit/error_grid")
+def api_audit_error_grid():
+    """Every ERROR / WARNING line from the selected date's session
+    logs, chronological, with a running index - the Audit tab's
+    error grid. App-level (not per trade-mode bucket)."""
+    date_str = request.args.get("date") or datetime.now().strftime("%Y-%m-%d")
+    return jsonify(build_error_grid(date_str))
 
 
 @app.route("/api/audit/log_report")
@@ -1591,6 +1684,20 @@ def get_executed_trades():
             orders = broker.fetch_all_orders()
         elif is_past_date and hasattr(broker, "fetch_trades_for_date"):
             orders = broker.fetch_trades_for_date(trade_date)
+
+            # Past dates must never render as silently empty: when the
+            # trade-history fetch failed (invalid session / API outage -
+            # 2026-10-07: the endpoint answered "Invalid request" and the
+            # failure surfaced as an empty grid), serve the day from the
+            # app's own audit records instead.
+            if not orders:
+                orders = _orders_from_audit(trade_date)
+                if orders:
+                    logger.info(
+                        f"get_executed_trades: broker history unavailable "
+                        f"for {trade_date} - serving {len(orders)} order(s) "
+                        f"from the app audit records"
+                    )
         elif is_past_date:
             return jsonify({
                 "success": False,
@@ -1855,9 +1962,33 @@ def feed_compare_feed_status():
 
 
 if _feed_lab_enabled():
-    from core.feed_capture import start_net_monitor, register_broker
+    from core.feed_capture import (
+        start_net_monitor, register_broker, register_trader,
+        start_position_capture_monitor, start_chain_capture_monitor,
+    )
     register_broker(broker)
+    register_trader(trader)
     start_net_monitor()
+    start_position_capture_monitor()
+    start_chain_capture_monitor()
+
+# Keep the in-memory fund summary warm WITHOUT depending on the
+# browser: the lot calculator reads this cache, and after a restart
+# (before any /fund_summary request from a page) it found the cache
+# empty and fell back to 1 lot - 95 such fallbacks in one minute on
+# 2026-10-06. One refresh per minute, LIVE only (PAPER sizes from its
+# own paper balance).
+def _fund_summary_autorefresh_loop():
+    while True:
+        try:
+            if str(fetch_from_json("appconfig.json", "MODE") or "").upper() != "PAPER":
+                _refresh_fund_summary_background()
+        except Exception:
+            pass
+        time.sleep(60)
+
+threading.Thread(target=_fund_summary_autorefresh_loop, daemon=True,
+                 name="fund-summary-autorefresh").start()
 
 # ========================== end Feed Lab block ==========================
 
@@ -1877,7 +2008,7 @@ if 1==1: #__name__ == "__main__":
 
         backup_old_logs()    
 
-        #app.run(host='0.0.0.0', port=5000, debug=True)
+        #app.run(host='0.0.0.0', port=SERVER_PORT, debug=True)
         logger.info("Initializing broker and trader...")
         trader = Trader_Singleton() 
         # uncomment for development
@@ -1910,13 +2041,17 @@ if 1==1: #__name__ == "__main__":
         
         trader.start_frontend_socket_server(app)
 
-        # The app window (browser) is opened by the server itself once
-        # the port is live - the launcher no longer manages it.
-        threading.Thread(
-            target=_open_app_window_when_ready,
-            daemon=True,
-            name="browser-opener"
-        ).start()
+        # The app window is opened by the server itself once the port
+        # is live - EXCEPT in the macOS Dock session: there the
+        # dock_shell process owns a native WebKit window (no Chrome in
+        # the Dock at all), waits for this port itself, and loads the
+        # app page.
+        if os.environ.get("APP_WINDOW_OWNER") != "dock_shell":
+            threading.Thread(
+                target=_open_app_window_when_ready,
+                daemon=True,
+                name="browser-opener"
+            ).start()
 
         if CURRENT_BROKER == "MSTOCK":
             logger.info("FLASK: Launching Flask thread...")
@@ -1937,7 +2072,7 @@ if 1==1: #__name__ == "__main__":
             socket_thread = threading.Thread(target=start_socket, daemon=True)
             socket_thread.start()
             trader.start_trading_watcher_thread()
-            app.run(debug=True , use_reloader = False)
+            app.run(debug=True , use_reloader = False, port=SERVER_PORT)
         elif CURRENT_BROKER == "MSTOCK":
             trader.start_trading_watcher_thread()
             asyncio.run(start_async_connections())
@@ -1945,12 +2080,12 @@ if 1==1: #__name__ == "__main__":
             trader.start_trading_watcher_thread()
             socket_thread = threading.Thread(target=start_socket, daemon=True)
             socket_thread.start()
-            app.run(debug=True, use_reloader=False)
+            app.run(debug=True, use_reloader=False, port=SERVER_PORT)
         elif CURRENT_BROKER == "PLAYBACK":
             trader.start_trading_watcher_thread()
             socket_thread = threading.Thread(target=start_socket, daemon=True)
             socket_thread.start()
-            app.run(debug=True, use_reloader=False)
+            app.run(debug=True, use_reloader=False, port=SERVER_PORT)
 
         
 
