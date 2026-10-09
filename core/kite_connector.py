@@ -122,47 +122,63 @@ class KiteSingleton:
         logger.debug("KiteConnect instance created.")
 
     def create_session(self):
-        try:
-            self.create_session_automated()
-            return
-        except Exception as e:
-            logger.warning(f"Automated Kite login failed ({e}) - falling back to browser login")
+        # Serialize ALL login flows. Startup runs create_session() while
+        # monitor threads (fund-summary refresh, Feed Lab) can trigger
+        # ensure_fresh_session() at the same moment. Two parallel logins
+        # for the same user invalidate each other's 2FA challenge and
+        # both TOTP submissions then come back "Invalid TOTP" (observed
+        # 2026-10-09: two flows 200ms apart, both rejected, 2 lockout
+        # attempts burned on a perfectly valid secret). Sharing the
+        # ensure_fresh_session relogin lock makes them run one after
+        # the other.
+        with KiteSingleton._relogin_lock:
+            # A concurrent flow that finished while we waited may have
+            # already refreshed the token - keep it instead of logging
+            # in a second time (each needless login burns TOTP window).
+            if self._access_token and self._token_is_accepted():
+                logger.info("Kite session already refreshed by a concurrent login - reusing it.")
+                return
+            try:
+                self.create_session_automated()
+                return
+            except Exception as e:
+                logger.warning(f"Automated Kite login failed ({e}) - falling back to browser login")
 
-        logger.info("Please visit the following URL to authorize the application:")
-        logger.debug(self._kite.login_url())
-        login_url = self._kite.login_url()        
-        #request_token = input("Enter request token here - ")
+            logger.info("Please visit the following URL to authorize the application:")
+            logger.debug(self._kite.login_url())
+            login_url = self._kite.login_url()
+            #request_token = input("Enter request token here - ")
 
-        # 1. Automatically open the browser
-        webbrowser.open_new(login_url)
-        
-        # 2. Start a temporary local HTTP server to listen for the redirect
-        # Override via KITE_REDIRECT_PORT in .env; must match the Redirect
-        # URL port configured in the Kite Developer Console.
-        port = int(os.getenv("KITE_REDIRECT_PORT", "8080"))
-        logger.info(f"Waiting for redirect with request token on port {port}...")
-        
-        server_address = ('127.0.0.1', port)
-        httpd = HTTPServer(server_address, RequestTokenHandler)
-        httpd.request_token = None
-        
-        # Wait until a request is handled and the token is captured
-        while httpd.request_token is None:
-            httpd.handle_request()
-            
-        request_token = httpd.request_token
-        logger.info("Successfully captured request token automatically!")
+            # 1. Automatically open the browser
+            webbrowser.open_new(login_url)
+
+            # 2. Start a temporary local HTTP server to listen for the redirect
+            # Override via KITE_REDIRECT_PORT in .env; must match the Redirect
+            # URL port configured in the Kite Developer Console.
+            port = int(os.getenv("KITE_REDIRECT_PORT", "8080"))
+            logger.info(f"Waiting for redirect with request token on port {port}...")
+
+            server_address = ('127.0.0.1', port)
+            httpd = HTTPServer(server_address, RequestTokenHandler)
+            httpd.request_token = None
+
+            # Wait until a request is handled and the token is captured
+            while httpd.request_token is None:
+                httpd.handle_request()
+
+            request_token = httpd.request_token
+            logger.info("Successfully captured request token automatically!")
 
 
-        if not KITE_SECRET_KEY:
-            raise ValueError("KITE_SECRET_KEY not found in environment variables")
-        data = self._kite.generate_session(
-            request_token=request_token, api_secret=os.getenv("KITE_SECRET_KEY")
-        )
-        #logger.debug(f"Profile data received: {data}")  # contains access_token
-        self.set_access_token(data["access_token"])
-        write_to_json({"kite_access_token" : data["access_token"] , "kite_last_token_timestamp" : datetime.now().isoformat()} , "access_token.json")
-        #logger.debug(f"Access token set: {data['access_token']}")  # do not log the token
+            if not KITE_SECRET_KEY:
+                raise ValueError("KITE_SECRET_KEY not found in environment variables")
+            data = self._kite.generate_session(
+                request_token=request_token, api_secret=os.getenv("KITE_SECRET_KEY")
+            )
+            #logger.debug(f"Profile data received: {data}")  # contains access_token
+            self.set_access_token(data["access_token"])
+            write_to_json({"kite_access_token" : data["access_token"] , "kite_last_token_timestamp" : datetime.now().isoformat()} , "access_token.json")
+            #logger.debug(f"Access token set: {data['access_token']}")  # do not log the token
 
 
     def create_session_automated(self, max_attempts=3):

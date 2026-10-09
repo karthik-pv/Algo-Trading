@@ -4,8 +4,11 @@ import json
 import base64
 import asyncio
 import contextlib
+import hashlib
+import hmac
 import logging
 import socket
+import struct
 import subprocess
 import sys
 import time
@@ -62,6 +65,18 @@ def _prompt_otp():
         raise RuntimeError("Empty M.Stock OTP entered")
     return otp
 
+
+def _totp_code(secret):
+    """6-digit TOTP from a base32 secret - same RFC 6238 scheme the
+    authenticator app uses (SHA-1, 30s window, 6 digits). Mirrors
+    kite_connector._totp_code."""
+    key = base64.b32decode(secret + "=" * ((8 - len(secret) % 8) % 8))
+    counter = int(time.time() // 30)
+    mac = hmac.new(key, struct.pack(">Q", counter), hashlib.sha1).digest()
+    offset = mac[-1] & 0x0F
+    code = (struct.unpack(">I", mac[offset:offset + 4])[0] & 0x7FFFFFFF) % 1000000
+    return f"{code:06d}"
+
 logging.basicConfig(level=logging.DEBUG)
 
 load_dotenv()
@@ -69,6 +84,11 @@ load_dotenv()
 MSTOCK_API_KEY = os.getenv("MSTOCK_API_KEY")
 MSTOCK_CLIENT_CODE = os.getenv("MSTOCK_CLIENT_CODE")
 MSTOCK_CLIENT_PASSWORD = os.getenv("MSTOCK_CLIENT_PASSWORD")
+# Authenticator-based TOTP secret (base32). When set, the login uses the
+# /session/verifytotp endpoint instead of the SMS/email OTP prompt -
+# see "Process to Enable TOTP on mStock" in the Type B User API docs
+# ("If TOTP is enabled, OTP will not be triggered for login requests").
+MSTOCK_TOTP_SECRET = os.getenv("MSTOCK_TOTP_SECRET")
 
 WS_HOST = "ws.mstock.trade"
 WS_PORT = 443
@@ -122,7 +142,11 @@ class MStockSingleton:
     def create_session(self):
         logger.info("Creating M.Stock session...")
         refresh_token = self.login()
-        self.get_session_token(refresh_token)
+        # login() returns None when the login response already carried
+        # the session token (TOTP-enabled account) - nothing further
+        # to exchange.
+        if refresh_token:
+            self.get_session_token(refresh_token)
 
     def login(self):
         logger.info("Logging in to M.Stock...")
@@ -164,16 +188,30 @@ class MStockSingleton:
                         time.sleep(10)
                     continue
                 data = response.get("data") if isinstance(response, dict) else None
-                if not data or not data.get("refreshToken"):
-                    last_error = RuntimeError(
-                        f"M.Stock login rejected: "
-                        f"{response.get('message') or response.get('error') or response}"
+                if data and data.get("refreshToken"):
+                    return data["refreshToken"]
+                if data and data.get("jwtToken"):
+                    # TOTP-enabled accounts can be handed the session
+                    # token straight from the login call (no second
+                    # step) - the official Node SDK treats the login
+                    # response's jwtToken as final.
+                    self.set_access_token(data["jwtToken"])
+                    write_to_json(
+                        {
+                            "mstock_jwt_token": data["jwtToken"],
+                            "mstock_last_token_timestamp": datetime.datetime.now().isoformat(),
+                        },
+                        "access_token.json",
                     )
-                    logger.warning(f"{last_error} (attempt {attempt}/4)")
-                    if attempt < 4:
-                        time.sleep(10)
-                    continue
-                return data["refreshToken"]
+                    return None
+                last_error = RuntimeError(
+                    f"M.Stock login rejected: "
+                    f"{response.get('message') or response.get('error') or response}"
+                )
+                logger.warning(f"{last_error} (attempt {attempt}/4)")
+                if attempt < 4:
+                    time.sleep(10)
+                continue
             except (OSError, socket.timeout) as net_error:
                 last_error = RuntimeError(
                     f"M.Stock login unreachable: {net_error} (attempt {attempt}/4)"
@@ -190,28 +228,50 @@ class MStockSingleton:
 
     def get_session_token(self, refresh_token):
         logger.info("Getting session token from M.Stock...")
-        otp = _prompt_otp()
-        conn = http.client.HTTPSConnection("api.mstock.trade")
-        headers = {
-            "X-Mirae-Version": "1",
-            "X-PrivateKey": self._api_key,
-            "Content-Type": "application/json",
-        }
-        json_data = {
-            "refreshToken": refresh_token,
-            "otp": otp,
-        }
-        conn.request(
-            "POST",
-            "/openapi/typeb/session/token",
-            json.dumps(json_data),
-            headers,
-        )
-        response = json.loads(conn.getresponse().read().decode("utf-8"))
-        logger.debug(f"Session token response: {response}")
+        if MSTOCK_TOTP_SECRET:
+            # TOTP-enabled account: the documented "Generate Session with
+            # TOTP" flow - no SMS/email OTP is generated at all. A code
+            # generated right at a 30s window boundary can be rejected,
+            # so retry once with a fresh code on an explicit TOTP error.
+            endpoint = "/openapi/typeb/session/verifytotp"
+            field = "totp"
+            attempts = 2
+            logger.info("MSTOCK_TOTP_SECRET configured - using TOTP login (no OTP prompt).")
+        else:
+            endpoint = "/openapi/typeb/session/token"
+            field = "otp"
+            attempts = 1
 
-        data = response.get("data") if isinstance(response, dict) else None
-        if not data or not data.get("jwtToken"):
+        last_error = None
+        for attempt in range(1, attempts + 1):
+            credential = _totp_code(MSTOCK_TOTP_SECRET) if field == "totp" else _prompt_otp()
+            conn = http.client.HTTPSConnection("api.mstock.trade", timeout=15)
+            headers = {
+                "X-Mirae-Version": "1",
+                "X-PrivateKey": self._api_key,
+                "Content-Type": "application/json",
+            }
+            json_data = {
+                "refreshToken": refresh_token,
+                field: credential,
+            }
+            conn.request(
+                "POST",
+                endpoint,
+                json.dumps(json_data),
+                headers,
+            )
+            response = json.loads(conn.getresponse().read().decode("utf-8"))
+            logger.debug(f"Session token response: {response}")
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+            data = response.get("data") if isinstance(response, dict) else None
+            if data and data.get("jwtToken"):
+                break
+
             # Surface the broker's actual error instead of crashing on
             # a None subscript - e.g. wrong/expired OTP, reused OTP, or
             # too many attempts.
@@ -220,7 +280,16 @@ class MStockSingleton:
                 if isinstance(response, dict)
                 else response
             )
-            raise RuntimeError(f"M.Stock OTP login rejected by API: {error}")
+            last_error = f"M.Stock OTP login rejected by API: {error}"
+            # An explicit bad-TOTP reply is worth one fresh-code retry
+            # (the previous code may have hit the window boundary);
+            # anything else (bad API key, suspended subscription) is not.
+            if field != "totp" or attempt >= attempts or (
+                isinstance(error, str) and "totp" not in error.lower()
+            ):
+                raise RuntimeError(last_error)
+            logger.warning(f"{last_error} - retrying with a fresh TOTP code")
+
         access_token = data["jwtToken"]
         #logger.debug(f"Access token: {access_token}")
         
