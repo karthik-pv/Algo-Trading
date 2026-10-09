@@ -409,6 +409,21 @@ class TradeAudit:
                     rec["sell_trigger_source"] = "RESTING_EXIT"
             self._persist()
 
+    def update_resting_exit_price(self, symbol, price):
+        """A provisional (click-anchored) resting exit was re-anchored
+        to the executed buy average - refresh the resting price so the
+        audit reports the limit that actually governs the exit."""
+        with self._lock:
+            rec = self._match_open(symbol=symbol) or self._match_latest_for_symbol(symbol)
+            if rec is None:
+                return
+            if not rec.get("resting_exit_placed_ts"):
+                return
+            rec["resting_exit_price"] = price
+            if rec.get("sell_trigger_source") == "RESTING_EXIT":
+                rec["sell_trigger_ltp"] = price
+            self._persist()
+
     def record_broker_side_sell_fill(self, symbol, fill_price, filled_qty):
         """A resting exit filled at the broker (no app-placed sell)."""
         with self._lock:

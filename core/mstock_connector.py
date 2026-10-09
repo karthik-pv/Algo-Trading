@@ -16,7 +16,7 @@ import datetime
 from dotenv import load_dotenv
 from loguru import logger
 
-from core.utils import fetch_from_json , write_to_json , get_exchange_for_underlying , is_market_open
+from core.utils import fetch_from_json , write_to_json , get_exchange_for_underlying , is_market_open , windows_login_dialog
 from adapter.mstock_utils import parse_quote_message
 from core import broker_stats
 
@@ -25,11 +25,19 @@ def _prompt_otp():
     """
     Ask the user for the M.Stock login OTP. With a console attached
     (Windows launcher / VSCode terminal) this reads from stdin as
-    before. Without one (macOS Dock app) stdin is EOF, so a native
-    dialog is shown instead.
+    before. Without one, a native dialog is shown instead (macOS
+    Dock app: osascript; detached Windows launch: tkinter) - the
+    degraded-start login retry loop can then actually recover
+    instead of failing on every pass.
     """
     if sys.stdin is not None and sys.stdin.isatty():
         return input("Please enter OTP received - ")
+
+    if sys.platform == "win32":
+        return windows_login_dialog(
+            "AlgoOptionScalper - M.Stock OTP",
+            "M.Stock login: enter the OTP you received",
+        )
 
     if sys.platform != "darwin":
         raise RuntimeError(
@@ -775,16 +783,44 @@ class MStockSingleton:
             self.set_access_token(access_token)
 
     # production
-    def initialise_for_prod(self):
+    def initialise_for_prod(self, allow_interactive=True):
         logger.info("Initializing M.Stock for production...")
         last_updated_date = fetch_from_json("access_token.json" , "mstock_last_token_timestamp")
         last_update_datetime = datetime.datetime.fromisoformat(last_updated_date)
         today_date = datetime.datetime.now().date()
-        if not last_update_datetime.date() == today_date:
-            try:
-                self.create_session()
-                logger.debug("MStock session created for production.")
-            except Exception as session_error:
+        if last_update_datetime.date() == today_date:
+            access_token = fetch_from_json("access_token.json", "mstock_jwt_token")
+            #logger.debug(access_token)  # do not log the token
+            logger.info("Fetched access token from JSON for production.")
+            self.set_access_token(access_token)
+            return
+        if not allow_interactive:
+            # Background (Feed Lab) session check: NO login attempt -
+            # the OTP dialog runs tkinter off the main thread, which
+            # hard-crashes pythonw (tcl86t.dll APPCRASH, 2026-10-09).
+            # Degrade to the stored JWT when it is still valid; the
+            # active broker's trading session is not touched.
+            if self._stored_jwt_fresh():
+                logger.warning(
+                    "M.Stock token is from a previous day - background "
+                    "check kept the still-valid stored JWT. The Feed "
+                    "Lab M-side may degrade until a manual login."
+                )
+                self.set_access_token(
+                    fetch_from_json("access_token.json", "mstock_jwt_token")
+                )
+            else:
+                logger.error(
+                    "M.Stock token expired and the background session "
+                    "check is non-interactive - the Feed Lab M-side "
+                    "stays degraded until a manual login. Trading on "
+                    "the active broker is unaffected."
+                )
+            return
+        try:
+            self.create_session()
+            logger.debug("MStock session created for production.")
+        except Exception as session_error:
                 # Broker login API down (e.g. 502 during a morning
                 # outage) or login rejected - the app must still come
                 # up from the Dock. Fall back to the stored JWT when it

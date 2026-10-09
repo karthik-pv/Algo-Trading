@@ -674,6 +674,20 @@
         background: transparent;
     }
 
+    /* Contract-note / tradebook upload in progress: the grid shows one
+       blinking message row while the conversion runs. */
+    @keyframes ordersUploadPulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.4; }
+    }
+    #ordersTableBody .upload-in-progress {
+        animation: ordersUploadPulse 1.2s ease-in-out infinite;
+        font-weight: 700;
+        color: #e8c468;
+        border-style: solid;
+        border-color: #e8c468;
+    }
+
     #ordersDateInput {
         background: transparent;
         color: #ccc;
@@ -5183,14 +5197,40 @@ document.addEventListener('DOMContentLoaded', function() {
         ordersDownloadBtn.addEventListener('click', downloadOrders);
     }
 
+    // Wipe the grid + every header value while an upload runs - the
+    // previously loaded date's view must never read as the uploaded
+    // note's data. One blinking message row stands in for the grid.
+    function showOrdersProgress(message) {
+        ordersRowsCache = [];
+        ordersDayStartCashCache = NaN;
+        if (ordersTableBody) {
+            ordersTableBody.innerHTML =
+                '<tr><td colspan="16" class="no-options upload-in-progress">'
+                + message + '</td></tr>';
+        }
+        if (ordersCountLabel) ordersCountLabel.textContent = message;
+        const statsEl = document.getElementById('ordersTradeStats');
+        if (statsEl) statsEl.innerHTML = '';
+        const brokerageLabel = document.getElementById('brokerageSummaryLabel');
+        if (brokerageLabel) brokerageLabel.style.display = 'none';
+        const otherChargesLabel = document.getElementById('otherChargesSummaryLabel');
+        if (otherChargesLabel) otherChargesLabel.style.display = 'none';
+        if (cashSummaryLabel) cashSummaryLabel.style.display = 'none';
+    }
+
     async function uploadContractNote() {
         if (!ordersUploadInput || !ordersUploadInput.files || ordersUploadInput.files.length === 0) return;
         const uploadFile = ordersUploadInput.files[0];
         // CSV files are Kite Console tradebook reports; PDFs stay on the
         // M.Stock contract-note flow.
         const isCsv = /\.csv$/i.test(uploadFile.name);
+        // Restore point - a failed upload puts the previous view back.
+        const previousDate = ordersDateInput ? ordersDateInput.value : '';
         if (ordersUploadBtn) ordersUploadBtn.disabled = true;
         if (ordersRefreshBtn) ordersRefreshBtn.disabled = true;
+        if (ordersDownloadBtn) ordersDownloadBtn.disabled = true;
+        if (ordersDateInput) ordersDateInput.disabled = true;
+        showOrdersProgress('Upload in progress...');
         try {
             const formData = new FormData();
             formData.append(isCsv ? "file" : "pdf", uploadFile);
@@ -5215,15 +5255,28 @@ document.addEventListener('DOMContentLoaded', function() {
                 trade_date: data.trade_date || '',
                 kind: isCsv ? 'kite' : 'mstock'
             };
+            // The date control follows the uploaded note (multi-day
+            // tradebooks carry no single date and leave it empty).
+            if (ordersDateInput) {
+                ordersDateInput.value = data.trade_date || '';
+            }
             renderOrders(ordersRowsCache);
             // Uploaded data is not tied to today's live cash story.
             if (cashSummaryLabel) cashSummaryLabel.style.display = 'none';
         } catch (error) {
             console.error("Could not upload " + (isCsv ? "tradebook CSV" : "contract note") + ":", error);
+            // Failed upload: restore the previous date and reload its
+            // broker rows so the grid is never left blank.
+            if (ordersDateInput) ordersDateInput.value = previousDate;
+            ordersSource = 'broker';
+            uploadedOrdersMeta = null;
+            loadOrders();
             alert(error.message || "Could not upload file");
         } finally {
             if (ordersUploadBtn) ordersUploadBtn.disabled = false;
             if (ordersRefreshBtn) ordersRefreshBtn.disabled = false;
+            if (ordersDownloadBtn) ordersDownloadBtn.disabled = false;
+            if (ordersDateInput) ordersDateInput.disabled = false;
             ordersUploadInput.value = '';
         }
     }

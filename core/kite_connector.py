@@ -22,7 +22,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 import urllib.parse
 
 
-from core.utils import get_access_token_from_json , write_to_json , fetch_from_json
+from core.utils import get_access_token_from_json , write_to_json , fetch_from_json , windows_login_dialog
 
 #logging.basicConfig(level=logging.DEBUG)
 
@@ -58,6 +58,12 @@ def _prompt_kite_2fa(twofa_type, attempts_left=None):
         label += f"  ({attempts_left} attempt(s) remain before lockout)"
     if sys.stdin is not None and sys.stdin.isatty():
         return input(f"Please enter Kite {label} - ").strip()
+
+    if sys.platform == "win32":
+        return windows_login_dialog(
+            "AlgoOptionScalper - Zerodha 2FA",
+            f"Kite login: enter the 6-digit {label}",
+        )
 
     if sys.platform != "darwin":
         raise RuntimeError(
@@ -314,13 +320,11 @@ class KiteSingleton:
         self.set_access_token(access_token)
 
     # prod
-    def initialise_kite_for_prod(self):
+    def initialise_kite_for_prod(self, allow_interactive=True):
         last_updated_date = fetch_from_json("access_token.json" , "kite_last_token_timestamp")
         last_update_datetime = datetime.fromisoformat(last_updated_date)
         today_date = datetime.now().date()
-        if not last_update_datetime.date() == today_date:
-            self.create_session()
-        else:
+        if last_update_datetime.date() == today_date:
             logging.debug("Access token already generated for the day")
             access_token = fetch_from_json("access_token.json" , "kite_access_token")
             self.set_access_token(access_token)
@@ -335,8 +339,38 @@ class KiteSingleton:
                     "Same-day Kite token is rejected by the API - "
                     "running a fresh login."
                 )
-                self.create_session()
-        logger.debug("Kite session created for production.")
+                if not allow_interactive:
+                    # Background (Feed Lab) session check: the ONLY
+                    # safe re-login is the silent TOTP one. NEVER run
+                    # create_session() off the main thread - its
+                    # dialog/browser fallback puts tkinter on a
+                    # non-main thread, which hard-crashes pythonw
+                    # (tcl86t.dll APPCRASH, 2026-10-09).
+                    if self.ensure_fresh_session():
+                        logger.info(
+                            "Kite session silently renewed in the "
+                            "background."
+                        )
+                    else:
+                        logger.error(
+                            "Kite token rejected and silent re-login "
+                            "unavailable (KITE_TOTP_SECRET unset or "
+                            "failed) - the Feed Lab K-side stays "
+                            "degraded until a manual login. Trading "
+                            "on the active broker is unaffected."
+                        )
+                else:
+                    self.create_session()
+        elif allow_interactive:
+            self.create_session()
+        else:
+            logger.error(
+                "Kite token is from a previous day and the background "
+                "session check is non-interactive - no browser/dialog "
+                "login can run off the main thread (tkinter APPCRASH). "
+                "The Feed Lab K-side stays degraded until a manual "
+                "login. Trading on the active broker is unaffected."
+            )
 
     def _token_is_accepted(self):
         """One cheap authenticated call: True only when Kite accepts

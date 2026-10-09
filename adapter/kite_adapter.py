@@ -911,10 +911,13 @@ class KiteAdapter(BrokerInterface):
             self._trader.frontend_data_socket.emit('sell_order_result',{"success": True, "tradingsymbol": trading_symbol , "lots": original_quantity, "position_key": position_key})
             return order_id
         except Exception as e:
+            # Re-raise like MStock's sell_units: the callers own the UI
+            # and the RMS-rejection backoff. Swallowing the error here
+            # (the old return None) meant the SL watcher never armed its
+            # backoff and re-fired the same rejected order every cycle
+            # (2026-10-08: 223 identical RMS rejects).
             logger.error(f"Kite sell_units error: {e}")
-            self._trader.frontend_data_socket.emit('status_message', {"success": False, "message": "Error placing order..."})
-            self._trader.frontend_data_socket.emit('sell_order_result',{"success": False, "tradingsymbol": trading_symbol , "position_key": position_key, "error": str(e)})
-            return None
+            raise
 
     def subscribe_to_all(self, instruments):
         try:
@@ -1533,6 +1536,10 @@ class KiteAdapter(BrokerInterface):
                     "order_type": o.get("order_type"),
                     "order_status": o.get("status"),
                     "order_id": o.get("order_id"),
+                    # Broker-reported executed quantity - the exit
+                    # re-anchor must never cancel + re-place an order
+                    # that already partially filled.
+                    "filled_quantity": o.get("filled_qty"),
                     # For the pending-grid joins (position leg + lot size).
                     "token": str(o.get("instrument_token") or ""),
                     "exchange": o.get("exchange"),

@@ -76,6 +76,61 @@ def get_access_token_from_json():
     return data.get("access_token")
 
 
+def windows_login_dialog(title, message, masked=True):
+    """
+    Native Windows text prompt for broker logins when no console is
+    attached (a detached launcher has no stdin to read). Shows a
+    topmost tkinter dialog - tkinter ships with CPython on Windows -
+    and blocks the caller for up to 5 minutes, the same cap as the
+    macOS osascript prompt. Returns the stripped text; raises
+    RuntimeError on cancel, timeout or an empty entry so the callers'
+    existing login-retry logging keeps working unchanged.
+    """
+    try:
+        import tkinter as tk
+
+        root = tk.Tk()
+    except Exception as dialog_error:
+        raise RuntimeError(f"Login dialog could not open: {dialog_error}")
+
+    root.withdraw()
+    result = {"text": None}
+
+    dialog = tk.Toplevel(root)
+    dialog.title(title)
+    dialog.attributes("-topmost", True)
+    dialog.resizable(False, False)
+    dialog.grab_set()
+    dialog.protocol("WM_DELETE_WINDOW", dialog.destroy)
+
+    tk.Label(dialog, text=message, justify="left").pack(anchor="w", padx=14, pady=(12, 4))
+    entry = tk.Entry(dialog, show="*" if masked else "", width=28)
+    entry.pack(padx=14, pady=(0, 10))
+    entry.focus_set()
+
+    def _ok(_event=None):
+        result["text"] = entry.get().strip()
+        dialog.destroy()
+
+    def _cancel(_event=None):
+        dialog.destroy()
+
+    buttons = tk.Frame(dialog)
+    buttons.pack(pady=(0, 12))
+    tk.Button(buttons, text="OK", width=10, command=_ok).pack(side="left", padx=6)
+    tk.Button(buttons, text="Cancel", width=10, command=_cancel).pack(side="left", padx=6)
+    entry.bind("<Return>", _ok)
+    entry.bind("<Escape>", _cancel)
+
+    root.after(300_000, root.destroy)
+    root.wait_window(dialog)
+    root.destroy()
+
+    if not result["text"]:
+        raise RuntimeError("Dialog entry cancelled or timed out")
+    return result["text"]
+
+
 _JSON_READ_RETRIES = 5
 _JSON_READ_RETRY_DELAY_SECONDS = 1.0
 

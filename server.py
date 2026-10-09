@@ -18,6 +18,8 @@ import pytz
 
 from core.trade_logic import Trader_Singleton
 from core.audit_log import trade_audit
+from core.kite_connector import KiteSingleton
+from core.mstock_connector import MStockSingleton
 from core.session_report import build_session_report, build_error_grid
 from interface.broker_interface import BrokerInterface
 from adapter.kite_adapter import KiteAdapter
@@ -2017,6 +2019,65 @@ if 1==1: #__name__ == "__main__":
         #logger.info("Starting in development mode...")
         # uncomment for prod
         broker.prod_start()
+
+        # Session health for BOTH brokers is independent of the ACTIVE
+        # one: the Feed Lab (chain capture, feed pills, dual-broker
+        # comparisons) reads each token straight from access_token.json
+        # instead of logging in. The active broker's prod_start() logs
+        # ITSELF in - the OTHER broker was never validated, so a token
+        # killed by any other login (Kite web/mobile invalidate the
+        # Connect session) left its feed on 403s all day - 2026-10-09:
+        # 07:23 Kite token rejected by 09:22, zero Kite ticks for the
+        # day's positions. Validate + re-login whichever broker is not
+        # trading, in the background; skipped in simulated sessions.
+        if CURRENT_BROKER not in ("SIMULATOR", "PLAYBACK"):
+            # allow_interactive=False: these run OFF the main thread,
+            # so they must never open the login dialogs/browser - the
+            # tkinter dialog from a background thread hard-crashes
+            # pythonw (tcl86t.dll APPCRASH, 2026-10-09). They only
+            # validate/renew silently; a failed check just degrades
+            # the Feed Lab side - trading is never affected.
+            def _ensure_kite_session():
+                try:
+                    KiteSingleton().initialise_kite_for_prod(
+                        allow_interactive=False
+                    )
+                    logger.info(
+                        "Kite session check complete "
+                        "(Feed Lab token validated/renewed)."
+                    )
+                except Exception as kite_error:
+                    logger.warning(
+                        f"Kite session check failed - Feed Lab will "
+                        f"run degraded until a manual login: {kite_error}"
+                    )
+
+            def _ensure_mstock_session():
+                try:
+                    MStockSingleton().initialise_for_prod(
+                        allow_interactive=False
+                    )
+                    logger.info(
+                        "M.Stock session check complete "
+                        "(Feed Lab token validated/renewed)."
+                    )
+                except Exception as mstock_error:
+                    logger.warning(
+                        f"M.Stock session check failed - Feed Lab will "
+                        f"run degraded until a manual login: {mstock_error}"
+                    )
+
+            if CURRENT_BROKER != "KITE":
+                threading.Thread(
+                    target=_ensure_kite_session, daemon=True,
+                    name="kite-session-check"
+                ).start()
+            if CURRENT_BROKER != "MSTOCK":
+                threading.Thread(
+                    target=_ensure_mstock_session, daemon=True,
+                    name="mstock-session-check"
+                ).start()
+
         #logger.info("Starting in production mode...")
         #broker.fetch_all_instruments()
         broker.download_instrument_list(EXCHANGE,UNDERLYING)

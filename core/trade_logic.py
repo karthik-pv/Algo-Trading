@@ -92,6 +92,11 @@ class Trader_Singleton:
     _pending_exit_lock = threading.Lock()
     _PENDING_EXIT_MAX_AGE_SECONDS = 900
 
+    # A broker position book can lag a just-filled BUY by seconds (the
+    # order sits in TRANSIT). Legs younger than this are immune to the
+    # not-held-by-broker stale drop.
+    _BUY_CONFIRM_GRACE_SECONDS = 20
+
     # ---------------------------------------------------------
     # PAPER pending exits (virtual resting U/D orders). PAPER mode
     # places no broker orders, so a U/D paper buy registers a virtual
@@ -1319,11 +1324,17 @@ class Trader_Singleton:
         if not intent:
             return
 
-        # Anchor: D mode is fill-accurate; U mode stays on the
-        # click-time LTP. Fall back to order history when the event
-        # carried no average price.
+        # Anchor: the executed buy fill when it is known. D mode is
+        # fill-accurate by design; U mode re-anchors too once the buy
+        # average is known (2026-10-09: a U exit computed on the click
+        # LTP 10.2 sat at 10.55 while the buy filled 10.5 - the fill
+        # ate the whole 3% target and the exit booked 0.48%). Fall
+        # back to order history when the event carried no average
+        # price, and to the click LTP when the fill cannot be fetched
+        # (the sweep then re-anchors once the average is learned).
         anchor = intent["anchor_ltp"]
-        if intent["mode"] == "D":
+        fill_known = False
+        if intent["mode"] in ("D", "U"):
             fill = float(fill_price) if fill_price else None
             if not fill:
                 try:
@@ -1337,10 +1348,12 @@ class Trader_Singleton:
                     )
             if fill:
                 anchor = float(fill)
+                fill_known = True
             else:
                 logger.warning(
                     f"Executed price unavailable for buy {key}; using "
-                    f"click LTP {anchor} for the D exit anchor"
+                    f"click LTP {anchor} for the {intent['mode']} exit "
+                    f"anchor"
                 )
 
         exit_price = self._exit_target_price(
@@ -1399,6 +1412,17 @@ class Trader_Singleton:
                     "trading_symbol": intent["trading_symbol"],
                     "instrument_token": str(intent["instrument_token"]),
                     "lots": intent["lots"],
+                    "strategy": intent.get("strategy"),
+                    "override_book_profit_pct":
+                        intent.get("override_book_profit_pct"),
+                    "exchange": intent.get("exchange"),
+                    # Price the resting limit actually sits at, and
+                    # whether it was computed on the click LTP because
+                    # the buy fill was not known yet (provisional exits
+                    # are re-anchored by the sweeper once the broker
+                    # reports the real average price).
+                    "anchor_used": exit_price,
+                    "provisional_anchor": not fill_known,
                     "registered_ts": time.time(),
                 }
             logger.info(
@@ -1411,6 +1435,149 @@ class Trader_Singleton:
                 f"the fill cannot be tracked; the SL watcher's "
                 f"net-position guard remains the safety net"
             )
+
+    def _reanchor_provisional_exit(self, intent, key):
+        """
+        Move a click-anchored resting exit to the executed buy average.
+
+        A U/D exit placed before the buy fill was known rests at the
+        click-LTP target. Once the position grid reports the broker's
+        real average price, cancel the provisional limit and re-place
+        it at target x fill - but ONLY while the resting order is
+        still working with zero fills ("the sell has not been done").
+        Anything else (filled, partially filled, order book missing
+        the order) is left alone; the normal status probe below keeps
+        handling those.
+        """
+        if not intent.get("provisional_anchor"):
+            return
+        position_key = intent.get("position_key") or ""
+        leg = (self._position_data or {}).get(position_key)
+        try:
+            buy_avg = float(leg.get("average_price") or 0) if leg else 0.0
+        except (TypeError, ValueError):
+            buy_avg = 0.0
+        if buy_avg <= 0:
+            return  # real average not learned yet
+        new_target = self._exit_target_price(
+            buy_avg, intent.get("strategy"),
+            override_pct=intent.get("override_book_profit_pct"),
+        )
+        if new_target <= 0:
+            return
+        old_target = float(intent.get("anchor_used") or 0)
+        if abs(new_target - old_target) < 0.05:
+            return  # already at the fill-anchored tick
+        if not intent.get("order_id"):
+            return
+
+        # The order must still be working AND untouched by fills.
+        try:
+            pending = self._broker.fetch_all_pending_orders()
+        except Exception as book_error:
+            logger.warning(
+                f"Exit re-anchor skipped for {key}: pending-order "
+                f"book unavailable ({book_error})"
+            )
+            return
+        if not pending:
+            return  # order no longer working - probe resolves it
+        order = next(
+            (o for o in pending
+             if str(o.get("order_id")) == str(intent["order_id"])),
+            None,
+        )
+        if order is None:
+            return  # filled or terminal - the status probe handles it
+        try:
+            filled = float(order.get("filled_quantity") or 0)
+        except (TypeError, ValueError):
+            filled = 0.0
+        if filled > 0:
+            logger.info(
+                f"Exit re-anchor skipped for {key} - the resting "
+                f"order already filled {filled:g} unit(s); the limit "
+                f"stays at {old_target}"
+            )
+            return
+
+        try:
+            cancelled = self._broker.cancel_order(intent["order_id"])
+        except Exception as cancel_error:
+            logger.warning(
+                f"Exit re-anchor skipped for {key}: cancel of the "
+                f"provisional order failed ({cancel_error})"
+            )
+            return
+        if not cancelled:
+            logger.warning(
+                f"Exit re-anchor skipped for {key}: broker did not "
+                f"confirm the cancel (a fill may have landed)"
+            )
+            return
+        logger.info(
+            f"Re-anchoring provisional exit for "
+            f"{intent['trading_symbol']}: buy avg {buy_avg} known, "
+            f"moving the limit {old_target} -> {new_target} [{key}]"
+        )
+        placed = None
+        try:
+            placed = self._broker.place_exit_limit(
+                intent["trading_symbol"],
+                intent["instrument_token"],
+                intent["lots"],
+                intent.get("exchange"),
+                new_target,
+            )
+        except Exception as place_error:
+            logger.error(
+                f"Exit re-anchor placement failed for {key}: "
+                f"{place_error}"
+            )
+        with self._pending_exit_lock:
+            self._pending_exit_intents.pop(key, None)
+            if placed:
+                new_order_id = str(placed).strip()
+                new_key = f"{intent['broker']}:{new_order_id}"
+                self._pending_exit_intents[new_key] = {
+                    **intent,
+                    "order_id": new_order_id,
+                    "anchor_used": new_target,
+                    "provisional_anchor": False,
+                    "registered_ts": time.time(),
+                }
+            else:
+                # Re-arm the provisional intent so the next sweep
+                # retries the placement (the SL watcher is the safety
+                # net while the position sits exit-less).
+                self._pending_exit_intents[key] = {
+                    **intent, "registered_ts": time.time(),
+                }
+        if placed:
+            logger.info(
+                f"Exit re-anchored for {intent['trading_symbol']} - "
+                f"resting SELL LIMIT now {new_target} "
+                f"[{intent['broker']}:{placed}]"
+            )
+            try:
+                trade_audit.update_resting_exit_price(
+                    intent["trading_symbol"], new_target
+                )
+            except Exception as audit_error:
+                logger.debug(
+                    f"Resting-exit re-anchor audit failed: {audit_error}"
+                )
+            try:
+                self.frontend_data_socket.emit('status_message', {
+                    "success": True,
+                    "message": (
+                        f"Resting exit for {intent['trading_symbol']} "
+                        f"re-anchored to the buy average: limit moved "
+                        f"{old_target} -> {new_target}"
+                    )
+                })
+            except Exception:
+                pass
 
     def _sweep_pending_exits(self):
         """
@@ -1446,6 +1613,24 @@ class Trader_Singleton:
                     f"Dropping stale pending exit intent {key} "
                     f"(unresolved for {self._PENDING_EXIT_MAX_AGE_SECONDS}s)"
                 )
+                continue
+            # Provisional (click-anchored) exits move to the real buy
+            # average as soon as the grid learns it - while the sell
+            # is still resting untouched.
+            try:
+                self._reanchor_provisional_exit(intent, key)
+            except Exception as reanchor_error:
+                logger.error(
+                    f"Exit re-anchor failed for {key}: "
+                    f"{reanchor_error}", exc_info=True
+                )
+            with self._pending_exit_lock:
+                still_tracked = key in self._pending_exit_intents
+            if not still_tracked:
+                # The re-anchor swapped the order: the cancelled id
+                # must not be probed (a CANCELED status here would
+                # raise a false "position open without exit" alarm).
+                # The replacement is tracked under its own key.
                 continue
             try:
                 status = self._broker.fetch_order_status(intent["order_id"])
@@ -2334,7 +2519,12 @@ class Trader_Singleton:
                 "total_pl": total_pl,
                 "order_strategy": strategy,
                 "sell_mode": sell_mode,
-                "override_book_profit_pct": self._default_override_book_profit_pct(strategy)
+                "override_book_profit_pct": self._default_override_book_profit_pct(strategy),
+                # Birth time for the broker-confirmation grace window -
+                # the broker position book lags a just-filled buy (the
+                # order shows TRANSIT) and the reconciliation must not
+                # treat that lag as "position closed".
+                "created_ts": time.time(),
             }
 
             # ---------------------------------------------------------
@@ -2710,9 +2900,22 @@ class Trader_Singleton:
             str(pos["instrument_token"]) for pos in positions
         }
 
+        # A just-placed BUY is invisible to the broker position book
+        # for a moment (the order is still TRANSIT - 2026-10-09 15:01:
+        # the position API returned [] while the buy was mid-flight
+        # and this drop wiped the fast-added grid row, leaving the
+        # live position invisible). Legs younger than the grace
+        # window survive it; the next reconciliation - the broker
+        # book having caught up - either confirms them or drops them
+        # then. Legs with no created_ts (ledger restore, residual
+        # top-ups) are broker-confirmed already and drop as before.
+        now_ts = time.time()
         stale_keys = [
             key for key in self._position_data
             if self._parse_position_key(key)[0] not in broker_tokens
+            and now_ts - float(
+                self._position_data[key].get("created_ts") or 0
+            ) > self._BUY_CONFIRM_GRACE_SECONDS
         ]
 
         for key in stale_keys:
@@ -3123,70 +3326,76 @@ class Trader_Singleton:
 
                     if self._mode in ("LIVE", "SIMULATION", "PLAYBACK"):
                         if sell:
-                            # U/D legs hold a resting exit limit at the
-                            # broker; cancel it first or a later fill would
-                            # leave the account net short.
+                            # An open SELL order at the broker earmarks
+                            # the long: selling on top of it goes NET
+                            # SHORT and the RMS rejects the order for
+                            # full short margin (2026-10-08: 223 rejects
+                            # on a T leg whose manual limit sell was
+                            # resting). U/D legs always hold such a
+                            # resting exit from buy time; T legs can
+                            # pick one up from a manual grid limit sell
+                            # or a leftover exit. Cancel ANY resting
+                            # SELL for this symbol before the exit sell.
                             auto_sell_aborted = False
-                            if sell_type in ("U", "D"):
-                                try:
-                                    cancelled, cancel_failed = (
-                                        self._cancel_pending_exit_orders(
-                                            tradingsymbol
-                                        )
+                            try:
+                                cancelled, cancel_failed = (
+                                    self._cancel_pending_exit_orders(
+                                        tradingsymbol
                                     )
-                                except RuntimeError as fetch_error:
-                                    logger.error(
-                                        f"Auto-sell aborted for {tradingsymbol} "
-                                        f"[{token}]: {fetch_error}"
-                                    )
+                                )
+                            except RuntimeError as fetch_error:
+                                logger.error(
+                                    f"Auto-sell aborted for {tradingsymbol} "
+                                    f"[{token}]: {fetch_error}"
+                                )
+                                auto_sell_aborted = True
+                            else:
+                                if cancel_failed:
                                     auto_sell_aborted = True
-                                else:
-                                    if cancel_failed:
-                                        auto_sell_aborted = True
 
-                                if auto_sell_aborted:
-                                    # The exit may have JUST filled -
-                                    # verify against the live broker net
-                                    # before selling, or the auto-sell
-                                    # would go net short.
-                                    net_qty = self._broker_net_qty_for_token(
-                                        instrument_token
+                            if auto_sell_aborted:
+                                # The exit may have JUST filled -
+                                # verify against the live broker net
+                                # before selling, or the auto-sell
+                                # would go net short.
+                                net_qty = self._broker_net_qty_for_token(
+                                    instrument_token
+                                )
+                                if net_qty is None:
+                                    # Cannot verify - skip this
+                                    # cycle and retry on the next
+                                    # watcher pass.
+                                    logger.error(
+                                        f"Auto-sell aborted for "
+                                        f"{tradingsymbol} [{token}]: "
+                                        f"live net could not be verified"
                                     )
-                                    if net_qty is None:
-                                        # Cannot verify - skip this
-                                        # cycle and retry on the next
-                                        # watcher pass.
-                                        logger.error(
-                                            f"Auto-sell aborted for "
-                                            f"{tradingsymbol} [{token}]: "
-                                            f"live net could not be verified"
-                                        )
-                                    elif net_qty <= 0:
-                                        # Exit filled and closed the
-                                        # position - drop the stale leg
-                                        # via a refresh; no sell.
-                                        logger.info(
-                                            f"Auto-exit already filled and "
-                                            f"closed {tradingsymbol} - "
-                                            f"refreshing instead of selling"
-                                        )
-                                        self.refresh_open_pos_buy_price()
-                                    elif net_qty < int(qty):
-                                        # Partial exit fill: refresh so
-                                        # the next cycle evaluates the
-                                        # true remaining quantity.
-                                        logger.info(
-                                            f"Broker net {net_qty} lot(s) is "
-                                            f"below the leg's {qty} for "
-                                            f"{tradingsymbol} (partial exit "
-                                            f"fill?) - refreshing instead "
-                                            f"of selling"
-                                        )
-                                        self.refresh_open_pos_buy_price()
-                                    else:
-                                        # The exit is confirmed gone and
-                                        # the net covers the leg - sell.
-                                        auto_sell_aborted = False
+                                elif net_qty <= 0:
+                                    # Exit filled and closed the
+                                    # position - drop the stale leg
+                                    # via a refresh; no sell.
+                                    logger.info(
+                                        f"Auto-exit already filled and "
+                                        f"closed {tradingsymbol} - "
+                                        f"refreshing instead of selling"
+                                    )
+                                    self.refresh_open_pos_buy_price()
+                                elif net_qty < int(qty):
+                                    # Partial exit fill: refresh so
+                                    # the next cycle evaluates the
+                                    # true remaining quantity.
+                                    logger.info(
+                                        f"Broker net {net_qty} lot(s) is "
+                                        f"below the leg's {qty} for "
+                                        f"{tradingsymbol} (partial exit "
+                                        f"fill?) - refreshing instead "
+                                        f"of selling"
+                                    )
+                                    self.refresh_open_pos_buy_price()
+                                else:
+                                    # The exit is confirmed gone and
+                                    # the net covers the leg - sell.
+                                    auto_sell_aborted = False
 
                             if sell and not auto_sell_aborted and self._mode == "LIVE" and self._auto_sell_rms_gate(token) <= 0:
                                 # NEVER auto-sell against a stale grid:
@@ -8155,6 +8364,26 @@ class Trader_Singleton:
                 self._sweep_pending_exits()
             except Exception as sweep_error:
                 logger.error(f"Pending-exit sweep failed: {sweep_error}", exc_info=True)
+
+            # Slow self-heal reconciliation: an event-driven refresh
+            # that runs while the broker position book still lags a
+            # just-filled buy once emptied the grid for a live
+            # position (2026-10-09 15:01 - nothing re-checked for
+            # minutes). Re-reconcile at most every 20s while legs are
+            # open so the grid always converges on the broker truth.
+            try:
+                if (
+                    self._mode != "PAPER"
+                    and self._position_data
+                    and time.time() - getattr(self, "_last_periodic_reconcile_ts", 0.0)
+                    >= 20
+                ):
+                    self._last_periodic_reconcile_ts = time.time()
+                    self.refresh_open_pos_buy_price()
+            except Exception as reconcile_error:
+                logger.warning(
+                    f"Periodic position reconcile failed: {reconcile_error}"
+                )
 
         @self.frontend_data_socket.on('cancel_all_pending_orders')
         def handle_cancel_all_pending_orders():

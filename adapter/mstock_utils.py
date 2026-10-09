@@ -89,6 +89,17 @@ def normalize_contract_symbol(symbol):
     if compact_match:
         return compact_match.group(1)
 
+    # BSE weekly compact form, e.g. contract notes print
+    # "BSXOPT SENSEX26O0871100PE 889017 (BT)": underlying + YY + single
+    # letter month code (1-9/O/N/D) + DD + strike + CE/PE, followed by
+    # the broker token and a (BT) suffix - so CE/PE is never at the end
+    # and the option type must be read from inside the symbol.
+    weekly_match = re.search(
+        r"((?:NIFTY|SENSEX)\d{2}[1-9OND]\d{2}\d+(?:\.\d+)?(?:CE|PE))", text
+    )
+    if weekly_match:
+        return weekly_match.group(1)
+
     formatted_match = re.search(
         r"\b(NIFTY|SENSEX)\s+(\d{2})([A-Z]{3})(\d{2})\s+(\d+(?:\.00)?)\s+(CE|PE)\b",
         text,
