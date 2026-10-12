@@ -731,6 +731,20 @@ class KiteAdapter(BrokerInterface):
             trade_audit.record_resting_exit_placed(
                 trading_symbol, quantity, float(limit_price)
             )
+            # Optimistic pending-grid push: show the resting exit
+            # immediately instead of waiting for the broker book to
+            # list it plus the next 15s poll.
+            try:
+                self._trader.register_provisional_pending_exit(
+                    order_id=order_id,
+                    tradingsymbol=trading_symbol,
+                    token=instrument_token,
+                    quantity=order_qty,
+                    exchange=exchange,
+                    price=limit_price,
+                )
+            except Exception as prov_error:
+                logger.debug(f"Provisional exit row failed: {prov_error}")
             # Resting exit placement - NOT a sale; no UI
             # 'sell_order_result' toast (it used to pop "Sell order
             # successful" on U/D buys and mode switches).

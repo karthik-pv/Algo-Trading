@@ -558,7 +558,14 @@ class MStockAdapter(BrokerInterface):
 
             logger.info(f"Total orders: {len(orders)}, Pending: {len(pending_orders)}")
             self._detect_broker_side_sell_fills(orders, pending_orders)
-            self._trader.frontend_data_socket.emit('update_pending_orders', pending_orders)
+            # Merge provisional just-placed exit rows so this emit
+            # cannot momentarily hide an exit the book doesn't list
+            # yet (the trader's _merged_pending_orders merges again
+            # on its side - idempotent).
+            self._trader.frontend_data_socket.emit(
+                'update_pending_orders',
+                self._trader._merge_provisional_pending_rows(pending_orders)
+            )
             return pending_orders
 
         except Exception as e:
@@ -1763,6 +1770,27 @@ class MStockAdapter(BrokerInterface):
                 str(exit_data.get("orderid") or "")
                 if isinstance(exit_data, dict) else ""
             )
+
+            # Optimistic pending-grid push: show the resting exit
+            # immediately. The broker order book can trail a fresh
+            # order, and the grid otherwise waits for the next 15s
+            # poll to reveal it (2026-10-09 09:34: row surfaced 7.7s
+            # after placement).
+            if exit_order_id:
+                try:
+                    self._trader.register_provisional_pending_exit(
+                        order_id=exit_order_id,
+                        tradingsymbol=trading_symbol_for_transaction,
+                        token=instrument_token,
+                        quantity=int(quantity) * int(lotsize),
+                        exchange=exchange,
+                        price=price,
+                    )
+                except Exception as prov_error:
+                    logger.debug(
+                        f"Provisional exit row failed: {prov_error}"
+                    )
+
             return exit_order_id or True
             
         except Exception as e:

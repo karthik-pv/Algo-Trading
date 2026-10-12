@@ -6,6 +6,7 @@ import hmac
 import base64
 import struct
 import hashlib
+import email.utils
 import subprocess
 import threading
 from datetime import datetime
@@ -38,18 +39,68 @@ KITE_LOGIN_BASE = "https://kite.zerodha.com"
 KITE_UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
            "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36")
 
+# TOTP codes live in 30-second windows. Zerodha rejects a code whose
+# window has rolled over by submission time, and every rejection burns
+# one of the few attempts before account lockout - so a code generated
+# in the tail of a window (network latency eats the rest) is a hazard,
+# and a local clock off by more than a few seconds is a guaranteed
+# wrong code on every try.
+TOTP_WINDOW_SECONDS = 30
+TOTP_WINDOW_GUARD_SECONDS = 4
+KITE_CLOCK_SKEW_LIMIT_SECONDS = 15.0
+
+# Errors where the request never reached Zerodha (or no reply came
+# back) - the ONLY failures safe to retry. Anything where Zerodha
+# actually answered (rejected password, HTTP error, bad JSON) must
+# hard-stop: rapid repeated logins are exactly what locks accounts.
+KITE_NETWORK_ERRORS = (
+    requests.exceptions.ConnectionError,
+    requests.exceptions.Timeout,
+)
+
 
 class Kite2FAAborted(RuntimeError):
     pass
 
 
+def _totp_decode_key(secret):
+    # Secrets copied from Google Authenticator / Kite setup screens
+    # often carry spaces, dashes or lowercase letters. Decode the raw
+    # string and every generated code is silently wrong - normalize
+    # first.
+    clean = "".join(secret.split()).replace("-", "").upper()
+    key = base64.b32decode(clean + "=" * ((8 - len(clean) % 8) % 8), casefold=True)
+    if len(key) < 10:
+        raise ValueError(
+            f"TOTP secret decodes to only {len(key)} bytes (need >= 10)"
+        )
+    return key
+
+
 def _totp_code(secret):
-    key = base64.b32decode(secret + "=" * ((8 - len(secret) % 8) % 8))
-    counter = int(time.time() // 30)
+    key = _totp_decode_key(secret)
+    # Guard the window tail: a code generated in the last few seconds
+    # of its window can expire before the submission lands ("valid
+    # secret, rejected code", one lockout attempt burned). Wait out
+    # the tail and generate inside a fresh window.
+    while time.time() % TOTP_WINDOW_SECONDS > (
+        TOTP_WINDOW_SECONDS - TOTP_WINDOW_GUARD_SECONDS
+    ):
+        time.sleep(0.25)
+    counter = int(time.time() // TOTP_WINDOW_SECONDS)
     mac = hmac.new(key, struct.pack(">Q", counter), hashlib.sha1).digest()
     offset = mac[-1] & 0x0F
     code = (struct.unpack(">I", mac[offset:offset + 4])[0] & 0x7FFFFFFF) % 1000000
     return f"{code:06d}"
+
+
+def _server_clock_skew_seconds(timeout=10):
+    """Local-minus-server clock skew, from the Date header of an
+    UNAUTHENTICATED fetch of the Kite login page. Free and safe - it
+    never touches the login flow, so it can never burn an attempt."""
+    resp = requests.get(f"{KITE_LOGIN_BASE}/", timeout=timeout)
+    server = email.utils.parsedate_to_datetime(resp.headers["Date"])
+    return time.time() - server.timestamp()
 
 
 def _prompt_kite_2fa(twofa_type, attempts_left=None):
@@ -185,30 +236,70 @@ class KiteSingleton:
         if not KITE_USER_ID or not KITE_PASSWORD:
             raise ValueError("KITE_USER_ID / KITE_PASSWORD not set in .env")
 
+        # progress tells the retry loop how far the flow got. Once
+        # credentials have been sent to Zerodha, NOTHING is retried:
+        # the failure may already have registered as an attempt
+        # server-side, and rapid repeated logins are what lock
+        # accounts. Only failures where no request ever reached
+        # Zerodha (seed page fetch died before credentials) may retry.
+        progress = {"credentials_sent": False}
         last_error = None
         for attempt in range(1, max_attempts + 1):
             try:
-                self._create_session_automated_once()
+                self._create_session_automated_once(progress)
                 return
             except Kite2FAAborted:
                 raise
-            except (requests.RequestException, RuntimeError, ValueError) as e:
+            except KITE_NETWORK_ERRORS as e:
+                if progress["credentials_sent"]:
+                    raise RuntimeError(
+                        f"Kite login network error after credentials were sent "
+                        f"- NOT retrying to protect lockout attempts: {e}"
+                    ) from e
                 last_error = e
-                logger.warning(f"Kite automated login attempt {attempt}/{max_attempts} failed: {e}")
+                logger.warning(
+                    f"Kite automated login attempt {attempt}/{max_attempts} "
+                    f"failed before credentials were sent: {e}"
+                )
                 if attempt < max_attempts:
                     time.sleep(2 * attempt)
-        raise RuntimeError(f"Kite automated login failed after {max_attempts} attempts: {last_error}")
+            except Exception as e:
+                raise RuntimeError(f"Kite automated login failed (no retry): {e}") from e
+        raise RuntimeError(
+            f"Kite automated login failed after {max_attempts} attempts: {last_error}"
+        )
 
-    def _create_session_automated_once(self):
+    def _create_session_automated_once(self, progress=None):
+        # Pre-flight: validate the TOTP secret BEFORE any network call.
+        # A corrupt/mismatched secret is otherwise discovered only
+        # after credentials have been submitted - the challenge would
+        # still be burned. Raising here keeps the attempt budget
+        # untouched and create_session()'s browser fallback available.
+        if KITE_TOTP_SECRET:
+            try:
+                _totp_decode_key(KITE_TOTP_SECRET)
+            except Exception as decode_error:
+                raise ValueError(
+                    f"KITE_TOTP_SECRET is not usable ({decode_error}) - "
+                    f"fix .env before logging in; no attempt was made"
+                ) from decode_error
+
         session = requests.Session()
         session.headers.update({"X-Kite-Version": "3", "User-Agent": KITE_UA})
 
+        seed_params = {}
         for seed_attempt in range(2):
             seed_resp = session.get(
                 f"{KITE_LOGIN_BASE}/connect/login",
-                params={"api_key": KITE_API_KEY},
+                params={"api_key": KITE_API_KEY, "v": "3"},
                 timeout=15,
             )
+            seed_params = {
+                k: v[0]
+                for k, v in urllib.parse.parse_qs(
+                    urllib.parse.urlparse(seed_resp.url).query
+                ).items()
+            }
             if "kf_session" in session.cookies and seed_resp.status_code == 200:
                 break
             logger.warning(
@@ -217,11 +308,23 @@ class KiteSingleton:
             )
             time.sleep(1)
 
+        # Session warm-up: binds the seed's api_key + sess_id to the
+        # browser session, mirroring the Kite web app. Skipping it can
+        # leave /connect/finish without a usable session binding.
+        if seed_params:
+            session.get(
+                f"{KITE_LOGIN_BASE}/api/connect/session",
+                params=seed_params,
+                timeout=15,
+            )
+
         resp = session.post(
             f"{KITE_LOGIN_BASE}/api/login",
             data={"user_id": KITE_USER_ID, "password": KITE_PASSWORD},
             timeout=15,
         )
+        if progress is not None:
+            progress["credentials_sent"] = True
         try:
             login_resp = resp.json()
         except ValueError:
@@ -229,7 +332,7 @@ class KiteSingleton:
 
         data = login_resp.get("data") or {}
         if "request_url" in data or "request_token" in data:
-            self._finish_automated_session(session, data)
+            self._finish_automated_session(session, data, seed_params)
             return
 
         twofa_type = str(data.get("twofa_type") or "").lower()
@@ -240,10 +343,39 @@ class KiteSingleton:
             )
         logger.debug(f"Kite 2FA required: type={twofa_type}")
 
+        # Clock-skew pre-flight, BEFORE submitting anything: a local
+        # clock off by more than a few seconds makes every generated
+        # code wrong, and each wrong submission burns a lockout
+        # attempt. This check is unauthenticated and free; aborting
+        # here still lets the browser fallback in create_session()
+        # run for a manual login.
+        try:
+            skew = _server_clock_skew_seconds()
+        except Exception as skew_error:
+            logger.warning(
+                f"Kite clock-skew pre-flight inconclusive ({skew_error}) - continuing"
+            )
+        else:
+            logger.debug(f"Kite clock skew: {skew:+.1f}s (limit {KITE_CLOCK_SKEW_LIMIT_SECONDS}s)")
+            if abs(skew) > KITE_CLOCK_SKEW_LIMIT_SECONDS:
+                raise RuntimeError(
+                    f"Local clock is {skew:+.1f}s away from Zerodha's server time "
+                    f"(limit {KITE_CLOCK_SKEW_LIMIT_SECONDS}s) - TOTP codes would "
+                    f"be rejected and lockout attempts burned. Fix the system "
+                    f"clock (Windows time sync) and retry."
+                )
+
         user_id = data.get("user_id") or KITE_USER_ID
         request_id = data.get("request_id")
         wrong_codes = 0
         attempts_left = None
+        # The current Kite web app submits the 2FA code as twofa_value
+        # (twofa_code is a dead legacy field the API silently ignores,
+        # so a CORRECT code came back "Invalid App Code" and burned a
+        # lockout attempt - observed 2026-10-10). The type must be the
+        # one the challenge ADVERTISED: type "totp" on an app_code
+        # account answers "The requested 2FA type is not available".
+        submit_type = twofa_type
         while True:
             if KITE_TOTP_SECRET and twofa_type in ("totp", "app_code"):
                 code = _totp_code(KITE_TOTP_SECRET)
@@ -255,8 +387,9 @@ class KiteSingleton:
                 data={
                     "user_id": user_id,
                     "request_id": request_id,
-                    "twofa_type": twofa_type,
-                    "twofa_code": code,
+                    "twofa_type": submit_type,
+                    "twofa_value": code,
+                    "skip_session": "false",
                 },
                 timeout=15,
             )
@@ -266,10 +399,15 @@ class KiteSingleton:
                 raise RuntimeError(f"Kite 2FA step returned HTTP {resp.status_code}")
 
             twofa_data = twofa_resp.get("data") or {}
-            if twofa_resp.get("status") == "success" and (
-                "request_url" in twofa_data or "request_token" in twofa_data
-            ):
-                self._finish_automated_session(session, twofa_data)
+            # Success detection must NOT require request_url /
+            # request_token: the current Kite /api/twofa answers a
+            # bare {"status":"success","data":{"profile":{}}} for a
+            # CORRECT code (observed 2026-10-10) - the request token
+            # only arrives from /connect/finish afterwards. Requiring
+            # those keys made every successful login look like a
+            # failure.
+            if twofa_resp.get("status") == "success":
+                self._finish_automated_session(session, twofa_data, seed_params)
                 return
 
             message = twofa_resp.get("message") or f"Kite 2FA failed (HTTP {resp.status_code})"
@@ -285,11 +423,24 @@ class KiteSingleton:
             if KITE_TOTP_SECRET:
                 raise Kite2FAAborted(f"{message} - TOTP secret did not work, falling back to browser login")
 
-    def _finish_automated_session(self, session, data):
+    def _finish_automated_session(self, session, data, seed_params=None):
         request_token = data.get("request_token")
-        if not request_token:
+        if not request_token and data.get("request_url"):
             resp = session.get(data["request_url"], allow_redirects=False, timeout=15)
             location = resp.headers.get("Location", "")
+            params = urllib.parse.parse_qs(urllib.parse.urlparse(location).query)
+            request_token = (params.get("request_token") or [None])[0]
+        if not request_token:
+            # Current Kite flow: /api/twofa succeeds without a URL, so
+            # fetch /connect/finish with the seed's api_key + sess_id -
+            # its 302 Location carries the request token.
+            finish_resp = session.get(
+                f"{KITE_LOGIN_BASE}/connect/finish",
+                params=seed_params or {},
+                allow_redirects=False,
+                timeout=15,
+            )
+            location = finish_resp.headers.get("Location", "")
             params = urllib.parse.parse_qs(urllib.parse.urlparse(location).query)
             request_token = (params.get("request_token") or [None])[0]
         if not request_token:

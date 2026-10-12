@@ -110,6 +110,20 @@ class Trader_Singleton:
     _paper_exit_seq = 0
 
     # ---------------------------------------------------------
+    # Provisional pending-grid rows for just-placed resting exits.
+    # The broker ORDER BOOK can trail a fresh SELL LIMIT by a beat;
+    # an emit in that window would render the grid without the new
+    # exit row (2026-10-09 09:34: the resting exit was placed at the
+    # broker 408ms after the buy fill but only surfaced on the grid
+    # 7.7s later, on the next 15s poll). The adapters register a
+    # locally-built row right after placement; it merges into every
+    # pending-orders emit until the broker book lists the order
+    # (the authoritative row takes over) or the TTL expires.
+    # ---------------------------------------------------------
+    _provisional_pending_orders = {}
+    _PROVISIONAL_EXIT_TTL_SECONDS = 60.0
+
+    # ---------------------------------------------------------
     # Per-instrument hourly tick sampler. Both websocket feeds call
     # record_tick() per wire tick; counts land in clock-hour buckets
     # and are logged + persisted at every hour boundary. Motivation:
@@ -1232,6 +1246,11 @@ class Trader_Singleton:
             if st in ("COMPLETE", "TRADED"):
                 with self._pending_exit_lock:
                     self._pending_exit_intents.pop(key, None)
+                # Retire the optimistic grid row - the exit is no
+                # longer resting.
+                self._provisional_pending_orders.pop(
+                    str(intent["order_id"]), None
+                )
                 fill = None
                 try:
                     fill = self._broker.fetch_order_executed_price(
@@ -1276,6 +1295,9 @@ class Trader_Singleton:
             elif st in ("REJECTED", "CANCELED", "CANCELLED"):
                 with self._pending_exit_lock:
                     self._pending_exit_intents.pop(key, None)
+                self._provisional_pending_orders.pop(
+                    str(intent["order_id"]), None
+                )
                 logger.error(
                     f"Resting exit for {intent['trading_symbol']} ended "
                     f"{st} - the position is OPEN with no exit; the "
@@ -1716,12 +1738,94 @@ class Trader_Singleton:
             })
         return rows
 
-    def _merged_pending_orders(self):
-        """Broker pending orders + virtual paper exits (PAPER only)."""
-        pending = self._broker.fetch_all_pending_orders()
+    def _merged_pending_orders(self, broker_pending=None):
+        """Broker pending orders + virtual paper exits (PAPER only)
+        + provisional rows for just-placed exits the broker book
+        does not list yet."""
+        if broker_pending is None:
+            broker_pending = self._broker.fetch_all_pending_orders()
+        pending = self._merge_provisional_pending_rows(broker_pending)
         if self._mode == "PAPER":
             pending = list(pending or []) + self._paper_pending_exit_rows()
         return pending
+
+    def _merge_provisional_pending_rows(self, broker_pending):
+        """Merge provisional just-placed exit rows into a pending
+        list. A row is retired the moment the broker book lists the
+        order (its authoritative row takes over) or when it ages past
+        the TTL - a cancelled/filled/stale provisional must never
+        outlive the broker's truth."""
+        if not self._provisional_pending_orders:
+            return broker_pending
+        broker_ids = {
+            str(o.get("order_id"))
+            for o in (broker_pending or [])
+            if o.get("order_id")
+        }
+        now = time.time()
+        retired = [
+            order_id
+            for order_id, entry in self._provisional_pending_orders.items()
+            if (
+                order_id in broker_ids
+                or now - entry["placed_ts"]
+                > self._PROVISIONAL_EXIT_TTL_SECONDS
+            )
+        ]
+        for order_id in retired:
+            self._provisional_pending_orders.pop(order_id, None)
+        if not self._provisional_pending_orders:
+            return broker_pending
+        extra = [
+            entry["row"]
+            for entry in self._provisional_pending_orders.values()
+        ]
+        return list(broker_pending or []) + extra
+
+    def register_provisional_pending_exit(self, order_id, tradingsymbol,
+                                          token, quantity, exchange, price):
+        """Optimistic pending-grid row for a just-placed resting SELL
+        LIMIT (LIVE U/D exits, partial-sell re-placements, mode
+        switches). Adapters call this right after the broker accepts
+        the order so the row shows immediately instead of waiting for
+        the broker book to list it plus the next 15s poll.
+        quantity is in UNITS."""
+        key = str(order_id or "").strip()
+        if not key or key.upper() == "TRUE":
+            return
+        row = {
+            "tradingsymbol": tradingsymbol,
+            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+            "transaction_type": "SELL",
+            "quantity": int(quantity or 0),
+            "average_price": 0,
+            "price": float(price or 0),
+            "order_type": "LIMIT",
+            "order_status": "PENDING",
+            "order_id": key,
+            "filled_quantity": 0,
+            # For the pending-grid joins (position leg + lot size) -
+            # same field the broker rows carry.
+            "token": str(token or ""),
+            "exchange": exchange,
+        }
+        self._provisional_pending_orders[key] = {
+            "row": row,
+            "placed_ts": time.time(),
+        }
+        logger.info(
+            f"Provisional pending-exit row registered: {tradingsymbol} "
+            f"SELL LIMIT {price} [{key}] - pushed before the broker "
+            f"book lists it"
+        )
+        try:
+            self.frontend_data_socket.emit(
+                'update_pending_orders', self._merged_pending_orders()
+            )
+        except Exception as emit_error:
+            logger.debug(
+                f"Provisional-exit grid push failed: {emit_error}"
+            )
 
     def cancel_paper_pending_exit(self, order_id):
         """Cancel one virtual paper exit. True when it existed."""
@@ -8394,6 +8498,18 @@ class Trader_Singleton:
                 # panel empties in PAPER mode too.
                 cancelled += len(self._paper_pending_exits)
                 self._paper_pending_exits.clear()
+                # Provisional just-placed exits may not be in the
+                # broker's book snapshot yet, so the bulk cancel can
+                # miss them - cancel those by id directly. Already-
+                # cancelled ones just report false and are not
+                # double-counted.
+                for prov_id in list(self._provisional_pending_orders):
+                    try:
+                        if self._broker.cancel_order(prov_id):
+                            cancelled += 1
+                    except Exception:
+                        pass
+                self._provisional_pending_orders.clear()
                 logger.info(f"Cancel All: {cancelled} pending order(s) cancelled")
 
                 self.frontend_data_socket.emit(
@@ -8439,6 +8555,11 @@ class Trader_Singleton:
                     success = self._broker.cancel_order(order_id)
 
                     if success:
+                        # Retire the optimistic row (if any) so the
+                        # refresh below cannot resurrect it.
+                        self._provisional_pending_orders.pop(
+                            str(order_id), None
+                        )
                         self.frontend_data_socket.emit('status_message', {"success": True,"message": f"Order {order_id} cancelled"})
                     else:
                         self.frontend_data_socket.emit('status_message', {"success": False,"message": f"Failed to cancel order {order_id}"})
