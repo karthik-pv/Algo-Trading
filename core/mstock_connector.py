@@ -77,6 +77,22 @@ def _totp_code(secret):
     code = (struct.unpack(">I", mac[offset:offset + 4])[0] & 0x7FFFFFFF) % 1000000
     return f"{code:06d}"
 
+
+def _masked_tokens(obj):
+    """Deep-copy obj with every value whose key contains 'token' replaced
+    by '***MASKED***' - same policy as write_to_json in core/utils.py.
+    Needed for broker session-token responses, where the jwtToken /
+    refreshToken / feedToken sit nested inside the response's data block
+    and must never reach the plaintext DEBUG logs."""
+    if isinstance(obj, dict):
+        return {
+            key: ("***MASKED***" if "token" in str(key).lower() else _masked_tokens(value))
+            for key, value in obj.items()
+        }
+    if isinstance(obj, list):
+        return [_masked_tokens(item) for item in obj]
+    return obj
+
 logging.basicConfig(level=logging.DEBUG)
 
 load_dotenv()
@@ -262,7 +278,7 @@ class MStockSingleton:
                 headers,
             )
             response = json.loads(conn.getresponse().read().decode("utf-8"))
-            logger.debug(f"Session token response: {response}")
+            logger.debug(f"Session token response: {_masked_tokens(response)}")
             try:
                 conn.close()
             except Exception:
@@ -863,10 +879,12 @@ class MStockSingleton:
             logger.info("Fetched access token from JSON for production.")
             self.set_access_token(access_token)
             return
-        if not allow_interactive:
+        if not allow_interactive and not MSTOCK_TOTP_SECRET:
             # Background (Feed Lab) session check: NO login attempt -
             # the OTP dialog runs tkinter off the main thread, which
             # hard-crashes pythonw (tcl86t.dll APPCRASH, 2026-10-09).
+            # With MSTOCK_TOTP_SECRET configured the login is fully
+            # silent (no dialog at all), so it is safe here too.
             # Degrade to the stored JWT when it is still valid; the
             # active broker's trading session is not touched.
             if self._stored_jwt_fresh():

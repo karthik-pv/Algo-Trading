@@ -212,9 +212,28 @@ class KiteSingleton:
             server_address = ('127.0.0.1', port)
             httpd = HTTPServer(server_address, RequestTokenHandler)
             httpd.request_token = None
+            # handle_request() blocks until a request arrives OR this
+            # timeout elapses (it then calls the no-op handle_timeout);
+            # the short poll granularity keeps the deadline below honest.
+            httpd.timeout = 1
 
-            # Wait until a request is handled and the token is captured
+            # Wait until a request is handled and the token is captured -
+            # but NEVER forever. A detached/non-interactive launch whose
+            # browser tab never completes parks the main thread here for
+            # the life of the process: Flask/Socket.IO never bind, no UI,
+            # no error anywhere - the app just never 'launches'
+            # (2026-10-12: main thread found parked in poll() on port
+            # 8080, 5001/5050 never bound). Give up after the window and
+            # raise so the caller logs a clear error and startup can
+            # continue with the Kite side degraded.
+            redirect_deadline = time.time() + 300  # 5 minutes
             while httpd.request_token is None:
+                if time.time() > redirect_deadline:
+                    raise RuntimeError(
+                        f"Timed out after 300s waiting for the Kite "
+                        f"redirect on port {port} - no request token was "
+                        f"captured (browser login not completed)"
+                    )
                 httpd.handle_request()
 
             request_token = httpd.request_token

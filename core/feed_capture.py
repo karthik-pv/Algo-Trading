@@ -2343,7 +2343,7 @@ def chain_status():
                 "strikes": (session or {}).get("strikes"),
                 "expiry": (session or {}).get("expiry"),
                 "instruments": {
-                    b: {v["symbol"] for v in (session or {}).get(b, {}).values()}
+                    b: sorted({v["symbol"] for v in (session or {}).get(b, {}).values()})
                     for b in ("KITE", "MSTOCK")
                 } if session else None,
             })
