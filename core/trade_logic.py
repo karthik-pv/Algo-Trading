@@ -207,6 +207,11 @@ class Trader_Singleton:
     _watcher_thread_ref = None
     _watcher_supervisor_started = False
     _voice_announcement_enabled = True
+    # Per-minute clock announcer ("11 13", "1 15", "3 40" - 12-hour,
+    # no AM/PM). Shares the single speaker with the P&L readout; None
+    # means "no minute announced yet" -> speak the time immediately.
+    _time_announcement_enabled = True
+    _last_announced_time_minute = None
 
     # ---------------------------------------------------------
     # Paper trading store
@@ -3224,7 +3229,12 @@ class Trader_Singleton:
 
     def voice_readout_core(self):
         """Speaks the P&L percentage of every open position so it can be
-        followed without watching the screen.
+        followed without watching the screen. The separate time announcer
+        speaks the wall clock every minute ("11 13", "1 15", "3 40" -
+        12-hour hour + minutes, no AM/PM) through the same single
+        speaker: a minute boundary that lands mid-utterance waits for
+        the current speech to finish and then goes out ahead of the
+        next P&L readout.
 
         macOS uses the built-in `say` CLI; Windows keeps the original
         SAPI.SpVoice COM implementation; other platforms park silently.
@@ -3252,6 +3262,20 @@ class Trader_Singleton:
             while not self._stop_event.is_set():
                 self._stop_event.wait(timeout=1.0)
 
+    @staticmethod
+    def _time_announcement_text():
+        """Clock text for the current minute: 12-hour hour and
+        zero-padded minutes with no AM/PM ("11 13", "1 15", "3 40")."""
+        now = time.localtime()
+        hour_12 = now.tm_hour % 12 or 12
+        return f"{hour_12} {now.tm_min:02d}"
+
+    @staticmethod
+    def _time_minute_key():
+        """Identity of the current minute, so each minute speaks once."""
+        now = time.localtime()
+        return (now.tm_year, now.tm_yday, now.tm_hour, now.tm_min)
+
     def _voice_readout_macos(self, format_pct_pl_for_voice):
         logger.info("Started voice readout thread (macOS `say`)")
         speaker_process = None
@@ -3266,17 +3290,34 @@ class Trader_Singleton:
             speaker_process = None
 
         while not self._stop_event.is_set():
-            if not self._voice_announcement_enabled:
+            if not (self._voice_announcement_enabled or self._time_announcement_enabled):
                 stop_speaking()
                 self._stop_event.wait(timeout=0.25)
                 continue
 
-            if self._position_data:
-                # `say` is busy while its process is still running; only
-                # queue a fresh readout once the previous one finished.
-                # Multiple arguments are spoken sequentially by one
-                # process, matching SAPI's queued async speech.
-                if speaker_process is None or speaker_process.poll() is not None:
+            # `say` is busy while its process is still running; only
+            # queue a fresh readout once the previous one finished.
+            if speaker_process is None or speaker_process.poll() is not None:
+                # Time first: a minute boundary that arrived while P&L
+                # was speaking waits for the utterance to end, then this
+                # announces ahead of the next P&L readout.
+                if self._time_announcement_enabled:
+                    minute_key = self._time_minute_key()
+                    if minute_key != self._last_announced_time_minute:
+                        try:
+                            speaker_process = subprocess.Popen(
+                                ["say", self._time_announcement_text()]
+                            )
+                            self._last_announced_time_minute = minute_key
+                        except Exception:
+                            speaker_process = None
+                            logger.warning("Voice readout: failed to start `say`")
+                        self._stop_event.wait(timeout=0.25)
+                        continue
+
+                if self._voice_announcement_enabled and self._position_data:
+                    # Multiple arguments are spoken sequentially by one
+                    # process, matching SAPI's queued async speech.
                     texts = []
                     for token, data in list(self._position_data.items()):
                         pct_pl = data.get("pct_pl")
@@ -3303,7 +3344,7 @@ class Trader_Singleton:
         SVSFPurgeBeforeSpeak = 2
 
         while not self._stop_event.is_set():
-            if not self._voice_announcement_enabled:
+            if not (self._voice_announcement_enabled or self._time_announcement_enabled):
                 if speaker.Status.RunningState == 2:
                     try:
                         speaker.Speak("", SVSFPurgeBeforeSpeak)
@@ -3312,10 +3353,17 @@ class Trader_Singleton:
                 self._stop_event.wait(timeout=0.25)
                 continue
 
-            if self._position_data:
-                # Check if the speaker is currently busy (RunningState 2 means it is speaking)
-                # If it's done (RunningState 1), give it the newest value.
-                if speaker.Status.RunningState != 2:
+            # Check if the speaker is currently busy (RunningState 2 means it is speaking)
+            # If it's done (RunningState 1), give it the newest value.
+            if speaker.Status.RunningState != 2:
+                # Time first: a minute boundary that arrived while P&L
+                # was speaking goes out ahead of the next P&L readout.
+                if self._time_announcement_enabled:
+                    minute_key = self._time_minute_key()
+                    if minute_key != self._last_announced_time_minute:
+                        speaker.Speak(self._time_announcement_text(), SVSFlagsAsync)
+                        self._last_announced_time_minute = minute_key
+                elif self._voice_announcement_enabled and self._position_data:
                     for token, data in list(self._position_data.items()):
                         pct_pl = data.get("pct_pl")
                         rounded_pl = format_pct_pl_for_voice(pct_pl)
@@ -7593,6 +7641,18 @@ class Trader_Singleton:
                 enabled = bool(payload.get("enabled", True))
             self._voice_announcement_enabled = enabled
             logger.info(f"Voice announcement {'enabled' if enabled else 'disabled'} from UI")
+
+        @self.frontend_data_socket.on('time_announcement_toggle')
+        def handle_time_announcement_toggle(payload):
+            enabled = True
+            if isinstance(payload, dict):
+                enabled = bool(payload.get("enabled", True))
+            self._time_announcement_enabled = enabled
+            if enabled:
+                # Reset the minute key so the current time is announced
+                # immediately instead of waiting for the next boundary.
+                self._last_announced_time_minute = None
+            logger.info(f"Time announcement {'enabled' if enabled else 'disabled'} from UI")
 
         @self.frontend_data_socket.on('refresh-options-table')
         def refresh_table():

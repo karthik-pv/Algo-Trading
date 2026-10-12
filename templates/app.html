@@ -1502,6 +1502,11 @@
             <span aria-hidden="true">&#128266;</span>
         </label>
 
+        <label class="announcement-toggle-label" title="Enable or disable per-minute time announcement" aria-label="Time announcement toggle">
+            <input type="checkbox" id="timeAnnounceToggle" checked>
+            <span aria-hidden="true">&#128336;</span>
+        </label>
+
         <button class="toggle-button active-toggle" id="callBtn">
             Calls
         </button>
@@ -2530,6 +2535,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const chgOLabelEl = document.getElementById('nmf_chgo');
     const expiryValueEl = document.getElementById('expiryValue');
     const announcementToggleEl = document.getElementById('announcementToggle');
+    const timeAnnounceToggleEl = document.getElementById('timeAnnounceToggle');
     const availableBalanceEl = document.getElementById('availableBalanceValue');
     const openProfitEl = document.getElementById('openProfitValue');
     const openProfitPctEl = document.getElementById('openProfitPct');
@@ -2783,6 +2789,9 @@ document.addEventListener('DOMContentLoaded', function() {
         socket.emit('voice_announcement_toggle', {
             enabled: announcementToggleEl ? announcementToggleEl.checked : true
         });
+        socket.emit('time_announcement_toggle', {
+            enabled: timeAnnounceToggleEl ? timeAnnounceToggleEl.checked : true
+        });
 
         // Pending orders are NOT pushed in setup_data - request them
         // explicitly (resting U/D exit limits show here).
@@ -2821,6 +2830,19 @@ document.addEventListener('DOMContentLoaded', function() {
             localStorage.setItem('announcementToggleEnabled', String(announcementToggleEl.checked));
             socket.emit('voice_announcement_toggle', {
                 enabled: announcementToggleEl.checked
+            });
+        });
+    }
+
+    if (timeAnnounceToggleEl) {
+        // Same persistence contract as the P&L announcement toggle:
+        // the preference survives page loads and tab switches.
+        const savedTimeAnnouncePref = localStorage.getItem('timeAnnounceToggleEnabled');
+        timeAnnounceToggleEl.checked = savedTimeAnnouncePref === null ? true : savedTimeAnnouncePref === 'true';
+        timeAnnounceToggleEl.addEventListener('change', () => {
+            localStorage.setItem('timeAnnounceToggleEnabled', String(timeAnnounceToggleEl.checked));
+            socket.emit('time_announcement_toggle', {
+                enabled: timeAnnounceToggleEl.checked
             });
         });
     }
