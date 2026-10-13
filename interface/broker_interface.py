@@ -64,6 +64,22 @@ class BrokerInterface(ABC):
         )
         return None
 
+    def modify_exit_limit(self, order_id, trading_symbol, instrument_token, quantity, exchange, price):
+        """
+        Modify the LIMIT price of a pending SELL exit order already
+        resting at the broker (quantity in LOTS, same semantics as
+        place_exit_limit). Returns True when the broker confirms the
+        modification; False when unsupported or failed so the caller
+        falls back to cancel + re-place.
+        Default no-op for brokers/adapters that do not support order
+        modification (simulator, playback).
+        """
+        logger.warning(
+            f"modify_exit_limit not supported by {type(self).__name__}; "
+            f"falling back to cancel + re-place for {trading_symbol}"
+        )
+        return False
+
     def cancel_all_pending_orders(self):
         """
         Cancel every pending/open order at the broker. Returns the

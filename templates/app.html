@@ -4176,6 +4176,17 @@ filteredContracts.sort(([, a], [, b]) => {
         });
     }
 
+    // Debounce per input: a BP drag/rapid clicking fires one 'change'
+    // per tick and every emit used to trigger a broker fetch ->
+    // cancel -> place cycle on the backend; overlapping cycles raced
+    // each other and stacked duplicate SELL LIMITs (2026-10-13).
+    // Collect the burst and emit once ~500ms after the last edit -
+    // the backend coalescing then does a single modify at the final
+    // value. Values are captured at schedule time: a grid re-render
+    // between the click and the emit must not lose the edit.
+    const BP_EMIT_DEBOUNCE_MS = 500;
+    const bpEmitTimers = new WeakMap();
+
     function emitBookProfitUpdate(input) {
         // Recover the position key from the row's sell button; a cleared
         // / invalid entry means 0 = no auto profit-booking for this leg.
@@ -4184,11 +4195,16 @@ filteredContracts.sort(([, a], [, b]) => {
         if (!sellBtn) return;
         const raw = parseFloat(input.value);
         const bp = isFinite(raw) && raw > 0 ? raw : 0;
-        socket.emit('position_book_profit_updated', {
+        const payload = {
             position_key: sellBtn.dataset.positionkey || '',
             instrument_token: sellBtn.dataset.token || '',
             book_profit_pct: bp
-        });
+        };
+        clearTimeout(bpEmitTimers.get(input));
+        bpEmitTimers.set(input, setTimeout(() => {
+            bpEmitTimers.delete(input);
+            socket.emit('position_book_profit_updated', payload);
+        }, BP_EMIT_DEBOUNCE_MS));
     }
 
     function handleBookProfitInputChange(event) {

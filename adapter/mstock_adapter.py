@@ -1653,6 +1653,118 @@ class MStockAdapter(BrokerInterface):
             price=price
         )
 
+    def modify_exit_limit(self, order_id, trading_symbol, instrument_token, quantity, exchange, price):
+        """Modify the LIMIT price of a pending SELL exit order, in place.
+
+        Used by the Book-Profit % edit in the position grid: editing the
+        override must move the resting exit's price WITHOUT the old
+        cancel + re-place dance, which raced with rapid grid edits and
+        stacked duplicate SELL LIMITs (each fresh placement also
+        re-binds margin and can hit FUND LIMIT INSUFFICIENT while the
+        previous SELL is still open).
+
+        quantity is in LOTS - same semantics as place_exit_limit.
+        Endpoint: PUT /openapi/typeb/orders/regular/{order_id} (mStock
+        typeB "Order Modification"). Returns True only when the broker
+        confirms the modification - any ambiguity returns False so the
+        caller falls back to cancel + re-place.
+        """
+        try:
+            logger.info(
+                f"Modifying pending exit order {order_id} for "
+                f"{trading_symbol} to LIMIT {price} ({quantity} lots) "
+                f"via M.Stock..."
+            )
+            conn = _MSTOCK_HTTP.lease()
+            headers = {
+                "X-Mirae-Version": "1",
+                "X-PrivateKey": self.mstock_instance._api_key,
+                "Authorization": f"Bearer {self.mstock_instance._access_token}",
+                "Content-Type": "application/json"
+            }
+
+            # Same instrument lookup as sell_units_temp: in-memory
+            # cache first, instrument-file fallback second.
+            if instrument_token in self._trader._five_weekly_option_contracts:
+                data = self._trader._five_weekly_option_contracts[instrument_token]
+            else:
+                data = find_matching_object(
+                    self._MSTOCK_INSTRUMENT_FILE, "token", str(instrument_token),
+                    prefix=INSTRUMENTS_SECTION_PREFIX
+                )
+            trading_symbol_for_transaction = (
+                data["name"] or data.get("tradingsymbol", trading_symbol)
+            )
+            lotsize = data["lotsize"]
+
+            # Exit with the same product the position is held in -
+            # same resolution as sell_units_temp.
+            sell_product = ""
+            for leg in self._trader._position_data.values():
+                if str(leg.get("instrument_token")) == str(instrument_token) and leg.get("producttype"):
+                    sell_product = str(leg["producttype"]).upper()
+                    break
+            if not sell_product:
+                sell_product = "CARRYFORWARD"
+
+            order_qty = str(int(quantity) * int(lotsize))
+            json_data = {
+                'variety': 'NORMAL',
+                'tradingsymbol': trading_symbol_for_transaction,
+                'symboltoken': str(instrument_token),
+                'exchange': exchange,
+                'transactiontype': 'SELL',
+                'orderid': str(order_id),
+                'ordertype': 'LIMIT',
+                'quantity': order_qty,
+                'producttype': sell_product,
+                'price': str(price),
+                'triggerprice': '0',
+                'disclosedquantity': '0',
+                'duration': 'DAY',
+                # Remaining quantity - the caller only takes the modify
+                # fast path for unfilled orders, so remaining == full.
+                'modqty_remng': order_qty,
+            }
+            logger.debug(f"Modify order payload: {json_data}")
+            conn.request(
+                'PUT',
+                f'/openapi/typeb/orders/regular/{order_id}',
+                json.dumps(json_data),
+                headers
+            )
+            response = conn.getresponse().read().decode("utf-8")
+            conn.close()
+            logger.debug(f"Modify raw response: {response}")
+
+            res_json = json.loads(response)
+            if isinstance(res_json, list):
+                res_json = res_json[0] if res_json else {}
+
+            # Strict validation: unlike cancel (where an unparseable
+            # body is treated as success), a failed modify MUST be
+            # reported so the caller re-syncs via cancel + re-place
+            # instead of silently leaving a stale exit price.
+            if not res_json.get("status", False):
+                msg = res_json.get("message", "Unknown error")
+                logger.error(
+                    f"M.Stock order modify failed for {order_id} "
+                    f"({trading_symbol}): {msg} | Raw: {res_json}"
+                )
+                return False
+
+            logger.info(
+                f"Order {order_id} modified to LIMIT {price} successfully."
+            )
+            return True
+
+        except Exception as e:
+            logger.error(
+                f"Modify exit order error for {order_id} "
+                f"({trading_symbol}): {e}"
+            )
+            return False
+
     def sell_units_temp(self, trading_symbol, instrument_token , quantity , exchange , ltp,limit_market="MARKET",price=0):
         try:
             logger.info(f"Selling units: {quantity} of {trading_symbol} ({instrument_token} {limit_market} {price} ) via M.Stock...")

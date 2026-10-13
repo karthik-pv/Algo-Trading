@@ -124,6 +124,23 @@ class Trader_Singleton:
     _PROVISIONAL_EXIT_TTL_SECONDS = 60.0
 
     # ---------------------------------------------------------
+    # Per-position locks for resting-exit reconciliation on
+    # Book-Profit % edits (position grid). The edit event fires on
+    # every slider tick and each one used to run its own fetch ->
+    # cancel -> place cycle over HTTP. Two overlapping cycles each
+    # fetched an order
+    # book that did not yet list the other's just-placed SELL, found
+    # nothing to cancel and placed on top - stacking duplicate SELL
+    # LIMITs (2026-10-13 12:51: the same pending exit was cancelled
+    # twice and 4.6/4.7 exits rested at once). The lock serializes
+    # the cycles per position; the reconcile re-reads the override
+    # AFTER acquiring it, so a slider dragged across values coalesces
+    # into ONE final modify/place instead of one per tick.
+    # ---------------------------------------------------------
+    _bp_exit_locks = {}
+    _bp_exit_locks_guard = threading.Lock()
+
+    # ---------------------------------------------------------
     # Per-instrument hourly tick sampler. Both websocket feeds call
     # record_tick() per wire tick; counts land in clock-hour buckets
     # and are logged + persisted at every hour boundary. Motivation:
@@ -1376,6 +1393,46 @@ class Trader_Singleton:
             if fill:
                 anchor = float(fill)
                 fill_known = True
+                # The executed BUY fill is the authoritative average
+                # buy price - write it into the leg. The fast grid
+                # update seeds the leg with a pre-buy LTP snapshot
+                # (provisional), and every Book-Profit % edit anchors
+                # the resting exit on this average: a stale seed made
+                # a "15%" exit rest ~5% too low and the leg booked
+                # ~8% (2026-10-13 13:07). Prefer the intent's own
+                # leg; fall back to the token's only leg.
+                try:
+                    fill_legs = []
+                    position_key = self._position_key(
+                        str(intent["instrument_token"]),
+                        self._normalise_strategy(intent.get("strategy") or ""),
+                        str(intent["mode"] or "").strip().upper(),
+                    )
+                    if position_key in self._position_data:
+                        fill_legs = [position_key]
+                    else:
+                        token_legs = self._legs_for_token(
+                            str(intent["instrument_token"])
+                        )
+                        if len(token_legs) == 1:
+                            fill_legs = token_legs
+                    for leg_key in fill_legs:
+                        leg = self._position_data[leg_key]
+                        old_leg_avg = float(
+                            leg.get("average_price") or 0
+                        )
+                        if abs(old_leg_avg - anchor) > 0.001:
+                            leg["average_price"] = anchor
+                            logger.info(
+                                f"Leg {leg_key} average buy price "
+                                f"corrected to the executed fill "
+                                f"{anchor} (was {old_leg_avg})"
+                            )
+                except Exception as avg_error:
+                    logger.debug(
+                        f"Fill-based average correction skipped: "
+                        f"{avg_error}"
+                    )
             else:
                 logger.warning(
                     f"Executed price unavailable for buy {key}; using "
@@ -2117,6 +2174,234 @@ class Trader_Singleton:
             )
         return (cancelled, failed)
 
+    def _bp_exit_lock(self, tradingsymbol_or_key):
+        """Per-position lock guarding BP-edit resting-exit reconciles."""
+        lock_key = str(tradingsymbol_or_key).upper()
+        with self._bp_exit_locks_guard:
+            lock = self._bp_exit_locks.get(lock_key)
+            if lock is None:
+                lock = threading.Lock()
+                self._bp_exit_locks[lock_key] = lock
+            return lock
+
+    def _sync_bp_resting_exit(self, key):
+        """
+        Make the broker-side resting SELL LIMIT of a U/D leg match the
+        leg's CURRENT book-profit override (position-grid edit).
+
+        Replaces the old fetch -> cancel -> place cycle that ran per
+        slider tick and raced itself into stacking duplicate SELL
+        LIMITs. Per symbol this:
+          1. runs under the per-symbol lock - overlapping edit events
+             queue up instead of interleaving their broker round-trips;
+          2. re-reads the override AFTER acquiring the lock - a slider
+             dragged across values coalesces into the final one;
+          3. short-circuits when a single resting exit already sits at
+             the target price - the dedupe that keeps grid edits from
+             stacking orders;
+          4. MODIFYs the resting SELL's price in place (broker order
+             modify) when one unfilled exit is pending;
+          5. falls back to the old cancel + fresh-place only when no
+             exit is resting (first placement), SEVERAL are (self-heal
+             for duplicates created by the old race) or the resting
+             order already partially filled (modify semantics get
+             murky there).
+
+        The target is anchored on the leg's average BUY price for both
+        U and D legs - BK% means "% over my buy price" (user decision
+        2026-10-13). A U edit while the LTP sits below the target
+        rests the limit there; an LTP already above it makes the
+        limit marketable and books BK% immediately.
+        """
+        with self._bp_exit_lock(key):
+            # Re-read AFTER the lock: edit events that queued up while
+            # this thread waited carry stale overrides; the leg now
+            # holds the latest one and a single reconcile suffices.
+            leg = self._position_data.get(key) or {}
+            mode_u_d = str(leg.get("sell_mode") or "").strip().upper()
+            symbol = str(leg.get("tradingsymbol") or "")
+            net_qty = int(leg.get("net_quantity", 0) or leg.get("lots", 0) or 0)
+            override_pct = leg.get("override_book_profit_pct")
+            if mode_u_d not in ("U", "D") or not symbol or net_qty <= 0 or override_pct is None:
+                return
+            override_pct = float(override_pct)
+
+            # BK% is "% over MY buy price" for BOTH U and D legs (user
+            # decision 2026-10-13): the edit anchors on the leg's
+            # average buy price, never on the current tick. A U edit
+            # while the LTP sits below the target simply rests the
+            # limit there; an LTP already above it makes the limit
+            # marketable and books BK% immediately.
+            anchor = float(leg.get("average_price") or 0)
+            if anchor <= 0:
+                anchor = float(leg.get("latest_price") or 0)
+            if anchor <= 0:
+                return
+            exit_price = self._exit_target_price(
+                anchor,
+                leg.get("order_strategy"),
+                override_pct=override_pct,
+            )
+            if exit_price <= 0:
+                return
+
+            # What is actually resting at the broker right now?
+            try:
+                pending = self._broker.fetch_all_pending_orders()
+            except Exception as fetch_error:
+                pending = None
+                logger.error(
+                    f"BP override {override_pct}%: could not fetch pending "
+                    f"orders for {symbol}: {fetch_error}"
+                )
+            if pending is None:
+                # Failed fetch - we cannot know what is resting; leave
+                # the exit as placed rather than risk stacking or a
+                # naked short.
+                return
+
+            symbol_upper = symbol.upper()
+            resting = [
+                o for o in pending
+                if str(o.get("tradingsymbol", "") or "").upper() == symbol_upper
+                and str(o.get("transaction_type", "") or "").upper() == "SELL"
+            ]
+
+            if len(resting) == 1:
+                order = resting[0]
+                try:
+                    filled_qty = float(order.get("filled_quantity") or 0)
+                except (TypeError, ValueError):
+                    filled_qty = 0.0
+                try:
+                    resting_price = float(order.get("price") or 0)
+                except (TypeError, ValueError):
+                    resting_price = 0.0
+                order_id = str(order.get("order_id") or "")
+
+                if filled_qty <= 0 and order_id:
+                    if abs(resting_price - exit_price) < 0.01:
+                        # Already resting at the target - nothing to do.
+                        # This short-circuit is what stops a slider drag
+                        # from stacking duplicate SELL LIMITs.
+                        logger.debug(
+                            f"BP override {override_pct}%: resting exit for "
+                            f"{symbol} already at {exit_price} (order "
+                            f"{order_id}) - nothing to do"
+                        )
+                        return
+                    modify = getattr(self._broker, "modify_exit_limit", None)
+                    if callable(modify):
+                        if modify(
+                            order_id,
+                            symbol,
+                            str(leg.get("instrument_token") or ""),
+                            net_qty,
+                            self._exchange,
+                            exit_price,
+                        ):
+                            logger.info(
+                                f"BP override {override_pct}%: resting exit "
+                                f"for {symbol} MODIFIED to {exit_price} "
+                                f"(order {order_id}, anchor {anchor}, "
+                                f"{mode_u_d})"
+                            )
+                            return
+                        logger.warning(
+                            f"BP override {override_pct}%: in-place modify "
+                            f"of exit order {order_id} failed for {symbol} "
+                            f"- falling back to cancel + re-place"
+                        )
+                        try:
+                            self.frontend_data_socket.emit(
+                                'status_message',
+                                {
+                                    "success": False,
+                                    "message": (
+                                        f"BP {override_pct}% edit for "
+                                        f"{symbol}: in-place modify failed "
+                                        f"- retrying via cancel + re-place"
+                                    )
+                                }
+                            )
+                        except Exception:
+                            pass
+                    # Modify unsupported by this broker: fall through to
+                    # the cancel + re-place flow below.
+
+            # Fallback (no exit resting / duplicates / partial fill /
+            # failed modify): the old cancel-then-place flow. Cancel
+            # failures still mean the exit may have JUST filled - the
+            # re-place must be skipped or the account goes net short.
+            def _bp_edit_failed(reason):
+                # The user's BK% edit did NOT take effect - the leg
+                # keeps resting at its old target. Say so on the UI;
+                # a silent failure read as success made legs book the
+                # OLD (lower) target (2026-10-13: FUND LIMIT
+                # INSUFFICIENT rejections left stale exits live).
+                logger.error(
+                    f"BP override {override_pct}%: NOT applied for "
+                    f"{symbol} - {reason} The exit keeps its old "
+                    f"target; re-edit BP once reachable."
+                )
+                try:
+                    self.frontend_data_socket.emit(
+                        'status_message',
+                        {
+                            "success": False,
+                            "message": (
+                                f"BP {override_pct}% for {symbol} NOT "
+                                f"applied ({reason}) - the exit keeps "
+                                f"its old target."
+                            )
+                        }
+                    )
+                except Exception:
+                    pass
+
+            try:
+                cancelled, failed = self._cancel_pending_exit_orders(symbol)
+            except RuntimeError as cancel_error:
+                _bp_edit_failed(f"order book unreachable ({cancel_error}).")
+                return
+            if failed:
+                # A resting limit may have JUST filled - refresh
+                # and skip the re-place; re-placing on top would
+                # go out naked short.
+                _bp_edit_failed("a resting exit could not be cancelled.")
+                self.refresh_open_pos_buy_price()
+                return
+            # Guard the fresh placement: if the resting exit filled
+            # mid-flight the leg is already closed and this SELL would
+            # go out naked short.
+            broker_qty = self._broker_net_qty_for_token(
+                str(leg.get("instrument_token") or "")
+            )
+            if broker_qty is None or broker_qty <= 0:
+                _bp_edit_failed(
+                    "position flat or unverifiable - the resting exit "
+                    "may have just filled."
+                )
+                self.refresh_open_pos_buy_price()
+                return
+            try:
+                self._broker.place_exit_limit(
+                    symbol,
+                    str(leg.get("instrument_token") or ""),
+                    net_qty,
+                    self._exchange,
+                    exit_price,
+                )
+                logger.info(
+                    f"BP override {override_pct}%: resting exit for "
+                    f"{symbol} placed at {exit_price} "
+                    f"(anchor {anchor}, {mode_u_d})"
+                )
+            except Exception as place_error:
+                _bp_edit_failed(
+                    f"placement rejected ({place_error})"
+                )
+
     def _broker_net_qty_for_token(self, token):
         """
         Live net position (in LOTS) for a token, straight from the
@@ -2561,6 +2846,26 @@ class Trader_Singleton:
             lotsize = int(lotsize)
 
             # ---------------------------------------------------------
+            # 1b. The leg's AVERAGE BUY PRICE anchors on the executed
+            # fill, NOT the in-memory LTP. The LTP snapshot can trail
+            # the market fill by several ticks (feed stall, fast tape)
+            # and every Book-Profit % edit anchors the resting exit on
+            # this average - a 3.15 fill seeded with a 3.0 LTP made a
+            # "15%" exit rest at 3.45 and the leg booked ~8%
+            # (2026-10-13 13:07). The adapter passes the pre-buy LTP
+            # here when the fill is not known yet (provisional U path)
+            # and the real fill wherever it is; resolve_pending_exit
+            # re-seeds the average authoritatively once the fill is
+            # learned. Fall back to the LTP only when no fill is known.
+            # ---------------------------------------------------------
+            try:
+                executed_buy_price = float(executed_buy_price or 0)
+            except (TypeError, ValueError):
+                executed_buy_price = 0.0
+            if executed_buy_price <= 0:
+                executed_buy_price = latest_ltp
+
+            # ---------------------------------------------------------
             # 2. If the same leg already exists, add this BUY to it.
             # ---------------------------------------------------------
             existing = self._position_data.get(leg_key)
@@ -2580,10 +2885,10 @@ class Trader_Singleton:
                 if new_qty > 0:
                     weighted_avg = (
                         (old_avg * old_qty)
-                        + (latest_ltp * quantity)
+                        + (executed_buy_price * quantity)
                     ) / new_qty
                 else:
-                    weighted_avg = latest_ltp
+                    weighted_avg = executed_buy_price
 
                 net_qty = new_qty
                 avg_price = weighted_avg
@@ -2591,7 +2896,7 @@ class Trader_Singleton:
             else:
 
                 net_qty = quantity
-                avg_price = latest_ltp
+                avg_price = executed_buy_price
 
             # ---------------------------------------------------------
             # 3. Calculate temporary P/L using current LTP.
@@ -3044,6 +3349,16 @@ class Trader_Singleton:
                 int(self._position_data[k].get("net_quantity", 0) or 0)
                 for k in leg_keys
             )
+
+            # NOTE: the leg's average buy price is intentionally NOT
+            # synced from the calculated position average here. The
+            # calculation consumes whatever BUY orders the broker book
+            # currently lists - right after a fresh BUY that order can
+            # be missing, and the average would be derived from an
+            # OLDER round trip's fills (2026-10-13 13:07: a 3.15 fill
+            # computed as 3.00). The authoritative correction happens
+            # in resolve_pending_exit() once the buy's executed price
+            # is confirmed.
 
             if held_qty > net_qty:
                 # FIFO reduction: shrink the oldest legs first.
@@ -8094,13 +8409,18 @@ class Trader_Singleton:
                 )
 
             # ----------------------------------------------------
-            # Re-place any live resting exit so the NEW override
+            # Sync any live resting exit so the NEW override
             # actually governs the exit price. The buy-time resting
             # SELL LIMIT sits at the strategy default (e.g. 6%) and
             # fills FIRST at the broker - a 9% BP edit did nothing to
-            # it and the leg booked ~6% instead of 9%. Cancel the old
-            # limit, place a fresh one at the override target (D
-            # anchors the average buy price, U the latest tick).
+            # it and the leg booked ~6% instead of 9%. The old flow
+            # (fetch -> cancel -> place per slider tick) raced itself
+            # into stacking duplicate SELL LIMITs; _sync_bp_resting_exit
+            # serializes per position, coalesces the slider ticks to
+            # the latest override and MODIFYs the resting order's
+            # price in place instead of stacking a fresh one (the
+            # target anchors on the leg's real average buy price for
+            # both U and D).
             # ----------------------------------------------------
             if self._mode == "LIVE":
                 affected_keys = (
@@ -8108,65 +8428,13 @@ class Trader_Singleton:
                     if position_key and ":" in position_key and position_key in self._position_data
                     else self._legs_for_token(str(bp_details.get("instrument_token", "")))
                 )
-                replaced = False
                 for key in affected_keys:
-                    leg = self._position_data.get(key) or {}
-                    mode_u_d = str(leg.get("sell_mode") or "").strip().upper()
-                    symbol = str(leg.get("tradingsymbol") or "")
-                    net_qty = int(leg.get("net_quantity", 0) or leg.get("lots", 0) or 0)
-                    if mode_u_d not in ("U", "D") or not symbol or net_qty <= 0:
-                        continue
-                    anchor = (
-                        float(leg.get("latest_price") or 0)
-                        if mode_u_d == "U"
-                        else float(leg.get("average_price") or 0)
-                    )
-                    if anchor <= 0:
-                        anchor = float(leg.get("average_price") or leg.get("latest_price") or 0)
-                    if anchor <= 0:
-                        continue
                     try:
-                        cancelled, failed = self._cancel_pending_exit_orders(symbol)
-                    except RuntimeError as cancel_error:
+                        self._sync_bp_resting_exit(key)
+                    except Exception as sync_error:
                         logger.error(
-                            f"BP override {new_pct}%: cannot verify resting "
-                            f"exits for {symbol} ({cancel_error}) - the exit "
-                            f"stays as placed; re-edit BP once the order "
-                            f"book is reachable."
-                        )
-                        continue
-                    if failed:
-                        # A resting limit may have JUST filled - refresh
-                        # and skip the re-place; re-placing on top would
-                        # go out naked short.
-                        self.refresh_open_pos_buy_price()
-                        continue
-                    exit_price = self._exit_target_price(
-                        anchor,
-                        leg.get("order_strategy"),
-                        override_pct=new_pct,
-                    )
-                    if exit_price <= 0:
-                        continue
-                    try:
-                        self._broker.place_exit_limit(
-                            symbol,
-                            str(leg.get("instrument_token") or ""),
-                            net_qty,
-                            self._exchange,
-                            exit_price,
-                        )
-                        replaced = True
-                        logger.info(
-                            f"BP override {new_pct}%: resting exit for "
-                            f"{symbol} re-placed at {exit_price} "
-                            f"(anchor {anchor}, {mode_u_d})"
-                        )
-                    except Exception as place_error:
-                        logger.error(
-                            f"BP override {new_pct}%: re-placement failed "
-                            f"for {symbol}: {place_error} - the TP/SL "
-                            f"watcher manages this leg."
+                            f"BP override {new_pct}%: resting-exit sync "
+                            f"failed for {key}: {sync_error}"
                         )
 
             self._save_position_ledger()

@@ -753,6 +753,40 @@ class KiteAdapter(BrokerInterface):
             logger.error(f"Kite place_exit_limit failed for {trading_symbol}: {e}")
             return None
 
+    def modify_exit_limit(self, order_id, trading_symbol, instrument_token, quantity, exchange, price):
+        """Modify the LIMIT price of a pending SELL exit order in place.
+
+        Used by the Book-Profit % edit in the position grid so editing
+        the override moves the resting exit instead of stacking a new
+        order on top. quantity is in LOTS (same semantics as
+        place_exit_limit); the modified quantity mirrors what a fresh
+        placement would send. Returns True when Kite confirms.
+        """
+        try:
+            instrument_details = self.get_instrument_details(trading_symbol)
+            lotsize = instrument_details["lot_size"]
+            tick = instrument_details.get("tick_size") or 0.05
+            order_qty = int(quantity) if exchange == "MCX" else int(quantity) * int(lotsize)
+            limit_price = round_to_tick(float(price), tick, up=True)
+
+            modified_id = self.kite.modify_order(
+                variety=self.kite.VARIETY_REGULAR,
+                order_id=str(order_id),
+                quantity=order_qty,
+                price=limit_price,
+            )
+            logger.info(
+                f"Kite SELL LIMIT exit {order_id} modified to {limit_price} "
+                f"for {trading_symbol} ({quantity} lots)"
+            )
+            return bool(modified_id)
+        except Exception as e:
+            logger.error(
+                f"Kite modify of exit order {order_id} for "
+                f"{trading_symbol} failed: {e}"
+            )
+            return False
+
     def fetch_order_executed_price(self, order_id):
         """Fetch the executed average price of a completed Kite order."""
         try:
