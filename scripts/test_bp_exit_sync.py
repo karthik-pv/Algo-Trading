@@ -10,6 +10,13 @@ edit reconcile). Exercises the decision paths against a mocked broker:
   6. resting SELL vanished + position flat      -> NO naked-short place
   7. overlapping events coalesce: second event re-reads the override
      AFTER the lock and reconciles to the latest pct in one action
+  8. U-mode edit anchors on the BUY price, not the LTP
+  9. fast buy update seeds the leg average with the EXECUTED fill
+ 10. resolve_pending_exit corrects a stale leg average from the fill
+     (+ audit buy-avg write-back + grid re-emit)
+ 11. BP edit inside the fill window, fill UNKNOWN -> edit HELD, nothing placed
+ 12. BP edit inside the fill window, fill KNOWN   -> inline resolve places
+     ONE exit anchored on the true fill (no duplicate placement)
 
 Run:  python scripts/test_bp_exit_sync.py
 """
@@ -21,7 +28,37 @@ import threading
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+import core.trade_logic as _tl  # noqa: E402
 from core.trade_logic import Trader_Singleton  # noqa: E402
+
+
+class _StubSocket:
+    def __init__(self):
+        self.events = []
+
+    def emit(self, event, *payload):
+        self.events.append((event, payload))
+
+
+class _StubAudit:
+    """Hermetic stand-in for the real audit singleton - the audit
+    recorder loads today's data/audit file on import, so letting the
+    exercised paths call it would overwrite REAL trade records."""
+
+    def __init__(self):
+        self.buy_avg_calls = []
+
+    def record_buy_avg_price(self, token, avg_price):
+        self.buy_avg_calls.append((str(token), float(avg_price)))
+
+    def record_sell_trigger(self, *a, **k):
+        pass
+
+    def record_sell_executed(self, *a, **k):
+        pass
+
+
+_tl.trade_audit = _StubAudit()
 
 
 class FakeBroker:
@@ -106,6 +143,7 @@ def make_trader(broker, legs):
                 failed += 1
         return cancelled, failed
     t._cancel_pending_exit_orders = cancel_pending
+    t.frontend_data_socket = _StubSocket()
     return t
 
 
@@ -235,11 +273,6 @@ check("8 U edit anchors on buy", broker.modify_calls == [("U1", "NIFTY-13Oct2026
       f"modify={broker.modify_calls}")
 
 # --- 9. fast buy update seeds the leg average with the EXECUTED fill ---
-class _StubSocket:
-    def emit(self, *a, **k):
-        pass
-
-
 t = object.__new__(Trader_Singleton)
 t._position_data = {}
 t._normalise_strategy = lambda s: str(s or "").strip().upper()
@@ -306,6 +339,63 @@ corrected = t._position_data[KEY]["average_price"]
 exit_placed = t._broker.place_exit_limit
 check("10 leg avg corrected from fill", corrected == 3.15,
       f"leg_avg={corrected}")
+check("10 audit buy-avg written back",
+      ("44620", 3.15) in _tl.trade_audit.buy_avg_calls,
+      f"audit_calls={_tl.trade_audit.buy_avg_calls}")
+check("10 grid re-emitted on correction",
+      any(ev == "update_open_positions" for ev, _ in t.frontend_data_socket.events),
+      f"events={[ev for ev, _ in t.frontend_data_socket.events]}")
+
+
+def buy_intent(order_id, override):
+    return {
+        "broker": "MSTOCK", "order_id": order_id, "mode": "D",
+        "anchor_ltp": 3.7, "strategy": "SCALPING",
+        "trading_symbol": "NIFTY-13Oct2026-22700-CE",
+        "instrument_token": "44620", "lots": 3, "exchange": "NSE",
+        "override_book_profit_pct": override, "registered_ts": 0.0,
+    }
+
+
+# --- 11. BP edit inside the fill window, fill UNKNOWN -> edit HELD ---
+# The leg's average (3.7) is still the provisional click-LTP seed; the
+# real fill is not confirmed. Anchoring the exit on the seed is the
+# 2026-10-13 13:33 bug - the edit must be held until the fill lands.
+broker = FakeBroker([], [{"instrument_token": "44620", "quantity": 195}])
+broker.fetch_order_executed_price = lambda oid: None   # fill not confirmed yet
+t = make_trader(broker, {KEY: leg(override=15.0)})
+t._pending_exit_intents = {}   # instance override (class attr is shared)
+t._provisional_pending_orders = {}
+t._pending_exit_lock = _Lock()
+t._pending_exit_intents["MSTOCK:BUY11"] = buy_intent("BUY11", override=9.0)
+Trader_Singleton._sync_bp_resting_exit(t, KEY)
+check("11 edit held while fill unknown",
+      not broker.place_calls and not broker.modify_calls
+      and t._pending_exit_intents["MSTOCK:BUY11"]["override_book_profit_pct"] == 15.0,
+      f"place={broker.place_calls} modify={broker.modify_calls} "
+      f"intent_override={t._pending_exit_intents['MSTOCK:BUY11']['override_book_profit_pct']}")
+
+# --- 12. BP edit inside the fill window, fill KNOWN -> inline resolve ---
+# The probe learns the real fill (3.95 above the 3.7 seed), resolves the
+# pending exit inline: leg corrected, ONE exit placed at fill x override
+# (15% of 3.95 -> tick 4.55, NOT the registration-time 9% -> 4.35), and
+# the sync must not stack a second placement on top.
+broker = FakeBroker([], [{"instrument_token": "44620", "quantity": 195}])
+broker.fetch_order_executed_price = lambda oid: 3.95   # real market fill
+t = make_trader(broker, {KEY: leg(override=15.0)})
+t._pending_exit_intents = {}   # instance override (class attr is shared)
+t._provisional_pending_orders = {}
+t._pending_exit_lock = _Lock()
+t._pending_exit_intents["MSTOCK:BUY12"] = buy_intent("BUY12", override=9.0)
+Trader_Singleton._sync_bp_resting_exit(t, KEY)
+placed_price = broker.place_calls[0][2] if broker.place_calls else None
+check("12 inline resolve on BP edit",
+      len(broker.place_calls) == 1
+      and placed_price == 4.55
+      and t._position_data[KEY]["average_price"] == 3.95
+      and ("44620", 3.95) in _tl.trade_audit.buy_avg_calls,
+      f"place={broker.place_calls} avg={t._position_data[KEY]['average_price']} "
+      f"audit={_tl.trade_audit.buy_avg_calls}")
 
 print()
 if FAILURES:

@@ -1401,6 +1401,7 @@ class Trader_Singleton:
                 # a "15%" exit rest ~5% too low and the leg booked
                 # ~8% (2026-10-13 13:07). Prefer the intent's own
                 # leg; fall back to the token's only leg.
+                corrected_legs = []
                 try:
                     fill_legs = []
                     position_key = self._position_key(
@@ -1416,6 +1417,20 @@ class Trader_Singleton:
                         )
                         if len(token_legs) == 1:
                             fill_legs = token_legs
+                    if not fill_legs:
+                        # 2026-10-13 13:33: this lookup came up empty
+                        # and the correction silently no-oped - the leg
+                        # kept the click-LTP seed, every BP edit then
+                        # anchored the exit on a price never paid and a
+                        # "+24%" display booked ~+20%. Say so loudly.
+                        logger.warning(
+                            f"Fill-based average correction found no "
+                            f"leg for token "
+                            f"{intent.get('instrument_token')} "
+                            f"({intent.get('strategy')}/"
+                            f"{intent.get('mode')}) - the grid seed "
+                            f"stays provisional"
+                        )
                     for leg_key in fill_legs:
                         leg = self._position_data[leg_key]
                         old_leg_avg = float(
@@ -1423,6 +1438,7 @@ class Trader_Singleton:
                         )
                         if abs(old_leg_avg - anchor) > 0.001:
                             leg["average_price"] = anchor
+                            corrected_legs.append(leg_key)
                             logger.info(
                                 f"Leg {leg_key} average buy price "
                                 f"corrected to the executed fill "
@@ -1433,6 +1449,32 @@ class Trader_Singleton:
                         f"Fill-based average correction skipped: "
                         f"{avg_error}"
                     )
+                # The audit also holds the provisional click-LTP seed
+                # (fast_update records it before the fill is known);
+                # the confirmed fill is authoritative there too - the
+                # 13:33 trade kept "buy_avg_price 1.85" for a 1.95
+                # fill, so every report understated entry slippage.
+                try:
+                    trade_audit.record_buy_avg_price(
+                        intent["instrument_token"], anchor
+                    )
+                except Exception as audit_error:
+                    logger.debug(
+                        f"Audit buy-avg write-back failed for {key}: "
+                        f"{audit_error}"
+                    )
+                if corrected_legs and self.frontend_data_socket:
+                    # Push the corrected average to the grid now -
+                    # without this the UI keeps the seed until the next
+                    # broker reconcile and the user trades on a phantom
+                    # profit number.
+                    try:
+                        self.frontend_data_socket.emit(
+                            'update_open_positions',
+                            self._position_data
+                        )
+                    except Exception:
+                        pass
             else:
                 logger.warning(
                     f"Executed price unavailable for buy {key}; using "
@@ -2184,6 +2226,69 @@ class Trader_Singleton:
                 self._bp_exit_locks[lock_key] = lock
             return lock
 
+    def _reconcile_pending_fill_before_edit(self, key):
+        """Close the fill-confirmation window before a BP edit anchors
+        on the leg's average.
+
+        Between the fast grid seed (click LTP) and the fill-gated
+        resolve, the leg's average_price is provisional. An edit in
+        that window anchored on the seed and the leg booked less than
+        BK% promised (2026-10-13 13:33: grid showed +24%, the trade
+        booked ~+20% against the real 1.95 fill). When an unresolved
+        BUY-exit intent exists for this leg, probe the broker for the
+        executed price: known -> resolve the intent inline (writes the
+        true average into the leg + audit and places the exit on it);
+        unknown -> report PENDING so the caller can hold the edit.
+
+        Returns "RESOLVED", "PENDING" or None (no unresolved intent).
+        """
+        leg = self._position_data.get(key) or {}
+        token = str(leg.get("instrument_token") or "")
+        mode = str(leg.get("sell_mode") or "").strip().upper()
+        if not token or mode not in ("U", "D"):
+            return None
+        with self._pending_exit_lock:
+            intent = next(
+                (
+                    i for i in self._pending_exit_intents.values()
+                    if i.get("kind") != "EXIT"
+                    and str(i.get("instrument_token") or "") == token
+                    and str(i.get("mode") or "").strip().upper() == mode
+                ),
+                None,
+            )
+            if intent is None:
+                return None
+            # resolve_pending_exit anchors the resting exit on the
+            # override captured at registration - carry the CURRENT
+            # leg override into the intent so an edit that lands
+            # inside the window is not lost.
+            if leg.get("override_book_profit_pct") is not None:
+                intent["override_book_profit_pct"] = float(
+                    leg["override_book_profit_pct"]
+                )
+        try:
+            fill = self._broker.fetch_order_executed_price(
+                intent["order_id"]
+            )
+        except Exception as fetch_error:
+            logger.debug(
+                f"Buy-fill probe for {key} failed: {fetch_error}"
+            )
+            fill = None
+        if not fill:
+            return "PENDING"
+        # Inline resolve: the pop under _pending_exit_lock is atomic,
+        # so a resolve racing on the adapter thread no-ops instead of
+        # stacking a second exit.
+        self.resolve_pending_exit(
+            broker=str(intent["broker"]),
+            order_id=str(intent["order_id"]),
+            status="COMPLETE",
+            fill_price=float(fill),
+        )
+        return "RESOLVED"
+
     def _sync_bp_resting_exit(self, key):
         """
         Make the broker-side resting SELL LIMIT of a U/D leg match the
@@ -2225,6 +2330,32 @@ class Trader_Singleton:
             if mode_u_d not in ("U", "D") or not symbol or net_qty <= 0 or override_pct is None:
                 return
             override_pct = float(override_pct)
+
+            # A just-bought leg can still be inside the fill window:
+            # the seed (fast_update) carries the click LTP and the
+            # fill-gated resolve has not landed yet. Anchoring here
+            # would rest the exit on a price never paid - the
+            # 2026-10-13 13:33 bug (grid said +24%, the leg booked
+            # ~+20% against the real 1.95 fill). Probe the buy fill
+            # first: known -> resolve the intent inline so the exit
+            # rests on the true average; unknown -> hold the edit -
+            # resolve/sweeper will place the exit with this override
+            # once the fill lands.
+            fill_state = self._reconcile_pending_fill_before_edit(key)
+            if fill_state == "PENDING":
+                logger.info(
+                    f"BP override {override_pct}%: edit held for "
+                    f"{symbol} - buy fill not confirmed yet; the "
+                    f"exit will anchor on the confirmed fill"
+                )
+                return
+            if fill_state == "RESOLVED":
+                # The inline resolve just placed the exit at the
+                # confirmed fill x this override. Skip the placement
+                # reconcile below - the broker book has not listed
+                # the fresh order yet and a re-place here would stack
+                # a duplicate SELL LIMIT.
+                return
 
             # BK% is "% over MY buy price" for BOTH U and D legs (user
             # decision 2026-10-13): the edit anchors on the leg's
