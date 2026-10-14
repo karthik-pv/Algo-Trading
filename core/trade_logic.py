@@ -1,5 +1,6 @@
 import math
 import re
+import socket as std_socket
 import subprocess
 import sys
 import threading
@@ -1128,6 +1129,14 @@ class Trader_Singleton:
     def _target_profit_points(self, strategy_type):
         """Per-strategy book-profit target in points (PTS_PROFIT_<strategy>)."""
         return self._strategy_threshold("PTS_PROFIT", strategy_type)
+
+    def _stop_loss_pct_mapping(self):
+        """Per-strategy stop-loss % for the UI (Pending Orders SL% column):
+        {INTRA: x, SCALPING: y, ULTRA_SCALPING: z} from PCT_STOP_LOSS_<strategy>."""
+        return {
+            strategy: self._strategy_threshold("PCT_STOP_LOSS", strategy)
+            for strategy in ("INTRA", "SCALPING", "ULTRA_SCALPING")
+        }
 
     def _exit_target_pct(self, strategy_type):
         """
@@ -6522,6 +6531,30 @@ class Trader_Singleton:
 
     def start_frontend_socket_server(self, app):
         logger.info("Starting frontend socket server...")
+
+        # Single-instance guard: if something already listens on the UI
+        # port, a leftover app process is still alive - fully running
+        # (voice + SL threads) but unreachable by any browser UI, so its
+        # toggles can never reach it and a default-on voice thread keeps
+        # announcing the clock forever (2026-10-13: five concurrent
+        # instances, "time announcement won't turn off"). Fail fast
+        # instead of launching an unmanageable zombie.
+        ui_port = int(os.getenv("SOCKET_IO_PORT", "5001"))
+        probe = std_socket.socket()
+        probe.settimeout(0.5)
+        try:
+            probe.connect(("127.0.0.1", ui_port))
+            logger.critical(
+                f"Port {ui_port} is already in use - another app instance "
+                f"is running. Exiting so the live instance keeps the UI, "
+                f"toggles and voice authority. Close that instance (or "
+                f"kill its python process) first."
+            )
+            probe.close()
+            os._exit(1)
+        except OSError:
+            probe.close()  # nothing listening - this instance may bind
+
         self.frontend_data_socket.init_app(app)
         self.register_socket_handlers()
 
@@ -6529,10 +6562,10 @@ class Trader_Singleton:
             self.frontend_data_socket.run(
                 app,
                 host='0.0.0.0',
-                port=int(os.getenv("SOCKET_IO_PORT", "5001")),
+                port=ui_port,
                 allow_unsafe_werkzeug=True
             )
-            
+
         socket_thread = threading.Thread(target=run_socketio, daemon=True)
         socket_thread.start()
         logger.info("Frontend socket server thread has been launched. 🚀")
@@ -7992,6 +8025,7 @@ class Trader_Singleton:
                     "positions_data" : self._position_data,
                     "order_strategy_mapping" : self._order_strategy_mapping,
                     "order_sell_mode_mapping" : self._order_sell_mode_mapping,
+                    "stop_loss_mapping" : self._stop_loss_pct_mapping(),
                     "mode" : self._mode,
                     "TVValidationRequired" : self._is_tv_validation_required(),
                     "CE_BUY_ALLOWED" : self._tv_ce_buy_allowed,

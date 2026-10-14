@@ -272,7 +272,7 @@
         border: 1px solid #555; color: #ffd75e; border-radius: 4px;
         font-size: 0.85rem; text-align: center; box-sizing: border-box;
     }
-    /* BK% box: clicks are shortcuts (+3 left / -3 right), so the native
+    /* BP% box: clicks are shortcuts (+3 left / -3 right), so the native
        number spinners are hidden to keep every click unambiguous. */
     .bp-override-input::-webkit-outer-spin-button,
     .bp-override-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
@@ -1421,7 +1421,8 @@
                     <th>P/L</th>
                     <th>%</th>
                     <th>PTS</th>
-                    <th>BK%</th>
+                    <th>BP%</th>
+                    <th>SL%</th>
                     <th>Levels</th>
                     <th>XE</th>
                     <th>BPrice</th>
@@ -1434,7 +1435,7 @@
                 </tr>
             </thead>
             <tbody id="positionsTableBody">
-                <tr><td colspan="14" class="no-options">Loading open positions...</td></tr>
+                <tr><td colspan="15" class="no-options">Loading open positions...</td></tr>
             </tbody>
         </table>
     </div>
@@ -1561,6 +1562,11 @@
             <thead>
                 <tr>
                     <th class="center">Action</th>
+                    <th>P/L</th>
+                    <th>%</th>
+                    <th>PTS</th>
+                    <th>BP%</th>
+                    <th>SL%</th>
                     <th>Levels</th>
                     <th>XE</th>
                     <th>SPrice</th>
@@ -1575,7 +1581,7 @@
                 </tr>
             </thead>
             <tbody id="pendingOrdersBody">
-                <tr><td colspan="12" class="no-options">No pending orders</td></tr>
+                <tr><td colspan="17" class="no-options">No pending orders</td></tr>
             </tbody>
         </table>
     </div>
@@ -2645,6 +2651,7 @@ document.addEventListener('DOMContentLoaded', function() {
     let openPositions = {};
     let orderStrategyMapping = {}; // To store strategies from setup_data
     let orderSellModeMapping = {}; // To store sell modes from setup_data
+    let stopLossMapping = {}; // Per-strategy stop-loss % (Pending Orders SL% column)
     // Tokens whose BUY Price is temporarily displayed using LTP
     let temporaryBuyPriceTokens = new Set();
     // Trading symbols with a sell request in flight (duplicate click guard)
@@ -2786,11 +2793,16 @@ document.addEventListener('DOMContentLoaded', function() {
         // server's setup-completion broadcast fired before this
         // client's socket was connected (grid rows with no prices).
         socket.emit('request_weekly_options');
+        // Toggle state on (re)connect comes from localStorage - the
+        // shared cross-tab truth - NOT this tab's checkbox. A second
+        // tab/window left open keeps a stale checked box (the change
+        // event fired only in the tab where the user clicked), and it
+        // used to silently RE-ENABLE announcements on every reconnect.
         socket.emit('voice_announcement_toggle', {
-            enabled: announcementToggleEl ? announcementToggleEl.checked : true
+            enabled: storedTogglePref('announcementToggleEnabled', announcementToggleEl)
         });
         socket.emit('time_announcement_toggle', {
-            enabled: timeAnnounceToggleEl ? timeAnnounceToggleEl.checked : true
+            enabled: storedTogglePref('timeAnnounceToggleEnabled', timeAnnounceToggleEl)
         });
 
         // Pending orders are NOT pushed in setup_data - request them
@@ -2847,6 +2859,27 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
+    // Shared preference read for reconnect emits: localStorage first
+    // (always current, shared by every tab), checkbox as the fallback
+    // when the user never toggled (no stored value).
+    function storedTogglePref(key, checkboxEl) {
+        const saved = localStorage.getItem(key);
+        if (saved !== null) return saved === 'true';
+        return checkboxEl ? checkboxEl.checked : true;
+    }
+
+    // Keep every open tab's checkboxes in sync: a toggle flipped in one
+    // tab must flip in the others too, or a stale tab reconnects with
+    // the old value and re-enables announcements backend-side.
+    window.addEventListener('storage', (event) => {
+        if (event.key === 'announcementToggleEnabled' && announcementToggleEl && event.newValue !== null) {
+            announcementToggleEl.checked = event.newValue === 'true';
+        }
+        if (event.key === 'timeAnnounceToggleEnabled' && timeAnnounceToggleEl && event.newValue !== null) {
+            timeAnnounceToggleEl.checked = event.newValue === 'true';
+        }
+    });
+
 
     socket.on('setup_data', (data) => {
         if (data.broker) brokerValueEl.textContent = data.broker;
@@ -2864,6 +2897,10 @@ document.addEventListener('DOMContentLoaded', function() {
         if (data.order_sell_mode_mapping) {
             orderSellModeMapping = data.order_sell_mode_mapping;
             console.log("Received sell mode mapping:", orderSellModeMapping);
+        }
+        if (data.stop_loss_mapping) {
+            stopLossMapping = data.stop_loss_mapping;
+            console.log("Received stop loss mapping:", stopLossMapping);
         }
         if (data.mode) applyModeLabel(data.mode);
         if (data.playback) configurePlaybackControls(data.playback);
@@ -3869,19 +3906,22 @@ filteredContracts.sort(([, a], [, b]) => {
     // --- PENDING ORDERS GRID ---
     // Position-grid format, pending-order semantics.
     //
-    // RELEVANT: Levels/XE/SPrice (from the contract table, or parsed
+    // RELEVANT: P/L/%/PTS (the joined leg's live unrealized P/L),
+    // BP% (the leg's profit-booking override box), SL% (the leg
+    // strategy's configured stop-loss % from stop_loss_mapping),
+    // Levels/XE/SPrice (from the contract table, or parsed
     // from the symbol), Order Type, Limit Price (the resting price -
     // the U/D exit target), BPrice (the joined leg's buy price),
     // MPrice (live market, shows distance to fill), Lots/Qty, and the
     // leg's Strategy/Sell Type when the order belongs to a position.
     //
-    // DROPPED: P/L, %, PTS (nothing is realized while an order rests)
-    // and Symbol / Order ID / Order Status (per request; the cancel
-    // button still carries the order id internally).
+    // DROPPED: Symbol / Order ID / Order Status (per request; the
+    // cancel button still carries the order id internally).
     //
     // Orphan orders (never filled, e.g. stale market buys) have no leg:
-    // Strategy/Sell Type/BPrice show '--' and Levels/MPrice show '--'
-    // when the strike is outside the current contract window.
+    // P/L/%/PTS/BP%/SL%/Strategy/Sell Type/BPrice show '--' and
+    // Levels/MPrice show '--' when the strike is outside the current
+    // contract window.
     socket.on('update_pending_orders', function(orders) {
         if (!pendingOrdersBody) return;
         pendingOrdersBody.innerHTML = "";
@@ -3896,7 +3936,7 @@ filteredContracts.sort(([, a], [, b]) => {
 
         if (!hasOrders) {
             pendingOrdersBody.innerHTML =
-                `<tr><td colspan="12" class="no-options">No pending orders</td></tr>`;
+                `<tr><td colspan="17" class="no-options">No pending orders</td></tr>`;
             return;
         }
 
@@ -3943,10 +3983,24 @@ filteredContracts.sort(([, a], [, b]) => {
             const sellTypeLabel = (!isBuy && leg) ? (leg.sell_mode || 'T') : '--';
             const orderType = order.order_type || '--';
 
+            // Leg P/L trio + BP% mirror the position grid; SL% is the
+            // leg strategy's configured stop-loss % (stop_loss_mapping).
+            const legTotalPl = leg ? Number(leg.total_pl) : NaN;
+            const legPctPl = leg ? Number(leg.pct_pl) : NaN;
+            const legPtsPl = leg ? Number(leg.pts_pl) : NaN;
+            const legBk = leg ? Number(leg.override_book_profit_pct) : NaN;
+            const legSl = leg ? Number(stopLossMapping[pendingLegStrategy(leg)]) : NaN;
+            const plClass = Number.isFinite(legPtsPl) && legPtsPl >= 0 ? 'profit' : 'loss';
+
             row.innerHTML = `
                 <td class="center">
                     <button class="sell-button cancel-btn" data-orderid="${order.order_id}">Cancel</button>
                 </td>
+                <td class="${Number.isFinite(legTotalPl) ? plClass : ''}">${Number.isFinite(legTotalPl) ? legTotalPl.toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2}) : '--'}</td>
+                <td class="${Number.isFinite(legPctPl) ? plClass : ''}">${Number.isFinite(legPctPl) ? legPctPl.toFixed(2) : '--'}</td>
+                <td class="${Number.isFinite(legPtsPl) ? plClass : ''}">${Number.isFinite(legPtsPl) ? legPtsPl.toFixed(2) : '--'}</td>
+                <td>${Number.isFinite(legBk) ? legBk : '--'}</td>
+                <td>${Number.isFinite(legSl) ? legSl : '--'}</td>
                 <td>${level || '--'}</td>
                 <td>${optionType || '--'}</td>
                 <td>${strikePrice || '--'}</td>
@@ -3964,6 +4018,18 @@ filteredContracts.sort(([, a], [, b]) => {
 
         addCancelOrderListeners();
     });
+
+    // Canonical strategy label for the SL% lookup - mirrors the
+    // backend _normalise_strategy (raw radio value / unknown labels
+    // fall back to ULTRA_SCALPING).
+    function pendingLegStrategy(leg) {
+        const text = String((leg && leg.order_strategy) || '')
+            .trim().toUpperCase().replace(/-/g, '_').replace(/ /g, '_');
+        if (text === 'ULTRA_SCALPING' || text === 'ULTRASCALPING') return 'ULTRA_SCALPING';
+        if (text === 'SCALPING') return 'SCALPING';
+        if (text === 'INTRA') return 'INTRA';
+        return 'ULTRA_SCALPING';
+    }
 
     function addCancelOrderListeners() {
         if (!pendingOrdersBody) return;
@@ -4046,7 +4112,7 @@ filteredContracts.sort(([, a], [, b]) => {
         positionsTableBody.innerHTML = '';
         
         if (!positions || Object.keys(positions).length === 0) {
-            positionsTableBody.innerHTML = `<tr><td colspan="14" class="no-options">No open positions found.</td></tr>`;
+            positionsTableBody.innerHTML = `<tr><td colspan="15" class="no-options">No open positions found.</td></tr>`;
             if (sellAllBtn) { sellAllBtn.disabled = true; sellAllBtn.textContent = 'Sell All'; }
             return;
         }
@@ -4060,6 +4126,8 @@ filteredContracts.sort(([, a], [, b]) => {
             const contract = allContracts[String(token)] || {};
             
             const plClass = (pos.pts_pl || 0) >= 0 ? 'profit' : 'loss';
+            // SL%: this leg strategy's configured stop-loss % (stop_loss_mapping).
+            const posSl = Number(stopLossMapping[pendingLegStrategy(pos)]);
             const row = document.createElement('tr');
             row.id = `row-sell-${domId}`;
             const currentStrategy = pos.order_strategy || 'ULTRA_SCALPING';
@@ -4090,6 +4158,7 @@ filteredContracts.sort(([, a], [, b]) => {
                 <td id="pct-${domId}" class="${plClass}">${(pos.pct_pl || 0).toFixed(2)}</td>
                 <td id="pts-${domId}" class="${plClass}">${(pos.pts_pl || 0).toFixed(2)}</td>
                 <td><input type="number" class="bp-override-input" id="bp-override-${domId}" step="0.5" min="0" placeholder="%" value="${pos.override_book_profit_pct ?? ''}"></td>
+                <td>${Number.isFinite(posSl) ? posSl : '--'}</td>
                 <td>${level}</td>
                 <td>${optionType || ''}</td>
                 <td id="buy-price-${domId}" class="${temporaryBuyPriceTokens.has(domId) ? 'temporary-buy-price' : ''}">

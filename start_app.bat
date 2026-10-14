@@ -8,8 +8,9 @@ REM   - the server opens the app window (browser) itself once it is online
 REM   - closing the app window stops the server, and this window closes with it
 REM We call the venv python DIRECTLY - do NOT use activate.bat, because the
 REM project path contains spaces which breaks venv PATH activation.
-echo Starting server... the app window opens automatically when it is online.
+echo Starting server... a splash window shows progress until the app is online.
 echo Closing the app window stops the server and closes this window.
+start "" venv\Scripts\pythonw.exe scripts\splash.py
 venv\Scripts\python.exe server.py
 
 REM Clean stop (app window closed): exit quietly, closing this window.
