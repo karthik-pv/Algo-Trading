@@ -550,13 +550,26 @@ class KiteSingleton:
         elif allow_interactive:
             self.create_session()
         else:
-            logger.error(
-                "Kite token is from a previous day and the background "
-                "session check is non-interactive - no browser/dialog "
-                "login can run off the main thread (tkinter APPCRASH). "
-                "The Feed Lab K-side stays degraded until a manual "
-                "login. Trading on the active broker is unaffected."
-            )
+            # Previous-day token on a background (Feed Lab) check: the
+            # ONLY safe re-login is the silent TOTP one - same policy
+            # as the same-day-rejected branch above. NEVER run
+            # create_session() off the main thread - its dialog/browser
+            # fallback puts tkinter on a non-main thread, which
+            # hard-crashes pythonw (tcl86t.dll APPCRASH, 2026-10-09).
+            if self.ensure_fresh_session():
+                logger.info(
+                    "Kite session silently renewed in the "
+                    "background."
+                )
+            else:
+                logger.error(
+                    "Kite token is from a previous day and silent TOTP "
+                    "re-login is unavailable (KITE_TOTP_SECRET unset or "
+                    "failed) - no browser/dialog login can run off the "
+                    "main thread (tkinter APPCRASH). The Feed Lab "
+                    "K-side stays degraded until a manual login. "
+                    "Trading on the active broker is unaffected."
+                )
 
     def _token_is_accepted(self):
         """One cheap authenticated call: True only when Kite accepts

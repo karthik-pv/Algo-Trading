@@ -5,7 +5,17 @@ import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from core import trade_logic as _tl
 from core.trade_logic import Trader_Singleton
+
+# Mode-agnostic: refresh_open_pos_buy_price re-reads MODE from
+# appconfig.json on EVERY call - the FIFO section below must exercise
+# the LIVE reconcile, but the app may legitimately be left in PAPER
+# (the 2026-10-15 FIFO "failures" were the paper branch running).
+_orig_fetch = _tl.fetch_from_json
+_tl.fetch_from_json = lambda f, k, **kw: (
+    "LIVE" if k == "MODE" else _orig_fetch(f, k, **kw)
+)
 
 t = Trader_Singleton()
 
@@ -21,6 +31,16 @@ paper_file = os.path.join(tempfile.gettempdir(), "opencode", "PaperTrading_test.
 if os.path.exists(paper_file):
     os.remove(paper_file)
 t._PAPER_TRADE_FILENAME = paper_file
+# Same isolation for the strategy-leg ledger: refresh_open_pos_buy_price
+# persists every reconciled leg to data/position_ledger.json - without a
+# temp path a test run writes its fake token-123 legs into the REAL
+# ledger and the NEXT run restores them before reconciling, breaking
+# every FIFO/count check (2026-10-15).
+t._POSITION_LEDGER_FILE = os.path.join(
+    tempfile.gettempdir(), "opencode", "position_ledger_test.json"
+)
+if os.path.exists(t._POSITION_LEDGER_FILE):
+    os.remove(t._POSITION_LEDGER_FILE)
 t._position_data = {}
 
 fails = []

@@ -2,15 +2,16 @@
 cd /d "C:\Users\phvra\Desktop\Algo-Trading - 1.8"
 title AlgoOptionScalper Server
 
-REM Single-window launcher:
-REM   - this window IS the server (loguru logs print here)
-REM   - the server opens the app window (browser) itself once it is online
-REM   - closing the app window stops the server, and this window closes with it
+REM Console-mode launcher - this window IS the server (loguru logs
+REM print here) and closing the app window stops the server with it.
+REM Taskbar icon / start_app_silent.vbs run the hidden-splash flow
+REM instead (scripts\splash.py spawns that server itself), so this
+REM bat does NOT start the splash - launching both would race two
+REM servers against each other.
 REM We call the venv python DIRECTLY - do NOT use activate.bat, because the
 REM project path contains spaces which breaks venv PATH activation.
-echo Starting server... a splash window shows progress until the app is online.
+echo Starting server in this console window - live logs print below.
 echo Closing the app window stops the server and closes this window.
-start "" venv\Scripts\pythonw.exe scripts\splash.py
 venv\Scripts\python.exe server.py
 
 REM Clean stop (app window closed): exit quietly, closing this window.

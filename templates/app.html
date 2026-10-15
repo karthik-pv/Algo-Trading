@@ -238,6 +238,58 @@
     #sell-widget-container { width: 100%; max-width: none; }
     #sell-widget-container h2 { text-align: center; color: #ffffff; margin-bottom: 1.5rem; }
     .profit { color: #66bb6a; font-weight: 500; }
+
+    /* Resting-exit badge ("→ 16.35"): marks a position leg whose U/D
+       SELL LIMIT is resting at the broker. The P&L columns are capped
+       at the exit-anchored value while it rests, so the badge explains
+       why a spiking LTP no longer lifts the displayed profit
+       (2026-10-15: exit filled +3.15% while the grid showed +23%). */
+    .exit-pending-badge {
+        display: inline-block;
+        margin-left: 6px;
+        padding: 1px 6px;
+        border-radius: 8px;
+        font-size: 11px;
+        font-weight: 600;
+        color: #ffb74d;
+        background: rgba(255, 183, 77, 0.12);
+        border: 1px solid rgba(255, 183, 77, 0.35);
+        white-space: nowrap;
+        cursor: help;
+    }
+
+    /* Persistent exit-blocked banner: a broker margin rejection left a
+       position with NO exit protection. Must be dismissed by hand -
+       a transient toast was missed and the position rode down -57%
+       unguarded (2026-10-15 13:15). */
+    #exitBlockedBanner {
+        display: none;
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        z-index: 99999;
+        background: #b71c1c;
+        color: #ffffff;
+        font-weight: 600;
+        padding: 10px 14px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.45);
+        align-items: center;
+        gap: 12px;
+    }
+    #exitBlockedBanner.show { display: flex; }
+    #exitBlockedBanner button {
+        margin-left: auto;
+        background: #ffffff;
+        color: #b71c1c;
+        border: none;
+        border-radius: 4px;
+        padding: 6px 12px;
+        font-weight: 700;
+        cursor: pointer;
+        white-space: nowrap;
+    }
+
     .loss { color: #ef5350; font-weight: 500; }
     .sell-button { background-color: #c62828; color: white; border: none; padding: 0.6rem 1rem; border-radius: 5px; cursor: pointer; font-size: 0.9rem; font-weight: 500; transition: background-color 0.2s; }
     .sell-button:hover { background-color: #a12020; }
@@ -2100,6 +2152,42 @@
                         </div>
                     </div>
                 </div>
+                <div class="field-row">
+                    <!-- TIME-LIMIT GUARD: decimal minutes (1.5 = 1m30s,
+                         3.3 = 3m18s). 0 = off. When a position's age
+                         crosses its strategy's limit it is sold
+                         UNCONDITIONALLY - no profit/loss check. -->
+                    <div class="field">
+                        <div class="field-caption">
+                            <label class="field-label" for="TIME_LIMIT_INTRA">Intra Time Limit</label>
+                            <span class="key-hint">TIME_LIMIT_INTRA</span>
+                        </div>
+                        <div class="input-wrap">
+                            <input type="number" step="0.1" min="0" id="TIME_LIMIT_INTRA" name="TIME_LIMIT_INTRA" placeholder="0" />
+                            <span class="suffix">min</span>
+                        </div>
+                    </div>
+                    <div class="field">
+                        <div class="field-caption">
+                            <label class="field-label" for="TIME_LIMIT_SCALPING">Scalping Time Limit</label>
+                            <span class="key-hint">TIME_LIMIT_SCALPING</span>
+                        </div>
+                        <div class="input-wrap">
+                            <input type="number" step="0.1" min="0" id="TIME_LIMIT_SCALPING" name="TIME_LIMIT_SCALPING" placeholder="0" />
+                            <span class="suffix">min</span>
+                        </div>
+                    </div>
+                    <div class="field">
+                        <div class="field-caption">
+                            <label class="field-label" for="TIME_LIMIT_ULTRA_SCALPING">Ultra Time Limit</label>
+                            <span class="key-hint">TIME_LIMIT_ULTRA_SCALPING</span>
+                        </div>
+                        <div class="input-wrap">
+                            <input type="number" step="0.1" min="0" id="TIME_LIMIT_ULTRA_SCALPING" name="TIME_LIMIT_ULTRA_SCALPING" placeholder="0" />
+                            <span class="suffix">min</span>
+                        </div>
+                    </div>
+                </div>
             </div>
         </section>
 
@@ -3415,6 +3503,10 @@ document.addEventListener('DOMContentLoaded', function() {
          // Update Sell Widget Data & UI
          if (openPositions[key]) { // Update internal data first
             openPositions[key].latest_price = ltp;
+            if (tick.exit_pending_price !== undefined) { // resting-exit marker sync
+                openPositions[key].exit_pending_price = tick.exit_pending_price;
+                openPositions[key].exit_pending_pct = tick.exit_pending_pct;
+            }
             if (tick.pts_pl !== undefined) { // Only update if P/L data exists
                 openPositions[key].pts_pl = tick.pts_pl;
                 openPositions[key].pct_pl = tick.pct_pl;
@@ -3427,6 +3519,18 @@ document.addEventListener('DOMContentLoaded', function() {
             marketPriceCell.textContent = ltp.toFixed(2); // Always update LTP
             marketPriceCell.classList.add('flash');
             setTimeout(() => marketPriceCell.classList.remove('flash'), 700);
+
+            // Resting-exit badge: keep it in sync with the leg's live
+            // marker (appears when the exit rests, disappears the
+            // moment it resolves and the cap lifts).
+            const exitBadgeHtml = exitPendingBadgeHtml(tick, domId);
+            const badge = document.getElementById(`exit-pending-badge-${domId}`);
+            if (exitBadgeHtml) {
+                if (badge) badge.outerHTML = exitBadgeHtml;
+                else marketPriceCell.insertAdjacentHTML('beforeend', exitBadgeHtml);
+            } else if (badge) {
+                badge.remove();
+            }
 
             // Update P/L Cells ONLY if P/L data is present in the tick
             if (tick.pts_pl !== undefined) {
@@ -3845,21 +3949,50 @@ filteredContracts.sort(([, a], [, b]) => {
         }
     });
 
+    // Persistent banner helpers (created lazily so they exist on every
+    // tab state without touching the layout markup).
+    function showExitBlockedBanner(message) {
+        let banner = document.getElementById('exitBlockedBanner');
+        if (!banner) {
+            banner = document.createElement('div');
+            banner.id = 'exitBlockedBanner';
+            const text = document.createElement('span');
+            text.id = 'exitBlockedBannerText';
+            const btn = document.createElement('button');
+            btn.textContent = 'Dismiss';
+            btn.addEventListener('click', hideExitBlockedBanner);
+            banner.appendChild(text);
+            banner.appendChild(btn);
+            document.body.appendChild(banner);
+        }
+        document.getElementById('exitBlockedBannerText').textContent = message;
+        banner.classList.add('show');
+    }
+
+    function hideExitBlockedBanner() {
+        const banner = document.getElementById('exitBlockedBanner');
+        if (banner) banner.classList.remove('show');
+    }
+
     // Auto-sell stuck in a broker margin-rejection loop (RMS FUND LIMIT
     // INSUFFICIENT): the watcher stopped re-firing and is backing off -
     // the position is open with NO exit protection until this clears.
-    // Red toast + stays until acted on (this is not a transient notice).
+    // PERSISTENT red banner (dismiss-only): a 30s toast was missed and
+    // a 22-lot position rode down -57% unguarded (2026-10-15 13:15).
     socket.on('auto_sell_stuck', function (info) {
         const req = (info && info.required != null)
             ? 'Rs.' + Number(info.required).toLocaleString('en-IN') : 'full short-margin';
         const avail = (info && info.available != null)
             ? 'Rs.' + Number(info.available).toLocaleString('en-IN') : 'near-zero';
-        showInlineStatus(
-            `UNPROTECTED POSITION: auto-sell BLOCKED for ${info.symbol} - broker demands ${req} to sell ${info.qty} qty (available ${avail}). The exit is being treated as an opening short - exit manually or call the broker.`,
-            'error',
-            30000
+        showExitBlockedBanner(
+            `UNPROTECTED POSITION: auto-sell BLOCKED for ${info.symbol} - broker demands ${req} to sell ${info.qty} qty (available ${avail}). The exit is being treated as an opening short - exit manually or call the broker.` +
+            ((info && info.count > 1) ? ` (rejections: ${info.count})` : '')
         );
         console.error('AUTO-SELL STUCK:', info);
+    });
+
+    socket.on('auto_sell_rms_cleared', function (info) {
+        hideExitBlockedBanner();
     });
 
     socket.on('buy_order_result', function (result) {
@@ -4107,8 +4240,50 @@ filteredContracts.sort(([, a], [, b]) => {
     }
 
 
+    // Resting-exit badge for a position leg's market-price cell: when
+    // a U/D SELL LIMIT rests at the broker, the leg books the LIMIT
+    // price when it fills - never a higher LTP. The badge shows that
+    // target (+ booked-if-filled %) next to the live LTP; the P&L
+    // columns are capped at the same value backend-side. The 09:37
+    // 2026-10-15 exit filled +3.15% while the grid showed +23% on a
+    // spike tick - this badge + cap make the resting window honest.
+    function exitPendingBadgeHtml(pos, domId) {
+        const exitPrice = Number(pos && pos.exit_pending_price);
+        if (!Number.isFinite(exitPrice) || exitPrice <= 0) return '';
+        const exitPct = Number(pos.exit_pending_pct);
+        const pctTxt = Number.isFinite(exitPct)
+            ? ` (${exitPct >= 0 ? '+' : ''}${exitPct.toFixed(2)}%)` : '';
+        return ` <span id="exit-pending-badge-${domId || ''}" class="exit-pending-badge" ` +
+            `title="Resting SELL LIMIT live at ${exitPrice.toFixed(2)} - the leg books ${pctTxt} when it fills. P&L display is capped at the exit price while it rests.">` +
+            `→ ${exitPrice.toFixed(2)}${pctTxt}</span>`;
+    }
+
     function populatePositionsTable(positions) {
         if (!positionsTableBody) return;
+        // The Override Lots box ships pre-filled with the leg's lot
+        // count (matching the Options-grid override box). The grid
+        // rebuilds on every positions emit, so carry any value the
+        // user typed across the rebuild - without this a refresh
+        // would silently turn a partial sell (2 lots) back into a
+        // full-position sell. The snapshot also records the lot count
+        // the value was typed against (the row's Sell button carries
+        // it): once a sell or external fill changes the leg's lots,
+        // the stale override is dropped and the box re-seeds to the
+        // REMAINING total - the split-sell flow (sell 2 of 5 now, the
+        // rest later) must never re-use the old tranche size by
+        // accident. Untouched boxes re-seed from the fresh lots too.
+        const preservedLotOverrides = {};
+        positionsTableBody
+            .querySelectorAll('.lots-override-input[id^="override-lots-sell-"]')
+            .forEach((input) => {
+                if (input.value === '' || input.value === input.placeholder) return;
+                const sellButton = input.closest('tr')?.querySelector('.sell-button');
+                if (!sellButton) return;
+                preservedLotOverrides[input.id.replace('override-lots-sell-', '')] = {
+                    value: input.value,
+                    lotsAtTyping: sellButton.dataset.lots,
+                };
+            });
         positionsTableBody.innerHTML = '';
         
         if (!positions || Object.keys(positions).length === 0) {
@@ -4146,6 +4321,16 @@ filteredContracts.sort(([, a], [, b]) => {
 
             const level = pos.level || contract.level || computeLevelFromWindow(strikePrice, optionType);
             const sellPending = pendingSellSymbols.has(domId);
+            // Split-sell support: keep the user's typed override only
+            // while the leg's lot count is unchanged. A partial sell
+            // (or an external fill) re-seeds the box to the new total,
+            // so the next Sell click defaults to the remaining lots
+            // and can be split down again.
+            const preservedOverride = preservedLotOverrides[domId];
+            const overrideLotsValue = (
+                preservedOverride
+                && String(preservedOverride.lotsAtTyping) === String(pos.lots || 0)
+            ) ? preservedOverride.value : (pos.lots || 0);
 
             
 
@@ -4155,7 +4340,7 @@ filteredContracts.sort(([, a], [, b]) => {
                     <button class="sell-button" data-token="${token}" data-tradingsymbol="${pos.tradingsymbol}" data-positionkey="${positionKey}" data-sellkey="${domId}" data-lots="${pos.lots || 0}" data-quantity="${pos.net_quantity || 0}" data-lotsize="${pos.lotsize || ''}" ${sellPending ? 'disabled' : ''}>${sellPending ? 'Selling..' : 'Sell'}</button>
                 </td>                        
                 <td id="total-pl-${domId}" class="${plClass}">${(pos.total_pl || 0).toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
-                <td id="pct-${domId}" class="${plClass}">${(pos.pct_pl || 0).toFixed(2)}</td>
+                <td id="pct-${domId}" class="${plClass}">${(pos.pct_pl || 0).toFixed(2)}%</td>
                 <td id="pts-${domId}" class="${plClass}">${(pos.pts_pl || 0).toFixed(2)}</td>
                 <td><input type="number" class="bp-override-input" id="bp-override-${domId}" step="0.5" min="0" placeholder="%" value="${pos.override_book_profit_pct ?? ''}"></td>
                 <td>${Number.isFinite(posSl) ? posSl : '--'}</td>
@@ -4164,9 +4349,9 @@ filteredContracts.sort(([, a], [, b]) => {
                 <td id="buy-price-${domId}" class="${temporaryBuyPriceTokens.has(domId) ? 'temporary-buy-price' : ''}">
                     ${(pos.average_price || 0).toFixed(2)}
                 </td>
-                <td id="market-price-${domId}">${(pos.latest_price || pos.average_price).toFixed(2)}</td>
+                <td id="market-price-${domId}">${(pos.latest_price || pos.average_price).toFixed(2)}${exitPendingBadgeHtml(pos, domId)}</td>
                 <td>${pos.lots || 0}</td>
-                <td><input type="number" class="lots-override-input" id="override-lots-sell-${domId}" placeholder="${pos.lots || 0}" ondblclick="this.value=this.placeholder" title="Double-click to reset to position lots"></td>
+                <td><input type="number" class="lots-override-input" id="override-lots-sell-${domId}" placeholder="${pos.lots || 0}" value="${overrideLotsValue}" ondblclick="this.value=this.placeholder" title="Lots to sell on the next Sell click. Double-click resets to the leg's current lots."></td>
                 <td id="pos-code-${domId}" class="leg-code-cell">${legCode(currentStrategy, posSellMode)}</td>
                 <td class="type-cell">
                     <label><input type="radio" name="sell-type-${domId}" value="UltraScalping" ${isUltraChecked}> U</label>

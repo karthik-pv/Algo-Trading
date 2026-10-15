@@ -231,6 +231,20 @@ class Trader_Singleton:
     _time_announcement_enabled = True
     _last_announced_time_minute = None
 
+    # URGENT voice channel: exit-critical announcements that BYPASS the
+    # voice checkbox. A blocked auto-sell leaves the position with no
+    # exit protection - the trader must hear it even with the P&L/time
+    # voice readout switched off (2026-10-15: a 22-lot position rode
+    # down -57% while both exits were RMS-blocked and silent).
+    _urgent_voice_queue = []
+    _urgent_voice_lock = threading.Lock()
+    # Continuous mode: tokens whose auto-sell is RMS-BLOCKED (broker
+    # pricing the exit as an opening short). While any token is here,
+    # the voice repeats "Sell manually from the broker terminal" every
+    # cycle - it stops ONLY when the position is sold and the app has
+    # reconciled it (the token is pruned from the RMS state).
+    _exit_blocked_voice_tokens = set()
+
     # ---------------------------------------------------------
     # Paper trading store
     # ---------------------------------------------------------
@@ -393,6 +407,12 @@ class Trader_Singleton:
         entry = self._auto_sell_rms_state.setdefault(
             token, {"count": 0, "backoff_until": 0.0, "alerted": False})
         entry["count"] += 1
+        if sig.get("order_id"):
+            # RMS opening-short signature: the exit is BLOCKED. Turn on
+            # the continuous manual-sell announcement (it stops only
+            # when this token's position is sold and reconciled).
+            with self._urgent_voice_lock:
+                self._exit_blocked_voice_tokens.add(str(token))
         if not sig.get("order_id"):
             # Not the RMS opening-short signature (network timeout,
             # "no valid response", ...) - no margin alert. A mild
@@ -432,12 +452,36 @@ class Trader_Singleton:
                 )
             except Exception as emit_error:
                 logger.debug(f"auto_sell_stuck emit failed: {emit_error}")
+            # The continuous voice announcement is armed via
+            # _exit_blocked_voice_tokens above - it repeats until the
+            # position is sold and reconciled; no fixed repeat count.
         else:
             logger.warning(
                 f"Auto-sell for {tradingsymbol} [{token}] rejected again "
                 f"(RMS FUND LIMIT INSUFFICIENT, rejection #{entry['count']}) "
                 f"- backing off instead of re-firing the same order"
             )
+        # Re-announce the block every 10th rejection: a banner/toast
+        # from rejection #1 is long gone by #30, and the position is
+        # still UNPROTECTED (2026-10-15: 55 rejections over 2.5 min
+        # looked silent unless the user scrolled the log).
+        if entry["count"] % 10 == 0:
+            try:
+                self.frontend_data_socket.emit(
+                    "auto_sell_stuck",
+                    {
+                        "symbol": tradingsymbol,
+                        "token": token,
+                        "qty": qty,
+                        "available": sig.get("available"),
+                        "required": sig.get("required"),
+                        "count": entry["count"],
+                    },
+                )
+            except Exception as emit_error:
+                logger.debug(f"auto_sell_stuck re-emit failed: {emit_error}")
+            # Continuous voice stays armed while the block persists
+            # (see _exit_blocked_voice_tokens); nothing to queue here.
         if entry["count"] >= self._AUTO_SELL_RMS_SUSPEND_AFTER:
             if not entry.get("suspended"):
                 entry["suspended"] = True
@@ -455,8 +499,17 @@ class Trader_Singleton:
 
     def _auto_sell_rms_clear(self, token):
         """Position for this token is gone / exit succeeded - drop the
-        backoff state."""
+        backoff state AND the continuous manual-sell announcement, and
+        tell the UI to drop its blocked banner."""
         self._auto_sell_rms_state.pop(token, None)
+        with self._urgent_voice_lock:
+            self._exit_blocked_voice_tokens.discard(str(token))
+        try:
+            self.frontend_data_socket.emit(
+                "auto_sell_rms_cleared", {"token": token}
+            )
+        except Exception:
+            pass
 
 
     def get_price_with_fallback(self, token, symbol):
@@ -708,7 +761,112 @@ class Trader_Singleton:
         position['pts_pl'] = pts_pl
         position['pct_pl'] = pct_pl
         position['total_pl'] = pts_pl * net_qty * lotsize
-    
+
+        # Resting-exit P&L cap: while a U/D SELL LIMIT rests on this
+        # leg, a tick ABOVE the limit cannot be booked - the exit fills
+        # at its limit price. Cap the displayed P&L at the
+        # exit-anchored value so the grid never shows a profit the leg
+        # cannot book (2026-10-15 09:37: a U exit resting at 16.35
+        # filled +3.15% while the grid, fed by the 19.5 spike tick,
+        # showed +23% for the seconds before the fill reconcile).
+        # A tick BELOW the limit keeps the raw LTP P&L - a collapse
+        # must stay visible (the SL watcher books it).
+        exit_price = position.get('exit_pending_price') or 0
+        try:
+            exit_price = float(exit_price or 0)
+        except (TypeError, ValueError):
+            exit_price = 0.0
+        if exit_price > 0:
+            exit_pts = exit_price - buy_price
+            exit_pct = (exit_pts * 100.0) / buy_price
+            position['exit_pending_pct'] = exit_pct
+            if pts_pl > exit_pts:
+                position['pts_pl'] = exit_pts
+                position['pct_pl'] = exit_pct
+                position['total_pl'] = exit_pts * net_qty * lotsize
+        else:
+            position.pop('exit_pending_pct', None)
+
+    def _legs_for_exit_intent(self, intent):
+        """
+        Resolve the open grid leg(s) an exit intent belongs to.
+
+        The intent's own position_key matches when it was built from
+        the same normalized parts the leg keys use; otherwise fall back
+        to the token's legs - but only when exactly one exists, so an
+        ambiguous token never stamps the wrong leg.
+        """
+        position_key = intent.get("position_key")
+        if position_key and position_key in self._position_data:
+            return [position_key]
+        exact = self._position_key(
+            str(intent.get("instrument_token") or ""),
+            self._normalise_strategy(intent.get("strategy") or ""),
+            str(intent.get("mode") or "").strip().upper(),
+        )
+        if exact and exact in self._position_data:
+            return [exact]
+        token_legs = self._legs_for_token(
+            str(intent.get("instrument_token") or "")
+        )
+        return token_legs if len(token_legs) == 1 else []
+
+    def _set_leg_exit_pending(self, position_key, price):
+        """
+        Stamp (or clear) a leg's live resting-exit marker and push the
+        grid row so the badge appears at once.
+
+        The marker does two things (see _update_leg_pl): caps the
+        displayed P&L at the exit-anchored value, and carries the
+        resting target to the UI ("exit pending @ price, +x%"). The
+        2026-10-15 09:37 U exit resting at 16.35 filled +3.15% while
+        the grid showed +23% on a 19.5 spike tick - the cap and the
+        badge make that window honest.
+        """
+        if not position_key:
+            return
+        position = (self._position_data or {}).get(position_key)
+        if position is None:
+            return
+        try:
+            price = float(price or 0)
+        except (TypeError, ValueError):
+            price = 0.0
+        if price > 0:
+            position["exit_pending_price"] = price
+        else:
+            # The exit is gone (rejected/cancelled/replaced): the leg
+            # returns to raw LTP P&L - a stale cap would overstate a
+            # leg that now only has the SL watcher as its exit.
+            position.pop("exit_pending_price", None)
+            position.pop("exit_pending_pct", None)
+        self._update_leg_pl(position_key)
+        try:
+            self.frontend_data_socket.emit(
+                'update_open_positions', self._position_data
+            )
+        except Exception:
+            pass
+
+    def _restamp_leg_exits_after_refresh(self):
+        """
+        Re-apply exit-pending markers after a broker reconcile.
+
+        refresh_open_pos_buy_price mutates/rebuilds leg dicts from the
+        broker book; a leg whose resting exit is still tracked must
+        come out of the rebuild with its marker intact, or the cap and
+        badge silently vanish until the next re-anchor.
+        """
+        with self._pending_exit_lock:
+            intents = [
+                i for i in self._pending_exit_intents.values()
+                if i.get("kind") == "EXIT"
+            ]
+        for intent in intents:
+            price = intent.get("anchor_used") or 0
+            for leg_key in self._legs_for_exit_intent(intent):
+                self._set_leg_exit_pending(leg_key, price)
+
     _funds_sync_fetch_ts = 0.0
     _funds_cache_toast_ts = 0.0
 
@@ -1305,6 +1463,11 @@ class Trader_Singleton:
                         str(intent["instrument_token"]),
                         intent["lots"],
                         float(fill or 0),
+                        # fetch_order_executed_price returns the
+                        # broker's AVERAGE fill - record it as such,
+                        # else the report leaves Sell Avg Price blank
+                        # for resting-exit fills (2026-10-15 09:37).
+                        avg_price=float(fill) if fill else None,
                     )
                 except Exception as audit_error:
                     logger.debug(
@@ -1329,6 +1492,11 @@ class Trader_Singleton:
                 self._provisional_pending_orders.pop(
                     str(intent["order_id"]), None
                 )
+                # The leg is open with NO exit - lift the P&L cap and
+                # the badge, else the row keeps showing a profit the
+                # dead exit can never book.
+                for leg_key in self._legs_for_exit_intent(intent):
+                    self._set_leg_exit_pending(leg_key, None)
                 logger.error(
                     f"Resting exit for {intent['trading_symbol']} ended "
                     f"{st} - the position is OPEN with no exit; the "
@@ -1529,6 +1697,21 @@ class Trader_Singleton:
             f"{intent['mode']}, anchor {anchor})"
         )
 
+        # The leg now rests against a live exit: stamp it so the grid
+        # shows the exit-anchored P&L cap + "exit pending" badge
+        # instead of raw LTP profit (2026-10-15 09:37 phantom +23%).
+        try:
+            for leg_key in self._legs_for_exit_intent({**intent,
+                    "position_key": (
+                        f"{intent['instrument_token']}:"
+                        f"{intent['strategy']}:{intent['mode']}"
+                    )}):
+                self._set_leg_exit_pending(leg_key, exit_price)
+        except Exception as stamp_error:
+            logger.debug(
+                f"Exit-pending stamp failed for {key}: {stamp_error}"
+            )
+
         # Track the EXIT order itself: the sweeper now probes its
         # status every cycle, and resolve_pending_exit closes the
         # leg when it reports TRADED (kind=EXIT branch above).
@@ -1694,6 +1877,16 @@ class Trader_Singleton:
                 f"resting SELL LIMIT now {new_target} "
                 f"[{intent['broker']}:{placed}]"
             )
+            # The resting price moved: refresh the leg's exit-pending
+            # marker so the cap and badge track the live limit.
+            try:
+                for leg_key in self._legs_for_exit_intent(intent):
+                    self._set_leg_exit_pending(leg_key, new_target)
+            except Exception as stamp_error:
+                logger.debug(
+                    f"Exit-pending re-stamp failed for {key}: "
+                    f"{stamp_error}"
+                )
             try:
                 trade_audit.update_resting_exit_price(
                     intent["trading_symbol"], new_target
@@ -1714,6 +1907,62 @@ class Trader_Singleton:
             except Exception:
                 pass
 
+    def _exit_fill_watchdog_core(self):
+        """
+        Fast probe for resting U/D exits: sweep the EXIT intents every
+        ~1s instead of waiting for the frontend's ~15s pending-orders
+        ping (throttled to ~60s when the window is minimized).
+
+        A resting exit that trades closes the position at the broker
+        IMMEDIATELY; every second of detection delay keeps a closed leg
+        on the grid with live LTP P&L - the 2026-10-15 09:37 exit
+        filled +3.15% while the grid showed +13.9..+23% for seconds.
+        One status REST call per intent per second, only while exits
+        are actually pending; a no-op otherwise.
+        """
+        # Editable without a restart, like the other *_INTERVAL knobs.
+        try:
+            interval = float(
+                fetch_from_json(
+                    "appconfig.json", "EXIT_FILL_PROBE_INTERVAL"
+                ) or 1.0
+            )
+        except (TypeError, ValueError):
+            interval = 1.0
+        if interval <= 0:
+            interval = 1.0
+        logger.info(
+            f"Exit-fill watchdog running (probe interval {interval}s)"
+        )
+        while not self._stop_event.is_set():
+            self._stop_event.wait(timeout=interval)
+            if self._stop_event.is_set():
+                return
+            # PAPER legs resolve on the virtual exit checker - never
+            # probe the broker for them.
+            if str(getattr(self, "_mode", "") or "").upper() == "PAPER":
+                continue
+            with self._pending_exit_lock:
+                has_intents = any(
+                    i.get("kind") == "EXIT"
+                    for i in self._pending_exit_intents.values()
+                )
+            if not has_intents:
+                continue
+            if (
+                time.time()
+                - getattr(self, "_last_exit_sweep_ts", 0.0)
+                < interval
+            ):
+                continue  # the frontend-ping sweep just ran
+            try:
+                self._sweep_pending_exits()
+            except Exception as sweep_error:
+                logger.error(
+                    f"Exit-fill watchdog sweep failed: {sweep_error}",
+                    exc_info=True,
+                )
+
     def _sweep_pending_exits(self):
         """
         Resolve pending U/D exit intents whose fill event was missed or
@@ -1726,6 +1975,11 @@ class Trader_Singleton:
             intents = list(self._pending_exit_intents.values())
         if not intents:
             return
+
+        # Shared throttle with the exit-fill watchdog thread: whoever
+        # swept last wins, so the frontend ping and the fast probe
+        # never double-fire at the broker in the same second.
+        self._last_exit_sweep_ts = time.time()
 
         if not hasattr(self._broker, "fetch_order_status"):
             logger.warning(
@@ -2136,6 +2390,134 @@ class Trader_Singleton:
         """Per-strategy book-profit threshold in percent (PCT_BOOK_PROFIT_<strategy>)."""
         return self._strategy_threshold("PCT_BOOK_PROFIT", strategy_type)
 
+    def _effective_time_limit_seconds(self, strategy_type):
+        """
+        Per-strategy time-limit in SECONDS (TIME_LIMIT_<strategy>).
+
+        Decimal minutes: 1 = 1m, 1.5 = 1m30s, 3.3 = 3m18s (the decimal
+        part x 60). 0, missing or unparsable -> 0.0 = guard DISABLED
+        (no warning spam - "off" is a normal, common state). Read fresh
+        on every call so a config-screen edit applies without a
+        restart, matching the other per-strategy thresholds.
+        """
+        try:
+            raw = fetch_from_json(
+                "appconfig.json", f"TIME_LIMIT_{strategy_type}"
+            )
+        except Exception:
+            raw = None
+        try:
+            minutes = float(raw)
+        except (TypeError, ValueError):
+            return 0.0
+        if not minutes or minutes <= 0:
+            return 0.0
+        return minutes * 60.0
+
+    def _watcher_time_limit_decision(self, position_key):
+        """
+        True when the leg's per-strategy TIME_LIMIT is over: the
+        position is then sold UNCONDITIONALLY by the watcher (no
+        profit/loss condition is checked - including U/D legs whose
+        profit normally belongs to the resting exit).
+
+        A missing/invalid entry_ts arms the clock from now instead of
+        firing (a leg restored after a restart resolves the true fill
+        time in refresh_open_pos_buy_price; guard off -> always False).
+        """
+        leg = self._position_data.get(position_key)
+        if not isinstance(leg, dict):
+            return False
+        time_limit_s = self._effective_time_limit_seconds(
+            leg.get("order_strategy", "DEFAULT")
+        )
+        if time_limit_s <= 0:
+            return False
+        entry_ts = leg.get("entry_ts")
+        if entry_ts is None:
+            leg["entry_ts"] = time.time()
+            return False
+        try:
+            return time.time() - float(entry_ts) >= time_limit_s
+        except (TypeError, ValueError):
+            leg["entry_ts"] = time.time()
+            return False
+
+    def _resolve_entry_time(self, tradingsymbol, position=None):
+        """
+        True entry time for a leg born in a reconcile (restart restore,
+        residual booking): the TIME_LIMIT guard's clock must keep
+        running across a restart, not restart from recognition.
+
+        Priority: the broker order book's latest TRADED BUY for this
+        symbol (exchtime/updatetime), then the audit's buy_exec_ts,
+        then NOW (armed fresh - logged loudly, it is the only case
+        where the limit runs from recognition).
+        """
+        wanted = str(tradingsymbol or "").upper()
+        # 1) Broker order book - the executed order carries its time.
+        try:
+            best = None
+            for o in (self._broker.fetch_all_orders() or []):
+                if str(o.get("tradingsymbol", "") or "").upper() != wanted:
+                    continue
+                if str(o.get("transaction_type", "") or "").upper() != "BUY":
+                    continue
+                if str(o.get("order_status", "") or "").strip().lower() \
+                        not in ("traded", "complete", "executed", "filled"):
+                    continue
+                raw_ts = None
+                for k in ("exchtime", "exch_time", "updatetime",
+                          "update_time", "order_timestamp", "fill_time"):
+                    if o.get(k):
+                        raw_ts = o.get(k)
+                        break
+                if not raw_ts:
+                    continue
+                ts = self._parse_broker_timestamp(raw_ts)
+                if ts and (best is None or ts > best):
+                    best = ts
+            if best:
+                return best
+        except Exception as e:
+            logger.debug(
+                f"Entry-time lookup from the order book failed for "
+                f"{tradingsymbol}: {e}"
+            )
+        # 2) Audit trail.
+        try:
+            ts = trade_audit.latest_buy_exec_ts(tradingsymbol)
+            if ts:
+                return float(ts)
+        except Exception as e:
+            logger.debug(
+                f"Entry-time lookup from the audit failed for "
+                f"{tradingsymbol}: {e}"
+            )
+        # 3) Last resort - arm from now (logged loudly; the limit runs
+        # from recognition only in this case).
+        logger.warning(
+            f"No buy time found for {tradingsymbol} (order book + audit "
+            f"both unavailable) - TIME_LIMIT clock armed from now"
+        )
+        return time.time()
+
+    def _parse_broker_timestamp(self, raw):
+        """Parse the broker order-book time into epoch seconds.
+        Handles MStock's '2026-Oct-15 12:11:43' and ISO strings."""
+        s = str(raw).strip()
+        for fmt in ("%d-%b-%Y %H:%M:%S", "%Y-%m-%d %H:%M:%S"):
+            try:
+                return time.mktime(
+                    datetime.datetime.strptime(s, fmt).timetuple()
+                )
+            except ValueError:
+                continue
+        try:
+            return datetime.datetime.fromisoformat(s).timestamp()
+        except Exception:
+            return None
+
     def _default_override_book_profit_pct(self, strategy_type):
         """
         Per-leg BK% seed, comparison-function aware: PCT mode seeds the
@@ -2446,6 +2828,27 @@ class Trader_Singleton:
                                 f"(order {order_id}, anchor {anchor}, "
                                 f"{mode_u_d})"
                             )
+                            # The resting price moved: refresh the leg's
+                            # exit-pending marker so the P&L cap and the
+                            # grid badge track the live limit, and keep
+                            # the audit's resting price honest (it keys
+                            # the booked-vs-seen report off this).
+                            try:
+                                trade_audit.update_resting_exit_price(
+                                    symbol, exit_price
+                                )
+                            except Exception as audit_error:
+                                logger.debug(
+                                    f"Resting-exit audit update failed "
+                                    f"for {symbol}: {audit_error}"
+                                )
+                            try:
+                                self._set_leg_exit_pending(key, exit_price)
+                            except Exception as stamp_error:
+                                logger.debug(
+                                    f"Exit-pending re-stamp failed for "
+                                    f"{key}: {stamp_error}"
+                                )
                             return
                         logger.warning(
                             f"BP override {override_pct}%: in-place modify "
@@ -2537,6 +2940,23 @@ class Trader_Singleton:
                     f"{symbol} placed at {exit_price} "
                     f"(anchor {anchor}, {mode_u_d})"
                 )
+                # Fresh placement after a cancel: the leg's marker must
+                # track the new limit (the old one was just cancelled)
+                # and the audit's resting price moves with it.
+                try:
+                    trade_audit.update_resting_exit_price(symbol, exit_price)
+                except Exception as audit_error:
+                    logger.debug(
+                        f"Resting-exit audit update failed for {symbol}: "
+                        f"{audit_error}"
+                    )
+                try:
+                    self._set_leg_exit_pending(key, exit_price)
+                except Exception as stamp_error:
+                    logger.debug(
+                        f"Exit-pending re-stamp failed for {key}: "
+                        f"{stamp_error}"
+                    )
             except Exception as place_error:
                 _bp_edit_failed(
                     f"placement rejected ({place_error})"
@@ -3079,6 +3499,9 @@ class Trader_Singleton:
                 # order shows TRANSIT) and the reconciliation must not
                 # treat that lag as "position closed".
                 "created_ts": time.time(),
+                # Birth time for the per-strategy TIME_LIMIT guard: the
+                # position's age counts from the order being placed.
+                "entry_ts": time.time(),
             }
 
             # ---------------------------------------------------------
@@ -3593,6 +4016,20 @@ class Trader_Singleton:
                     "override_book_profit_pct",
                     self._default_override_book_profit_pct(leg["order_strategy"])
                 )
+                # TIME-LIMIT guard clock: kept from the original seed /
+                # ledger when present. A leg born in a reconcile
+                # (restart restore, residual booking) recovers the true
+                # buy time from the broker order book (latest TRADED
+                # BUY), then the audit's buy_exec_ts, then arms from now
+                # (logged) - the time limit keeps running across a
+                # restart instead of resetting.
+                if not leg.get("entry_ts"):
+                    leg["entry_ts"] = (
+                        self._resolve_entry_time(
+                            str(leg.get("tradingsymbol") or ""),
+                            position,
+                        )
+                    )
                 self._update_leg_pl(key)
 
         # =========================================================
@@ -3608,6 +4045,16 @@ class Trader_Singleton:
         # =========================================================
         # 5. FINAL POSITION GRID UPDATE
         # =========================================================
+        # The reconcile mutated/rebuilt leg dicts: re-apply the
+        # exit-pending markers of every still-tracked EXIT intent so
+        # the P&L cap + badge survive the refresh.
+        try:
+            self._restamp_leg_exits_after_refresh()
+        except Exception as restamp_error:
+            logger.debug(
+                f"Exit-pending restamp after refresh failed: "
+                f"{restamp_error}"
+            )
         try:
             if not self.frontend_data_socket:
                 raise ConnectionRefusedError
@@ -3682,6 +4129,26 @@ class Trader_Singleton:
 
     # ---------------------- TRADING LOGIC (Refactored) ----------------------
 
+    def announce_urgent(self, text, repeat=3):
+        """Queue an exit-critical announcement on the voice channel that
+        IGNORES the voice checkbox - consumed ahead of the P&L/time
+        readouts, and each utterance purges whatever is mid-speech."""
+        with self._urgent_voice_lock:
+            for _ in range(max(1, int(repeat))):
+                self._urgent_voice_queue.append(str(text))
+
+    def _urgent_voice_pop(self):
+        """Next urgent text: one-shot queue first, then the CONTINUOUS
+        manual-sell announcement while any auto-sell stays RMS-blocked.
+        The continuous message repeats every cycle until the position
+        is sold and the app has reconciled it (token pruned)."""
+        with self._urgent_voice_lock:
+            if self._urgent_voice_queue:
+                return self._urgent_voice_queue.pop(0)
+            if self._exit_blocked_voice_tokens:
+                return "Sell manually from the broker terminal"
+        return None
+
     def voice_readout_core(self):
         """Speaks the P&L percentage of every open position so it can be
         followed without watching the screen. The separate time announcer
@@ -3745,6 +4212,20 @@ class Trader_Singleton:
             speaker_process = None
 
         while not self._stop_event.is_set():
+            # URGENT first - checkbox-independent, purge what is playing
+            # ("Sell manually from the broker terminal" must cut through
+            # any P&L readout).
+            urgent = self._urgent_voice_pop()
+            if urgent is not None:
+                stop_speaking()
+                try:
+                    speaker_process = subprocess.Popen(["say", urgent])
+                except Exception:
+                    speaker_process = None
+                    logger.warning("Voice readout: failed to start `say`")
+                self._stop_event.wait(timeout=0.25)
+                continue
+
             if not (self._voice_announcement_enabled or self._time_announcement_enabled):
                 stop_speaking()
                 self._stop_event.wait(timeout=0.25)
@@ -3799,6 +4280,18 @@ class Trader_Singleton:
         SVSFPurgeBeforeSpeak = 2
 
         while not self._stop_event.is_set():
+            # URGENT first - checkbox-independent, purge what is playing
+            # ("Sell manually from the broker terminal" must cut through
+            # any P&L readout).
+            urgent = self._urgent_voice_pop()
+            if urgent is not None:
+                try:
+                    speaker.Speak(urgent, SVSFPurgeBeforeSpeak | SVSFlagsAsync)
+                except Exception:
+                    pass
+                self._stop_event.wait(timeout=0.25)
+                continue
+
             if not (self._voice_announcement_enabled or self._time_announcement_enabled):
                 if speaker.Status.RunningState == 2:
                     try:
@@ -3843,6 +4336,14 @@ class Trader_Singleton:
                 t: st for t, st in self._auto_sell_rms_state.items()
                 if t in self._position_data
             }
+            # The continuous manual-sell announcement ends the same way:
+            # the broker-side sell landed AND the app recognized it (the
+            # leg left the grid) - stop repeating it.
+            with self._urgent_voice_lock:
+                self._exit_blocked_voice_tokens = {
+                    t for t in self._exit_blocked_voice_tokens
+                    if t in self._position_data
+                }
             # LIVE only: no point watching when the market is shut -
             # the broker takes no orders. PAPER / SIMULATION / PLAYBACK
             # watch 24/7 so exits can be tested anytime (the sim/playback
@@ -3918,11 +4419,29 @@ class Trader_Singleton:
                     # This trigger check is only applicable when Sell Type = T. For other cases U and D system raises Sell Order immediately after Buy Order is executed
 
                     #sell = self.to_sell_or_not_to_sell(buy_price , ltp , order_strategy_type,contract_type, should_log_eval)
-                    sell = self._watcher_sell_decision(
-                        buy_price, ltp, order_strategy_type, contract_type,
-                        sell_type, should_log_eval,
-                        override_book_profit_pct=data.get("override_book_profit_pct")
-                    )
+
+                    # TIME-LIMIT GUARD: per-strategy appconfig key
+                    # TIME_LIMIT_<STRATEGY> (decimal minutes; 0 = off).
+                    # When the leg's age crosses the limit the position
+                    # is sold UNCONDITIONALLY - no profit/loss condition
+                    # is evaluated (bypasses even the U/D resting-exit
+                    # ownership of profit), through the same
+                    # cancel-before-sell -> market-sell path as the SL.
+                    time_up = self._watcher_time_limit_decision(token)
+                    if time_up:
+                        sell = True
+                        if should_log_eval:
+                            logger.debug(
+                                f"TIME LIMIT is over for {tradingsymbol} "
+                                f"({self._effective_time_limit_seconds(order_strategy_type)/60:.1f}m) "
+                                f"- unconditional exit"
+                            )
+                    else:
+                        sell = self._watcher_sell_decision(
+                            buy_price, ltp, order_strategy_type, contract_type,
+                            sell_type, should_log_eval,
+                            override_book_profit_pct=data.get("override_book_profit_pct")
+                        )
 
                     if should_log_eval:
                         logger.debug(f"Decision To Sell {tradingsymbol} - {sell}")
@@ -4045,17 +4564,25 @@ class Trader_Singleton:
                                     auto_sell_aborted = True
 
                             if sell and not auto_sell_aborted:
-                                logger.info(f"Placing SELL order for {tradingsymbol} {instrument_token} : {qty} lots at LTP {ltp}")
-                                # AUDIT: stop-loss routine trigger. Pass
-                                # the RAW instrument token - the audit
-                                # records store the plain token, while
-                                # the loop variable here is the composite
-                                # position key (token:STRATEGY:MODE).
+                                logger.info(
+                                    f"Placing SELL order for {tradingsymbol} "
+                                    f"{instrument_token} : {qty} lots at LTP {ltp}"
+                                    + (" [TIME LIMIT over]" if time_up else "")
+                                )
+                                # AUDIT: stop-loss / time-limit routine
+                                # trigger. Pass the RAW instrument token -
+                                # the audit records store the plain token,
+                                # while the loop variable here is the
+                                # composite position key
+                                # (token:STRATEGY:MODE).
                                 trade_audit.record_sell_trigger(
                                     token=str(instrument_token),
                                     lots=qty,
                                     ltp=float(ltp or 0),
-                                    source="SL_WATCHER",
+                                    source=(
+                                        "TIME_LIMIT" if time_up
+                                        else "SL_WATCHER"
+                                    ),
                                 )
                                 try:
                                     broker.sell_units(tradingsymbol,instrument_token,qty,exchange,ltp, position_key=str(token))
@@ -4064,6 +4591,22 @@ class Trader_Singleton:
                                     trade_audit.record_sell_executed(
                                         str(instrument_token), qty, float(ltp or 0)
                                     )
+
+                                    if time_up:
+                                        try:
+                                            self.frontend_data_socket.emit(
+                                                'status_message',
+                                                {
+                                                    "success": True,
+                                                    "message": (
+                                                        f"Time limit over - "
+                                                        f"exited {tradingsymbol} "
+                                                        f"({qty} lot(s))"
+                                                    )
+                                                }
+                                            )
+                                        except Exception:
+                                            pass
 
                                     # A booked position must reach the UI
                                     # balance box without a page reload:
@@ -4110,7 +4653,10 @@ class Trader_Singleton:
                                     token=str(instrument_token),
                                     lots=qty,
                                     ltp=float(ltp or 0),
-                                    source="SL_WATCHER",
+                                    source=(
+                                        "TIME_LIMIT" if time_up
+                                        else "SL_WATCHER"
+                                    ),
                                 )
                                 trade_audit.record_sell_executed(
                                     str(instrument_token), qty, float(ltp or 0)
@@ -6304,7 +6850,15 @@ class Trader_Singleton:
                         'ltp': price,
                         'pts_pl': position_info.get('pts_pl'),
                         'pct_pl': position_info.get('pct_pl'),
-                        'total_pl': position_info.get('total_pl')
+                        'total_pl': position_info.get('total_pl'),
+                        # Resting-exit marker: lets the grid badge the
+                        # market price with the live limit + booked-if-
+                        # filled % (P&L fields above are already capped
+                        # at the exit by _update_leg_pl).
+                        'exit_pending_price':
+                            position_info.get('exit_pending_price'),
+                        'exit_pending_pct':
+                            position_info.get('exit_pending_pct'),
                     }
 
                     self.frontend_data_socket.emit(
@@ -6551,6 +7105,18 @@ class Trader_Singleton:
                 f"kill its python process) first."
             )
             probe.close()
+            # Sinks use enqueue=True (background writer thread) - os._exit
+            # would kill the process before the critical message is flushed.
+            try:
+                logger.complete()
+            except Exception:
+                pass
+            print(
+                f"FATAL: Port {ui_port} is already in use - another app "
+                f"instance is running. Close that instance (or kill its "
+                f"python process) first.",
+                flush=True,
+            )
             os._exit(1)
         except OSError:
             probe.close()  # nothing listening - this instance may bind
@@ -6593,6 +7159,18 @@ class Trader_Singleton:
             )
             logger.info("Launching voice readout thread 🔊")
             voice_thread.start()
+
+            # Fast probe for resting U/D exit fills (~1s cadence) - the
+            # frontend's ~15s pending-orders ping is far too slow to
+            # take a filled leg off the grid honestly (2026-10-15).
+            if not getattr(self, "_exit_fill_watchdog_started", False):
+                self._exit_fill_watchdog_started = True
+                watchdog = threading.Thread(
+                    target=self._exit_fill_watchdog_core,
+                    daemon=True,
+                )
+                logger.info("Launching exit-fill watchdog thread ⏱")
+                watchdog.start()
 
             # One supervisor per process watches the watcher and
             # relaunches it if it ever dies or stalls again.
@@ -7953,8 +8531,56 @@ class Trader_Singleton:
         Browser/app window closed and no frontend client reconnected
         within the grace window: stop the application so the console
         windows (server + logs) close along with it.
+
+        EXCEPT while legs are open (2026-10-15 13:17: a window close
+        with an RMS-blocked 22-lot position killed the watcher - and
+        every bit of exit protection - and the option collapsed 57%
+        with nobody watching). A window close may not stop the engine
+        while a position depends on it: keep the watcher alive, keep
+        re-arming this check, and shut down only when flat.
         """
         if self._browser_sids:
+            return
+
+        open_legs = len(self._position_data or {})
+        blocked = len(self._auto_sell_rms_state or {})
+        if open_legs or blocked:
+            now_ts = time.time()
+            first_warn = now_ts - getattr(
+                self, "_shutdown_block_warn_ts", 0.0
+            ) > 60.0
+            if first_warn:
+                self._shutdown_block_warn_ts = now_ts
+                logger.critical(
+                    f"App window closed with {open_legs} open leg(s) "
+                    f"({blocked} auto-sell block(s) active) - NOT "
+                    f"shutting down: the watcher stays alive to "
+                    f"protect the position. Re-open the UI to trade "
+                    f"or exit; the app exits on window close only "
+                    f"when flat."
+                )
+                try:
+                    self.frontend_data_socket.emit(
+                        'status_message',
+                        {
+                            "success": False,
+                            "message": (
+                                f"Window closed with {open_legs} open "
+                                f"position(s) - the engine keeps "
+                                f"running to protect them. Re-open "
+                                f"the UI to regain control."
+                            )
+                        }
+                    )
+                except Exception:
+                    pass
+            self._cancel_browser_exit_timer()
+            self._browser_exit_timer = threading.Timer(
+                self._WINDOW_CLOSING_GRACE_SECONDS,
+                self._shutdown_if_no_browser
+            )
+            self._browser_exit_timer.daemon = True
+            self._browser_exit_timer.start()
             return
 
         logger.info(

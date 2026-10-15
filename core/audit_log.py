@@ -353,6 +353,25 @@ class TradeAudit:
             rec["buy_avg_price"] = avg_price
             self._persist()
 
+    def latest_buy_exec_ts(self, symbol):
+        """Most recent buy_exec_ts among records for this symbol
+        (canonical symbol match), else None. Used to recover the true
+        entry time for a leg restored after a restart - the TIME_LIMIT
+        guard keeps running across restarts instead of resetting."""
+        try:
+            from core.audit_log_parser import canonical_symbol
+        except Exception:
+            return None
+        want = canonical_symbol(symbol)
+        best = None
+        for rec in self._records:
+            if canonical_symbol(rec.get("symbol")) != want:
+                continue
+            ts = rec.get("buy_exec_ts")
+            if ts and (best is None or ts > best):
+                best = ts
+        return best
+
     def record_retry_attempt(self, token, lots, ltp):
         with self._lock:
             rec = self._match_open(token=token)
@@ -380,7 +399,8 @@ class TradeAudit:
                 rec["sell_trigger_source"] = source
                 self._persist()
 
-    def record_sell_executed(self, token, lots, ltp, success=True):
+    def record_sell_executed(self, token, lots, ltp, success=True,
+                             avg_price=None):
         with self._lock:
             rec = self._match_open(token=token)
             if rec is None:
@@ -389,6 +409,13 @@ class TradeAudit:
                 return  # keep the first fill
             rec["sell_exec_ts"] = time.time()
             rec["sell_exec_ltp"] = ltp
+            if avg_price is not None:
+                # The broker's average fill, when the caller knows it -
+                # a resting-exit fill reports its limit-average here.
+                try:
+                    rec["sell_avg_price"] = float(avg_price)
+                except (TypeError, ValueError):
+                    pass
             rec["sell_success"] = bool(success)
             self._persist()
 
@@ -814,6 +841,15 @@ class TradeAudit:
         sell_avg = rec.get("sell_avg_price")
         if sell_avg is None and rec.get("imported"):
             sell_avg = sell_ltp
+        if (
+            sell_avg is None
+            and rec.get("sell_trigger_source") == "RESTING_EXIT"
+            and rec.get("resting_exit_price")
+        ):
+            # A resting SELL LIMIT cannot trade below its limit price:
+            # when the broker-side hook missed the average, the resting
+            # price is the honest floor for the fill average.
+            sell_avg = rec.get("resting_exit_price")
         if sell_avg is not None:
             out["Sell Avg Price"] = _fmt_num(sell_avg)
         if sell_avg is not None and trig_ltp:

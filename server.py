@@ -48,6 +48,16 @@ logging.getLogger('werkzeug').setLevel(logging.ERROR)
 logging.getLogger('websockets').setLevel(logging.WARNING)
 logging.getLogger('kiteconnect').setLevel(logging.WARNING)
 
+# Windows consoles default to cp1252 - emoji in log lines (✅, 🚀, 🔊 ...)
+# crash print() with UnicodeEncodeError and the log line is lost. Make the
+# std streams replace unencodable characters instead of raising.
+for _stream in (sys.stdout, sys.stderr):
+    if _stream is not None and hasattr(_stream, "reconfigure"):
+        try:
+            _stream.reconfigure(errors="backslashreplace")
+        except Exception:
+            pass
+
 logger.remove()
 
 # File logging
@@ -117,6 +127,23 @@ logger.info("=" * 80)
 logger.info("Starting new session")
 logger.info("=" * 80)
 
+# Splash-screen progress channel. scripts/splash.py polls this file
+# every 400 ms and shows the latest one-liner, so the user sees real
+# startup progress instead of a silent wait. Overwrite, not append:
+# the splash only shows a file written no earlier than its own
+# launch, so a stale line from a previous run is never displayed.
+STARTUP_STATUS_PATH = os.path.join(DATA_DIR, "startup_status.txt")
+
+
+def update_startup_status(message):
+    try:
+        with open(STARTUP_STATUS_PATH, "w", encoding="utf-8") as f:
+            f.write(message)
+    except Exception:
+        pass  # splash progress is cosmetic - never block startup
+
+
+
 # Define a custom log level for data logs
 logger.level("DATA", no=25, color="<yellow>", icon="📊")
 
@@ -133,6 +160,7 @@ logger.level("DATA", no=25, color="<yellow>", icon="📊")
 
 
 logger.info("Logger initialized successfully")
+update_startup_status("Starting server...")
 
 
 # Local web server port. 5000 conflicts with macOS AirPlay Receiver
@@ -140,6 +168,153 @@ logger.info("Logger initialized successfully")
 # dead (Flask bind fails with Errno 48). Keep in sync with SERVER_PORT
 # in scripts/build_mac_app.sh.
 SERVER_PORT = 5050
+
+
+def _open_app_window_to(url):
+    """Open the Chrome/Edge app-mode window (default browser fallback)."""
+    if sys.platform == "darwin":
+        chrome = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+        if os.path.exists(chrome):
+            subprocess.Popen([chrome, f"--app={url}"])
+            return
+    else:
+        for candidate in (
+            r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+            r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+            r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
+            r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
+        ):
+            if os.path.exists(candidate):
+                subprocess.Popen([candidate, f"--app={url}"])
+                return
+    import webbrowser
+    webbrowser.open(url)
+
+
+def _pids_listening_on(port):
+    """PIDs with a LISTENING socket on the given port (Windows netstat)."""
+    import re
+    try:
+        out = subprocess.run(
+            ["netstat", "-ano"], capture_output=True, text=True
+        ).stdout
+    except Exception:
+        return []
+    pids = set()
+    for line in out.splitlines():
+        if f":{port} " not in line or "LISTENING" not in line:
+            continue
+        m = re.search(r"LISTENING\s+(\d+)\s*$", line.strip())
+        if m:
+            pids.add(int(m.group(1)))
+    return sorted(pids)
+
+
+def _pid_is_python(pid):
+    """True if the PID's image name is python/pythonw (Windows)."""
+    try:
+        out = subprocess.run(
+            ["tasklist", "/FI", f"PID eq {pid}", "/FO", "CSV", "/NH"],
+            capture_output=True, text=True,
+        ).stdout
+    except Exception:
+        return False
+    return out.strip().lower().startswith('"python')
+
+
+def _early_single_instance_check():
+    """
+    Single-instance guard that runs BEFORE broker login and instrument
+    download (which cost ~15s), so a blocked launch fails - or recovers
+    - in under a second instead of after a full init sequence.
+
+    - Port 5001 free: normal startup.
+    - Port held AND http://127.0.0.1:5050/ answers 200: a live instance
+      is serving but has no window (window closed, or the launcher was
+      clicked again). Reopen the app window to it and exit - the
+      reconnect also cancels its pending close-shutdown timer.
+    - Port held AND nothing serving: an unreachable leftover process
+      (voice/SL threads with no UI). If it is a python process, kill it
+      and continue; a foreign squatter fails fast with a clear message.
+    """
+    import socket as _socket
+
+    ui_port = int(os.getenv("SOCKET_IO_PORT", "5001"))
+    probe = _socket.socket()
+    probe.settimeout(0.5)
+    try:
+        probe.connect(("127.0.0.1", ui_port))
+    except OSError:
+        probe.close()
+        return  # nothing on the UI port - normal startup
+    probe.close()
+
+    import urllib.request
+    serving = False
+    try:
+        with urllib.request.urlopen(
+            f"http://127.0.0.1:{SERVER_PORT}/", timeout=2
+        ) as resp:
+            serving = resp.status == 200
+    except Exception:
+        serving = False
+
+    if serving:
+        logger.info(
+            "Another live app instance is already serving on port "
+            f"{SERVER_PORT} - reopening its app window instead of "
+            "starting a second server."
+        )
+        _open_app_window_to(f"http://127.0.0.1:{SERVER_PORT}")
+        time.sleep(1.0)
+        logger.complete()
+        os._exit(0)
+
+    if sys.platform != "win32":
+        logger.critical(
+            f"Port {ui_port} is held by a process that is not serving "
+            "the app - close that process and start again."
+        )
+        logger.complete()
+        os._exit(1)
+
+    logger.warning(
+        f"Port {ui_port} is held by a stale (non-serving) process - "
+        "terminating it and continuing startup."
+    )
+    killed = False
+    for pid in _pids_listening_on(ui_port):
+        if _pid_is_python(pid):
+            subprocess.run(
+                ["taskkill", "/PID", str(pid), "/F"], capture_output=True
+            )
+            logger.info(f"Terminated stale app process (pid {pid}).")
+            killed = True
+    if not killed:
+        logger.critical(
+            f"Port {ui_port} is held by a non-python process - close it "
+            "and start again."
+        )
+        logger.complete()
+        os._exit(1)
+    time.sleep(1.5)
+    recheck = _socket.socket()
+    recheck.settimeout(0.5)
+    try:
+        recheck.connect(("127.0.0.1", ui_port))
+        recheck.close()
+        logger.critical(
+            f"Port {ui_port} is still held after terminating the stale "
+            "process - close the holder and start again."
+        )
+        logger.complete()
+        os._exit(1)
+    except OSError:
+        recheck.close()
+        logger.info("Stale process cleared - continuing startup.")
+
+
+_early_single_instance_check()
 
 app = Flask(__name__)
 CORS(app)
@@ -171,6 +346,7 @@ try:
 
     if CURRENT_MODE in ("LIVE", "PAPER"):
         logger.info(f"Mode is {CURRENT_MODE}. Verifying internet connectivity before startup.")
+        update_startup_status("Verifying internet connection...")
         if not check_internet_connectivity():
             raise RuntimeError(
                 "NO INTERNET CONNECTIVITY detected. "
@@ -250,6 +426,10 @@ APPCONFIG_GROUPS = {
         "PTS_PROFIT_SCALPING", "PTS_LOSS_SCALPING",
         "PTS_PROFIT_ULTRA_SCALPING", "PTS_LOSS_ULTRA_SCALPING",
     ],
+    "timelimit": [
+        "TIME_LIMIT_INTRA", "TIME_LIMIT_SCALPING",
+        "TIME_LIMIT_ULTRA_SCALPING",
+    ],
     "signals": ["INTRA_EMA", "SCALPING_EMA", "ULTRA_SCALPING_EMA", "EMA_TOLERANCE_PTS"],
     "market": [
         "NIFTY_ORDER_FREEZE_LIMIT", "SENSEX_ORDER_FREEZE_LIMIT",
@@ -326,6 +506,11 @@ APPCONFIG_DEFAULTS = {
         "PTS_LOSS_SCALPING": "5",
         "PTS_PROFIT_ULTRA_SCALPING": "2.5",
         "PTS_LOSS_ULTRA_SCALPING": "5"
+    },
+    "timelimit": {
+        "TIME_LIMIT_INTRA": "0",
+        "TIME_LIMIT_SCALPING": "0",
+        "TIME_LIMIT_ULTRA_SCALPING": "0"
     },
     "signals": {
         "INTRA_EMA": "1mEMA50",
@@ -2012,6 +2197,7 @@ if 1==1: #__name__ == "__main__":
 
         #app.run(host='0.0.0.0', port=SERVER_PORT, debug=True)
         logger.info("Initializing broker and trader...")
+        update_startup_status(f"Connecting to broker ({CURRENT_BROKER})...")
         trader = Trader_Singleton() 
         # uncomment for development
         logger.info(f"Using broker: {CURRENT_BROKER}")
@@ -2080,6 +2266,7 @@ if 1==1: #__name__ == "__main__":
 
         #logger.info("Starting in production mode...")
         #broker.fetch_all_instruments()
+        update_startup_status("Loading instrument list...")
         broker.download_instrument_list(EXCHANGE,UNDERLYING)
         trader.set_broker(broker)
 
@@ -2095,11 +2282,13 @@ if 1==1: #__name__ == "__main__":
         logger.info("Instrument cache preload launched in background.")
 
         try:
+            update_startup_status("Resolving day-start cash...")
             day_cash_value, day_cash_source = resolve_day_start_cash(broker)
             logger.info(f"Day-start cash resolved: {day_cash_value} (source: {day_cash_source})")
         except Exception as e:
             logger.warning(f"Could not resolve day-start cash at startup: {e}")
         
+        update_startup_status("Starting web interface...")
         trader.start_frontend_socket_server(app)
 
         # The app window is opened by the server itself once the port
@@ -2129,6 +2318,7 @@ if 1==1: #__name__ == "__main__":
             target=_audit_enrichment_loop, daemon=True, name="audit-enrich"
         ).start()
 
+        update_startup_status("Starting trading engine - app window opens shortly...")
         if CURRENT_BROKER == "KITE":
             socket_thread = threading.Thread(target=start_socket, daemon=True)
             socket_thread.start()

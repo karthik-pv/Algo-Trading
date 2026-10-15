@@ -398,6 +398,17 @@ EXPORT_COLUMNS = [
 ]
 
 
+# The merged B..P width renders roughly 250 monospace-9pt chars per
+# row; longer lines (the label.new entries) wrap onto a second row.
+# Budget at well under that: Excel wraps at word boundaries, so a
+# token straddling the row edge drops whole words to the next line
+# and a line can need noticeably more rows than its raw length
+# suggests. One merged cell per script line (see write_orders_workbook)
+# keeps every cell far below Excel's 32767-char cell cap, which
+# xlsxwriter silently truncates past.
+PINE_CHARS_PER_ROW = 150
+
+
 def write_orders_workbook(output_rows, pine_script, filename=None):
     """Write the standard formatted trade workbook used by every importer."""
     output_path = filename or tempfile.mktemp(suffix=".xlsx")
@@ -444,17 +455,52 @@ def write_orders_workbook(output_rows, pine_script, filename=None):
             worksheet.write(row_index + 1, pnl_column, value, cell_format)
 
         pine_start = len(output_rows) + 2
-        pine_end = pine_start + 12
         pine_label_format = workbook.add_format({
             "bold": True, "bg_color": "#D9EAD3", "border": 1,
             "align": "center", "valign": "vcenter",
         })
-        pine_script_format = workbook.add_format({
-            "text_wrap": True, "valign": "top", "border": 1,
-            "font_name": "Consolas", "font_size": 9,
-        })
+        # The script renders inside merged cells, so each cell must be
+        # tall enough to DISPLAY its text: the old fixed 13-row box
+        # left long scripts visually cut off (the text was in the
+        # cell, but Excel only paints what fits). The replacement still
+        # clipped on active days: one shared cell per 30k-char block
+        # budgeted rows from a chars-per-row estimate, but Excel wraps
+        # at word boundaries, so some lines needed more rows than
+        # budgeted - and inside a shared block every underestimate hid
+        # that line AND everything painted after it. Now each script
+        # line owns its merged B..P cell, so a wrap mis-estimate can
+        # never hide another line; per-line cells also keep every cell
+        # far below Excel's 32767-char cap. Left/right borders on every
+        # cell (plus top on the first and bottom on the last) keep the
+        # single continuous box look the shared blocks had.
+        pine_lines = (pine_script or "").split("\n")
+        pine_end = pine_start + 11  # legacy 12-row floor for tiny scripts
+        cursor = pine_start
+        border_base = {"text_wrap": True, "valign": "top", "font_name": "Consolas", "font_size": 9}
+        pine_script_formats = {
+            "single": workbook.add_format({**border_base, "border": 1}),
+            "first": workbook.add_format({**border_base, "left": 1, "right": 1, "top": 1}),
+            "last": workbook.add_format({**border_base, "left": 1, "right": 1, "bottom": 1}),
+            "middle": workbook.add_format({**border_base, "left": 1, "right": 1}),
+        }
+        for line_number, line in enumerate(pine_lines):
+            if len(pine_lines) == 1:
+                pine_script_format = pine_script_formats["single"]
+            elif line_number == 0:
+                pine_script_format = pine_script_formats["first"]
+            elif line_number == len(pine_lines) - 1:
+                pine_script_format = pine_script_formats["last"]
+            else:
+                pine_script_format = pine_script_formats["middle"]
+            line_rows = max(1, math.ceil(len(line) / PINE_CHARS_PER_ROW))
+            line_end = cursor + line_rows - 1
+            worksheet.merge_range(cursor, 1, line_end, 15, line, pine_script_format)
+            pine_end = max(pine_end, line_end)
+            cursor = line_end + 1
         worksheet.merge_range(pine_start, 0, pine_end, 0, "PINE", pine_label_format)
-        worksheet.merge_range(pine_start, 1, pine_end, 15, pine_script, pine_script_format)
+        # Uniform row heights so every script line renders cleanly.
+        for row_index in range(pine_start, pine_end + 1):
+            worksheet.set_row(row_index, 15)
         worksheet.set_column(0, 0, 14)
         worksheet.set_column(1, 15, 16)
         worksheet.set_column(13, 13, 18)
@@ -468,7 +514,6 @@ def write_orders_workbook(output_rows, pine_script, filename=None):
         for column_name in ("PnL", "PnL_RT"):
             column_index = EXPORT_COLUMNS.index(column_name)
             worksheet.set_column(column_index, column_index, None, pnl_number_format)
-        worksheet.set_row(pine_start, 30)
 
     return output_path
 

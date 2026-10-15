@@ -550,7 +550,17 @@ class MStockAdapter(BrokerInterface):
             # ("O-Pending" at the exchange, "Pending" at the OMS, plus
             # casing variants) - match them all, case-insensitively, or
             # genuinely open orders vanish from the pending grid.
-            pending_statuses = {"pending", "o-pending", "open", "validated"}
+            # "Modified" too: an in-place BP-edit leaves the resting
+            # SELL at status MODIFIED forever (2026-10-15 13:15: a
+            # modified 440-qty exit dropped out of this filter, the SL
+            # watcher then market-sold ON TOP of the live limit - the
+            # RMS priced the stack as a naked short and rejected the
+            # stop 55x with a Rs.49.5L margin demand while the option
+            # collapsed -57%).
+            pending_statuses = {
+                "pending", "o-pending", "open", "validated",
+                "modified", "o-modified",
+            }
             pending_orders = [
                 o for o in orders
                 if str(o.get("order_status", "")).strip().lower() in pending_statuses
@@ -2082,11 +2092,23 @@ class MStockAdapter(BrokerInterface):
                                         override_book_profit_pct=target_profit_pct,
                                     )
                                     fill_price = None
-                                    for _ in range(3):
+                                    # Fill-probe cadence: the market
+                                    # buy's average appears in the
+                                    # order book ~0.3-0.7s after
+                                    # placement (2026-10-15 measured:
+                                    # click -> SELL LIMIT resting was
+                                    # mean 1.31s / max 2.42s, dominated
+                                    # by this loop's 0.5s sleep
+                                    # overshoot). Probe every ~0.25s
+                                    # (REST ~0.15s + 0.1s sleep) with a
+                                    # ~2.5s budget - the fill is
+                                    # detected ~0.5s sooner without
+                                    # hammering the order-book API.
+                                    for _ in range(8):
                                         fill_price = self.fetch_order_executed_price(mstock_buy_order_id)
                                         if fill_price:
                                             break
-                                        time.sleep(0.5)
+                                        time.sleep(0.1)
                                     if fill_price:
                                         self._trader.resolve_pending_exit(
                                             broker="MSTOCK",
