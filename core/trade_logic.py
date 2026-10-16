@@ -277,6 +277,11 @@ class Trader_Singleton:
     # (~1s) and a slow first paint, not much else.
     _WINDOW_CLOSING_GRACE_SECONDS = 5
 
+    # Grace used when the app page is re-rendered while a close-shutdown
+    # is armed (re-opened window): covers the full page load + socket
+    # connect, which took ~4s on the cold 2026-10-16 03:53 start.
+    _WINDOW_REOPEN_GRACE_SECONDS = 20
+
     # Frontend liveness: timestamp of the last socket event from the app
     # page (connect or the ~15s pending-orders poll). Chrome background
     # processes can keep the 5001 socket ESTABLISHED long after the app
@@ -8621,6 +8626,36 @@ class Trader_Singleton:
         logger.info(
             "Window-closing beacon received - shutdown armed for "
             f"{self._WINDOW_CLOSING_GRACE_SECONDS}s (cancelled by a reconnect)."
+        )
+
+    def window_reopening(self):
+        """
+        The app page is being rendered again (fresh app window or
+        reload) while no browser client is connected yet. If a
+        close-shutdown is armed, push the deadline out: a freshly
+        opened window needs a few seconds to load the page and
+        connect its socket - the beacon grace (5s) can expire first
+        and kill the server just as the window comes up (2026-10-16
+        03:53: the splash re-open path opened the window ~4s after
+        the beacon; INDEX rendered but the 5s timer fired before the
+        socket made it). handle_connect still cancels the timer
+        outright the moment the socket is back.
+        """
+        if self._browser_sids:
+            return
+        if self._browser_exit_timer is None:
+            return
+        self._cancel_browser_exit_timer()
+        self._browser_exit_timer = threading.Timer(
+            self._WINDOW_REOPEN_GRACE_SECONDS,
+            self._shutdown_if_no_browser
+        )
+        self._browser_exit_timer.daemon = True
+        self._browser_exit_timer.start()
+        logger.info(
+            "App page re-rendered while a close-shutdown is armed - "
+            f"grace extended to {self._WINDOW_REOPEN_GRACE_SECONDS}s "
+            "for the new window to connect."
         )
 
     def register_socket_handlers(self):

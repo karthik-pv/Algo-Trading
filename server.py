@@ -1400,6 +1400,11 @@ def run_flask_app():
 @app.route("/")
 def index():
     logger.info("INDEX: Rendering app page (default, trade tab)")
+    # A page render with no browser client connected means a window is
+    # coming up (fresh open, or re-open right after a close) - make
+    # sure the window-closing beacon's 5s grace does not expire while
+    # the page is still loading and connecting its socket.
+    trader.window_reopening()
     return render_template("app.html", active_tab="trade")
 
 @app.route("/trade")

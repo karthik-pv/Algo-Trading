@@ -11,9 +11,9 @@ __pycache__/
 data/
 
 # Machine-local config; example is tracked, variants are not
-config/appconfig.json
-config/appconfig.*.json
-!config/appconfig.example.json
+# config/appconfig.json
+# config/appconfig.*.json
+# !config/appconfig.example.json
 
 # Legacy root-level names (pre appconfig consolidation)
 config.json
