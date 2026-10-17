@@ -3729,14 +3729,50 @@ filteredContracts.sort(([, a], [, b]) => {
         return getLevelSortOrder(a.level) -
             getLevelSortOrder(b.level);
     });
+    // Expiry values arrive in broker-specific formats the native
+    // Date parser cannot handle - MStock sends "19Oct2026" (Kite sends
+    // ISO "2026-10-19"), and new Date("19Oct2026") yields the string
+    // "Invalid Date" without throwing, which is what the expiry box
+    // kept displaying. Parse every known shape explicitly and return
+    // null (rendered as "--") when nothing matches.
+    function parseExpiryValue(value) {
+        if (value === null || value === undefined || value === '') {
+            return null;
+        }
+
+        if (value instanceof Date) {
+            return isNaN(value.getTime()) ? null : value;
+        }
+
+        if (typeof value === 'number' && isFinite(value)) {
+            const fromEpoch = new Date(value);
+            return isNaN(fromEpoch.getTime()) ? null : fromEpoch;
+        }
+
+        const text = String(value).trim();
+
+        // MStock style: 19Oct2026 (also tolerate 19-Oct-2026)
+        const dmy = text.match(/^(\d{1,2})-?([A-Za-z]{3})-?(\d{4})$/);
+
+        if (dmy) {
+            const months = { jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5, jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11 };
+            const month = months[dmy[2].toLowerCase()];
+            if (month !== undefined) {
+                const parsed = new Date(+dmy[3], month, +dmy[1]);
+                return isNaN(parsed.getTime()) ? null : parsed;
+            }
+        }
+
+        const native = new Date(text);
+        return isNaN(native.getTime()) ? null : native;
+    }
+
         if (filteredContracts.length > 0) {
             const firstContract = filteredContracts[0][1];
-            if (firstContract && firstContract.expiry) {
-                 try {
-                     const date = new Date(firstContract.expiry);
-                     expiryValueEl.textContent = date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }).replace(' ', '-');
-                 } catch (e) { expiryValueEl.textContent = '--'; }
-            } else { expiryValueEl.textContent = '--'; }
+            const parsedExpiry = parseExpiryValue(firstContract && firstContract.expiry);
+            expiryValueEl.textContent = parsedExpiry
+                ? parsedExpiry.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }).replace(' ', '-')
+                : '--';
         } else { expiryValueEl.textContent = '--'; }
 
         let displayRowIndex = 0;
