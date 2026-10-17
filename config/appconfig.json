@@ -20,11 +20,11 @@
     },
     "pct": {
         "PCT_BOOK_PROFIT_INTRA": "20",
-        "PCT_STOP_LOSS_INTRA": "10",
+        "PCT_STOP_LOSS_INTRA": "30",
         "PCT_BOOK_PROFIT_SCALPING": "6",
         "PCT_STOP_LOSS_SCALPING": "6",
-        "PCT_BOOK_PROFIT_ULTRA_SCALPING": "4",
-        "PCT_STOP_LOSS_ULTRA_SCALPING": "4"
+        "PCT_BOOK_PROFIT_ULTRA_SCALPING": "3",
+        "PCT_STOP_LOSS_ULTRA_SCALPING": "6"
     },
     "pnt": {
         "PTS_PROFIT_INTRA": "10",
