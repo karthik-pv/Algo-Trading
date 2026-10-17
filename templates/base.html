@@ -233,6 +233,7 @@
             <!-- System Audit = former Audit + Feed Lab tabs merged into one
                panel (templates/app.html, section headers inside). -->
             <a class="app-tab {% if request.path in ('/audit', '/feedlab') %}active{% endif %}" href="/audit">System Audit</a>
+<a class="app-tab {% if request.path == '/spatt' %}active{% endif %}" href="/spatt">SPATT</a>
         </div>
         <button class="tab-scroll-btn" id="tabScrollRight" type="button" title="Scroll tabs right">&#x276F;</button>
         <div class="tabbar-right" id="tabbarRight">

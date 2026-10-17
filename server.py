@@ -1457,6 +1457,152 @@ def audit_page():
     return render_template("app.html", active_tab="audit")
 
 
+# --- SPATT: Setup / Price Action / Trade Case grid (live view of the
+# data/insight/setups/setup_pa_tradecase.json playbook; Excel is an export) ---
+_SPATT_JSON = os.path.join(DATA_DIR, "insight", "setups", "setup_pa_tradecase.json")
+_spatt_cache = {"payload": None, "mtime": None}
+
+
+def _spatt_split_window(txt):
+    """'03 Aug 26-09:40-11:15' -> ('03 Aug 26', '09:40', '11:15', '01:35').
+    Returns Date, From Time, To Time, Duration (hh:mm). Comma/newline
+    separated instances join with ', '. Unparseable text keeps the full
+    string in Date."""
+    import re
+    from datetime import datetime as _dt
+    dates, froms, tos, durs = [], [], [], []
+    for line in re.split(r"[\n,]+", txt or ""):
+        line = line.strip()
+        if not line:
+            continue
+        m = re.search(r"(\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})\s*$", line)
+        if m:
+            dates.append(line[:m.start()].strip().rstrip("-").strip())
+            t0, t1 = m.group(1), m.group(2)
+            froms.append(t0)
+            tos.append(t1)
+            try:
+                delta = _dt.strptime(t1, "%H:%M") - _dt.strptime(t0, "%H:%M")
+                mins = int(delta.total_seconds() // 60)
+                if mins < 0:
+                    mins = 0
+                durs.append("%02d:%02d" % (mins // 60, mins % 60))
+            except ValueError:
+                durs.append("")
+        else:
+            dates.append(line)
+            froms.append("")
+            tos.append("")
+            durs.append("")
+    return (", ".join(dates), ", ".join(froms), ", ".join(tos), ", ".join(durs))
+
+
+def _spatt_read():
+    mtime = os.path.getmtime(_SPATT_JSON)
+    if _spatt_cache["payload"] is None or _spatt_cache["mtime"] != mtime:
+        with open(_SPATT_JSON, encoding="utf-8") as f:
+            data = json.load(f)
+        _spatt_cache["payload"] = data
+        _spatt_cache["mtime"] = mtime
+    return _spatt_cache["payload"], _spatt_cache["mtime"]
+
+
+@app.route("/spatt")
+def spatt_page():
+    return render_template("app.html", active_tab="spatt")
+
+
+@app.route("/spatt/data")
+def spatt_data():
+    try:
+        data, mtime = _spatt_read()
+        headers = data["headers"]
+        rows = data["rows"]
+        # Window (index 5) -> Date | From Time | To Time | Duration sub-columns
+        rows = [row[:5] + list(_spatt_split_window(row[5] if len(row) > 5 else "")) + row[6:]
+                for row in rows]
+        headers = headers[:5] + ["Date", "From Time", "To Time", "Duration"] + headers[6:]
+        return jsonify({"headers": headers, "rows": rows,
+                        "mtime": datetime.fromtimestamp(mtime).strftime("%d %b %Y %H:%M:%S")})
+    except FileNotFoundError:
+        return jsonify({"error": "setup_pa_tradecase.json not found"}), 404
+    except Exception as e:
+        logger.error("spatt_data failed: %s", e)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/spatt/export")
+def spatt_export():
+    """Download the playbook as a styled .xlsx (bold+filled header, sized
+    columns, wrapped text - same formatting as the original hand-built file)."""
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment
+    from openpyxl.utils import get_column_letter
+    import io
+
+    data, mtime = _spatt_read()
+    # 11-column layout: Window split into Date/From Time/To Time/Duration + Momentors code
+    headers = list(data["headers"])
+    rows = data["rows"]
+    headers = headers[:5] + ["Date", "From Time", "To Time", "Duration"] + headers[6:]
+    rows = [row[:5] + list(_spatt_split_window(row[5] if len(row) > 5 else "")) + row[6:]
+            for row in rows]
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "TradeCases"
+    header_font = Font(bold=True)
+    header_fill = PatternFill("solid", fgColor="D9E1F2")
+    GREEN = Font(color="FF2E7D32", bold=True)
+    RED = Font(color="FFC62828", bold=True)
+
+    # two-row header: single cols span rows 1-2; Window (5-8) and Change (9-10) groups
+    groups = [(0, 0, "Sno"), (1, 1, "Trend"), (2, 2, "Set Up"), (3, 3, "Price Action"),
+              (4, 4, "Tradecase"), (5, 8, "Window"), (9, 10, "Change"), (11, 11, "Momentors"),
+              (12, 12, "Note")]
+    for c0, c1, label in groups:
+        cell = ws.cell(row=1, column=c0 + 1, value=label)
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = Alignment(vertical="center", horizontal="center", wrap_text=True)
+        if c0 == c1:
+            ws.merge_cells(start_row=1, start_column=c0 + 1, end_row=2, end_column=c0 + 1)
+        else:
+            ws.merge_cells(start_row=1, start_column=c0 + 1, end_row=1, end_column=c1 + 1)
+    SUBS2 = {9: "Points", 10: "%"}
+    for c_i, hname in enumerate(headers, start=1):
+        if 5 <= c_i - 1 <= 10:
+            label = SUBS2.get(c_i - 1, hname)
+            cell = ws.cell(row=2, column=c_i, value=label)
+            cell.font = header_font
+            cell.fill = header_fill
+            cell.alignment = Alignment(vertical="center", horizontal="center", wrap_text=True)
+
+    for r_i, row in enumerate(rows, start=2):
+        trend = str(row[1] or "").lower()
+        for c_i, val in enumerate(row, start=1):
+            cell = ws.cell(row=r_i, column=c_i, value=val)
+            cell.alignment = Alignment(vertical="top", wrap_text=True)
+            if c_i in (2, 3):  # Trend + Set Up colored by direction
+                cell.font = RED if trend.startswith("down") else GREEN
+    widths = {"A": 6, "B": 10, "C": 12, "D": 40, "E": 20, "F": 10, "G": 9, "H": 9,
+              "I": 9, "J": 10, "K": 9, "L": 16, "M": 30}
+    for col, w in widths.items():
+        ws.column_dimensions[col].width = w
+    ws.row_dimensions[1].height = 20
+    ws.row_dimensions[2].height = 18
+    # sort/filter dropdowns on the sub-header row
+    if rows:
+        ws.auto_filter.ref = "A2:M%d" % (len(rows) + 2)
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    stamp = datetime.fromtimestamp(mtime).strftime("%Y%m%d")
+    return send_file(buf, as_attachment=True, download_name="setup_pa_tradecase_%s.xlsx" % stamp,
+                     mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+
 def _audit_lot_size(symbol):
     """Lot size for the audit backfill (broker instrument details)."""
     try:
