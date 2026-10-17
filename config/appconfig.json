@@ -4,9 +4,9 @@
     "TIME_LIMIT_SCALPING": "3",
     "TIME_LIMIT_ULTRA_SCALPING": "1",
     "session": {
-        "MODE": "LIVE",
-        "BROKER": "MSTOCK",
-        "UNDERLYING": "NIFTY"
+        "MODE": "PAPER",
+        "BROKER": "KITE",
+        "UNDERLYING": "CRUDEOILM"
     },
     "gating": {
         "TV_DATA_Validation_REQUIRED": false,
@@ -20,7 +20,7 @@
     },
     "pct": {
         "PCT_BOOK_PROFIT_INTRA": "20",
-        "PCT_STOP_LOSS_INTRA": "6",
+        "PCT_STOP_LOSS_INTRA": "10",
         "PCT_BOOK_PROFIT_SCALPING": "6",
         "PCT_STOP_LOSS_SCALPING": "6",
         "PCT_BOOK_PROFIT_ULTRA_SCALPING": "4",
@@ -33,6 +33,11 @@
         "PTS_LOSS_SCALPING": "5",
         "PTS_PROFIT_ULTRA_SCALPING": "2.5",
         "PTS_LOSS_ULTRA_SCALPING": "5"
+    },
+    "timelimit": {
+        "TIME_LIMIT_INTRA": "0",
+        "TIME_LIMIT_SCALPING": "0",
+        "TIME_LIMIT_ULTRA_SCALPING": "0"
     },
     "signals": {
         "INTRA_EMA": "1mEMA50",
@@ -78,10 +83,5 @@
         "GST_PCT": "18",
         "STAMP_DUTY_BUY_PCT": "0.003",
         "STAMP_DUTY_MIN": "1"
-    },
-    "timelimit": {
-        "TIME_LIMIT_INTRA": "5",
-        "TIME_LIMIT_SCALPING": "3",
-        "TIME_LIMIT_ULTRA_SCALPING": "1"
     }
 }
