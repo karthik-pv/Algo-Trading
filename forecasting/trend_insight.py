@@ -1811,36 +1811,43 @@ def px_current_1m_cross(one, date, entry_stamp, direction, lookback_days=10):
 
 
 def px_support_label(b1, t5, direction, leg_ext, move_ext):
-    """Price Action label (user rule): the MAJOR rungs the move reclaimed.
+    """Price Action label (user rule + notation): the MAJOR rungs the move
+    reclaimed, grouped in hierarchy order (major TF first: 3E -> 5E -> 1E),
+    levels ascending within each TF, digits compacted - all but the last rung
+    as their leading digit, the last in full: 3E(50,100) -> '3E5100';
+    5E(50,100,200) -> '5E51200'; 1E(100,200) -> '1E1200'.
 
-    Major rung set: 1E100, 1E200, 3E50, 3E100, 5E50, 5E100, 5E200 (the minor
-    rungs 1E50/1E21/1E9 never listed except the fallback). The move's range =
-    leg_ext (dip low at the 1m PVT cross / rally top for shorts) to move_ext
-    (farthest print of the containing 5m-PVT run: max close for up / min close
-    for down). A major rung inside that range was taken as support (up) / cap
-    (down) by this move. Listed in crossing order: up = ascending level, down =
-    descending. Fallback when no major is in range: the 1E50/1E21 minor shelf."""
+    Move range = leg_ext (dip low at the 1m PVT cross / rally top for shorts)
+    to move_ext (farthest print of the containing 5m-PVT run). Major rung set:
+    1E100, 1E200, 3E50, 3E100, 5E50, 5E100, 5E200. Fallback when no major is
+    in range: the 1E50/1E21 minor shelf."""
     def g(*vals):
         for v in vals:
             if v is not None:
                 return v
         return None
 
-    majors = [("1E100", g(b1.get("1m EMA100"), b1.get("ema100_1m"))),
-              ("1E200", g(b1.get("1m EMA200"), b1.get("ema200_1m"))),
-              ("3E50", t5.get("30m_ema50")), ("3E100", t5.get("30m_ema100")),
-              ("5E50", t5.get("5m_ema50")), ("5E100", t5.get("5m_ema100")),
-              ("5E200", t5.get("5m_ema200"))]
+    majors = [("1E", "100", g(b1.get("1m EMA100"), b1.get("ema100_1m"))),
+              ("1E", "200", g(b1.get("1m EMA200"), b1.get("ema200_1m"))),
+              ("3E", "50", t5.get("30m_ema50")), ("3E", "100", t5.get("30m_ema100")),
+              ("5E", "50", t5.get("5m_ema50")), ("5E", "100", t5.get("5m_ema100")),
+              ("5E", "200", t5.get("5m_ema200"))]
     if leg_ext is None:
         leg_ext = b1["close"]
     if move_ext is None:
         move_ext = b1["close"]
     lo, hi = (leg_ext, move_ext) if direction == "up" else (move_ext, leg_ext)
-    in_range = sorted([(v, nm) for nm, v in majors if v is not None and lo < v < hi],
-                      reverse=(direction == "down"))
+    in_range = [(tf, num, v) for tf, num, v in majors
+                if v is not None and lo < v < hi]
     if in_range:
-        return ("Rise from " if direction == "up" else "Fall from ") + \
-            ", ".join(nm for _, nm in in_range)
+        parts = []
+        for tf in ("3E", "5E", "1E"):            # hierarchy: major TF first
+            grp = sorted([x for x in in_range if x[0] == tf], key=lambda x: int(x[1]))
+            if not grp:
+                continue
+            digits = "".join(x[1][0] for x in grp[:-1]) + grp[-1][1]
+            parts.append(tf + digits)
+        return ("Rise from " if direction == "up" else "Fall from ") + ", ".join(parts)
     return ("Rise from 1E50, 1E21" if direction == "up" else "Fall from 1E50, 1E21")
 
 
