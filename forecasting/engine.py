@@ -22,6 +22,7 @@ All failures are contained: on_snapshot never raises; it returns None and logs.
 import json
 import os
 import threading
+import time
 from datetime import datetime, timedelta, timezone
 
 from forecasting.levels import build_daily_context, collect_levels, rank_levels
@@ -32,6 +33,11 @@ _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DEFAULT_STORE = os.path.join(_REPO_ROOT, "data", "insight", "store.json")
 DEFAULT_CSV = os.path.join(_REPO_ROOT, "data", "insight", "csv")
 DEFAULT_FORECAST_DIR = os.path.join(_REPO_ROOT, "data", "forecasts")
+
+# Tick-budget fuse: if a single on_snapshot call exceeds this budget, forecasting
+# disables itself (until the next day / reset_fuse()) instead of taxing the
+# trading loop. Normal cost is ~0.2 ms; 50 ms = ~300x headroom.
+TICK_BUDGET_MS = float(os.environ.get("FORECAST_TICK_BUDGET_MS", "50"))
 
 IST = timezone(timedelta(hours=5, minutes=30))
 
@@ -85,6 +91,9 @@ class ForecastEngine(object):
         self._active_setup = None
         self._detector = SetupDetector()
         self._loaded = False
+        self._warmed = False     # True once one on_snapshot has completed (lazy loads done)
+        self._tripped = None     # tick-budget fuse: reason string while tripped, None = armed
+        self._tripped_day = None
 
     # -- loading -----------------------------------------------------------
 
@@ -131,6 +140,8 @@ class ForecastEngine(object):
         self._ensure_loaded()
         self._frozen_day = date_str
         self._day = date_str
+        self._tripped = None
+        self._tripped_day = None
         self._events = []
         self._active_setup = None
         self._detector.reset_day(date_str)
@@ -251,12 +262,36 @@ class ForecastEngine(object):
     # -- main entry --------------------------------------------------------
 
     def on_snapshot(self, data, log=True):
+        today = _ist_now().strftime("%Y-%m-%d")
+        if self._tripped:
+            if self._tripped_day == today:
+                return None                     # fuse tripped today: skip, protect the trading loop
+            self._tripped = None                # new day: fuse re-arms automatically
+        t0 = time.perf_counter()
+        warm = self._warmed
         try:
-            return self._on_snapshot(data, log=log)
+            out = self._on_snapshot(data, log=log)
+            self._warmed = True
+            return out
         except Exception as e:
             import traceback
             print("[forecasting] on_snapshot failed: %s\n%s" % (e, traceback.format_exc()))
             return None
+        finally:
+            if warm:                            # the first (lazy-loading) call is exempt
+                dt_ms = (time.perf_counter() - t0) * 1000.0
+                if dt_ms > TICK_BUDGET_MS:
+                    self._tripped = ("on_snapshot took %.1f ms (budget %.0f ms)" % (
+                        dt_ms, TICK_BUDGET_MS))
+                    self._tripped_day = today
+                    print("[forecasting] TICK-BUDGET FUSE TRIPPED at %s - forecasting disabled "
+                          "until day rollover/reset_fuse(): %s" % (
+                              _ist_now().strftime("%d %b %H:%M:%S"), self._tripped))
+
+    def reset_fuse(self):
+        """Re-arm the tick-budget fuse after a trip (manual/intervention)."""
+        self._tripped = None
+        self._tripped_day = None
 
     def _on_snapshot(self, data, log=True):
         self._ensure_loaded()
