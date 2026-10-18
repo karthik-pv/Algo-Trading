@@ -1187,16 +1187,32 @@ def instruments_json():
 
 @app.route("/trading_view_webhook" , methods = ["POST"])
 def trading_view():
+    import re
     logger.info("Received TradingView webhook")
+    raw = request.get_data(as_text=True) or ""
     # hardened parse: TradingView sends Content-Type text/plain whenever the
     # alert message is not valid JSON (e.g. after re-creating an alert) -
     # force=True parses the body regardless of Content-Type, silent=True
     # returns None instead of raising 415 when the body is genuinely broken.
     data = request.get_json(force=True, silent=True)
+    if data is None and raw:
+        # TEST-FEED REPAIR: the alert's SYM field can arrive as a study-object
+        # dump with unescaped inner quotes (seen on the BTCUSD test chart),
+        # shredding the JSON. SYM is unused downstream - strip it and re-parse.
+        fixed = re.sub(r'"SYM"\s*:\s*".*?",\s*"(INDICATORS|LEVELS|SETUPS)"',
+                       r'"SYM":"REPAIRED","\1"', raw, count=1, flags=re.S)
+        try:
+            data = json.loads(fixed)
+            logger.warning("Webhook body repaired (broken SYM field stripped)")
+        except Exception:
+            data = None
     if data is None:
-        body = (request.get_data(as_text=True) or "")[:500]
+        body = raw[:500]
         logger.error(f"TradingView webhook: unparsable body (Content-Type: {request.content_type}): {body}")
         return jsonify({"error": "unparsable webhook body"}), 400
+    if data.get("MSG") == "LEVELS":
+        # levels-ladder message: no trade-logic consumer wired yet - acknowledge
+        return {"status": "success", "msg": "LEVELS received (no consumer wired yet)"}
     res = trading_view_handle_func(data, trader)
     return jsonify(res)
 
