@@ -1859,6 +1859,89 @@ def q_235px(bars_5m, bars_1m):
     return out
 
 
+def q_2pm_3px(bars_5m, bars_1m):
+    """Detect 2PM_3PX episodes.
+
+    Trigger: 30m PVT sign -1 -> +1 (carried values, so the flip prints on the
+    30m close bar) with 2PM fully up at the trigger bar (2H PVT sign +1 AND
+    forward-filled 2H MACD_2452 > Signal - sign-based, no-repaint).
+    Exit (user 2026-10-18): first 5m bar AFTER the trigger with close < its own
+    5m EMA21; EOD flat at 15:25 if unbroken. No 3PM condition (per definition).
+    """
+    from datetime import datetime
+    last2h = None
+    for b in bars_5m:
+        if b.get("2h_macd") is not None and b.get("2h_signal") is not None:
+            last2h = b["2h_macd"] > b["2h_signal"]
+        b["ff2h"] = last2h
+
+    mom = compute_momentor_ages(bars_5m)
+
+    one = {}  # 1m ladder bands for Price Action where coverage exists (Aug 3 2026+)
+    for b in bars_1m:
+        if b["hhmm"] <= PX_LAST_1M and b.get("close") is not None:
+            one.setdefault(b["date"], []).append(b)
+
+    def minutes(a, b):
+        d0 = datetime.strptime(a, "%H:%M")
+        d1 = datetime.strptime(b, "%H:%M")
+        return int((d1 - d0).total_seconds() // 60)
+
+    episodes = []
+    for run in contiguous_runs(bars_5m):
+        day5 = [x for x in run if x["hhmm"] <= PX_LAST_5M]
+        for i in range(1, len(day5)):
+            p, b = day5[i - 1], day5[i]
+            if not (p["30m_pvt_sign"] == -1 and b["30m_pvt_sign"] == 1):
+                continue
+            if not (b["2h_pvt_sign"] == 1 and b["ff2h"]):
+                continue
+            entry = b["close"]
+            # exit: first LATER 5m bar closing below its own 5m EMA21
+            end_bar, eod = None, True
+            for x in day5[i + 1:]:
+                if x["5m_ema21"] is not None and x["close"] < x["5m_ema21"]:
+                    end_bar, eod = x, False
+                    break
+            if end_bar is None:
+                end_bar = day5[-1]
+            pts = end_bar["close"] - entry
+            band = None
+            t1 = [x for x in one.get(b["date"], []) if x["hhmm"] >= b["hhmm"]]
+            if t1:
+                band = px_1m_band(t1[0])
+                basis = "1m"
+            else:
+                band = px_5m_band(b)
+                basis = "5m"
+            episodes.append({
+                "date": b["date"], "from": b["hhmm"], "to": end_bar["hhmm"],
+                "duration_min": minutes(b["hhmm"], end_bar["hhmm"]),
+                "entry": round(entry, 2), "exit": round(end_bar["close"], 2),
+                "pts": round(pts, 1) + 0.0, "pct": round(100.0 * pts / entry, 2) + 0.0,
+                "eod": eod,
+                "momentors": px_momentor_string(mom, b["date"], b["hhmm"]),
+                "price_action_band": band, "band_basis": basis,
+            })
+
+    pts_all = sorted(e["pts"] for e in episodes)
+    out = {
+        "definition": (
+            "2PM_3PX = 2PM uptrending (2H PVT sign +1 AND 2H MACD_2452 up, carried "
+            "no-repaint values) at a 30m PVT cross-up (-1 -> +1 on carried values, "
+            "prints at the 30m close bar). Exit = first 5m close below its own "
+            "5m EMA21; EOD flat at 15:25 if unbroken. No 3PM condition."),
+        "n_episodes": len(episodes),
+        "n_positive": sum(1 for p in pts_all if p > 0),
+        "n_eod_flat": sum(1 for e in episodes if e["eod"]),
+        "total_pts": round(sum(pts_all), 1),
+        "mean_pts": round(sum(pts_all) / len(pts_all), 2) if pts_all else None,
+        "median_pts": pts_all[len(pts_all) // 2] if pts_all else None,
+        "episodes": episodes,
+    }
+    return out
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description="Multi-TF trend insight from 5m export")
     ap.add_argument("--csv", default=DEFAULT_CSV)
@@ -1873,7 +1956,9 @@ def main(argv=None):
     ap.add_argument("--q23pm", action="store_true",
                     help="query: 23PM/235PM setup - where rises start (1m EMAs)")
     ap.add_argument("--q235px", action="store_true",
-                    help="query: 235PX - 5m PVT cross-up in 2PM+3PM up, 1m MACD swing exit")
+                    help="query: 235PX - 5m PVT cross-up in 2PM+3PM up, EMA4 exit")
+    ap.add_argument("--q2pm3px", action="store_true",
+                    help="query: 2PM_3PX - 30m PVT cross-up in 2PM up, 5m EMA21 exit")
     ap.add_argument("--csv-1m", default=os.path.join("data", "insight", "csv", "NSE_NIFTY1!, 1m.csv"))
     args = ap.parse_args(argv)
 
@@ -1908,6 +1993,10 @@ def main(argv=None):
         bars = load_bars(args.csv)
         one_m = load_1m_bars(args.csv_1m)
         print(json.dumps(q_235px(bars, one_m), indent=1))
+    if args.q2pm3px:
+        bars = load_bars(args.csv)
+        one_m = load_1m_bars(args.csv_1m)
+        print(json.dumps(q_2pm_3px(bars, one_m), indent=1))
     if args.build:
         build(args.csv)
 

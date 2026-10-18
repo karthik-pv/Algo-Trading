@@ -22,7 +22,13 @@ This complements `forecasting/HANDOFF.md` (the PAInsight forecasting-engine note
 - **113 episodes** (full 5m range Sep 2025 → Oct 2026 — the EMA4 exit needs no 1m data): **60 positive (53%), 20 EOD flats, total +1,148.6 pts, mean +10.2, median +1.6, best +295.7, worst −39.2**. All 113 appended to `setup_pa_tradecase.json` (Sno 113–225, Trend=Uptrend, Set Up=235PX, Tradecase=SCALP_235PX — draft text, user to refine).
 - Deliberately **excluded** example: 2026-10-14 15:20 cross-up — 3PM was down (30m PVT negative since 13:10, 30m MACD below signal since 14:40); the user's sighting was a "3PM *turning*" entry — candidate for a future sibling setup, not 235PX.
 
-### 235PX row convention in the playbook
+### New setup 2PM_3PX (`--q2pm3px`)
+- **Definition (user, 2026-10-18)**: 2PM uptrending (2H PVT>0 & 2H MACD_2452 up, carried no-repaint) at a **30m PVT cross-up** (−1→+1 on carried values — prints at the 5m bar carrying the 30m close value; entry = that bar's close, the earliest no-repaint entry). **No 3PM condition** (unlike 235PX). Trigger stamps land on :15/:45 (the 30m boundaries of the 09:15 session).
+- **Exit**: first 5m close below its own **5m EMA21**; EOD flat at 15:25 if unbroken (same close-basis convention as 235PX's EMA4 exit).
+- Implemented: `q_2pm_3px()` + `--q2pm3px` in `forecasting/trend_insight.py`.
+- **17 episodes** (full range Oct 2025 → Aug 2026; no 1m dependency): **11 positive (65%), 6 EOD flats, total +559.3 pts, mean +32.9, median +14.6** — deeper/rarer trigger + wider exit than 235PX (53% positive, mean +10.2). Best +162.3 (07 Apr 26), worst −38.0 (06 Feb 26). Rows **226–242** appended to `setup_pa_tradecase.json` (Trend=Uptrend, Set Up=2PM_3PX, **Tradecase=INTRA_5PM** — user-specified).
+
+### Machine-setup row convention in the playbook (235PX / 2PM_3PX)
 `Price Action` = entry close vs an EMA ladder band: **1m ladder** where 1m coverage exists (Aug 3 2026+, `px_1m_band`: >1E9 / 1E9-21 / … / <1E200), else **5m ladder** basis (`px_5m_band`: >5E4 / 5E4-9 / … / <5E200). `Window` = `dd Mon yy-HH:MM-HH:MM`; `Note` documents entry/exit prices, swing minutes, EOD flag, the 1m MACD cross-down comparison where covered, and marks the row machine-detected. 235PX rows are appended after the 235PM family (Sno continues), chronological within the family; filter by Set Up in the grid.
 
 ---
