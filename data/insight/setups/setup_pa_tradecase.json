@@ -1137,7 +1137,7 @@
    "03 Aug 26-09:40-11:15",
    37,
    0.15,
-   "3MO_DPM",
+   "3MO_DPM_X",
    "In-phase triggers (1m Stoch+PVT x-up): 09:51, 10:12, 10:37. Phase: rise of 37 pts (MFE 50), 2 shallow 1E21 dips held. Post-phase triggers 11:38-14:14 did NOT re-establish 23PM_5PM"
   ],
   [
@@ -1161,7 +1161,7 @@
    "04 Aug 26-09:40-10:25",
    -12,
    -0.05,
-   "3O_DPM_X",
+   "3O_DPM",
    "Entry trigger 09:36-09:39; phase: MFE +31 early then faded to -5; 1 EMA21 dip. Early-MFE fade type"
   ],
   [
@@ -1257,7 +1257,7 @@
    "22 Sep 26-10:05-10:10",
    2,
    0.01,
-   "3SO_X",
+   "3SO",
    "Entry trigger 09:58-10:01; micro-phase (10 min): +6 pts (MFE 9). Marginal record"
   ],
   [
@@ -1269,7 +1269,7 @@
    "23 Sep 26-11:15-12:45",
    21,
    0.09,
-   "3PMS_2P",
+   "3PMS_2P_X",
    "In-phase triggers 11:23, 11:56-12:00, 12:31-12:35. Phase rose 15 pts (MFE 35); 7 dips held; no entry trigger (alignment formed off open drive)"
   ],
   [
@@ -1281,7 +1281,7 @@
    "06 Oct 26-11:15-12:00",
    15,
    0.07,
-   "3S_2PM",
+   "3S_2PM_X",
    "Open-drive continuation, no entry trigger (alignment at open); phase +12 pts (MFE 28); 4 dips held"
   ],
   [
@@ -1293,7 +1293,7 @@
    "06 Oct 26-12:45-13:00",
    -16,
    -0.07,
-   "3S_2PM_X",
+   "3S_2PM",
    "Entry trigger 12:16-12:18 (29 min before). FAILED: phase -15 pts (MFE 8); 1 dip - trigger fired into a phase that rolled over"
   ],
   [
@@ -1317,7 +1317,7 @@
    "13 Oct 26-10:10-10:55",
    -62,
    -0.27,
-   "3PMSO_2P_X",
+   "3PMSO_2P",
    "Entry trigger 09:56-10:01. Phase -47 pts (MFE 11) - 23PM_5PM state formed on a ROLLOVER while price fell. Biggest warning row: check 5m structure before trusting alignment"
   ],
   [
@@ -2517,7 +2517,7 @@
    "03 Aug 26-13:35-13:50",
    -9,
    -0.03,
-   "3M_DPM",
+   "3M_DPM_X",
    "Machine-detected 23PM_5PX - 5m PVT cross-up with 2PM+3PM up (sign-based, carried no-repaint); exit = first 5m close below 5m EMA4. Entry 24658.2, exit 24649.6, 15 min. 1m MACD xdn was 13:51 (-8.1 pts)."
   ],
   [
@@ -2553,7 +2553,7 @@
    "06 Aug 26-12:35-12:40",
    -4,
    -0.02,
-   "3MS",
+   "3MS_X",
    "Machine-detected 23PM_5PX - 5m PVT cross-up with 2PM+3PM up (sign-based, carried no-repaint); exit = first 5m close below 5m EMA4. Entry 24734.8, exit 24730.6, 5 min. 1m MACD xdn was 12:49 (-7.8 pts)."
   ],
   [
@@ -2565,7 +2565,7 @@
    "26 Aug 26-14:10-14:25",
    -1,
    0.0,
-   "3PM_2PM_DP",
+   "3PM_2PM_DP_X",
    "Machine-detected 23PM_5PX - 5m PVT cross-up with 2PM+3PM up (sign-based, carried no-repaint); exit = first 5m close below 5m EMA4. Entry 24445.4, exit 24444.4, 15 min. 1m MACD xdn was 14:28 (-3.8 pts)."
   ],
   [
@@ -2577,7 +2577,7 @@
    "18 Sep 26-14:00-14:40",
    27,
    0.12,
-   "3S_2PM",
+   "3S_2PM_X",
    "Machine-detected 23PM_5PX - 5m PVT cross-up with 2PM+3PM up (sign-based, carried no-repaint); exit = first 5m close below 5m EMA4. Entry 23361.4, exit 23388.3, 40 min. 1m MACD xdn was 14:41 (+26.8 pts)."
   ],
   [
@@ -2589,7 +2589,7 @@
    "21 Sep 26-09:20-09:40",
    6,
    0.03,
-   "3SO_2P",
+   "3SO_2P_X",
    "Machine-detected 23PM_5PX - 5m PVT cross-up with 2PM+3PM up (sign-based, carried no-repaint); exit = first 5m close below 5m EMA4. Entry 23392.8, exit 23399.3, 20 min. 1m MACD xdn was 09:41 (+5.7 pts)."
   ],
   [
@@ -2601,7 +2601,7 @@
    "21 Sep 26-11:00-12:20",
    26,
    0.11,
-   "3S_2P",
+   "3S_2P_X",
    "Machine-detected 23PM_5PX - 5m PVT cross-up with 2PM+3PM up (sign-based, carried no-repaint); exit = first 5m close below 5m EMA4. Entry 23400.6, exit 23427.0, 80 min. 1m MACD xdn was 11:19 (-0.4 pts)."
   ],
   [
@@ -2613,7 +2613,7 @@
    "21 Sep 26-13:20-14:25",
    23,
    0.1,
-   "2P",
+   "2P_X",
    "Machine-detected 23PM_5PX - 5m PVT cross-up with 2PM+3PM up (sign-based, carried no-repaint); exit = first 5m close below 5m EMA4. Entry 23432.8, exit 23455.5, 65 min. 1m MACD xdn was 13:43 (-2.8 pts)."
   ],
   [
@@ -2637,7 +2637,7 @@
    "06 Oct 26-15:15-15:25",
    12,
    0.05,
-   "2PM",
+   "2PM_X",
    "Machine-detected 23PM_5PX - 5m PVT cross-up with 2PM+3PM up (sign-based, carried no-repaint); exit = first 5m close below 5m EMA4. Entry 22787.6, exit 22799.3, 10 min. Swing unbroken to close - EOD flat. 1m MACD xdn was 15:29 (+6.8 pts)."
   ],
   [
@@ -2649,7 +2649,7 @@
    "13 Oct 26-11:40-11:45",
    -20,
    -0.09,
-   "3PMS_2P",
+   "3PMS_2P_X",
    "Machine-detected 23PM_5PX - 5m PVT cross-up with 2PM+3PM up (sign-based, carried no-repaint); exit = first 5m close below 5m EMA4. Entry 22605.2, exit 22584.7, 5 min. 1m MACD xdn was 11:48 (-26.4 pts)."
   ],
   [
@@ -2661,7 +2661,7 @@
    "14 Oct 26-12:15-12:25",
    -2,
    -0.01,
-   "NA",
+   "X",
    "Machine-detected 23PM_5PX - 5m PVT cross-up with 2PM+3PM up (sign-based, carried no-repaint); exit = first 5m close below 5m EMA4. Entry 22762.5, exit 22760.5, 10 min. 1m MACD xdn was 12:26 (-7.0 pts)."
   ],
   [
@@ -2673,7 +2673,7 @@
    "16 Oct 26-09:55-10:40",
    101,
    0.44,
-   "3O_DP",
+   "3O_DP_X",
    "Machine-detected 23PM_5PX - 5m PVT cross-up with 2PM+3PM up (sign-based, carried no-repaint); exit = first 5m close below 5m EMA4. Entry 23011.8, exit 23112.9, 45 min. 1m MACD xdn was 10:33 (+129.2 pts)."
   ],
   [
@@ -2685,7 +2685,7 @@
    "16 Oct 26-13:20-13:25",
    -9,
    -0.04,
-   "3S_DP",
+   "3S_DP_X",
    "Machine-detected 23PM_5PX - 5m PVT cross-up with 2PM+3PM up (sign-based, carried no-repaint); exit = first 5m close below 5m EMA4. Entry 23136.3, exit 23127.0, 5 min. 1m MACD xdn was 13:44 (-3.0 pts)."
   ],
   [
@@ -2697,7 +2697,7 @@
    "16 Oct 26-14:50-14:55",
    -14,
    -0.06,
-   "DP",
+   "DP_X",
    "Machine-detected 23PM_5PX - 5m PVT cross-up with 2PM+3PM up (sign-based, carried no-repaint); exit = first 5m close below 5m EMA4. Entry 23119.7, exit 23106.1, 5 min. 1m MACD xdn was 14:58 (-23.2 pts)."
   ],
   [
@@ -2709,7 +2709,7 @@
    "16 Oct 26-15:15-15:25",
    1,
    0.0,
-   "DP",
+   "DP_X",
    "Machine-detected 23PM_5PX - 5m PVT cross-up with 2PM+3PM up (sign-based, carried no-repaint); exit = first 5m close below 5m EMA4. Entry 23120.9, exit 23121.8, 10 min. Swing unbroken to close - EOD flat. 1m MACD xdn was 15:29 (-0.2 pts)."
   ],
   [
@@ -2901,7 +2901,7 @@
    "28 Aug 26-10:45-11:20",
    -15,
    -0.06,
-   "3PS_DP",
+   "3PS_DP_X",
    "Machine-detected 2PM_3PX - 30m PVT cross-up with 2PM up (2H PVT>0 & 2H MACD2 up, carried no-repaint); exit = first 5m close below 5m EMA21. Entry 24349.0, exit 24334.3, 35 min."
   ],
   [
@@ -2913,7 +2913,7 @@
    "28 Aug 26-15:15-15:25",
    15,
    0.06,
-   "3PS_DP",
+   "3PS_DP_X",
    "Machine-detected 2PM_3PX - 30m PVT cross-up with 2PM up (2H PVT>0 & 2H MACD2 up, carried no-repaint); exit = first 5m close below 5m EMA21. Entry 24331.7, exit 24346.3, 10 min. Swing unbroken to close - EOD flat."
   ],
   [
@@ -6453,7 +6453,7 @@
    "11 Aug 26-14:05-14:10",
    -4,
    -0.02,
-   "3S",
+   "3S_X",
    "Machine-detected 23PM_5PX downtrend - 5m PVT cross-down with 2PM+3PM down (sign-based, carried no-repaint); exit = first 5m close above 5m EMA4. Entry 24534.0, exit 24538.0, 5 min. 1m MACD xup was 14:13 (-5.5 pts)."
   ],
   [
@@ -6465,7 +6465,7 @@
    "11 Aug 26-15:25-15:25",
    0,
    0.0,
-   "3S",
+   "3S_X",
    "Machine-detected 23PM_5PX downtrend - 5m PVT cross-down with 2PM+3PM down (sign-based, carried no-repaint); exit = first 5m close above 5m EMA4. Entry 24543.0, exit 24543.0, 0 min. Swing unbroken to close - EOD flat. 1m MACD xup was 15:29 (-1.5 pts)."
   ],
   [
@@ -6489,7 +6489,7 @@
    "12 Aug 26-13:45-14:15",
    -1,
    0.0,
-   "3SO",
+   "3SO_X",
    "Machine-detected 23PM_5PX downtrend - 5m PVT cross-down with 2PM+3PM down (sign-based, carried no-repaint); exit = first 5m close above 5m EMA4. Entry 24380.4, exit 24381.5, 30 min. 1m MACD xup was 14:10 (-1.5 pts)."
   ],
   [
@@ -6501,7 +6501,7 @@
    "18 Aug 26-13:30-13:45",
    -2,
    -0.01,
-   "NA",
+   "X",
    "Machine-detected 23PM_5PX downtrend - 5m PVT cross-down with 2PM+3PM down (sign-based, carried no-repaint); exit = first 5m close above 5m EMA4. Entry 24244.9, exit 24247.3, 15 min. 1m MACD xup was 13:45 (-1.3 pts)."
   ],
   [
@@ -6513,7 +6513,7 @@
    "18 Aug 26-15:20-15:25",
    4,
    0.02,
-   "3SO",
+   "3SO_X",
    "Machine-detected 23PM_5PX downtrend - 5m PVT cross-down with 2PM+3PM down (sign-based, carried no-repaint); exit = first 5m close above 5m EMA4. Entry 24232.9, exit 24229.0, 5 min. Swing unbroken to close - EOD flat. 1m MACD xup was 15:29 (+1.9 pts)."
   ],
   [
@@ -6537,7 +6537,7 @@
    "19 Aug 26-13:15-13:40",
    1,
    0.0,
-   "3S",
+   "3S_X",
    "Machine-detected 23PM_5PX downtrend - 5m PVT cross-down with 2PM+3PM down (sign-based, carried no-repaint); exit = first 5m close above 5m EMA4. Entry 24111.8, exit 24110.8, 25 min. 1m MACD xup was 13:39 (+5.3 pts)."
   ],
   [
@@ -6561,7 +6561,7 @@
    "24 Aug 26-15:05-15:25",
    -4,
    -0.02,
-   "3SO",
+   "3SO_X",
    "Machine-detected 23PM_5PX downtrend - 5m PVT cross-down with 2PM+3PM down (sign-based, carried no-repaint); exit = first 5m close above 5m EMA4. Entry 24205.9, exit 24209.7, 20 min. 1m MACD xup was 15:29 (-5.7 pts)."
   ],
   [
@@ -6573,7 +6573,7 @@
    "25 Aug 26-09:40-10:40",
    36,
    0.15,
-   "3S",
+   "3S_X",
    "Machine-detected 23PM_5PX downtrend - 5m PVT cross-down with 2PM+3PM down (sign-based, carried no-repaint); exit = first 5m close above 5m EMA4. Entry 24183.1, exit 24147.0, 60 min. 1m MACD xup was 10:12 (+27.7 pts)."
   ],
   [
@@ -6597,7 +6597,7 @@
    "25 Aug 26-11:45-11:50",
    -4,
    -0.02,
-   "3S",
+   "3S_X",
    "Machine-detected 23PM_5PX downtrend - 5m PVT cross-down with 2PM+3PM down (sign-based, carried no-repaint); exit = first 5m close above 5m EMA4. Entry 24163.6, exit 24167.3, 5 min. 1m MACD xup was 11:54 (-10.6 pts)."
   ],
   [
@@ -6609,7 +6609,7 @@
    "25 Aug 26-12:50-13:35",
    24,
    0.1,
-   "3S",
+   "3S_X",
    "Machine-detected 23PM_5PX downtrend - 5m PVT cross-down with 2PM+3PM down (sign-based, carried no-repaint); exit = first 5m close above 5m EMA4. Entry 24170.5, exit 24146.0, 45 min. 1m MACD xup was 13:29 (+27.3 pts)."
   ],
   [
@@ -6621,7 +6621,7 @@
    "31 Aug 26-13:55-14:35",
    16,
    0.07,
-   "3S",
+   "3S_X",
    "Machine-detected 23PM_5PX downtrend - 5m PVT cross-down with 2PM+3PM down (sign-based, carried no-repaint); exit = first 5m close above 5m EMA4. Entry 24250.8, exit 24234.7, 40 min. 1m MACD xup was 14:32 (+21.5 pts)."
   ],
   [
@@ -6645,7 +6645,7 @@
    "07 Sep 26-12:20-13:00",
    10,
    0.04,
-   "NA",
+   "X",
    "Machine-detected 23PM_5PX downtrend - 5m PVT cross-down with 2PM+3PM down (sign-based, carried no-repaint); exit = first 5m close above 5m EMA4. Entry 23889.0, exit 23878.8, 40 min. 1m MACD xup was 13:02 (+9.2 pts)."
   ],
   [
@@ -6657,7 +6657,7 @@
    "07 Sep 26-14:35-15:25",
    27,
    0.11,
-   "3S",
+   "3S_X",
    "Machine-detected 23PM_5PX downtrend - 5m PVT cross-down with 2PM+3PM down (sign-based, carried no-repaint); exit = first 5m close above 5m EMA4. Entry 23893.0, exit 23865.8, 50 min. Swing unbroken to close - EOD flat. 1m MACD xup was 15:03 (+10.2 pts)."
   ],
   [
@@ -6669,7 +6669,7 @@
    "08 Sep 26-15:15-15:25",
    10,
    0.04,
-   "3S",
+   "3S_X",
    "Machine-detected 23PM_5PX downtrend - 5m PVT cross-down with 2PM+3PM down (sign-based, carried no-repaint); exit = first 5m close above 5m EMA4. Entry 23752.4, exit 23742.2, 10 min. Swing unbroken to close - EOD flat. 1m MACD xup was 15:29 (+6.4 pts)."
   ],
   [
@@ -6681,7 +6681,7 @@
    "09 Sep 26-11:50-12:25",
    16,
    0.07,
-   "3S",
+   "3S_X",
    "Machine-detected 23PM_5PX downtrend - 5m PVT cross-down with 2PM+3PM down (sign-based, carried no-repaint); exit = first 5m close above 5m EMA4. Entry 23619.3, exit 23603.8, 35 min. 1m MACD xup was 12:15 (+26.1 pts)."
   ],
   [
@@ -6705,7 +6705,7 @@
    "10 Sep 26-12:55-13:10",
    4,
    0.02,
-   "3S",
+   "3S_X",
    "Machine-detected 23PM_5PX downtrend - 5m PVT cross-down with 2PM+3PM down (sign-based, carried no-repaint); exit = first 5m close above 5m EMA4. Entry 23533.5, exit 23529.2, 15 min. 1m MACD xup was 13:15 (-1.8 pts)."
   ],
   [
@@ -6717,7 +6717,7 @@
    "11 Sep 26-13:10-13:20",
    -4,
    -0.02,
-   "3SO",
+   "3SO_X",
    "Machine-detected 23PM_5PX downtrend - 5m PVT cross-down with 2PM+3PM down (sign-based, carried no-repaint); exit = first 5m close above 5m EMA4. Entry 23391.0, exit 23395.2, 10 min. 1m MACD xup was 13:24 (-7.8 pts)."
   ],
   [
@@ -6729,7 +6729,7 @@
    "16 Sep 26-11:30-11:40",
    -8,
    -0.03,
-   "3S",
+   "3S_X",
    "Machine-detected 23PM_5PX downtrend - 5m PVT cross-down with 2PM+3PM down (sign-based, carried no-repaint); exit = first 5m close above 5m EMA4. Entry 23276.5, exit 23284.6, 10 min. 1m MACD xup was 11:44 (-9.6 pts)."
   ],
   [
@@ -6777,7 +6777,7 @@
    "28 Sep 26-11:55-12:05",
    -7,
    -0.03,
-   "3O",
+   "3O_X",
    "Machine-detected 23PM_5PX downtrend - 5m PVT cross-down with 2PM+3PM down (sign-based, carried no-repaint); exit = first 5m close above 5m EMA4. Entry 22870.8, exit 22877.6, 10 min. 1m MACD xup was 12:09 (-10.6 pts)."
   ],
   [
@@ -6789,7 +6789,7 @@
    "28 Sep 26-12:50-13:20",
    2,
    0.01,
-   "NA",
+   "X",
    "Machine-detected 23PM_5PX downtrend - 5m PVT cross-down with 2PM+3PM down (sign-based, carried no-repaint); exit = first 5m close above 5m EMA4. Entry 22882.9, exit 22880.8, 30 min. 1m MACD xup was 13:19 (+5.7 pts)."
   ],
   [
@@ -6801,7 +6801,7 @@
    "28 Sep 26-14:05-14:45",
    58,
    0.25,
-   "3S",
+   "3S_X",
    "Machine-detected 23PM_5PX downtrend - 5m PVT cross-down with 2PM+3PM down (sign-based, carried no-repaint); exit = first 5m close above 5m EMA4. Entry 22877.3, exit 22819.8, 40 min. 1m MACD xup was 14:46 (+59.7 pts)."
   ],
   [
@@ -6813,7 +6813,7 @@
    "29 Sep 26-12:30-12:50",
    -19,
    -0.08,
-   "3SO",
+   "3SO_X",
    "Machine-detected 23PM_5PX downtrend - 5m PVT cross-down with 2PM+3PM down (sign-based, carried no-repaint); exit = first 5m close above 5m EMA4. Entry 22670.0, exit 22688.7, 20 min. 1m MACD xup was 12:50 (-15.3 pts)."
   ],
   [
@@ -6825,7 +6825,7 @@
    "29 Sep 26-14:45-14:50",
    -6,
    -0.02,
-   "NA",
+   "X",
    "Machine-detected 23PM_5PX downtrend - 5m PVT cross-down with 2PM+3PM down (sign-based, carried no-repaint); exit = first 5m close above 5m EMA4. Entry 22676.5, exit 22682.1, 5 min. 1m MACD xup was 14:54 (-11.8 pts)."
   ],
   [
@@ -6837,7 +6837,7 @@
    "29 Sep 26-15:00-15:05",
    -9,
    -0.04,
-   "3O",
+   "3O_X",
    "Machine-detected 23PM_5PX downtrend - 5m PVT cross-down with 2PM+3PM down (sign-based, carried no-repaint); exit = first 5m close above 5m EMA4. Entry 22669.4, exit 22678.5, 5 min. 1m MACD xup was 15:09 (-18.8 pts)."
   ],
   [
@@ -6849,7 +6849,7 @@
    "01 Oct 26-12:05-13:05",
    152,
    0.67,
-   "NA",
+   "X",
    "Machine-detected 23PM_5PX downtrend - 5m PVT cross-down with 2PM+3PM down (sign-based, carried no-repaint); exit = first 5m close above 5m EMA4. Entry 22627.3, exit 22475.0, 60 min. 1m MACD xup was 12:39 (+65.3 pts)."
   ],
   [
@@ -7065,7 +7065,7 @@
    "13 Aug 26-10:15-10:50",
    5,
    0.02,
-   "3SO",
+   "3SO_X",
    "Machine-detected 2PM_3PX downtrend - 30m PVT cross-down with 2PM down (2H PVT<0 & 2H MACD2 down, carried no-repaint); exit = first 5m close above 5m EMA21. Entry 24421.7, exit 24416.9, 35 min."
   ],
   [
@@ -7077,7 +7077,7 @@
    "01 Sep 26-13:15-15:25",
    91,
    0.38,
-   "3MS",
+   "3MS_X",
    "Machine-detected 2PM_3PX downtrend - 30m PVT cross-down with 2PM down (2H PVT<0 & 2H MACD2 down, carried no-repaint); exit = first 5m close above 5m EMA21. Entry 24187.1, exit 24095.9, 130 min. Swing unbroken to close - EOD flat."
   ],
   [
@@ -7089,7 +7089,7 @@
    "03 Sep 26-15:15-15:25",
    19,
    0.08,
-   "3M",
+   "3M_X",
    "Machine-detected 2PM_3PX downtrend - 30m PVT cross-down with 2PM down (2H PVT<0 & 2H MACD2 down, carried no-repaint); exit = first 5m close above 5m EMA21. Entry 24015.8, exit 23997.0, 10 min. Swing unbroken to close - EOD flat."
   ],
   [
@@ -7101,7 +7101,7 @@
    "15 Sep 26-10:15-15:25",
    198,
    0.84,
-   "3MO",
+   "3MO_X",
    "Machine-detected 2PM_3PX downtrend - 30m PVT cross-down with 2PM down (2H PVT<0 & 2H MACD2 down, carried no-repaint); exit = first 5m close above 5m EMA21. Entry 23426.5, exit 23228.9, 310 min. Swing unbroken to close - EOD flat."
   ],
   [
@@ -7113,7 +7113,7 @@
    "17 Sep 26-11:15-11:40",
    -35,
    -0.15,
-   "NA",
+   "X",
    "Machine-detected 2PM_3PX downtrend - 30m PVT cross-down with 2PM down (2H PVT<0 & 2H MACD2 down, carried no-repaint); exit = first 5m close above 5m EMA21. Entry 23269.2, exit 23304.4, 25 min."
   ],
   [
@@ -7125,7 +7125,7 @@
    "30 Sep 26-14:45-15:25",
    11,
    0.05,
-   "3M",
+   "3M_X",
    "Machine-detected 2PM_3PX downtrend - 30m PVT cross-down with 2PM down (2H PVT<0 & 2H MACD2 down, carried no-repaint); exit = first 5m close above 5m EMA21. Entry 22724.8, exit 22713.5, 40 min. Swing unbroken to close - EOD flat."
   ]
  ]
