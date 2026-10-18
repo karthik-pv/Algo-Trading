@@ -160,19 +160,21 @@ No 5m Stoch / 5m VOC in this export. File lives in `data/insight/csv/` (copied f
 
 ## LEVELS from the TradingView webhook payload (new 2026-10-18 — see `HANDOFF_TradingView_Algo_JSON.md` §5)
 
-Live days: parse `LEVELS.CW_CD` (main table) + `CW_ND`/`NW_ND` (projections) directly — sorted desc, split at the `Close` row for nearest resistance/support; `Distance` field = pts away. Backfills: computed from the same formulas (verified against the Pine source):
+**ALL OHLC-derived level families are computed on HEIKIN-ASHI OHLC of the reference period** (user-confirmed 2026-10-18) — not raw OHLC. This includes PDH/PDL/PDC: those names mean the HA-previous-day values, not the printed highs/lows. HA chain per TF: HA-C = (O+H+L+C)/4; HA-O = (prev HA-O + prev HA-C)/2; HA-H = max(H, HA-O, HA-C); HA-L = min(L, HA-O, HA-C). In a falling period the HA-O rides above the raw highs — HA-H = that HA-O ceiling (e.g. W rows read PWH 23129 vs raw 22830).
 
-| Family | Names | Formula |
+Live days: parse `LEVELS.CW_CD` (main table) + `CW_ND`/`NW_ND` (projections) directly — sorted desc, split at the `Close` row for nearest resistance/support; `Distance` field = pts away. Backfills: computed from HA chains (verified vs the live table to within ~6–18 pts; the residual = chain history depth — TradingView chains from full history, backfill seeds Aug 3).
+
+| Family | Names | Formula (all on **HA-OCHL**) |
 |---|---|---|
-| Floor pivots (prev completed period) | `D P`, `R1–R4 D`, `S1–S4 D` · `W P`, `W R1–R3`, `W S1–S3` · `M P`… · `Q P`… | P=(H+L+C)/3; R1=2P−L; S1=2P−H; R2=P+(H−L); S2=P−(H−L); R3=2P+(H−2L); S3=2P−(2H−L); R4=3P+(H−3L); S4=3P−(3H−L) |
-| Next-period projections | `D P`, `D R1–R3`, `D S1–S3` (CW_ND) · `W P`… (NW_ND) | same formula on the **developing** period OHLC |
-| Camarilla (prev day) | `Cam R1–R4`, `Cam S1–S4` | PDC ± (PDH−PDL)×1.1/{12,6,4,2} |
-| Fib (prev day range) | `Fib 38.2/50/61.8 D` | PDL + rng×{0.382, 0.5, 0.618} (low-anchored) |
-| Round numbers | `RN −` / `RN +` | floor/ceil(close/50)×50 — tracked as the 50-pt ladder (`RN22550`-style) |
-| Opening range | `ORH` / `ORL` | first 15 min H/L |
-| VWAP | `VWAP D`, `VWAP W` | session VWAP (have it); weekly VWAP needs volume — payload-only |
-| Prior periods | `PWH/PWL/PWC` · `PMH/PML` | prev week / month H·L·C |
-| EMAs | `1m/5m/30m/2h EMA50/100/200`, `D EMA100/200`, `W EMA100/200` | same ladder as above |
+| Floor pivots (prev completed period) | `D P`, `R1–R4 D`, `S1–S4 D` · `W P`, `W R1–R3`, `W S1–S3` · `M P`… · `Q P`… | P=(HA-H+HA-L+HA-C)/3; R1=2P−HA-L; S1=2P−HA-H; R2=P+(HA-H−HA-L); S2=P−(HA-H−HA-L); R3=2P+HA-H−2·HA-L; S3=2P−(2·HA-H−HA-L); R4=3P+HA-H−3·HA-L; S4=3P−(3·HA-H−HA-L) |
+| Next-period projections | `D P`, `D R1–R3`, `D S1–S3` (CW_ND) · `W P`… (NW_ND) | same formula on the **developing** period's HA |
+| Camarilla (prev day) | `Cam R1–R4`, `Cam S1–S4` | HA-PDC ± (HA-PDH−HA-PDL)×1.1/{12,6,4,2} |
+| Fib (prev day range) | `Fib 38.2/50/61.8 D` | HA-PDL + HA-range×{0.382, 0.5, 0.618} (low-anchored) |
+| Round numbers | `RN −` / `RN +` | floor/ceil(close/50)×50 — price-based, no HA (tracked as the 50-pt ladder) |
+| Opening range | `ORH` / `ORL` | first 15 min H/L (today's raw range) |
+| VWAP | `VWAP D`, `VWAP W` | volume-based — NOT HA (VWAP W payload-only in backfills) |
+| Prior periods | `PWH/PWL/PWC` · `PMH/PML` | prev week / month **HA** H·L·C (PWH = the HA-high ceiling, not the printed high!) |
+| EMAs | `1m/5m/30m/2h EMA50/100/200`, `D EMA100/200`, `W EMA100/200` | the chart's close-based EMAs (same values as the exports) |
 
 R5/S5 default off. Unknown `Name`s: index by name gracefully (inputs change the mix). Q-pivots in backfills approximate (July 1m data missing).
 
