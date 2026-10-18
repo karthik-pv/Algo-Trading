@@ -5,7 +5,7 @@ This complements `forecasting/HANDOFF.md` (the PAInsight forecasting-engine note
 
 ---
 
-## 0. 2026-10-18 UPDATE — new 5m export + 235PX setup
+## 0. 2026-10-18 UPDATE — new 5m export + 23PM_5PX setup
 
 ### New canonical 5m file: `data/insight/csv/NSE_NIFTY1!, 5_Sep 2025-Oct 2026.csv`
 - Replaces `NSE_NIFTY1!, 5_Sep 2025-Mar 2026.csv` (same 20,293 bars, 2025-09-15 → 2026-10-16; OHLC and all shared indicator columns verified **identical** to the old file — r=1.0 / max diff ≤5e-11 — pure column additions).
@@ -15,21 +15,21 @@ This complements `forecasting/HANDOFF.md` (the PAInsight forecasting-engine note
 - **`2H VOC` is a 30m-computed VOC with periods ×4 (36/84) = the 2H equivalent** (user-confirmed). It updates on **30m boundaries** (13–14 bars/day), NOT on 2H closes — momentor ages off it accrue per 30m step. Not a duplicate of 30m VOC (r=0.47). Range −29.5..+34.1, full-range coverage.
 - Header vocabulary from the user's Numbers doc (`Nifty Data.numbers`): `3M1/3M2`, `2M1/2M2`, `DM1/DM2` = MACD pairs; `5m Stock D`/`30m Stock D` = Stoch D (typo normalized in code). Still absent: 2H Stoch, D Stoch, D VOC → `2SX`/`DSX`/`DOX` momentors remain pending (`2O` is now unblocked).
 
-### New setup 235PX (`--q235px`)
+### New setup 23PM_5PX (`--q23pm5px`)
 - **Definition (user, 2026-10-18)**: 2PM uptrending (2H PVT>0 & 2H MACD_2452 up) + 3PM uptrending (30m PVT>0 & 30m MACD_2452 up), carried no-repaint values, sign-based — same convention as 235PM. M1 (12/26) pairs are NOT used by current setups — reserved for a future setup. Trigger = **5m PVT cross-up** (−1→+1, same-day contiguous, stamps ≤15:25).
 - **Exit (user, 2026-10-18, replaced the original 1m-MACD-cross-down rule)**: **first 5m close below its own 5m EMA4** — price loses the micro-mean (5m EMA4 ≈ 1m EMA21, median 0.8 pts apart). EOD flat at 15:25 if unbroken. The 1m MACD_2452 cross-down is logged as a comparison note (`macd_xdn_note`), not an exit. Rationale: measured head-to-head on the first 17 episodes, the EMA4 exit captured +116.2 pts vs +63.9 for the MACD exit (better in 13/17; the 1m MACD lags and confirms after the fade). No trigger bar ever closed below its own EMA4 (no born-dead edge case).
-- Implemented: `q_235px()` + `--q235px` in `forecasting/trend_insight.py`; entry = trigger 5m-bar close.
-- **113 episodes** (full 5m range Sep 2025 → Oct 2026 — the EMA4 exit needs no 1m data): **60 positive (53%), 20 EOD flats, total +1,148.6 pts, mean +10.2, median +1.6, best +295.7, worst −39.2**. All 113 appended to `setup_pa_tradecase.json` (Sno 113–225, Trend=Uptrend, Set Up=235PX, Tradecase=SCALP_235PX — draft text, user to refine).
-- Deliberately **excluded** example: 2026-10-14 15:20 cross-up — 3PM was down (30m PVT negative since 13:10, 30m MACD below signal since 14:40); the user's sighting was a "3PM *turning*" entry — candidate for a future sibling setup, not 235PX.
+- Implemented: `q_23pm_5px()` + `--q23pm5px` in `forecasting/trend_insight.py`; entry = trigger 5m-bar close.
+- **113 episodes** (full 5m range Sep 2025 → Oct 2026 — the EMA4 exit needs no 1m data): **60 positive (53%), 20 EOD flats, total +1,148.6 pts, mean +10.2, median +1.6, best +295.7, worst −39.2**. All 113 appended to `setup_pa_tradecase.json` (Sno 113–225, Trend=Uptrend, Set Up=23PM_5PX, Tradecase=SCALP_23PM_5PX — draft text, user to refine).
+- Deliberately **excluded** example: 2026-10-14 15:20 cross-up — 3PM was down (30m PVT negative since 13:10, 30m MACD below signal since 14:40); the user's sighting was a "3PM *turning*" entry — candidate for a future sibling setup, not 23PM_5PX.
 
 ### New setup 2PM_3PX (`--q2pm3px`)
-- **Definition (user, 2026-10-18)**: 2PM uptrending (2H PVT>0 & 2H MACD_2452 up, carried no-repaint) at a **30m PVT cross-up** (−1→+1 on carried values — prints at the 5m bar carrying the 30m close value; entry = that bar's close, the earliest no-repaint entry). **No 3PM condition** (unlike 235PX). Trigger stamps land on :15/:45 (the 30m boundaries of the 09:15 session).
-- **Exit**: first 5m close below its own **5m EMA21**; EOD flat at 15:25 if unbroken (same close-basis convention as 235PX's EMA4 exit).
+- **Definition (user, 2026-10-18)**: 2PM uptrending (2H PVT>0 & 2H MACD_2452 up, carried no-repaint) at a **30m PVT cross-up** (−1→+1 on carried values — prints at the 5m bar carrying the 30m close value; entry = that bar's close, the earliest no-repaint entry). **No 3PM condition** (unlike 23PM_5PX). Trigger stamps land on :15/:45 (the 30m boundaries of the 09:15 session).
+- **Exit**: first 5m close below its own **5m EMA21**; EOD flat at 15:25 if unbroken (same close-basis convention as 23PM_5PX's EMA4 exit).
 - Implemented: `q_2pm_3px()` + `--q2pm3px` in `forecasting/trend_insight.py`.
-- **17 episodes** (full range Oct 2025 → Aug 2026; no 1m dependency): **11 positive (65%), 6 EOD flats, total +559.3 pts, mean +32.9, median +14.6** — deeper/rarer trigger + wider exit than 235PX (53% positive, mean +10.2). Best +162.3 (07 Apr 26), worst −38.0 (06 Feb 26). Rows **226–242** appended to `setup_pa_tradecase.json` (Trend=Uptrend, Set Up=2PM_3PX, **Tradecase=INTRA_5PM** — user-specified).
+- **17 episodes** (full range Oct 2025 → Aug 2026; no 1m dependency): **11 positive (65%), 6 EOD flats, total +559.3 pts, mean +32.9, median +14.6** — deeper/rarer trigger + wider exit than 23PM_5PX (53% positive, mean +10.2). Best +162.3 (07 Apr 26), worst −38.0 (06 Feb 26). Rows **226–242** appended to `setup_pa_tradecase.json` (Trend=Uptrend, Set Up=2PM_3PX, **Tradecase=INTRA_5PM** — user-specified).
 
-### Machine-setup row convention in the playbook (235PX / 2PM_3PX)
-`Price Action` = entry close vs an EMA ladder band: **1m ladder** where 1m coverage exists (Aug 3 2026+, `px_1m_band`: >1E9 / 1E9-21 / … / <1E200), else **5m ladder** basis (`px_5m_band`: >5E4 / 5E4-9 / … / <5E200). `Window` = `dd Mon yy-HH:MM-HH:MM`; `Note` documents entry/exit prices, swing minutes, EOD flag, the 1m MACD cross-down comparison where covered, and marks the row machine-detected. 235PX rows are appended after the 235PM family (Sno continues), chronological within the family; filter by Set Up in the grid.
+### Machine-setup row convention in the playbook (23PM_5PX / 2PM_3PX)
+`Price Action` = entry close vs an EMA ladder band: **1m ladder** where 1m coverage exists (Aug 3 2026+, `px_1m_band`: >1E9 / 1E9-21 / … / <1E200), else **5m ladder** basis (`px_5m_band`: >5E4 / 5E4-9 / … / <5E200). `Window` = `dd Mon yy-HH:MM-HH:MM`; `Note` documents entry/exit prices, swing minutes, EOD flag, the 1m MACD cross-down comparison where covered, and marks the row machine-detected. 23PM_5PX rows are appended after the 235PM family (Sno continues), chronological within the family; filter by Set Up in the grid.
 
 ---
 
@@ -63,7 +63,7 @@ python -m forecasting.trend_insight --build is safe: writes only to data/insight
 
 | File | Coverage | Role |
 |---|---|---|
-| `data/insight/csv/NSE_NIFTY1!, 5_Sep 2025-Oct 2026.csv` | 5m bars **2025-09-15 → 2026-10-16** (20,293 bars) — carries 5m/30m/2H/D PVT + dual MACD pairs (M1 12/26 discarded, M2 24/52 used) + Stoch + VOC (5m/30m/2H) + EMAs (incl. 5m EMA4, 1m E100/E200) + VWAP per bar | PRIMARY source; regime + episodes + Momentors + 235PX |
+| `data/insight/csv/NSE_NIFTY1!, 5_Sep 2025-Oct 2026.csv` | 5m bars **2025-09-15 → 2026-10-16** (20,293 bars) — carries 5m/30m/2H/D PVT + dual MACD pairs (M1 12/26 discarded, M2 24/52 used) + Stoch + VOC (5m/30m/2H) + EMAs (incl. 5m EMA4, 1m E100/E200) + VWAP per bar | PRIMARY source; regime + episodes + Momentors + 23PM_5PX |
 | `data/insight/csv/NSE_NIFTY1!, 1m.csv` | 1m bars **2026-08-03 → 2026-10-16** (53 days, 20,405 bars) — true 1m Stoch/PVT/MACD + 1m EMA ladder | 1m-EMA context + 1SPX_15PM trigger detection |
 | `data/insight/setups/setup_pa_tradecase.json` | the playbook (112 records) | **force-added to git** (`git add -f`), so it travels with the repo |
 | `data/insight/reports/*` | insight pack + query outputs | regenerable via the commands above |

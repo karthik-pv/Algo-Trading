@@ -1716,7 +1716,7 @@ def compute_momentor_ages(bars):
 
 
 # ---------------------------------------------------------------------------
-# Query: 235PX - 5m PVT cross-up with 2PM+3PM up (sign-based, carried values);
+# Query: 23PM_5PX - 5m PVT cross-up with 2PM+3PM up (sign-based, carried values);
 # lives while the 1m MACD_2452 up-swing running at the trigger completes
 # (ends at the first 1m cross-down at/after the trigger; if 1m MACD is still
 # down at trigger, the next cross-up's swing is "the" swing).
@@ -1763,8 +1763,8 @@ def px_5m_band(b5):
     return ">5E4"
 
 
-def q_235px(bars_5m, bars_1m):
-    """Detect 235PX episodes.
+def q_23pm_5px(bars_5m, bars_1m):
+    """Detect 23PM_5PX episodes.
 
     Trigger: 5m PVT sign -1 -> +1 (contiguous same-day bars) with 2PM+3PM fully
     up at the trigger bar (PVT sign +1 AND forward-filled MACD_2452 up on both
@@ -1842,7 +1842,7 @@ def q_235px(bars_5m, bars_1m):
     pts_all = sorted(e["pts"] for e in episodes)
     out = {
         "definition": (
-            "235PX = 2PM+3PM uptrending (PVT sign +1 AND MACD_2452 up, carried "
+            "23PM_5PX = 2PM+3PM uptrending (PVT sign +1 AND MACD_2452 up, carried "
             "no-repaint values) at a 5m PVT cross-up (-1 -> +1, same-day contiguous "
             "bars, stamps <= 15:25). Exit = first 5m close below its own 5m EMA4 "
             "(price loses the micro-mean); EOD flat at 15:25 if unbroken. "
@@ -1955,8 +1955,8 @@ def main(argv=None):
                     help="query: 1m EMA price action joined to 5m-file HTF regime")
     ap.add_argument("--q23pm", action="store_true",
                     help="query: 23PM/235PM setup - where rises start (1m EMAs)")
-    ap.add_argument("--q235px", action="store_true",
-                    help="query: 235PX - 5m PVT cross-up in 2PM+3PM up, EMA4 exit")
+    ap.add_argument("--q23pm5px", action="store_true",
+                    help="query: 23PM_5PX - 5m PVT cross-up in 2PM+3PM up, EMA4 exit")
     ap.add_argument("--q2pm3px", action="store_true",
                     help="query: 2PM_3PX - 30m PVT cross-up in 2PM up, 5m EMA21 exit")
     ap.add_argument("--csv-1m", default=os.path.join("data", "insight", "csv", "NSE_NIFTY1!, 1m.csv"))
@@ -1989,10 +1989,10 @@ def main(argv=None):
         with open(os.path.join("data", "insight", "reports", "q23pm.json"), "w") as f:
             json.dump(res, f, indent=1)
         print(json.dumps(res, indent=1))
-    if args.q235px:
+    if args.q23pm5px:
         bars = load_bars(args.csv)
         one_m = load_1m_bars(args.csv_1m)
-        print(json.dumps(q_235px(bars, one_m), indent=1))
+        print(json.dumps(q_23pm_5px(bars, one_m), indent=1))
     if args.q2pm3px:
         bars = load_bars(args.csv)
         one_m = load_1m_bars(args.csv_1m)
