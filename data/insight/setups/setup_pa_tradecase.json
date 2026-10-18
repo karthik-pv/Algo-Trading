@@ -21,7 +21,7 @@
    "16 Sep 25-11:40-12:05",
    3,
    0.01,
-   "3PMS",
+   "3SPM",
    "5m phase-level record - 1SPX_15PM trigger not verifiable (no 1m data): rise of 3.1 pts (MFE 5.7), 0 5m-E21 closing-dips; retrace low at 10:50."
   ],
   [
@@ -33,7 +33,7 @@
    "16 Sep 25-12:25-13:00",
    2,
    0.01,
-   "3PMS",
+   "3SPM",
    "5m phase-level record - 1SPX_15PM trigger not verifiable (no 1m data): rise of 1.9 pts (MFE 7.6), 0 5m-E21 closing-dips; retrace low at 11:00."
   ],
   [
@@ -69,7 +69,7 @@
    "17 Sep 25-11:00-11:10",
    1,
    0.0,
-   "3MSO",
+   "3SMO",
    "5m phase-level record - 1SPX_15PM trigger not verifiable (no 1m data): rise of 0.9 pts (MFE 5.1), 0 5m-E21 closing-dips; retrace low at 09:30."
   ],
   [
@@ -93,7 +93,7 @@
    "03 Oct 25-14:40-15:25",
    19,
    0.07,
-   "3PS_2M",
+   "3SP_2M",
    "5m phase-level record - 1SPX_15PM trigger not verifiable (no 1m data): rise of 18.6 pts (MFE 30.7), 0 5m-E21 closing-dips; retrace low at 14:15."
   ],
   [
@@ -105,7 +105,7 @@
    "06 Oct 25-09:15-09:25",
    -2,
    -0.01,
-   "3PSO_2M",
+   "3SPO_2M",
    "5m phase-level record - 1SPX_15PM trigger not verifiable (no 1m data): rise of -1.5 pts (MFE 25.9), 0 5m-E21 closing-dips; no pre-phase dip."
   ],
   [
@@ -117,7 +117,7 @@
    "06 Oct 25-09:40-11:50",
    69,
    0.28,
-   "3PSO_2M",
+   "3SPO_2M",
    "5m phase-level record - 1SPX_15PM trigger not verifiable (no 1m data): rise of 69.3 pts (MFE 86.9), 0 5m-E21 closing-dips; retrace low at 09:30."
   ],
   [
@@ -249,7 +249,7 @@
    "23 Oct 25-09:40-10:50",
    -23,
    -0.09,
-   "3MSO",
+   "3SMO",
    "5m phase-level record - 1SPX_15PM trigger not verifiable (no 1m data): rise of -23.1 pts (MFE 17.3), 0 5m-E21 closing-dips; retrace low at 09:15."
   ],
   [
@@ -285,7 +285,7 @@
    "17 Nov 25-10:40-10:45",
    5,
    0.02,
-   "3PMSO_2P_DP",
+   "3SPMO_2P_DP",
    "5m phase-level record - 1SPX_15PM trigger not verifiable (no 1m data): rise of 5.1 pts (MFE 13.5), 0 5m-E21 closing-dips; retrace low at 09:15. micro phase (5-10 min)."
   ],
   [
@@ -309,7 +309,7 @@
    "19 Nov 25-13:15-13:30",
    -18,
    -0.07,
-   "3PMS_2P_DM",
+   "3SPM_2P_DM",
    "5m phase-level record - 1SPX_15PM trigger not verifiable (no 1m data): rise of -17.9 pts (MFE 8.3), 0 5m-E21 closing-dips; retrace low at 11:45."
   ],
   [
@@ -321,7 +321,7 @@
    "19 Nov 25-14:15-15:00",
    -1,
    0.0,
-   "3PMS_2P_DM",
+   "3SPM_2P_DM",
    "5m phase-level record - 1SPX_15PM trigger not verifiable (no 1m data): rise of -0.8 pts (MFE 16.3), 0 5m-E21 closing-dips; retrace low at 13:40."
   ],
   [
@@ -345,7 +345,7 @@
    "20 Nov 25-10:10-11:40",
    46,
    0.18,
-   "3PMSO_2P_DM",
+   "3SPMO_2P_DM",
    "5m phase-level record - 1SPX_15PM trigger not verifiable (no 1m data): rise of 46.0 pts (MFE 52.1), 0 5m-E21 closing-dips; retrace low at 09:15."
   ],
   [
@@ -357,7 +357,7 @@
    "20 Nov 25-12:40-12:50",
    2,
    0.01,
-   "3MS_2P_DM",
+   "3SM_2P_DM",
    "5m phase-level record - 1SPX_15PM trigger not verifiable (no 1m data): rise of 1.9 pts (MFE 7.4), 0 5m-E21 closing-dips; retrace low at 11:15."
   ],
   [
@@ -393,7 +393,7 @@
    "19 Dec 25-15:10-15:25",
    4,
    0.01,
-   "3PS_2PM",
+   "3SP_2PM",
    "5m phase-level record - 1SPX_15PM trigger not verifiable (no 1m data): rise of 3.6 pts (MFE 8.4), 0 5m-E21 closing-dips; retrace low at 14:00."
   ],
   [
@@ -513,7 +513,7 @@
    "28 Jan 26-11:10-11:35",
    14,
    0.05,
-   "3PMSO_2PM",
+   "3SPMO_2PM",
    "5m phase-level record - 1SPX_15PM trigger not verifiable (no 1m data): rise of 13.5 pts (MFE 41.9), 0 5m-E21 closing-dips; retrace low at 10:10."
   ],
   [
@@ -537,7 +537,7 @@
    "29 Jan 26-12:45-15:10",
    139,
    0.55,
-   "3PS",
+   "3SP",
    "5m phase-level record - 1SPX_15PM trigger not verifiable (no 1m data): rise of 139.2 pts (MFE 168.5), 0 5m-E21 closing-dips; retrace low at 11:50."
   ],
   [
@@ -573,7 +573,7 @@
    "09 Feb 26-10:10-11:25",
    57,
    0.22,
-   "3PMSO_DP",
+   "3SPMO_DP",
    "5m phase-level record - 1SPX_15PM trigger not verifiable (no 1m data): rise of 57.3 pts (MFE 64.2), 0 5m-E21 closing-dips; retrace low at 09:15."
   ],
   [
@@ -645,7 +645,7 @@
    "02 Apr 26-14:40-15:25",
    90,
    0.4,
-   "3PMSO",
+   "3SPMO",
    "5m phase-level record - 1SPX_15PM trigger not verifiable (no 1m data): rise of 90.0 pts (MFE 153.7), 0 5m-E21 closing-dips; retrace low at 13:10."
   ],
   [
@@ -657,7 +657,7 @@
    "06 Apr 26-09:15-09:20",
    -14,
    -0.06,
-   "3PMSO",
+   "3SPMO",
    "5m phase-level record - 1SPX_15PM trigger not verifiable (no 1m data): rise of -13.8 pts (MFE 56.7), 0 5m-E21 closing-dips; no pre-phase dip. micro phase (5-10 min)."
   ],
   [
@@ -669,7 +669,7 @@
    "06 Apr 26-09:35-09:35",
    62,
    0.27,
-   "3PMSO",
+   "3SPMO",
    "5m phase-level record - 1SPX_15PM trigger not verifiable (no 1m data): rise of 0.0 pts (MFE 51.9), 0 5m-E21 closing-dips; retrace low at 09:30. micro phase (5-10 min)."
   ],
   [
@@ -717,7 +717,7 @@
    "08 Apr 26-09:15-11:10",
    148,
    0.62,
-   "3PSO_DP",
+   "3SPO_DP",
    "5m phase-level record - 1SPX_15PM trigger not verifiable (no 1m data): rise of 147.8 pts (MFE 165.9), 0 5m-E21 closing-dips; no pre-phase dip."
   ],
   [
@@ -729,7 +729,7 @@
    "15 Apr 26-10:40-11:00",
    -25,
    -0.1,
-   "3PMSO_2P_DPM",
+   "3SPMO_2P_DPM",
    "5m phase-level record - 1SPX_15PM trigger not verifiable (no 1m data): rise of -25.0 pts (MFE 15.8), 0 5m-E21 closing-dips; retrace low at 09:15."
   ],
   [
@@ -765,7 +765,7 @@
    "21 Apr 26-11:10-11:40",
    -23,
    -0.09,
-   "3PMSO",
+   "3SPMO",
    "5m phase-level record - 1SPX_15PM trigger not verifiable (no 1m data): rise of -22.7 pts (MFE 7.7), 0 5m-E21 closing-dips; retrace low at 09:40."
   ],
   [
@@ -789,7 +789,7 @@
    "06 May 26-15:25-15:25",
    10,
    0.04,
-   "3MSO_2PM",
+   "3SMO_2PM",
    "5m phase-level record - 1SPX_15PM trigger not verifiable (no 1m data): rise of 0.0 pts (MFE 13.3), 0 5m-E21 closing-dips; retrace low at 13:55. micro phase (5-10 min)."
   ],
   [
@@ -825,7 +825,7 @@
    "21 May 26-09:15-10:30",
    -33,
    -0.14,
-   "3PMSO_2P",
+   "3SPMO_2P",
    "5m phase-level record - 1SPX_15PM trigger not verifiable (no 1m data): rise of -33.1 pts (MFE 44.2), 0 5m-E21 closing-dips; no pre-phase dip."
   ],
   [
@@ -837,7 +837,7 @@
    "22 May 26-09:40-11:15",
    19,
    0.08,
-   "3PMSO_2P",
+   "3SPMO_2P",
    "5m phase-level record - 1SPX_15PM trigger not verifiable (no 1m data): rise of 19.0 pts (MFE 60.2), 0 5m-E21 closing-dips; retrace low at 09:15."
   ],
   [
@@ -849,7 +849,7 @@
    "22 May 26-11:50-12:00",
    -9,
    -0.04,
-   "3PMSO_2P",
+   "3SPMO_2P",
    "5m phase-level record - 1SPX_15PM trigger not verifiable (no 1m data): rise of -9.4 pts (MFE 5.9), 0 5m-E21 closing-dips; retrace low at 11:30."
   ],
   [
@@ -1005,7 +1005,7 @@
    "07 Jul 26-11:40-12:10",
    6,
    0.02,
-   "3MSO",
+   "3SMO",
    "5m phase-level record - 1SPX_15PM trigger not verifiable (no 1m data): rise of 5.5 pts (MFE 19.4), 0 5m-E21 closing-dips; retrace low at 10:45."
   ],
   [
@@ -1017,7 +1017,7 @@
    "17 Jul 26-15:10-15:25",
    23,
    0.1,
-   "3PMSO_2M",
+   "3SPMO_2M",
    "5m phase-level record - 1SPX_15PM trigger not verifiable (no 1m data): rise of 23.4 pts (MFE 33.1), 0 5m-E21 closing-dips; retrace low at 13:50."
   ],
   [
@@ -1029,7 +1029,7 @@
    "20 Jul 26-14:40-15:00",
    0,
    0.0,
-   "3PMS_2M",
+   "3SPM_2M",
    "5m phase-level record - 1SPX_15PM trigger not verifiable (no 1m data): rise of -0.0 pts (MFE 15.6), 0 5m-E21 closing-dips; retrace low at 13:10."
   ],
   [
@@ -1041,7 +1041,7 @@
    "20 Jul 26-15:10-15:25",
    12,
    0.05,
-   "3PMS_2M",
+   "3SPM_2M",
    "5m phase-level record - 1SPX_15PM trigger not verifiable (no 1m data): rise of 12.2 pts (MFE 14.3), 0 5m-E21 closing-dips; retrace low at 13:40."
   ],
   [
@@ -1113,7 +1113,7 @@
    "31 Jul 26-09:40-11:00",
    19,
    0.08,
-   "3MSO_DPM",
+   "3SMO_DPM",
    "5m phase-level record - 1SPX_15PM trigger not verifiable (no 1m data): rise of 19.0 pts (MFE 24.8), 0 5m-E21 closing-dips; retrace low at 09:15."
   ],
   [
@@ -1125,7 +1125,7 @@
    "31 Jul 26-12:25-13:35",
    21,
    0.09,
-   "3MS_DPM",
+   "3SM_DPM",
    "5m phase-level record - 1SPX_15PM trigger not verifiable (no 1m data): rise of 21.3 pts (MFE 40.5), 0 5m-E21 closing-dips; retrace low at 11:10."
   ],
   [
@@ -1173,7 +1173,7 @@
    "06 Aug 26-11:40-11:40",
    -19,
    -0.08,
-   "3MS",
+   "3SM",
    "5m phase-level record - 1SPX_15PM trigger not verifiable (no 1m data): rise of 0.0 pts (MFE 19.3), 0 5m-E21 closing-dips; retrace low at 10:50. micro phase (5-10 min)."
   ],
   [
@@ -1269,7 +1269,7 @@
    "23 Sep 26-11:15-12:45",
    21,
    0.09,
-   "3PMS_2P",
+   "3SPM_2P",
    "In-phase triggers 11:23, 11:56-12:00, 12:31-12:35. Phase rose 15 pts (MFE 35); 7 dips held; no entry trigger (alignment formed off open drive)"
   ],
   [
@@ -1317,7 +1317,7 @@
    "13 Oct 26-10:10-10:55",
    -62,
    -0.27,
-   "3PMSO_2P",
+   "3SPMO_2P",
    "Entry trigger 09:56-10:01. Phase -47 pts (MFE 11) - 23PM_5PM state formed on a ROLLOVER while price fell. Biggest warning row: check 5m structure before trusting alignment"
   ],
   [
@@ -1329,7 +1329,7 @@
    "13 Oct 26-14:15-15:35",
    188,
    0.83,
-   "3PMS_2P",
+   "3SPM_2P",
    "Entry trigger 13:53-13:55; in-phase triggers 14:17-14:19, 15:05-15:09. Phase ROSE 198 pts (MFE 221); 1 dip held. The trend-day monster off 1E100"
   ],
   [
@@ -1341,7 +1341,7 @@
    "15 Oct 26-10:10-12:00",
    77,
    0.34,
-   "3PMSO",
+   "3SPMO",
    "No entry trigger detected (phase formed off open reclaim). Phase ran 92 pts (MFE 106); 2 dips held. Triggerless momentum phase - valid 23PM_5PM for review"
   ],
   [
@@ -1401,7 +1401,7 @@
    "03 Oct 25-14:35-15:15",
    35,
    0.14,
-   "3PS_2M",
+   "3SP_2M",
    "Machine-detected 23PM_5PX - 5m PVT cross-up with 2PM+3PM up (sign-based, carried no-repaint); exit = first 5m close below 5m EMA4. Entry 24965.5, exit 25000.7, 40 min."
   ],
   [
@@ -1413,7 +1413,7 @@
    "06 Oct 25-09:40-10:45",
    44,
    0.17,
-   "3PSO_2M",
+   "3SPO_2M",
    "Machine-detected 23PM_5PX - 5m PVT cross-up with 2PM+3PM up (sign-based, carried no-repaint); exit = first 5m close below 5m EMA4. Entry 25028.1, exit 25071.6, 65 min."
   ],
   [
@@ -1473,7 +1473,7 @@
    "20 Oct 25-12:00-12:20",
    2,
    0.01,
-   "3PS",
+   "3SP",
    "Machine-detected 23PM_5PX - 5m PVT cross-up with 2PM+3PM up (sign-based, carried no-repaint); exit = first 5m close below 5m EMA4. Entry 25888.5, exit 25890.4, 20 min."
   ],
   [
@@ -1557,7 +1557,7 @@
    "17 Nov 25-11:55-12:25",
    3,
    0.01,
-   "3PMS_2P_DP",
+   "3SPM_2P_DP",
    "Machine-detected 23PM_5PX - 5m PVT cross-up with 2PM+3PM up (sign-based, carried no-repaint); exit = first 5m close below 5m EMA4. Entry 26036.0, exit 26039.0, 30 min."
   ],
   [
@@ -1569,7 +1569,7 @@
    "17 Nov 25-15:05-15:25",
    -1,
    0.0,
-   "3MS_2P_DP",
+   "3SM_2P_DP",
    "Machine-detected 23PM_5PX - 5m PVT cross-up with 2PM+3PM up (sign-based, carried no-repaint); exit = first 5m close below 5m EMA4. Entry 26060.8, exit 26059.8, 20 min. Swing unbroken to close - EOD flat."
   ],
   [
@@ -1581,7 +1581,7 @@
    "19 Nov 25-13:45-14:55",
    36,
    0.14,
-   "3PMS_2P_DM",
+   "3SPM_2P_DM",
    "Machine-detected 23PM_5PX - 5m PVT cross-up with 2PM+3PM up (sign-based, carried no-repaint); exit = first 5m close below 5m EMA4. Entry 26041.8, exit 26077.4, 70 min."
   ],
   [
@@ -1977,7 +1977,7 @@
    "06 Apr 26-09:35-09:40",
    -39,
    -0.17,
-   "3PMSO",
+   "3SPMO",
    "Machine-detected 23PM_5PX - 5m PVT cross-up with 2PM+3PM up (sign-based, carried no-repaint); exit = first 5m close below 5m EMA4. Entry 22774.6, exit 22735.4, 5 min."
   ],
   [
@@ -1989,7 +1989,7 @@
    "06 Apr 26-10:15-10:25",
    -18,
    -0.08,
-   "3PMSO",
+   "3SPMO",
    "Machine-detected 23PM_5PX - 5m PVT cross-up with 2PM+3PM up (sign-based, carried no-repaint); exit = first 5m close below 5m EMA4. Entry 22734.6, exit 22717.0, 10 min."
   ],
   [
@@ -2085,7 +2085,7 @@
    "21 Apr 26-13:20-13:35",
    3,
    0.01,
-   "3PMS",
+   "3SPM",
    "Machine-detected 23PM_5PX - 5m PVT cross-up with 2PM+3PM up (sign-based, carried no-repaint); exit = first 5m close below 5m EMA4. Entry 24551.6, exit 24554.9, 15 min."
   ],
   [
@@ -2193,7 +2193,7 @@
    "22 May 26-11:40-12:00",
    10,
    0.04,
-   "3PMSO_2P",
+   "3SPMO_2P",
    "Machine-detected 23PM_5PX - 5m PVT cross-up with 2PM+3PM up (sign-based, carried no-repaint); exit = first 5m close below 5m EMA4. Entry 23800.2, exit 23809.7, 20 min."
   ],
   [
@@ -2205,7 +2205,7 @@
    "22 May 26-12:45-13:05",
    16,
    0.07,
-   "3PMSO_2P",
+   "3SPMO_2P",
    "Machine-detected 23PM_5PX - 5m PVT cross-up with 2PM+3PM up (sign-based, carried no-repaint); exit = first 5m close below 5m EMA4. Entry 23809.6, exit 23825.1, 20 min."
   ],
   [
@@ -2217,7 +2217,7 @@
    "25 May 26-13:00-13:35",
    17,
    0.07,
-   "3PS_DP",
+   "3SP_DP",
    "Machine-detected 23PM_5PX - 5m PVT cross-up with 2PM+3PM up (sign-based, carried no-repaint); exit = first 5m close below 5m EMA4. Entry 23972.0, exit 23989.2, 35 min."
   ],
   [
@@ -2409,7 +2409,7 @@
    "20 Jul 26-15:10-15:25",
    12,
    0.05,
-   "3PMS_2M",
+   "3SPM_2M",
    "Machine-detected 23PM_5PX - 5m PVT cross-up with 2PM+3PM up (sign-based, carried no-repaint); exit = first 5m close below 5m EMA4. Entry 24254.7, exit 24266.9, 15 min. Swing unbroken to close - EOD flat."
   ],
   [
@@ -2421,7 +2421,7 @@
    "29 Jul 26-13:05-13:25",
    3,
    0.01,
-   "3PS_2PM_DP",
+   "3SP_2PM_DP",
    "Machine-detected 23PM_5PX - 5m PVT cross-up with 2PM+3PM up (sign-based, carried no-repaint); exit = first 5m close below 5m EMA4. Entry 24305.5, exit 24308.4, 20 min."
   ],
   [
@@ -2541,7 +2541,7 @@
    "06 Aug 26-12:00-12:10",
    -16,
    -0.07,
-   "3MS",
+   "3SM",
    "Machine-detected 23PM_5PX - 5m PVT cross-up with 2PM+3PM up (sign-based, carried no-repaint); exit = first 5m close below 5m EMA4. Entry 24744.8, exit 24728.3, 10 min. 1m MACD xdn was 12:10 (-13.6 pts)."
   ],
   [
@@ -2553,7 +2553,7 @@
    "06 Aug 26-12:35-12:40",
    -4,
    -0.02,
-   "3MS",
+   "3SM",
    "Machine-detected 23PM_5PX - 5m PVT cross-up with 2PM+3PM up (sign-based, carried no-repaint); exit = first 5m close below 5m EMA4. Entry 24734.8, exit 24730.6, 5 min. 1m MACD xdn was 12:49 (-7.8 pts)."
   ],
   [
@@ -2649,7 +2649,7 @@
    "13 Oct 26-11:40-11:45",
    -20,
    -0.09,
-   "3PMS_2P",
+   "3SPM_2P",
    "Machine-detected 23PM_5PX - 5m PVT cross-up with 2PM+3PM up (sign-based, carried no-repaint); exit = first 5m close below 5m EMA4. Entry 22605.2, exit 22584.7, 5 min. 1m MACD xdn was 11:48 (-26.4 pts)."
   ],
   [
@@ -2721,7 +2721,7 @@
    "03 Oct 25-14:15-14:20",
    2,
    0.01,
-   "3PS_2M",
+   "3SP_2M",
    "Machine-detected 2PM_3PX - 30m PVT cross-up with 2PM up (2H PVT>0 & 2H MACD2 up, carried no-repaint); exit = first 5m close below 5m EMA21. Entry 24929.3, exit 24931.3, 5 min."
   ],
   [
@@ -2745,7 +2745,7 @@
    "28 Nov 25-09:45-11:20",
    15,
    0.06,
-   "3PS_DP",
+   "3SP_DP",
    "Machine-detected 2PM_3PX - 30m PVT cross-up with 2PM up (2H PVT>0 & 2H MACD2 up, carried no-repaint); exit = first 5m close below 5m EMA21. Entry 26412.4, exit 26427.3, 95 min."
   ],
   [
@@ -2769,7 +2769,7 @@
    "29 Jan 26-12:45-15:25",
    137,
    0.54,
-   "3PS",
+   "3SP",
    "Machine-detected 2PM_3PX - 30m PVT cross-up with 2PM up (2H PVT>0 & 2H MACD2 up, carried no-repaint); exit = first 5m close below 5m EMA21. Entry 25396.2, exit 25533.6, 160 min. Swing unbroken to close - EOD flat."
   ],
   [
@@ -2781,7 +2781,7 @@
    "06 Feb 26-11:45-12:20",
    -38,
    -0.15,
-   "3PSO_DP",
+   "3SPO_DP",
    "Machine-detected 2PM_3PX - 30m PVT cross-up with 2PM up (2H PVT>0 & 2H MACD2 up, carried no-repaint); exit = first 5m close below 5m EMA21. Entry 25695.8, exit 25657.8, 35 min."
   ],
   [
@@ -2793,7 +2793,7 @@
    "06 Feb 26-13:45-15:25",
    73,
    0.28,
-   "3PS_DP",
+   "3SP_DP",
    "Machine-detected 2PM_3PX - 30m PVT cross-up with 2PM up (2H PVT>0 & 2H MACD2 up, carried no-repaint); exit = first 5m close below 5m EMA21. Entry 25658.1, exit 25730.8, 100 min. Swing unbroken to close - EOD flat."
   ],
   [
@@ -2817,7 +2817,7 @@
    "02 Apr 26-13:45-15:25",
    139,
    0.62,
-   "3PS",
+   "3SP",
    "Machine-detected 2PM_3PX - 30m PVT cross-up with 2PM up (2H PVT>0 & 2H MACD2 up, carried no-repaint); exit = first 5m close below 5m EMA21. Entry 22621.0, exit 22760.3, 100 min. Swing unbroken to close - EOD flat."
   ],
   [
@@ -2853,7 +2853,7 @@
    "17 Apr 26-09:45-12:35",
    80,
    0.33,
-   "3PSO",
+   "3SPO",
    "Machine-detected 2PM_3PX - 30m PVT cross-up with 2PM up (2H PVT>0 & 2H MACD2 up, carried no-repaint); exit = first 5m close below 5m EMA21. Entry 24198.5, exit 24278.9, 170 min."
   ],
   [
@@ -2865,7 +2865,7 @@
    "27 May 26-09:45-09:55",
    -18,
    -0.08,
-   "3PSO_DPM",
+   "3SPO_DPM",
    "Machine-detected 2PM_3PX - 30m PVT cross-up with 2PM up (2H PVT>0 & 2H MACD2 up, carried no-repaint); exit = first 5m close below 5m EMA21. Entry 23954.3, exit 23936.1, 10 min."
   ],
   [
@@ -2889,7 +2889,7 @@
    "20 Jul 26-13:45-15:25",
    15,
    0.06,
-   "3PS_2M",
+   "3SP_2M",
    "Machine-detected 2PM_3PX - 30m PVT cross-up with 2PM up (2H PVT>0 & 2H MACD2 up, carried no-repaint); exit = first 5m close below 5m EMA21. Entry 24251.9, exit 24266.9, 100 min. Swing unbroken to close - EOD flat."
   ],
   [
@@ -2901,7 +2901,7 @@
    "28 Aug 26-10:45-11:20",
    -15,
    -0.06,
-   "3PS_DP",
+   "3SP_DP",
    "Machine-detected 2PM_3PX - 30m PVT cross-up with 2PM up (2H PVT>0 & 2H MACD2 up, carried no-repaint); exit = first 5m close below 5m EMA21. Entry 24349.0, exit 24334.3, 35 min."
   ],
   [
@@ -2913,7 +2913,7 @@
    "28 Aug 26-15:15-15:25",
    15,
    0.06,
-   "3PS_DP",
+   "3SP_DP",
    "Machine-detected 2PM_3PX - 30m PVT cross-up with 2PM up (2H PVT>0 & 2H MACD2 up, carried no-repaint); exit = first 5m close below 5m EMA21. Entry 24331.7, exit 24346.3, 10 min. Swing unbroken to close - EOD flat."
   ],
   [
@@ -6873,7 +6873,7 @@
    "29 Sep 25-14:45-15:25",
    17,
    0.07,
-   "3MS",
+   "3SM",
    "Machine-detected 2PM_3PX downtrend - 30m PVT cross-down with 2PM down (2H PVT<0 & 2H MACD2 down, carried no-repaint); exit = first 5m close above 5m EMA21. Entry 24711.8, exit 24695.1, 40 min. Swing unbroken to close - EOD flat."
   ],
   [
@@ -7017,7 +7017,7 @@
    "04 Jun 26-12:45-14:00",
    -8,
    -0.04,
-   "3MS",
+   "3SM",
    "Machine-detected 2PM_3PX downtrend - 30m PVT cross-down with 2PM down (2H PVT<0 & 2H MACD2 down, carried no-repaint); exit = first 5m close above 5m EMA21. Entry 23444.6, exit 23453.0, 75 min."
   ],
   [
@@ -7077,7 +7077,7 @@
    "01 Sep 26-13:15-15:25",
    91,
    0.38,
-   "3MS",
+   "3SM",
    "Machine-detected 2PM_3PX downtrend - 30m PVT cross-down with 2PM down (2H PVT<0 & 2H MACD2 down, carried no-repaint); exit = first 5m close above 5m EMA21. Entry 24187.1, exit 24095.9, 130 min. Swing unbroken to close - EOD flat."
   ],
   [
@@ -7137,7 +7137,7 @@
    "10 Nov 25-11:15",
    -37,
    -0.14,
-   "3PMS_2P",
+   "3SPM_2P",
    "Machine-detected 2PX_3PM (up) - 2H PVT cross-up with both 2H MACDs yet to cross (both still down) (PVT leads); 30m already up. Entry 25732.3. Fwd 15/30/60m/EOD: +4.5/-6.9/-12.9/-37.3."
   ],
   [
@@ -7149,7 +7149,7 @@
    "05 Dec 25-11:15",
    49,
    0.19,
-   "3PSO_2P",
+   "3SPO_2P",
    "Machine-detected 2PX_3PMO (up) - 2H PVT cross-up with both 2H MACDs yet to cross (both still down) (PVT leads); 30m already up. Entry 26284.8. Fwd 15/30/60m/EOD: +4.7/+1.6/+7.5/+49.3."
   ],
   [
@@ -7173,7 +7173,7 @@
    "22 Jan 26-11:15",
    131,
    0.52,
-   "3PMSO_2P",
+   "3SPMO_2P",
    "Machine-detected 2PX_3PMO (up) - 2H PVT cross-up with both 2H MACDs yet to cross (both still down) (PVT leads); 30m already up. Entry 25246.5. Fwd 15/30/60m/EOD: +23.2/-20.7/+18.6/+130.9."
   ],
   [
@@ -7197,7 +7197,7 @@
    "27 Apr 26-15:15",
    2,
    0.01,
-   "3PMSO_2P",
+   "3SPMO_2P",
    "Machine-detected 2PX_3PMO (up) - 2H PVT cross-up with both 2H MACDs yet to cross (both still down) (PVT leads); 30m already up. Entry 24121.6. Fwd 15/30/60m/EOD: -/-/-/+2.4."
   ],
   [
@@ -7209,7 +7209,7 @@
    "14 May 26-13:15",
    -15,
    -0.06,
-   "3PSO_2P",
+   "3SPO_2P",
    "Machine-detected 2PX_3PMO (up) - 2H PVT cross-up with both 2H MACDs yet to cross (both still down) (PVT leads); 30m already up. Entry 23737.2. Fwd 15/30/60m/EOD: +2.3/+26.6/+19.7/-15.4."
   ],
   [
@@ -7221,7 +7221,7 @@
    "24 Jun 26-11:15",
    73,
    0.3,
-   "3PSO_2P",
+   "3SPO_2P",
    "Machine-detected 2PX_3PO (up) - 2H PVT cross-up with both 2H MACDs yet to cross (both still down) (PVT leads); 30m already up. Entry 23986.6. Fwd 15/30/60m/EOD: -7.0/+32.1/+12.1/+72.7."
   ],
   [
@@ -7245,7 +7245,7 @@
    "20 Aug 26-11:15",
    30,
    0.12,
-   "3PMSO_2P",
+   "3SPMO_2P",
    "Machine-detected 2PX_3PMO (up) - 2H PVT cross-up with both 2H MACDs yet to cross (both still down) (PVT leads); 30m already up. Entry 24266.8. Fwd 15/30/60m/EOD: +6.7/+16.7/+22.5/+30.2."
   ],
   [
@@ -7257,7 +7257,7 @@
    "09 Oct 26-11:15",
    18,
    0.08,
-   "3PMSO_2P",
+   "3SPMO_2P",
    "Machine-detected 2PX_3PMO (up) - 2H PVT cross-up with both 2H MACDs yet to cross (both still down) (PVT leads); 30m already up. Entry 22595.5. Fwd 15/30/60m/EOD: -9.2/-32.2/-53.7/+17.6."
   ],
   [
@@ -7413,7 +7413,7 @@
    "03 Oct 25-14:15-15:25",
    79,
    0.32,
-   "3PS_2M",
+   "3SP_2M",
    "Machine-detected 2PM_3PX_5PM (up) - 2H fully confirmed (PVT+MACD1+MACD2), entry at the 30m PVT cross; exit = 5m MACD2 cross against. Entry 24929.3, exit 25007.9, 70 min. 5m MACD2 against at entry. Swing unbroken to close - EOD flat."
   ],
   [
@@ -7437,7 +7437,7 @@
    "28 Nov 25-09:45-11:25",
    5,
    0.02,
-   "3PS_DP",
+   "3SP_DP",
    "Machine-detected 2PM_3PX_5PM (up) - 2H fully confirmed (PVT+MACD1+MACD2), entry at the 30m PVT cross; exit = 5m MACD2 cross against. Entry 26412.4, exit 26417.8, 100 min. 5m MACD2 in favour at entry."
   ],
   [
@@ -7461,7 +7461,7 @@
    "29 Jan 26-12:45-15:15",
    140,
    0.55,
-   "3PS",
+   "3SP",
    "Machine-detected 2PM_3PX_5PM (up) - 2H fully confirmed (PVT+MACD1+MACD2), entry at the 30m PVT cross; exit = 5m MACD2 cross against. Entry 25396.2, exit 25535.9, 150 min. 5m MACD2 in favour at entry."
   ],
   [
@@ -7497,7 +7497,7 @@
    "27 May 26-09:45-11:55",
    40,
    0.17,
-   "3PSO_DPM",
+   "3SPO_DPM",
    "Machine-detected 2PM_3PX_5PM (up) - 2H fully confirmed (PVT+MACD1+MACD2), entry at the 30m PVT cross; exit = 5m MACD2 cross against. Entry 23954.3, exit 23994.2, 130 min. 5m MACD2 in favour at entry."
   ],
   [
@@ -7509,7 +7509,7 @@
    "20 Jul 26-13:45-15:25",
    15,
    0.06,
-   "3PS_2M",
+   "3SP_2M",
    "Machine-detected 2PM_3PX_5PM (up) - 2H fully confirmed (PVT+MACD1+MACD2), entry at the 30m PVT cross; exit = 5m MACD2 cross against. Entry 24251.9, exit 24266.9, 100 min. 5m MACD2 in favour at entry. Swing unbroken to close - EOD flat."
   ],
   [
@@ -7521,7 +7521,7 @@
    "28 Aug 26-10:45-11:25",
    -31,
    -0.13,
-   "3PS_DP",
+   "3SP_DP",
    "Machine-detected 2PM_3PX_5PM (up) - 2H fully confirmed (PVT+MACD1+MACD2), entry at the 30m PVT cross; exit = 5m MACD2 cross against. Entry 24349.0, exit 24318.1, 40 min. 5m MACD2 in favour at entry."
   ],
   [
@@ -7545,7 +7545,7 @@
    "29 Sep 25-14:45-15:25",
    17,
    0.07,
-   "3MS",
+   "3SM",
    "Machine-detected 2PM_3PX_5PM (down) - 2H fully confirmed (PVT+MACD1+MACD2), entry at the 30m PVT cross; exit = 5m MACD2 cross against. Entry 24711.8, exit 24695.1, 40 min. 5m MACD2 against at entry. Swing unbroken to close - EOD flat."
   ],
   [
@@ -7653,7 +7653,7 @@
    "04 Jun 26-12:45-14:10",
    -36,
    -0.16,
-   "3MS",
+   "3SM",
    "Machine-detected 2PM_3PX_5PM (down) - 2H fully confirmed (PVT+MACD1+MACD2), entry at the 30m PVT cross; exit = 5m MACD2 cross against. Entry 23444.6, exit 23480.9, 85 min. 5m MACD2 in favour at entry."
   ],
   [
@@ -7689,7 +7689,7 @@
    "01 Sep 26-13:15-15:25",
    91,
    0.38,
-   "3MS",
+   "3SM",
    "Machine-detected 2PM_3PX_5PM (down) - 2H fully confirmed (PVT+MACD1+MACD2), entry at the 30m PVT cross; exit = 5m MACD2 cross against. Entry 24187.1, exit 24095.9, 130 min. 5m MACD2 in favour at entry. Swing unbroken to close - EOD flat."
   ],
   [

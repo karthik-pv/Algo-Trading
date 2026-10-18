@@ -1730,13 +1730,13 @@ PX_LAST_1M = "15:29"    # last tradeable 1m bar stamp
 
 
 def px_momentor_string(mom, date, hhmm):
-    """Render Momentors token string (3/2/D TF tokens, PMSO letters) for a bar.
-    30m-and-above only by definition - no 1m/5m elements in the column."""
+    """Render Momentors token string (3/2/D TF tokens) for a bar.
+    Letter sequence per TF: S P M O (user notation); 30m-and-above only."""
     d = mom.get((date, hhmm), {})
     toks = []
-    for tf, cmap in (("3", (("P", "3PX"), ("M", "3MX"), ("S", "3SX"), ("O", "3OX"))),
-                     ("2", (("P", "2PX"), ("M", "2MX"))),
-                     ("D", (("P", "DPX"), ("M", "DMX")))):
+    for tf, cmap in (("3", (("S", "3SX"), ("P", "3PX"), ("M", "3MX"), ("O", "3OX"))),
+                     ("2", (("S", "2SX"), ("P", "2PX"), ("M", "2MX"))),
+                     ("D", (("S", "DSX"), ("P", "DPX"), ("M", "DMX")))):
         letters = "".join(L for L, c in cmap if d.get(c) is not None)
         if letters:
             toks.append(tf + letters)
