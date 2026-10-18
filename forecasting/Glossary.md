@@ -45,6 +45,31 @@ differently anywhere, this file wins.
 | `3PMX` | 3P/3M1/3M2 crossed up/down, index 1–13 candles since cross, **same-day credit only** (next day degrades to 3PM if P/M2 still trending) | UT / DT |
 | `3PM` | 3P and 3M2 both up/down — no cross credit | UT / DT |
 
+## Set Ups — momentor states (per TF)
+
+State setups: name = `<TF><indicator>`. **Direction is not in the name** — it lives in the Trend column (UT/DT); the same setup name serves both directions. "Uptrending" defaults to the payload's Trend flags (Downtrending = the −1 mirror):
+
+| Set Up (5m) | Uptrending state |
+|---|---|
+| `5P` | 5m PVT uptrending — above zero (`PVTTrendFlag` +1) |
+| `5M1` | 5m MACD1 (12/26) UT — above signal (`Trend_1226` +1) |
+| `5M2` | 5m MACD2 (24/52) UT — above signal (`Trend_2452` +1) |
+| `5S` | 5m Stochastic UT — K>D (`KTrendFlag` +1) and rising (`StochPoiseFlag` +1) |
+| `5SPM` | **5S + 5P + 5M1 + 5M2 all uptrending** (full 5m alignment) |
+| `5O` | 5m VOC above the zero line — **no Downtrend mirror** (VOC-below-zero is not a setup) |
+
+Same pattern per TF:
+
+- **1m:** `1P` / `1M` / `1S` / `1SPM` / `1O` — **1M is always the 24/52 pair; 1M1/1M2 are never distinguished** → `1SPM` = 1m Stoch/PVT/MACD2 all uptrending
+- **2H:** `2P` / `2M1` / `2M2` / `2S` / `2SPM` / `2O`
+- **D:** `DP` / `DM1` / `DM2` / `DS` / `DSPM` / `DO`
+- **W:** `WP` / `WM1` / `WM2` / `WS` / `WSPM` / `WO`
+- **30m:** keeps its Forecast-session family (`3P` / `3S` / `3SP` / `3M1` / `3M2` / `3PM` / `3PMX`)
+
+These are **states** (no cross required) — the cross events (`5PX`, `3M2X`, `3MX` = both together, …) live in Cross-event naming above. Multi-TF playbook setups (23PM_5PX etc.) = logical ANDs of these states + a trigger cross.
+
+Data availability: `1O`/`5O`/`3OX`/`2OX` tracked (VOC in exports) · `DS` from the D file · `2S`/`DO` pending export plots · `WS` limited.
+
 ## Indicator shorthand
 
 - **PVT/MACD state per TF:** `DPM` (Daily) · `2PM` (2H) · `3PM` (30m) · `5PM` (5m) · `1PM` (1m) · `WPM` (Weekly)
