@@ -1810,16 +1810,16 @@ def px_current_1m_cross(one, date, entry_stamp, direction, lookback_days=10):
     return None, None
 
 
-def px_support_label(b1, t5, direction, leg_ext):
-    """Major-ladder Price Action label at the 1m PVT cross bar (user rule).
+def px_support_label(b1, t5, direction, leg_ext, move_ext):
+    """Price Action label (user rule): the MAJOR rungs the move reclaimed.
 
-    Major rungs: 1E100, 1E200, 5E50, 5E100, 5E200, DE100, DE200 - the minor
-    rungs (1E50/1E21/1E9) are never listed except the fallback. Label = the
-    majors the move has already RECLAIMED between the leg extreme and the
-    cross-bar close, in crossing order (up: ascending level; down: descending).
-    Fallback when no major was reclaimed: the 1E50/1E21 minor shelf."""
-    c = b1["close"]
-
+    Major rung set: 1E100, 1E200, 3E50, 3E100, 5E50, 5E100, 5E200 (the minor
+    rungs 1E50/1E21/1E9 never listed except the fallback). The move's range =
+    leg_ext (dip low at the 1m PVT cross / rally top for shorts) to move_ext
+    (farthest print of the containing 5m-PVT run: max close for up / min close
+    for down). A major rung inside that range was taken as support (up) / cap
+    (down) by this move. Listed in crossing order: up = ascending level, down =
+    descending. Fallback when no major is in range: the 1E50/1E21 minor shelf."""
     def g(*vals):
         for v in vals:
             if v is not None:
@@ -1828,22 +1828,36 @@ def px_support_label(b1, t5, direction, leg_ext):
 
     majors = [("1E100", g(b1.get("1m EMA100"), b1.get("ema100_1m"))),
               ("1E200", g(b1.get("1m EMA200"), b1.get("ema200_1m"))),
+              ("3E50", t5.get("30m_ema50")), ("3E100", t5.get("30m_ema100")),
               ("5E50", t5.get("5m_ema50")), ("5E100", t5.get("5m_ema100")),
-              ("5E200", t5.get("5m_ema200")), ("DE100", t5.get("1d_ema100")),
-              ("DE200", t5.get("1d_ema200"))]
+              ("5E200", t5.get("5m_ema200"))]
     if leg_ext is None:
-        leg_ext = c
-    if direction == "up":
-        reclaimed = sorted([(v, nm) for nm, v in majors
-                            if v is not None and leg_ext < v < c])
-        if reclaimed:
-            return "Rise from " + ", ".join(nm for _, nm in reclaimed)
-        return "Rise from 1E50, 1E21"
-    reclaimed = sorted([(v, nm) for nm, v in majors
-                        if v is not None and c < v < leg_ext], reverse=True)
-    if reclaimed:
-        return "Fall from " + ", ".join(nm for _, nm in reclaimed)
-    return "Fall from 1E50, 1E21"
+        leg_ext = b1["close"]
+    if move_ext is None:
+        move_ext = b1["close"]
+    lo, hi = (leg_ext, move_ext) if direction == "up" else (move_ext, leg_ext)
+    in_range = sorted([(v, nm) for nm, v in majors if v is not None and lo < v < hi],
+                      reverse=(direction == "down"))
+    if in_range:
+        return ("Rise from " if direction == "up" else "Fall from ") + \
+            ", ".join(nm for _, nm in in_range)
+    return ("Rise from 1E50, 1E21" if direction == "up" else "Fall from 1E50, 1E21")
+
+
+def px_run_move_ext(bars_5m, idx5, date, stamp, direction):
+    """Farthest print of the 5m-PVT run containing (date, stamp): walk forward
+    while the 5m PVT sign holds, track max close (up) / min close (down)."""
+    i = idx5.get((date, stamp))
+    if i is None:
+        return None
+    s = 1 if direction == "up" else -1
+    ext = bars_5m[i]["close"]
+    j = i
+    while j + 1 < len(bars_5m) and bars_5m[j + 1]["5m_pvt_sign"] == s:
+        j += 1
+        c = bars_5m[j]["close"]
+        ext = max(ext, c) if direction == "up" else min(ext, c)
+    return ext
 
 
 def q_23pm_5px(bars_5m, bars_1m, direction="up"):
@@ -1885,6 +1899,7 @@ def q_23pm_5px(bars_5m, bars_1m, direction="up"):
         return int((d1 - d0).total_seconds() // 60)
 
     stamp5 = {(x["date"], x["hhmm"]): x for x in bars_5m}
+    idx5 = {(x["date"], x["hhmm"]): i for i, x in enumerate(bars_5m)}
     episodes = []
     for run in contiguous_runs(bars_5m):
         day5 = [x for x in run if x["hhmm"] <= PX_LAST_5M]
@@ -1925,11 +1940,12 @@ def q_23pm_5px(bars_5m, bars_1m, direction="up"):
                 macd_note = {"time": ref["hhmm"], "pts": round(note_pts, 1) + 0.0}
             # Price Action (user rule): major level taken at the CURRENT 1m PVT cross
             x1, leg_ext = px_current_1m_cross(one, b["date"], b["hhmm"], direction)
+            mext = px_run_move_ext(bars_5m, idx5, b["date"], b["hhmm"], direction)
             if x1 is not None:
                 t5c = stamp5.get((x1["date"], session_stamp(x1["hhmm"], 5))) or b
-                pa, basis = px_support_label(x1, t5c, direction, leg_ext), "1m"
+                pa, basis = px_support_label(x1, t5c, direction, leg_ext, mext), "1m"
             else:
-                pa = px_support_label(b, b, direction, None)
+                pa = px_support_label(b, b, direction, None, mext)
                 basis = "5m"
             band = px_1m_band(seq1[0]) if seq1 else px_5m_band(b)
             episodes.append({
@@ -2006,6 +2022,7 @@ def q_2pm_3px(bars_5m, bars_1m, direction="up"):
         return int((d1 - d0).total_seconds() // 60)
 
     stamp5 = {(x["date"], x["hhmm"]): x for x in bars_5m}
+    idx5 = {(x["date"], x["hhmm"]): i for i, x in enumerate(bars_5m)}
     episodes = []
     for run in contiguous_runs(bars_5m):
         day5 = [x for x in run if x["hhmm"] <= PX_LAST_5M]
@@ -2032,11 +2049,12 @@ def q_2pm_3px(bars_5m, bars_1m, direction="up"):
                 else (entry - end_bar["close"])
             # Price Action (user rule): major level taken at the CURRENT 1m PVT cross
             x1, leg_ext = px_current_1m_cross(one, b["date"], b["hhmm"], direction)
+            mext = px_run_move_ext(bars_5m, idx5, b["date"], b["hhmm"], direction)
             if x1 is not None:
                 t5c = stamp5.get((x1["date"], session_stamp(x1["hhmm"], 5))) or b
-                pa, basis = px_support_label(x1, t5c, direction, leg_ext), "1m"
+                pa, basis = px_support_label(x1, t5c, direction, leg_ext, mext), "1m"
             else:
-                pa = px_support_label(b, b, direction, None)
+                pa = px_support_label(b, b, direction, None, mext)
                 basis = "5m"
             t1 = [x for x in one.get(b["date"], []) if x["hhmm"] >= b["hhmm"]]
             band = px_1m_band(t1[0]) if t1 else px_5m_band(b)
@@ -2115,6 +2133,7 @@ def q_23pm_5pm_down(bars_5m, bars_1m):
                 and b["5m_macd"] < b["5m_signal"])
 
     stamp5 = {(x["date"], x["hhmm"]): x for x in bars_5m}
+    idx5 = {(x["date"], x["hhmm"]): i for i, x in enumerate(bars_5m)}
     phases = []
     for run in contiguous_runs(bars_5m):
         day5 = [x for x in run if x["hhmm"] <= PX_LAST_5M]
@@ -2133,11 +2152,12 @@ def q_23pm_5pm_down(bars_5m, bars_1m):
             mfe = (entry - min(lows)) if lows else None
             # Price Action (user rule): major level taken at the CURRENT 1m PVT cross-down
             x1, leg_ext = px_current_1m_cross(one, phase[0]["date"], phase[0]["hhmm"], "down")
+            mext = px_run_move_ext(bars_5m, idx5, phase[0]["date"], phase[0]["hhmm"], "down")
             if x1 is not None:
                 t5c = stamp5.get((x1["date"], session_stamp(x1["hhmm"], 5))) or phase[0]
-                pa, basis = px_support_label(x1, t5c, "down", leg_ext), "1m"
+                pa, basis = px_support_label(x1, t5c, "down", leg_ext, mext), "1m"
             else:
-                pa, basis = px_support_label(phase[0], phase[0], "down", None), "5m"
+                pa, basis = px_support_label(phase[0], phase[0], "down", None, mext), "5m"
             t1 = [x for x in one.get(phase[0]["date"], []) if x["hhmm"] >= phase[0]["hhmm"]]
             band = px_1m_band(t1[0]) if t1 else px_5m_band(phase[0])
             phases.append({
