@@ -1729,9 +1729,9 @@ PX_LAST_5M = "15:25"    # last tradeable 5m bar stamp (15:30+ = post-close tail)
 PX_LAST_1M = "15:29"    # last tradeable 1m bar stamp
 
 
-def px_momentor_string(mom, date, hhmm, x_fired=False):
-    """Render Momentors token string (3/2/D TF tokens, PMSO letters) for a bar;
-    trailing _X when the row's 1SPX-class entry trigger fired (uniform rule)."""
+def px_momentor_string(mom, date, hhmm):
+    """Render Momentors token string (3/2/D TF tokens, PMSO letters) for a bar.
+    30m-and-above only by definition - no 1m/5m elements in the column."""
     d = mom.get((date, hhmm), {})
     toks = []
     for tf, cmap in (("3", (("P", "3PX"), ("M", "3MX"), ("S", "3SX"), ("O", "3OX"))),
@@ -1740,10 +1740,7 @@ def px_momentor_string(mom, date, hhmm, x_fired=False):
         letters = "".join(L for L, c in cmap if d.get(c) is not None)
         if letters:
             toks.append(tf + letters)
-    if not toks:
-        return "X" if x_fired else "NA"
-    s = "_".join(toks)
-    return s + "_X" if x_fired else s
+    return "_".join(toks) if toks else "NA"
 
 
 def px_1m_band(b1):
@@ -1873,27 +1870,6 @@ def px_run_move_ext(bars_5m, idx5, date, stamp, direction, sign_col="5m_pvt_sign
         c = bars_5m[j]["close"]
         ext = max(ext, c) if direction == "up" else min(ext, c)
     return ext
-
-
-def px_stoch_confirmed(one, date, hhmm, direction, window=5):
-    """X-flag test (1SPX-class confluence, row-level): did the 1m Stochastic
-    cross in the trend's direction within +/-window 1m-bars of the anchor
-    1m PVT cross? (up: K crossed above D; down: K crossed below D)."""
-    day = one.get(date, [])
-    idx = next((i for i, b in enumerate(day) if b["hhmm"] == hhmm), None)
-    if idx is None:
-        return False
-    lo = max(0, idx - window)
-    hi = min(len(day), idx + window + 1)
-    for i in range(lo + 1, hi):
-        p, b = day[i - 1], day[i]
-        if None in (p.get("K"), p.get("D"), b.get("K"), b.get("D")):
-            continue
-        if direction == "up" and p["K"] <= p["D"] and b["K"] > b["D"]:
-            return True
-        if direction == "down" and p["K"] >= p["D"] and b["K"] < b["D"]:
-            return True
-    return False
 
 
 def detect_1spx15pm_down(bars_5m, bars_1m, confluence_bars=5, cluster_min=15):
@@ -2048,8 +2024,6 @@ def q_23pm_5px(bars_5m, bars_1m, direction="up"):
                 pa = px_support_label(b, b, direction, None, mext)
                 basis = "5m"
             band = px_1m_band(seq1[0]) if seq1 else px_5m_band(b)
-            x_flag = px_stoch_confirmed(one, x1["date"], x1["hhmm"], direction) \
-                if x1 is not None else False
             episodes.append({
                 "date": b["date"], "from": b["hhmm"], "to": end_bar["hhmm"],
                 "duration_min": minutes(b["hhmm"], end_bar["hhmm"]),
@@ -2057,7 +2031,7 @@ def q_23pm_5px(bars_5m, bars_1m, direction="up"):
                 "pts": int(round(pts)), "pct": round(100.0 * pts / entry, 2) + 0.0,
                 "eod": eod,
                 "macd_note": macd_note,
-                "momentors": px_momentor_string(mom, b["date"], b["hhmm"], x_flag),
+                "momentors": px_momentor_string(mom, b["date"], b["hhmm"]),
                 "price_action": pa,
                 "price_action_band": band,
                 "band_basis": "1m" if seq1 else "5m",
@@ -2160,15 +2134,13 @@ def q_2pm_3px(bars_5m, bars_1m, direction="up"):
                 basis = "5m"
             t1 = [x for x in one.get(b["date"], []) if x["hhmm"] >= b["hhmm"]]
             band = px_1m_band(t1[0]) if t1 else px_5m_band(b)
-            x_flag = px_stoch_confirmed(one, x1["date"], x1["hhmm"], direction) \
-                if x1 is not None else False
             episodes.append({
                 "date": b["date"], "from": b["hhmm"], "to": end_bar["hhmm"],
                 "duration_min": minutes(b["hhmm"], end_bar["hhmm"]),
                 "entry": round(entry, 2), "exit": round(end_bar["close"], 2),
                 "pts": int(round(pts)), "pct": round(100.0 * pts / entry, 2) + 0.0,
                 "eod": eod,
-                "momentors": px_momentor_string(mom, b["date"], b["hhmm"], x_flag),
+                "momentors": px_momentor_string(mom, b["date"], b["hhmm"]),
                 "price_action": pa,
                 "price_action_band": band, "band_basis": basis,
                 "direction": direction,
@@ -2219,9 +2191,6 @@ def q_23pm_5pm_down(bars_5m, bars_1m):
 
     mom = compute_momentor_ages(bars_5m)
 
-    down_inst = [(datetime.strptime("%s %s" % (d, s), "%d:%m:%y %H:%M"),
-                  datetime.strptime("%s %s" % (d, e), "%d:%m:%y %H:%M"))
-                 for d, s, e in detect_1spx15pm_down(bars_5m, bars_1m)]
 
     one = {}
     for b in bars_1m:
@@ -2268,14 +2237,6 @@ def q_23pm_5pm_down(bars_5m, bars_1m):
                 pa, basis = px_support_label(phase[0], phase[0], "down", None, mext), "5m"
             t1 = [x for x in one.get(phase[0]["date"], []) if x["hhmm"] >= phase[0]["hhmm"]]
             band = px_1m_band(t1[0]) if t1 else px_5m_band(phase[0])
-            # X: a 1SPX-class instance (stoch cross-down + 1m PVT cross-down in the
-            # down-state) overlapping the phase window
-            x_flag = any(s0.date() == phase[0]["date"]
-                         and s0 <= datetime.strptime("%s %s" % (phase[0]["date"], phase[-1]["hhmm"]),
-                                                     "%Y-%m-%d %H:%M")
-                         and e0 >= datetime.strptime("%s %s" % (phase[0]["date"], phase[0]["hhmm"]),
-                                                     "%Y-%m-%d %H:%M")
-                         for s0, e0 in down_inst)
             phases.append({
                 "date": phase[0]["date"], "from": phase[0]["hhmm"], "to": phase[-1]["hhmm"],
                 "duration_min": minutes(phase[0]["hhmm"], phase[-1]["hhmm"]),
@@ -2284,7 +2245,7 @@ def q_23pm_5pm_down(bars_5m, bars_1m):
                 "mfe": round(mfe, 1) + 0.0 if mfe is not None else None,
                 "n_bars": len(phase),
                 "ends_at_close": phase[-1]["hhmm"] == PX_LAST_5M,
-                "momentors": px_momentor_string(mom, phase[0]["date"], phase[0]["hhmm"], x_flag),
+                "momentors": px_momentor_string(mom, phase[0]["date"], phase[0]["hhmm"]),
                 "price_action": pa,
                 "price_action_band": band, "band_basis": basis,
             })
@@ -2393,14 +2354,12 @@ def q_2px_3pm(bars_5m, bars_1m, direction="up"):
                 pa, basis = px_support_label(x1, t5c, direction, leg_ext, mext), "1m"
             else:
                 pa, basis = px_support_label(b, b, direction, None, mext), "5m"
-            x_flag = px_stoch_confirmed(one, x1["date"], x1["hhmm"], direction) \
-                if x1 is not None else False
             episodes.append({
                 "date": b["date"], "from": b["hhmm"], "variant": name,
                 "entry": round(entry, 2), "direction": direction,
                 "m1": m1, "m2": m2,
                 "voc": round(voc, 1) + 0.0 if voc is not None else None,
-                "momentors": px_momentor_string(mom, b["date"], b["hhmm"], x_flag),
+                "momentors": px_momentor_string(mom, b["date"], b["hhmm"]),
                 "price_action": pa, "band_basis": basis,
                 **fwd,
             })
@@ -2503,15 +2462,13 @@ def q_2pm_3px_5pm(bars_5m, bars_1m, direction="up"):
                 pa, basis = px_support_label(x1, t5c, direction, leg_ext, mext), "1m"
             else:
                 pa, basis = px_support_label(b, b, direction, None, mext), "5m"
-            x_flag = px_stoch_confirmed(one, x1["date"], x1["hhmm"], direction) \
-                if x1 is not None else False
             episodes.append({
                 "date": b["date"], "from": b["hhmm"], "to": end_bar["hhmm"],
                 "duration_min": minutes(b["hhmm"], end_bar["hhmm"]),
                 "entry": round(entry, 2), "exit": round(end_bar["close"], 2),
                 "pts": int(round(pts)), "pct": round(100.0 * pts / entry, 2) + 0.0,
                 "eod": eod, "synced_5m_at_entry": synced,
-                "momentors": px_momentor_string(mom, b["date"], b["hhmm"], x_flag),
+                "momentors": px_momentor_string(mom, b["date"], b["hhmm"]),
                 "price_action": pa, "band_basis": basis,
                 "direction": direction,
             })
