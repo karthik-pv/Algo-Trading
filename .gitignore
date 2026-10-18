@@ -8,11 +8,7 @@ __pycache__/
 .DS_Store
 
 # Runtime data (logs, tokens, instrument dumps, paper trades)
-data/*
-!data/insight/
-data/insight/*
-# tracking/commentary logs are versioned; the rest of data/ stays local
-!data/insight/tracking_*.md
+data/
 
 # Machine-local config; example is tracked, variants are not
 # config/appconfig.json
