@@ -6774,6 +6774,8 @@ document.addEventListener('DOMContentLoaded', function () {
         <thead id="spattHead"></thead>
         <tbody id="spattBody"></tbody>
       </table>
+      <datalist id="spattDlTrend"></datalist>
+      <datalist id="spattDlSetup"></datalist>
     </div>
   </div>
 </section>
@@ -6902,12 +6904,13 @@ document.addEventListener('DOMContentLoaded', function () {
             }
         });
         r2 += '</tr>';
-        // row 3: filters
+        // row 3: filters (Trend/Set Up get dropdowns of distinct values)
         var r3 = '<tr>';
         data.headers.forEach(function (h, i) {
+            var listAttr = (i === 1) ? ' list="spattDlTrend"' : (i === 2) ? ' list="spattDlSetup"' : '';
             r3 += '<th style="background:#2b2b2b; padding:2px; position:sticky; top:48px; z-index:5;">' +
-                  '<input type="text" data-col="' + i + '" placeholder="' + h + ' contains..." ' +
-                  'style="width:95%; background:#1e1e1e; color:#ddd; border:1px solid #555; padding:3px 4px; font-size:0.7rem;"></th>';
+                  '<input type="text" data-col="' + i + '" placeholder="' + h + ' contains..." ' + listAttr +
+                  ' style="width:95%; background:#1e1e1e; color:#ddd; border:1px solid #555; padding:3px 4px; font-size:0.7rem;"></th>';
         });
         r3 += '</tr>';
         head.innerHTML = r1 + r2 + r3;
@@ -6990,6 +6993,21 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     }
 
+    function fillDatalists() {
+        // dropdown suggestions for the limited-value columns: Trend (1) / Set Up (2)
+        ['1', '2'].forEach(function (ci) {
+            var dl = el(ci === '1' ? 'spattDlTrend' : 'spattDlSetup');
+            if (!dl) return;
+            var seen = {}, vals = [];
+            data.rows.forEach(function (row) {
+                var v = (row[ci] === null || row[ci] === undefined) ? '' : String(row[ci]).trim();
+                if (v && !seen[v]) { seen[v] = 1; vals.push(v); }
+            });
+            vals.sort();
+            dl.innerHTML = vals.map(function (v) { return '<option value="' + v + '">'; }).join('');
+        });
+    }
+
     function load() {
         fetch('/spatt/data', { cache: 'no-store' })
             .then(function (r) { return r.json(); })
@@ -6999,6 +7017,7 @@ document.addEventListener('DOMContentLoaded', function () {
                     return;
                 }
                 data = j;
+                fillDatalists();
                 applySort();
                 render();
                 el('spattMeta').textContent = 'rows: ' + j.rows.length + '  |  file: ' + (j.mtime || 'n/a');
