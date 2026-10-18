@@ -6913,6 +6913,29 @@ document.addEventListener('DOMContentLoaded', function () {
         applyFilters();
     }
 
+    function paLadderMatch(cellTxt, f) {
+        // Ladder-aware match for the Price Action column (user request): searching
+        // "5e50" must find rows recorded as "5e51200" (the compact token contains
+        // rung 50); "3e100" must find "3e5100". Returns true/false for a ladder
+        // query, or null when the text is not a rung token (caller uses substring).
+        var m = f.match(/^([0-9])e(\d+)$/);
+        if (!m) return null;
+        var LADDER = {'50': [50], '100': [100], '200': [200], '21': [21], '9': [9],
+                      '5100': [50, 100], '5200': [50, 200], '1200': [100, 200],
+                      '51200': [50, 100, 200]};
+        if (LADDER[m[2]] === undefined) return null;  // partial/unknown level -> substring fallback
+        var lvl = parseInt(m[2], 10);
+        var toks = cellTxt.match(/\b[0-9]e\d+\b/g) || [];
+        for (var i = 0; i < toks.length; i++) {
+            var tm = toks[i].match(/^([0-9])e(\d+)$/);
+            if (!tm || tm[1] !== m[1]) continue;
+            if (tm[2] === m[2]) return true;                       // exact token
+            var rungs = LADDER[tm[2]];
+            if (rungs && rungs.indexOf(lvl) !== -1) return true;   // compacted set contains the rung
+        }
+        return false;
+    }
+
     function applyFilters() {
         var filters = [];
         el('spattHead').querySelectorAll('input[data-col]').forEach(function (inp) {
@@ -6925,7 +6948,12 @@ document.addEventListener('DOMContentLoaded', function () {
             filters.forEach(function (f, i) {
                 if (!f) return;
                 var cellTxt = cells[i] ? cells[i].textContent.toLowerCase() : '';
-                if (cellTxt.indexOf(f) === -1) show = false;
+                var lm = (i === 3) ? paLadderMatch(cellTxt, f) : null;   // Price Action col: ladder-aware
+                if (lm === null) {
+                    if (cellTxt.indexOf(f) === -1) show = false;
+                } else if (!lm) {
+                    show = false;
+                }
             });
             tr.style.display = show ? '' : 'none';
         });
