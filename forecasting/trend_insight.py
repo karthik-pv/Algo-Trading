@@ -1945,7 +1945,7 @@ def q_23pm_5px(bars_5m, bars_1m, direction="up"):
                 ref = seq1[-1] if j is None else seq1[j]
                 note_pts = (ref["close"] - entry) if direction == "up" \
                     else (entry - ref["close"])
-                macd_note = {"time": ref["hhmm"], "pts": round(note_pts, 1) + 0.0}
+                macd_note = {"time": ref["hhmm"], "pts": int(round(note_pts))}
             # Price Action (user rule): major level taken at the CURRENT 1m PVT cross
             x1, leg_ext = px_current_1m_cross(one, b["date"], b["hhmm"], direction)
             mext = px_run_move_ext(bars_5m, idx5, b["date"], b["hhmm"], direction)
@@ -1960,7 +1960,7 @@ def q_23pm_5px(bars_5m, bars_1m, direction="up"):
                 "date": b["date"], "from": b["hhmm"], "to": end_bar["hhmm"],
                 "duration_min": minutes(b["hhmm"], end_bar["hhmm"]),
                 "entry": round(entry, 2), "exit": round(end_bar["close"], 2),
-                "pts": round(pts, 1) + 0.0, "pct": round(100.0 * pts / entry, 2) + 0.0,
+                "pts": int(round(pts)), "pct": round(100.0 * pts / entry, 2) + 0.0,
                 "eod": eod,
                 "macd_note": macd_note,
                 "momentors": px_momentor_string(mom, b["date"], b["hhmm"]),
@@ -2070,7 +2070,7 @@ def q_2pm_3px(bars_5m, bars_1m, direction="up"):
                 "date": b["date"], "from": b["hhmm"], "to": end_bar["hhmm"],
                 "duration_min": minutes(b["hhmm"], end_bar["hhmm"]),
                 "entry": round(entry, 2), "exit": round(end_bar["close"], 2),
-                "pts": round(pts, 1) + 0.0, "pct": round(100.0 * pts / entry, 2) + 0.0,
+                "pts": int(round(pts)), "pct": round(100.0 * pts / entry, 2) + 0.0,
                 "eod": eod,
                 "momentors": px_momentor_string(mom, b["date"], b["hhmm"]),
                 "price_action": pa,
@@ -2172,7 +2172,7 @@ def q_23pm_5pm_down(bars_5m, bars_1m):
                 "date": phase[0]["date"], "from": phase[0]["hhmm"], "to": phase[-1]["hhmm"],
                 "duration_min": minutes(phase[0]["hhmm"], phase[-1]["hhmm"]),
                 "entry": round(entry, 2), "exit": round(phase[-1]["close"], 2),
-                "pts": round(move, 1) + 0.0, "pct": round(100.0 * move / entry, 2) + 0.0,
+                "pts": int(round(move)), "pct": round(100.0 * move / entry, 2) + 0.0,
                 "mfe": round(mfe, 1) + 0.0 if mfe is not None else None,
                 "n_bars": len(phase),
                 "ends_at_close": phase[-1]["hhmm"] == PX_LAST_5M,
