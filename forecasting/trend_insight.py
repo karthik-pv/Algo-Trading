@@ -1830,6 +1830,7 @@ def px_support_label(b1, t5, direction, leg_ext, move_ext):
     majors = [("1E", "100", g(b1.get("1m EMA100"), b1.get("ema100_1m"))),
               ("1E", "200", g(b1.get("1m EMA200"), b1.get("ema200_1m"))),
               ("3E", "50", t5.get("30m_ema50")), ("3E", "100", t5.get("30m_ema100")),
+              ("3E", "200", t5.get("30m_ema200")),
               ("5E", "50", t5.get("5m_ema50")), ("5E", "100", t5.get("5m_ema100")),
               ("5E", "200", t5.get("5m_ema200"))]
     if leg_ext is None:
