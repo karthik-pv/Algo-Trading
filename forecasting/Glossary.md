@@ -1,5 +1,6 @@
-# Tracking Glossary — shared nomenclature
+# Glossary — shared nomenclature
 
+Scope: the vocabulary for the **Forecasting**, **Tracking** and **Commentary** modules.
 Derived from the **Forecast** sessions ("Forecasting trading setups for scalping",
 "Forecasting good 1PM Swing conditions") + `forecasting/HANDOFF.md` + `SPATT_HANDOFF.md`.
 This is the canonical vocabulary for all Tracking / Commentary entries. If a term is used
