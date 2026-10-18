@@ -1,7 +1,18 @@
 """Multi-TF trend/price-action insight from the 5m TradingView export.
 
-Source: data/insight/csv/NSE_NIFTY1!, 5_Sep 2025-Mar 2026.csv
-(each 5m row carries 5m/30m/2H/D indicator state: PVT, MACD, Stoch, EMAs, VWAP).
+Source: data/insight/csv/NSE_NIFTY1!, 5_Sep 2025-Oct 2026.csv
+(each 5m row carries 5m/30m/2H/D indicator state: PVT, MACD, Stoch, VOC, EMAs, VWAP).
+
+Two export layouts supported (auto-detected in load_bars):
+  - LEGACY prefixed headers: "5m MACD Line", "30m PVT", ... (one MACD 24/52 pair per TF).
+  - CURRENT unprefixed positional layout (59 cols, repeated generic names). Per HTF
+    block TWO MACD pairs: M1 = 12/26 (not used by current setups - reserved for a
+    future setup), M2 = 24/52 (USE - the research pair).
+    New columns vs legacy: "5m EMA4", "1m EMA100", "2H VOC".
+    "2H VOC" is a 30m-computed VOC with periods x4 (36/84) = the 2H equivalent;
+    it updates on 30m boundaries (13-14 bars/day), NOT on 2H closes.
+    User-renamed header vocabulary (from Nifty Data.numbers): 3M1/3M2, 2M1/2M2,
+    DM1/DM2 = the MACD pairs; "5m Stock D"/"30m Stock D" mean Stoch D (typo normalized).
 
 Dev window: 2025-09-15 .. 2026-03-31 (insight development).
 Out-of-sample: 2026-04-01 .. file end (kept untouched until validation).
@@ -29,7 +40,7 @@ from datetime import datetime, timedelta
 
 from forecasting.store_builder import read_tv_csv, fnum, sgn
 
-DEFAULT_CSV = os.path.join("data", "insight", "csv", "NSE_NIFTY1!, 5_Sep 2025-Mar 2026.csv")
+DEFAULT_CSV = os.path.join("data", "insight", "csv", "NSE_NIFTY1!, 5_Sep 2025-Oct 2026.csv")
 DEFAULT_OUT_DIR = os.path.join("data", "insight", "reports")
 
 DEV_START = "2025-09-15"
@@ -88,7 +99,16 @@ def session_stamp(hhmm, step_min):
 
 
 def load_bars(csv_path):
-    """Parse the 5m export into bar dicts with multi-TF indicator state."""
+    """Parse a 5m export into bar dicts; auto-detects the layout (see module docstring)."""
+    with open(csv_path, "r", newline="", encoding="utf-8-sig") as f:
+        header = [h.strip() for h in next(csv.reader(f))]
+    if "5m MACD Line" in header:
+        return _load_bars_prefixed(csv_path)
+    return _load_bars_positional(csv_path)
+
+
+def _load_bars_prefixed(csv_path):
+    """Legacy layout: per-TF prefixed header names (one MACD 24/52 pair per TF)."""
     rows = read_tv_csv(csv_path)
     cn = col_names()
     bars = []
@@ -118,6 +138,82 @@ def load_bars(csv_path):
                 b["%s_k" % tf] = fnum(r, cols["k"])
                 b["%s_d" % tf] = fnum(r, cols["d"])
         b["ema200_1m"] = fnum(r, cn["micro"]["ema200_1m"])
+        bars.append(b)
+    return bars
+
+
+def _read_raw_csv(path):
+    """Raw reader for the unprefixed positional layout (duplicate headers kept by index)."""
+    with open(path, "r", newline="", encoding="utf-8-sig") as f:
+        reader = csv.reader(f)
+        header = [h.strip() for h in next(reader)]
+        rows = []
+        for raw in reader:
+            if not raw or not raw[0].strip():
+                continue
+            if len(raw) < len(header):
+                raw = raw + [""] * (len(header) - len(raw))
+            rows.append(raw)
+    return header, rows
+
+
+def _load_bars_positional(csv_path):
+    """Current unprefixed layout: repeated generic headers, blocks anchored from the right.
+
+    0-indexed (59 cols): 0-4 time/OHLC | 5-20 EMAs (1m E100/E200, 5m E4/E9/E21/E50/
+    E100/E200, 30m/2H/D) | 21 VWAP | 5m: MACD 22-23, VOC 24, PVT 25, X-markers
+    26-28, Stoch 29-30 | 30m: VOC 31, Stoch 32-33, MACD M1 34-35, M2 36-37, PVT 38,
+    markers 39-41 | 2H: MACD M1 42-43, M2 44-45, VOC 46, PVT 47, markers 48-50 |
+    D: MACD M1 51-52, M2 53-54, PVT 55, markers 56-58.
+    """
+    header, raw = _read_raw_csv(csv_path)
+
+    def expect(idx, name):
+        got = header[idx] if idx < len(header) else None
+        if got != name:
+            raise ValueError(
+                "unexpected export layout: col %d = %r, expected %r "
+                "(layout changed? update _load_bars_positional)" % (idx, got, name))
+
+    for idx, name in ((5, "1m EMA100"), (6, "1m EMA200"), (7, "5m EMA4"), (21, "VWAP"),
+                      (25, "PVT"), (38, "PVT"), (47, "PVT"), (55, "PVT")):
+        expect(idx, name)
+
+    def fv(v):
+        v = (v or "").strip()
+        if v == "":
+            return None
+        try:
+            return float(v)
+        except ValueError:
+            return None
+
+    bars = []
+    for r in raw:
+        ts = r[0].strip()
+        b = {
+            "date": ts[:10], "hhmm": ts[11:16] if len(ts) > 15 else "",
+            "open": fv(r[1]), "high": fv(r[2]), "low": fv(r[3]), "close": fv(r[4]),
+            "vwap": fv(r[21]),
+            "5m_pvt": fv(r[25]), "30m_pvt": fv(r[38]), "2h_pvt": fv(r[47]), "1d_pvt": fv(r[55]),
+            # MACD pairs: use M2 (24/52, the research pair);
+            # M1 (12/26) NOT used by current setups - reserved for a future setup
+            "5m_macd": fv(r[22]), "5m_signal": fv(r[23]),
+            "30m_macd": fv(r[36]), "30m_signal": fv(r[37]),
+            "2h_macd": fv(r[44]), "2h_signal": fv(r[45]),
+            "1d_macd": fv(r[53]), "1d_signal": fv(r[54]),
+            "5m_k": fv(r[29]), "5m_d": fv(r[30]),
+            "30m_k": fv(r[32]), "30m_d": fv(r[33]),
+            "5m_voc": fv(r[24]), "30m_voc": fv(r[31]), "2h_voc": fv(r[46]),
+            "5m_ema4": fv(r[7]), "ema100_1m": fv(r[5]), "ema200_1m": fv(r[6]),
+            "5m_ema9": fv(r[8]), "5m_ema21": fv(r[9]), "5m_ema50": fv(r[10]),
+            "5m_ema100": fv(r[11]), "5m_ema200": fv(r[12]),
+            "30m_ema50": fv(r[13]), "30m_ema100": fv(r[14]), "30m_ema200": fv(r[15]),
+            "2h_ema50": fv(r[16]), "2h_ema100": fv(r[17]), "2h_ema200": fv(r[18]),
+            "1d_ema100": fv(r[19]), "1d_ema200": fv(r[20]),
+        }
+        for tf in ("5m", "30m", "2h", "1d"):
+            b["%s_pvt_sign" % tf] = sgn(b["%s_pvt" % tf])
         bars.append(b)
     return bars
 
@@ -1137,6 +1233,8 @@ def load_1m_bars(csv_path):
         pvt1 = fnum(r, "1m PVT") if "1m PVT" in r else None
         b["pvt"] = pvt1 if pvt1 is not None else fnum(r, "PVT")
         b["pvt_sign"] = sgn(b["pvt"])
+        b["macd"] = fnum(r, "1m MACD Line")
+        b["signal"] = fnum(r, "1m Signal Line")
         bars.append(b)
     return bars
 
@@ -1617,6 +1715,150 @@ def compute_momentor_ages(bars):
     return out
 
 
+# ---------------------------------------------------------------------------
+# Query: 235PX - 5m PVT cross-up with 2PM+3PM up (sign-based, carried values);
+# lives while the 1m MACD_2452 up-swing running at the trigger completes
+# (ends at the first 1m cross-down at/after the trigger; if 1m MACD is still
+# down at trigger, the next cross-up's swing is "the" swing).
+# ---------------------------------------------------------------------------
+
+PX_LAST_5M = "15:25"    # last tradeable 5m bar stamp (15:30+ = post-close tail)
+PX_LAST_1M = "15:29"    # last tradeable 1m bar stamp
+
+
+def px_momentor_string(mom, date, hhmm):
+    """Render Momentors token string (3/2/D TF tokens, PMSO letters) for a bar."""
+    d = mom.get((date, hhmm), {})
+    toks = []
+    for tf, cmap in (("3", (("P", "3PX"), ("M", "3MX"), ("S", "3SX"), ("O", "3OX"))),
+                     ("2", (("P", "2PX"), ("M", "2MX"))),
+                     ("D", (("P", "DPX"), ("M", "DMX")))):
+        letters = "".join(L for L, c in cmap if d.get(c) is not None)
+        if letters:
+            toks.append(tf + letters)
+    return "_".join(toks) if toks else "NA"
+
+
+def px_1m_band(b1):
+    """Price Action band: where the entry close sits vs the 1m EMA ladder."""
+    c = b1["close"]
+    ladder = (("1m EMA200", "<1E200"), ("1m EMA100", "1E100-200"), ("1m EMA50", "1E50-100"),
+              ("1m EMA21", "1E21-50"), ("1m EMA9", "1E9-21"))
+    for key, label in ladder:
+        v = b1.get(key)
+        if v is not None and c < v:
+            return label
+    return ">1E9"
+
+
+def px_5m_band(b5):
+    """Price Action band vs the 5m EMA ladder (basis when no 1m coverage)."""
+    c = b5["close"]
+    ladder = (("5m_ema200", "<5E200"), ("5m_ema100", "5E100-200"), ("5m_ema50", "5E50-100"),
+              ("5m_ema21", "5E21-50"), ("5m_ema9", "5E9-21"), ("5m_ema4", "5E4-9"))
+    for key, label in ladder:
+        v = b5.get(key)
+        if v is not None and c < v:
+            return label
+    return ">5E4"
+
+
+def q_235px(bars_5m, bars_1m):
+    """Detect 235PX episodes.
+
+    Trigger: 5m PVT sign -1 -> +1 (contiguous same-day bars) with 2PM+3PM fully
+    up at the trigger bar (PVT sign +1 AND forward-filled MACD_2452 up on both
+    2H and 30m - sign-based, no-repaint, matches the 235PM playbook convention).
+
+    Exit (user 2026-10-18): first 5m bar AFTER the trigger with close < its own
+    5m EMA4 - price loses the micro-mean (5m EMA4 ~ 1m EMA21). EOD flat at
+    15:25 if unbroken. The 1m MACD_2452 cross-down (legacy exit) is logged as
+    a comparison note when 1m coverage exists (Aug 3 2026+), not used to exit.
+    """
+    from datetime import datetime
+    last30 = last2h = None
+    for b in bars_5m:
+        if b.get("30m_macd") is not None and b.get("30m_signal") is not None:
+            last30 = b["30m_macd"] > b["30m_signal"]
+        if b.get("2h_macd") is not None and b.get("2h_signal") is not None:
+            last2h = b["2h_macd"] > b["2h_signal"]
+        b["ff30"], b["ff2h"] = last30, last2h
+
+    mom = compute_momentor_ages(bars_5m)
+
+    one = {}
+    for b in bars_1m:
+        if (b["hhmm"] <= PX_LAST_1M and b.get("macd") is not None
+                and b.get("signal") is not None and b.get("close") is not None):
+            one.setdefault(b["date"], []).append(b)
+
+    def minutes(a, b):
+        d0 = datetime.strptime(a, "%H:%M")
+        d1 = datetime.strptime(b, "%H:%M")
+        return int((d1 - d0).total_seconds() // 60)
+
+    episodes = []
+    for run in contiguous_runs(bars_5m):
+        day5 = [x for x in run if x["hhmm"] <= PX_LAST_5M]
+        for i in range(1, len(day5)):
+            p, b = day5[i - 1], day5[i]
+            if not (p["5m_pvt_sign"] == -1 and b["5m_pvt_sign"] == 1):
+                continue
+            if not (b["30m_pvt_sign"] == 1 and b["2h_pvt_sign"] == 1
+                    and b["ff30"] and b["ff2h"]):
+                continue
+            entry = b["close"]
+            # exit: first LATER 5m bar closing below its own 5m EMA4
+            end_bar, eod = None, True
+            for x in day5[i + 1:]:
+                if x["5m_ema4"] is not None and x["close"] < x["5m_ema4"]:
+                    end_bar, eod = x, False
+                    break
+            if end_bar is None:
+                end_bar = day5[-1]
+            pts = end_bar["close"] - entry
+            # legacy exit note: 1m MACD_2452 cross-down at/after trigger (if covered)
+            seq1 = [x for x in one.get(b["date"], []) if x["hhmm"] >= b["hhmm"]]
+            macd_note = None
+            if seq1:
+                st = ["up" if x["macd"] > x["signal"] else "dn" for x in seq1]
+                j = next((j2 for j2 in range(1, len(seq1))
+                          if st[j2 - 1] == "up" and st[j2] == "dn"), None)
+                ref = seq1[-1] if j is None else seq1[j]
+                macd_note = {"time": ref["hhmm"], "pts": round(ref["close"] - entry, 1) + 0.0}
+            band = px_1m_band(seq1[0]) if seq1 else px_5m_band(b)
+            episodes.append({
+                "date": b["date"], "from": b["hhmm"], "to": end_bar["hhmm"],
+                "duration_min": minutes(b["hhmm"], end_bar["hhmm"]),
+                "entry": round(entry, 2), "exit": round(end_bar["close"], 2),
+                "pts": round(pts, 1) + 0.0, "pct": round(100.0 * pts / entry, 2) + 0.0,
+                "eod": eod,
+                "macd_xdn_note": macd_note,
+                "momentors": px_momentor_string(mom, b["date"], b["hhmm"]),
+                "price_action_band": band,
+                "band_basis": "1m" if seq1 else "5m",
+            })
+
+    pts_all = sorted(e["pts"] for e in episodes)
+    out = {
+        "definition": (
+            "235PX = 2PM+3PM uptrending (PVT sign +1 AND MACD_2452 up, carried "
+            "no-repaint values) at a 5m PVT cross-up (-1 -> +1, same-day contiguous "
+            "bars, stamps <= 15:25). Exit = first 5m close below its own 5m EMA4 "
+            "(price loses the micro-mean); EOD flat at 15:25 if unbroken. "
+            "macd_xdn_note = where the legacy 1m MACD_2452 cross-down exit would "
+            "have landed (1m coverage Aug 3 2026+ only)."),
+        "n_episodes": len(episodes),
+        "n_positive": sum(1 for p in pts_all if p > 0),
+        "n_eod_flat": sum(1 for e in episodes if e["eod"]),
+        "total_pts": round(sum(pts_all), 1),
+        "mean_pts": round(sum(pts_all) / len(pts_all), 2) if pts_all else None,
+        "median_pts": pts_all[len(pts_all) // 2] if pts_all else None,
+        "episodes": episodes,
+    }
+    return out
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description="Multi-TF trend insight from 5m export")
     ap.add_argument("--csv", default=DEFAULT_CSV)
@@ -1630,6 +1872,8 @@ def main(argv=None):
                     help="query: 1m EMA price action joined to 5m-file HTF regime")
     ap.add_argument("--q23pm", action="store_true",
                     help="query: 23PM/235PM setup - where rises start (1m EMAs)")
+    ap.add_argument("--q235px", action="store_true",
+                    help="query: 235PX - 5m PVT cross-up in 2PM+3PM up, 1m MACD swing exit")
     ap.add_argument("--csv-1m", default=os.path.join("data", "insight", "csv", "NSE_NIFTY1!, 1m.csv"))
     args = ap.parse_args(argv)
 
@@ -1660,6 +1904,10 @@ def main(argv=None):
         with open(os.path.join("data", "insight", "reports", "q23pm.json"), "w") as f:
             json.dump(res, f, indent=1)
         print(json.dumps(res, indent=1))
+    if args.q235px:
+        bars = load_bars(args.csv)
+        one_m = load_1m_bars(args.csv_1m)
+        print(json.dumps(q_235px(bars, one_m), indent=1))
     if args.build:
         build(args.csv)
 
