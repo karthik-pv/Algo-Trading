@@ -1457,6 +1457,26 @@ def audit_page():
     return render_template("app.html", active_tab="audit")
 
 
+# --- Setup library for the Trade-tab PA widget (SetUps / Momentors /
+# Levels Ladder, rendered below Pending Orders): serves the curated
+# forecasting/setup_library.json so the frontend can list setups and
+# highlight the active Setup Call id. ---
+_SETUP_LIBRARY_JSON = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                   "forecasting", "setup_library.json")
+
+
+@app.route("/setup/library")
+def setup_library_data():
+    try:
+        with open(_SETUP_LIBRARY_JSON) as f:
+            return jsonify(json.load(f))
+    except FileNotFoundError:
+        return jsonify({"error": "setup_library.json not found"}), 404
+    except Exception as e:
+        logger.error("setup_library failed: %s", e)
+        return jsonify({"error": str(e)}), 500
+
+
 # --- SPATT: Setup / Price Action / Trade Case grid (live view of the
 # data/insight/setups/setup_pa_tradecase.json playbook; Excel is an export) ---
 _SPATT_JSON = os.path.join(DATA_DIR, "insight", "setups", "setup_pa_tradecase.json")
@@ -1476,6 +1496,7 @@ def _spatt_split_window(txt):
         if not line:
             continue
         m = re.search(r"(\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})\s*$", line)
+        m1 = re.search(r"(\d{1,2}:\d{2})", line)
         if m:
             dates.append(line[:m.start()].strip().rstrip("-").strip())
             t0, t1 = m.group(1), m.group(2)
@@ -1486,15 +1507,21 @@ def _spatt_split_window(txt):
                 mins = int(delta.total_seconds() // 60)
                 if mins < 0:
                     mins = 0
-                h, m = mins // 60, mins % 60
-                if h and m:
-                    durs.append("%dh %dm" % (h, m))
+                h, mn = mins // 60, mins % 60
+                if h and mn:
+                    durs.append("%dh %dm" % (h, mn))
                 elif h:
                     durs.append("%dh" % h)
                 else:
-                    durs.append("%dm" % m)
+                    durs.append("%dm" % mn)
             except ValueError:
                 durs.append("")
+        elif m1:
+            # event row: date + single time (trigger event, no exit yet)
+            dates.append(line[:m1.start()].strip().rstrip("-").strip())
+            froms.append(m1.group(1))
+            tos.append("")
+            durs.append("")
         else:
             dates.append(line)
             froms.append("")

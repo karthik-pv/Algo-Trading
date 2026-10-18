@@ -200,8 +200,11 @@ def _load_bars_positional(csv_path):
             # M1 (12/26) NOT used by current setups - reserved for a future setup
             "5m_macd": fv(r[22]), "5m_signal": fv(r[23]),
             "30m_macd": fv(r[36]), "30m_signal": fv(r[37]),
+            "30m_macd_1226": fv(r[34]), "30m_signal_1226": fv(r[35]),
             "2h_macd": fv(r[44]), "2h_signal": fv(r[45]),
+            "2h_macd_1226": fv(r[42]), "2h_signal_1226": fv(r[43]),
             "1d_macd": fv(r[53]), "1d_signal": fv(r[54]),
+            "1d_macd_1226": fv(r[51]), "1d_signal_1226": fv(r[52]),
             "5m_k": fv(r[29]), "5m_d": fv(r[30]),
             "30m_k": fv(r[32]), "30m_d": fv(r[33]),
             "5m_voc": fv(r[24]), "30m_voc": fv(r[31]), "2h_voc": fv(r[46]),
@@ -1856,16 +1859,16 @@ def px_support_label(b1, t5, direction, leg_ext, move_ext):
     return ("Rise from 1E50, 1E21" if direction == "up" else "Fall from 1E50, 1E21")
 
 
-def px_run_move_ext(bars_5m, idx5, date, stamp, direction):
-    """Farthest print of the 5m-PVT run containing (date, stamp): walk forward
-    while the 5m PVT sign holds, track max close (up) / min close (down)."""
+def px_run_move_ext(bars_5m, idx5, date, stamp, direction, sign_col="5m_pvt_sign"):
+    """Farthest print of the sign-run containing (date, stamp): walk forward
+    while the sign column holds, track max close (up) / min close (down)."""
     i = idx5.get((date, stamp))
     if i is None:
         return None
     s = 1 if direction == "up" else -1
     ext = bars_5m[i]["close"]
     j = i
-    while j + 1 < len(bars_5m) and bars_5m[j + 1]["5m_pvt_sign"] == s:
+    while j + 1 < len(bars_5m) and bars_5m[j + 1][sign_col] == s:
         j += 1
         c = bars_5m[j]["close"]
         ext = max(ext, c) if direction == "up" else min(ext, c)
@@ -2308,6 +2311,121 @@ def q_23pm_5pm_down(bars_5m, bars_1m):
     return out
 
 
+def q_2px_3pm(bars_5m, bars_1m, direction="up"):
+    """2PX_3PM family: the 2H PVT cross BEFORE the 2H MACDs confirm.
+
+    Trigger (up): 2H PVT sign -1 -> +1; (down): +1 -> -1 (carried values; the
+    flip prints at the 2H close bar) with BOTH 2H MACD1 (12/26) and MACD2
+    (24/52) still in their PRE-CROSS state (up: both still down; down: both
+    still up) - the early window where the 2H PVT leads and the MACDs lag.
+
+    Context names the variant (30m carried states, ff from 30m closes, on the
+    trend's side): 30m PVT & M1 & M2 -> 2PX_3PM; M1 only -> 2PX_3PM1;
+    M2 only -> 2PX_3PM2; neither -> 2PX_3P. Suffix O when the 30m VOC is on
+    the trend's side of zero (above 0 for up / below 0 for down) at trigger.
+
+    Price Action = the major rungs reclaimed by the 2H-PVT run (px_support_label
+    at the current 1m PVT cross; run horizon = the 2H-PVT run).
+    Forward moves = close-to-close from the trigger, in trend direction."""
+    from datetime import datetime
+    s = 1 if direction == "up" else -1
+    want = direction == "up"      # ff MACD state = "uptrending" (up) / "downtrending" (down)
+    pre = not want                # the 2H MACDs' pre-cross state
+    last30_1 = last30_2 = last2h_1 = last2h_2 = None
+    for b in bars_5m:
+        if b.get("30m_macd_1226") is not None and b.get("30m_signal_1226") is not None:
+            last30_1 = b["30m_macd_1226"] > b["30m_signal_1226"]
+        if b.get("30m_macd") is not None and b.get("30m_signal") is not None:
+            last30_2 = b["30m_macd"] > b["30m_signal"]
+        if b.get("2h_macd_1226") is not None and b.get("2h_signal_1226") is not None:
+            last2h_1 = b["2h_macd_1226"] > b["2h_signal_1226"]
+        if b.get("2h_macd") is not None and b.get("2h_signal") is not None:
+            last2h_2 = b["2h_macd"] > b["2h_signal"]
+        b["f30m1"], b["f30m2"], b["f2h1"], b["f2h2"] = last30_1, last30_2, last2h_1, last2h_2
+
+    mom = compute_momentor_ages(bars_5m)
+    stamp5 = {(x["date"], x["hhmm"]): x for x in bars_5m}
+    idx5 = {(x["date"], x["hhmm"]): i for i, x in enumerate(bars_5m)}
+    one = {}
+    for b in bars_1m:
+        if b["hhmm"] <= PX_LAST_1M and b.get("close") is not None:
+            one.setdefault(b["date"], []).append(b)
+
+    episodes = []
+    skipped_macd_confirmed = 0
+    for run in contiguous_runs(bars_5m):
+        day5 = [x for x in run if x["hhmm"] <= PX_LAST_5M]
+        for i in range(1, len(day5)):
+            p, b = day5[i - 1], day5[i]
+            if not (p["2h_pvt_sign"] == -s and b["2h_pvt_sign"] == s):
+                continue
+            if not (b["f2h1"] is pre and b["f2h2"] is pre):
+                skipped_macd_confirmed += 1   # a 2H MACD already crossed - not the early window
+                continue
+            if b["30m_pvt_sign"] != s:
+                continue                      # 30m not aligned - not this family
+            m1 = b["f30m1"] is want
+            m2 = b["f30m2"] is want
+            if m1 and m2:
+                variant = "2PX_3PM"
+            elif m1:
+                variant = "2PX_3PM1"
+            elif m2:
+                variant = "2PX_3PM2"
+            else:
+                variant = "2PX_3P"
+            voc = b.get("30m_voc")
+            voc_ok = voc is not None and (voc > 0 if direction == "up" else voc < 0)
+            name = variant + ("O" if voc_ok else "")
+            entry = b["close"]
+            fwd = {}
+            for k, key in ((3, "r15m"), (6, "r30m"), (12, "r60m")):
+                v = round(day5[i + k]["close"] - entry, 1) if i + k < len(day5) else None
+                fwd[key] = v if direction == "up" else (-v if v is not None else None)
+            v = round(day5[-1]["close"] - entry, 1)
+            fwd["r_eod"] = v if direction == "up" else -v
+            # Price Action: the majors the 2H-PVT run reclaimed (user support rule)
+            x1, leg_ext = px_current_1m_cross(one, b["date"], b["hhmm"], direction)
+            mext = px_run_move_ext(bars_5m, idx5, b["date"], b["hhmm"], direction,
+                                   sign_col="2h_pvt_sign")
+            if x1 is not None:
+                t5c = stamp5.get((x1["date"], session_stamp(x1["hhmm"], 5))) or b
+                pa, basis = px_support_label(x1, t5c, direction, leg_ext, mext), "1m"
+            else:
+                pa, basis = px_support_label(b, b, direction, None, mext), "5m"
+            x_flag = px_stoch_confirmed(one, x1["date"], x1["hhmm"], direction) \
+                if x1 is not None else False
+            episodes.append({
+                "date": b["date"], "from": b["hhmm"], "variant": name,
+                "entry": round(entry, 2), "direction": direction,
+                "m1": m1, "m2": m2,
+                "voc": round(voc, 1) + 0.0 if voc is not None else None,
+                "momentors": px_momentor_string(mom, b["date"], b["hhmm"], x_flag),
+                "price_action": pa, "band_basis": basis,
+                **fwd,
+            })
+
+    from collections import Counter
+    vc = Counter(e["variant"] for e in episodes)
+    out = {
+        "definition": (
+            "2PX_3PM family (%s) = 2H PVT %s with BOTH 2H MACD1 (12/26) and "
+            "MACD2 (24/52) still in their pre-cross state (ff) - the early "
+            "window where the 2H PVT leads. The 30m has already turned (30m "
+            "PVT on the trend's side); the 30m MACD states name the variant. "
+            "Trailing O = the 30m VOC on the trend's side of zero. "
+            "r15m/r30m/r60m/r_eod = forward moves from the trigger in trend "
+            "direction. price_action = the majors the 2H-PVT run reclaimed.") % (
+            direction,
+            "cross-up (-1 -> +1)" if direction == "up" else "cross-down (+1 -> -1)"),
+        "n_episodes": len(episodes),
+        "skipped_2h_macd_already_crossed": skipped_macd_confirmed,
+        "variants": dict(vc),
+        "episodes": episodes,
+    }
+    return out
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description="Multi-TF trend insight from 5m export")
     ap.add_argument("--csv", default=DEFAULT_CSV)
@@ -2331,6 +2449,10 @@ def main(argv=None):
                     help="query: 2PM_3PX downtrend mirror (30m PVT cross-down in 2PM down)")
     ap.add_argument("--q23pm5pmd", action="store_true",
                     help="query: 23PM_5PM downtrend phases (machine mirror of the uptrend phases)")
+    ap.add_argument("--q2px3pm", action="store_true",
+                    help="query: 2PX_3PM family - 2H PVT cross-up before the 2H MACDs confirm")
+    ap.add_argument("--q2px3pmd", action="store_true",
+                    help="query: 2PX_3PM family downtrend mirror (2H PVT cross-down, MACDs yet to cross down)")
     ap.add_argument("--csv-1m", default=os.path.join("data", "insight", "csv", "NSE_NIFTY1!, 1m.csv"))
     args = ap.parse_args(argv)
 
@@ -2381,6 +2503,14 @@ def main(argv=None):
         bars = load_bars(args.csv)
         one_m = load_1m_bars(args.csv_1m)
         print(json.dumps(q_23pm_5pm_down(bars, one_m), indent=1))
+    if args.q2px3pm:
+        bars = load_bars(args.csv)
+        one_m = load_1m_bars(args.csv_1m)
+        print(json.dumps(q_2px_3pm(bars, one_m), indent=1))
+    if args.q2px3pmd:
+        bars = load_bars(args.csv)
+        one_m = load_1m_bars(args.csv_1m)
+        print(json.dumps(q_2px_3pm(bars, one_m, direction="down"), indent=1))
     if args.build:
         build(args.csv)
 
