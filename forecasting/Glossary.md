@@ -178,6 +178,16 @@ Live days: parse `LEVELS.CW_CD` (main table) + `CW_ND`/`NW_ND` (projections) dir
 
 R5/S5 default off. Unknown `Name`s: index by name gracefully (inputs change the mix). Q-pivots in backfills approximate (July 1m data missing).
 
+## Scalping model — the 5m PVT switch (user, 2026-10-18)
+
+**5m PVT > 0 = upmove for scalping** (mirror for < 0). The long frame, in order:
+
+1. **Entry look:** price rising **from 1E21 / 1E50**, with **1m Stoch / 1m PVT cross up**, and the **15m PVT/MACD swing** pointing with you (15m MACD = computable from 1m closes; 15m PVT = volume-based, payload-only).
+2. **Volatile variant:** price may slice **below 1E21/1E50 → 1E100 → 1E200 + any other level nearby** (payload levels in confluence — RN, PDH/PDC, pivots).
+3. **The reclaim rule:** if **5m PVT is still >> 0** (a marginal dip, not a collapse), price **comes back up and goes above 1E50** — the dip is a scalp entry, not a regime change. If the 5m PVT flips decisively negative, the upmove frame is off.
+
+Dip depth ∝ 5m PVT state: marginal flip → the full ladder sweep to 1E200 + nearby-level confluence; 5m PVT positive → 1E21/1E50 hold and reclaim.
+
 ## Commentary style rules (Tracking session, user-specified 2026-10-18)
 
 1. **Track the setup states by name** — 2PM / 3PM / 5PM (+1PM, DPM) with sign and M2 status (`3P+ 3M2↓`), carried no-repaint.
