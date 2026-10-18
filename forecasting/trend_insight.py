@@ -2426,6 +2426,119 @@ def q_2px_3pm(bars_5m, bars_1m, direction="up"):
     return out
 
 
+def q_2pm_3px_5pm(bars_5m, bars_1m, direction="up"):
+    """2PM_3PX_5PM: the fully-confirmed 2H, entered on the 30m PVT cross.
+
+    Context: 2H PVT sign AND 2H MACD1 (12/26) AND 2H MACD2 (24/52) all on the
+    trend's side (forward-filled, no-repaint) - the 2H fully confirmed.
+    Entry: 30m PVT cross in the trend's direction (-1 -> +1 up / +1 -> -1
+    down; prints at the 30m close bar) - a synching 5m uptrend starts.
+    Exit: the first 5m MACD2 (24/52) cross against the position AFTER entry
+    (up: cross-down; down: cross-up); if the 5m MACD2 is already against at
+    entry, the exit waits for the next cross in favour and its reversal.
+    EOD flat at 15:25 if unbroken.
+    """
+    from datetime import datetime
+    s = 1 if direction == "up" else -1
+    want = direction == "up"
+    last2h_1 = last2h_2 = None
+    for b in bars_5m:
+        if b.get("2h_macd_1226") is not None and b.get("2h_signal_1226") is not None:
+            last2h_1 = b["2h_macd_1226"] > b["2h_signal_1226"]
+        if b.get("2h_macd") is not None and b.get("2h_signal") is not None:
+            last2h_2 = b["2h_macd"] > b["2h_signal"]
+        b["f2h1"], b["f2h2"] = last2h_1, last2h_2
+
+    mom = compute_momentor_ages(bars_5m)
+    stamp5 = {(x["date"], x["hhmm"]): x for x in bars_5m}
+    idx5 = {(x["date"], x["hhmm"]): i for i, x in enumerate(bars_5m)}
+    one = {}
+    for b in bars_1m:
+        if b["hhmm"] <= PX_LAST_1M and b.get("close") is not None:
+            one.setdefault(b["date"], []).append(b)
+
+    def minutes(a, b):
+        d0 = datetime.strptime(a, "%H:%M")
+        d1 = datetime.strptime(b, "%H:%M")
+        return int((d1 - d0).total_seconds() // 60)
+
+    episodes = []
+    for run in contiguous_runs(bars_5m):
+        day5 = [x for x in run if x["hhmm"] <= PX_LAST_5M]
+        for i in range(1, len(day5)):
+            p, b = day5[i - 1], day5[i]
+            if not (p["30m_pvt_sign"] == -s and b["30m_pvt_sign"] == s):
+                continue
+            if not (b["2h_pvt_sign"] == s and b["f2h1"] is want and b["f2h2"] is want):
+                continue
+            entry = b["close"]
+            synced = (b["5m_macd"] is not None and b["5m_signal"] is not None
+                      and (b["5m_macd"] > b["5m_signal"]) == want)
+            # exit: first 5m MACD2 cross against the position after entry
+            end_bar, eod = None, True
+            prev_state = None
+            if b["5m_macd"] is not None and b["5m_signal"] is not None:
+                prev_state = (b["5m_macd"] > b["5m_signal"]) == want
+            for x in day5[i + 1:]:
+                if None in (x["5m_macd"], x["5m_signal"]):
+                    continue
+                cur = (x["5m_macd"] > x["5m_signal"]) == want
+                if prev_state and not cur:          # cross against the position
+                    end_bar, eod = x, False
+                    break
+                if cur:                              # keep the in-favour state current
+                    prev_state = True
+                elif prev_state:
+                    prev_state = False
+            if end_bar is None:
+                end_bar = day5[-1]
+            pts = (end_bar["close"] - entry) if direction == "up" \
+                else (entry - end_bar["close"])
+            # Price Action: the majors the 30m-PVT run reclaimed (user support rule)
+            x1, leg_ext = px_current_1m_cross(one, b["date"], b["hhmm"], direction)
+            mext = px_run_move_ext(bars_5m, idx5, b["date"], b["hhmm"], direction,
+                                   sign_col="30m_pvt_sign")
+            if x1 is not None:
+                t5c = stamp5.get((x1["date"], session_stamp(x1["hhmm"], 5))) or b
+                pa, basis = px_support_label(x1, t5c, direction, leg_ext, mext), "1m"
+            else:
+                pa, basis = px_support_label(b, b, direction, None, mext), "5m"
+            x_flag = px_stoch_confirmed(one, x1["date"], x1["hhmm"], direction) \
+                if x1 is not None else False
+            episodes.append({
+                "date": b["date"], "from": b["hhmm"], "to": end_bar["hhmm"],
+                "duration_min": minutes(b["hhmm"], end_bar["hhmm"]),
+                "entry": round(entry, 2), "exit": round(end_bar["close"], 2),
+                "pts": int(round(pts)), "pct": round(100.0 * pts / entry, 2) + 0.0,
+                "eod": eod, "synced_5m_at_entry": synced,
+                "momentors": px_momentor_string(mom, b["date"], b["hhmm"], x_flag),
+                "price_action": pa, "band_basis": basis,
+                "direction": direction,
+            })
+
+    pts_all = sorted(e["pts"] for e in episodes)
+    out = {
+        "definition": (
+            "2PM_3PX_5PM (%s) = 2H fully confirmed (PVT sign %s AND MACD1 12/26 "
+            "AND MACD2 24/52 %s, ff no-repaint) at a 30m PVT %s - a synching 5m "
+            "uptrend starts. Exit = the first 5m MACD2 (24/52) cross against the "
+            "position after entry; EOD flat at 15:25 if unbroken. "
+            "synced_5m_at_entry = the 5m MACD2 was in favour at entry.") % (
+            direction, "+1" if direction == "up" else "-1",
+            "up" if direction == "up" else "down",
+            "cross-up (-1 -> +1)" if direction == "up" else "cross-down (+1 -> -1)"),
+        "n_episodes": len(episodes),
+        "n_positive": sum(1 for p in pts_all if p > 0),
+        "n_eod_flat": sum(1 for e in episodes if e["eod"]),
+        "n_synced_at_entry": sum(1 for e in episodes if e["synced_5m_at_entry"]),
+        "total_pts": round(sum(pts_all), 1),
+        "mean_pts": round(sum(pts_all) / len(pts_all), 2) if pts_all else None,
+        "median_pts": pts_all[len(pts_all) // 2] if pts_all else None,
+        "episodes": episodes,
+    }
+    return out
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description="Multi-TF trend insight from 5m export")
     ap.add_argument("--csv", default=DEFAULT_CSV)
@@ -2453,6 +2566,10 @@ def main(argv=None):
                     help="query: 2PX_3PM family - 2H PVT cross-up before the 2H MACDs confirm")
     ap.add_argument("--q2px3pmd", action="store_true",
                     help="query: 2PX_3PM family downtrend mirror (2H PVT cross-down, MACDs yet to cross down)")
+    ap.add_argument("--q2pm3px5pm", action="store_true",
+                    help="query: 2PM_3PX_5PM - 30m PVT cross-up in fully-confirmed 2H, 5m MACD2 exit")
+    ap.add_argument("--q2pm3px5pmd", action="store_true",
+                    help="query: 2PM_3PX_5PM downtrend mirror (2H confirmed down, 30m PVT cross-down, 5m MACD2 cross-up exit)")
     ap.add_argument("--csv-1m", default=os.path.join("data", "insight", "csv", "NSE_NIFTY1!, 1m.csv"))
     args = ap.parse_args(argv)
 
@@ -2511,6 +2628,14 @@ def main(argv=None):
         bars = load_bars(args.csv)
         one_m = load_1m_bars(args.csv_1m)
         print(json.dumps(q_2px_3pm(bars, one_m, direction="down"), indent=1))
+    if args.q2pm3px5pm:
+        bars = load_bars(args.csv)
+        one_m = load_1m_bars(args.csv_1m)
+        print(json.dumps(q_2pm_3px_5pm(bars, one_m), indent=1))
+    if args.q2pm3px5pmd:
+        bars = load_bars(args.csv)
+        one_m = load_1m_bars(args.csv_1m)
+        print(json.dumps(q_2pm_3px_5pm(bars, one_m, direction="down"), indent=1))
     if args.build:
         build(args.csv)
 
