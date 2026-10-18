@@ -6897,7 +6897,11 @@ document.addEventListener('DOMContentLoaded', function () {
                 if (i === 1) style += ' color:' + tcol + ';';                                             // Trend
                 if (i === 2) style += ' color:' + tcol + '; font-weight:600;';                            // Set Up
                 if (i >= 5 && i <= 8) style += ' white-space:nowrap; font-family:Consolas,monospace;';    // Date/From/To/Duration
-                if (i === 9 || i === 10) style += ' text-align:right; font-family:Consolas,monospace;';   // Points/%
+                if (i === 9 || i === 10) {                                                                // Points/% - green/red by execution result
+                    var num = parseFloat(txt);
+                    if (!isNaN(num)) style += ' color:' + (num > 0 ? GREEN : (num < 0 ? RED : '#ddd')) + '; font-weight:600;';
+                    style += ' text-align:right; font-family:Consolas,monospace;';
+                }
                 if (i === 11) style += ' text-align:center; font-family:Consolas,monospace;';             // Momentors
                 if (i === 12) style += ' font-size:0.7rem; word-break:break-word;';                       // Note
                 tr += '<td style="' + style + '">' + txt + '</td>';
