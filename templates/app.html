@@ -6926,6 +6926,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 if (i === 1) style += ' color:' + tcol + ';';                                             // Trend
                 if (i === 2) style += ' color:' + tcol + '; font-weight:600;';                            // Set Up
                 if (i >= 5 && i <= 8) style += ' white-space:nowrap; font-family:Consolas,monospace;';    // Date/From/To/Duration
+                if (i <= 2 || (i >= 5 && i <= 7)) style += ' text-align:center;';                         // Sno/Trend/SetUp + Date/From/To centered
                 if (i === 8) style += ' text-align:right;';                                               // Duration right-aligned
                 if (i === 9 || i === 10) {                                                                // Points/% - green/red by execution result
                     var num = parseFloat(txt);
