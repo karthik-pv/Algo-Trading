@@ -116,15 +116,20 @@ No 5m Stoch / 5m VOC in this export. File lives in `data/insight/csv/` (copied f
 
 | Momentor | Meaning | Tracked from |
 |---|---|---|
-| `3PX` / `3MX` / `3M1X` / `3SX` / `3OX` | 30m PVT sign · MACD M2 (24/52) · MACD M1 (12/26) · Stoch K vs D · VOC sign | 5m file, true 30m closes only (`:40/:10` stamps; `:15` readings are intrabar recomputes — never call a cross off them) |
-| `2PX` / `2MX` / `2M1X` / `2OX` | 2H same family; 2H VOC updates per 30m step (not per 2H close) | 5m file (2SX pending — no 2H Stoch in export) |
-| `DPX` / `DMX` / `DM1X` | Daily same family (D-PVT carried = previous day's final) | 5m file D block (DSX/DOX pending) |
-| `1PX` / `1MX` / `1m VOCross` / `1SX` | 1m micro layer (tracking only — not SPATT momentors) | 1m.csv |
-| `5PX` / `5MX` / `5m VOCross` | 5m layer | 1m.csv carried / 5m file |
+| `3PX` / `3SX` / `3OX` | 30m PVT sign · Stoch K vs D · VOC sign | 5m file, true 30m closes only (`:40/:10` stamps; `:15` readings are intrabar recomputes — never call a cross off them) |
+| `3M1X` | 30m MACD **12/26** cross alone | 5m file (M1 pair) |
+| `3M2X` | 30m MACD **24/52** cross alone | 5m file (M2 pair) |
+| `3MX` | **both 3M1X and 3M2X happening together** (same close) — user definition, 2026-10-18. Never use `3MX` for a single-pair cross — spell out `3M1X` or `3M2X` | 5m file |
+| `2PX` / `2M1X` / `2M2X` / `2MX` / `2OX` | 2H same family (2MX = both together); 2H VOC updates per 30m step (not per 2H close) | 5m file (2SX pending — no 2H Stoch in export) |
+| `DPX` / `DM1X` / `DM2X` / `DMX` | Daily same family (DMX = both together; D-PVT carried = previous day's final) | 5m file D block (DSX/DOX pending) |
+| `1PX` / `1MX` / `1m VOCross` / `1SX` | 1m micro layer (1MX here = the 1m 24/52 cross — tracking only, not a SPATT momentor) | 1m.csv |
+| `5PX` / `5MX` / `5m VOCross` | 5m layer (5MX = the 5m 24/52 cross — no 5m M1 in any export) | 1m.csv carried / 5m file |
 
-- `3PMX` (the v2 setup acronym, credit 1–13) is a **state** triggered by a same-day `3MX` UP — never call the composite without naming the trigger event.
+- `3PMX` (the v2 setup acronym, credit 1–13) is a **state** triggered by a same-day `3M2X` UP — never call the composite without naming the trigger event.
 - Ages: 30m counts the cross candle as 1 (valid 1–13); 2H/D count it as 0 (valid 0–4); outside → NA.
 - Not callable: 1M1X / 5M1X (no M1 columns for 1m/5m in any export) · 2SX / DSX / DOX (plots not yet added to the TradingView export).
+- **Module note:** the SPATT engine's `MX` momentor column (`compute_momentor_ages`) tracks the M2-pair state/age — in commentary the user's combined definition above wins; a log line meaning the M2-pair cross alone says `3M2X`.
+- **Empty-column trap:** HTF MACD/Stoch/VOC are populated ONLY at the TF's closing bars — before the day's first 2H close (11:15) those columns are empty; never read "+/−" from empty (the `sgn(False)==0` trap) — carry the previous day's final TF state instead.
 
 **Level interactions — all five called, all levels:** **approaching** (Δ ≤ ~12 pts, 1m EMAs excluded — price hugs them) · **crossed above** / **crossed below** / **took support at** / **faced resistance at**, plus the 1m EMA21 retrace-support (wick touch). Ladder: 1E9/1E21/1E50/1E100/1E200 · 5E4/5E9/5E21/5E50/5E100/5E200 · 3E50/3E100/3E200 · 2E50/2E100/2E200 · DE100/DE200 (+ W/M if touched) · VWAP · Round100s · PDH/PDL/PDC/PDOpen. Tight clusters print as one line; same level+event deduped 15 min.
 
