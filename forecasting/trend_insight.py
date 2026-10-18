@@ -1326,11 +1326,11 @@ def q_1m_ema_vs_htf(bars_5m, bars_1m):
 
 
 # ---------------------------------------------------------------------------
-# Query: 23PM / 235PM setups -> where do rises start (1m EMA ladder)
+# Query: 23PM / 23PM_5PM setups -> where do rises start (1m EMA ladder)
 # ---------------------------------------------------------------------------
 
 def q_23pm(bars_5m, bars_1m):
-    """Validate: 235PM uptrend -> rises from 1m EMA21/50; 5m-MACD-cooling
+    """Validate: 23PM_5PM uptrend -> rises from 1m EMA21/50; 5m-MACD-cooling
     (PVT still +) -> retrace to 1m EMA100/200 then rise."""
     # forward-fill HTF MACD states + 5m histogram on the 5m grid
     last30 = last2h = None
@@ -1375,7 +1375,7 @@ def q_23pm(bars_5m, bars_1m):
 
     EMAS = ["1m EMA9", "1m EMA21", "1m EMA50", "1m EMA100", "1m EMA200"]
     out = {"definition": "23PM = 2H+30m PVT+ & MACD_2452 up (ff from window closes); "
-                         "235PM = 23PM + 5m PVT+ & 5m MACD up. Claim A: 235PM rises start "
+                         "23PM_5PM = 23PM + 5m PVT+ & 5m MACD up. Claim A: 23PM_5PM rises start "
                          "at 1m EMA21/50. Claim B: 23PM + 5m MACD cooling/retracing with "
                          "5m PVT+ -> retrace to 1m EMA100/200 then rise."}
 
@@ -1400,14 +1400,14 @@ def q_23pm(bars_5m, bars_1m):
                     "resist_touch": rj[0], "reject_pct": round(100.0 * rj[1] / rj[0], 1) if rj[0] else None}
         return r
 
-    # Claim A: 235PM bars
+    # Claim A: 23PM_5PM bars
     a_bars = [b for b in joined if b["r235"]]
-    out["claimA_235PM"] = {
+    out["claimA_23PM_5PM"] = {
         "n_1m_bars": len(a_bars),
         "ema_hold_reject": hold_rates(a_bars),
         "pullback_episodes": {},
     }
-    # pullback episodes: 1m close below EMA21 from above, in 235PM
+    # pullback episodes: 1m close below EMA21 from above, in 23PM_5PM
     for lvl, key in (("1m EMA21", "pb21"), ("1m EMA50", "pb50")):
         n = resumed = 0
         depths = []
@@ -1438,7 +1438,7 @@ def q_23pm(bars_5m, bars_1m):
                             # classify deepest penetration by band: which EMA did the low pierce
                             lows = b  # need low vs next EMAs
                         in_ep = False
-        out["claimA_235PM"]["pullback_episodes"][key] = {
+        out["claimA_23PM_5PM"]["pullback_episodes"][key] = {
             "level": lvl, "n": n,
             "p_reclaim_within_day": round(resumed / float(n), 3) if n else None,
             "median_depth_below_pts": round(med(depths), 1) if depths else None,
@@ -1476,9 +1476,9 @@ def q_23pm(bars_5m, bars_1m):
                         else:
                             bands["above_1E9"] += 1
                     in_ep = False
-    out["claimA_235PM"]["pullback_low_band"] = dict(bands)
+    out["claimA_23PM_5PM"]["pullback_low_band"] = dict(bands)
 
-    # Claim B: 23PM (not 235PM) with 5m PVT+ and MACD cooling/retracing
+    # Claim B: 23PM (not 23PM_5PM) with 5m PVT+ and MACD cooling/retracing
     cool_bars = [b for b in joined if b["r23_not235"] and b["pvt5_pos"]
                  and (b["macd5_xdn"] or b["macd5_fall"])]
     out["claimB_cooling"] = {
@@ -1528,17 +1528,17 @@ def q_23pm(bars_5m, bars_1m):
             "p_tag_EMA100_or_200_within_2h": round(n_tag / float(len(trig)), 3) if trig else None,
             "p_rise_after_tag": round(n_rise / float(n_fwd), 3) if n_fwd else None,
         }
-    # contrast: in plain 235PM (no cooling), how often do pullbacks even reach EMA100/200?
+    # contrast: in plain 23PM_5PM (no cooling), how often do pullbacks even reach EMA100/200?
     out["contrast"] = {
-        "note": "claimB window = 23PM up but 5m not-full-alignment; claimA window = full 235PM",
-        "n_235PM_bars": len(a_bars),
+        "note": "claimB window = 23PM up but 5m not-full-alignment; claimA window = full 23PM_5PM",
+        "n_23PM_5PM_bars": len(a_bars),
         "n_23PM_not235_bars": sum(1 for b in joined if b["r23_not235"]),
     }
     return out
 
 
 def detect_1spx15pm(bars_5m, bars_1m, confluence_bars=5, cluster_min=15):
-    """1SPX_15PM detection: inside 235PM state, Stochastic cross-up (available at
+    """1SPX_15PM detection: inside 23PM_5PM state, Stochastic cross-up (available at
     5m cadence in the export) + 1m PVT cross-up within +/-confluence_bars 1m-bars.
     Clusters within cluster_min minutes merge into one instance.
     Returns [(date_ddmmyy, start_hhmm, end_hhmm)]."""
@@ -1604,7 +1604,7 @@ def detect_1spx15pm(bars_5m, bars_1m, confluence_bars=5, cluster_min=15):
         instances[variant].sort()
 
     out = {}
-    for variant, label in ((1, "inside_235PM"), (2, "23PM_not235_transition")):
+    for variant, label in ((1, "inside_23PM_5PM"), (2, "23PM_not235_transition")):
         merged = []
         for t in instances[variant]:
             if merged and (t - merged[-1][1]).total_seconds() <= cluster_min * 60 \
@@ -1768,7 +1768,7 @@ def q_23pm_5px(bars_5m, bars_1m):
 
     Trigger: 5m PVT sign -1 -> +1 (contiguous same-day bars) with 2PM+3PM fully
     up at the trigger bar (PVT sign +1 AND forward-filled MACD_2452 up on both
-    2H and 30m - sign-based, no-repaint, matches the 235PM playbook convention).
+    2H and 30m - sign-based, no-repaint, matches the 23PM_5PM playbook convention).
 
     Exit (user 2026-10-18): first 5m bar AFTER the trigger with close < its own
     5m EMA4 - price loses the micro-mean (5m EMA4 ~ 1m EMA21). EOD flat at
@@ -1954,7 +1954,7 @@ def main(argv=None):
     ap.add_argument("--q1m", action="store_true",
                     help="query: 1m EMA price action joined to 5m-file HTF regime")
     ap.add_argument("--q23pm", action="store_true",
-                    help="query: 23PM/235PM setup - where rises start (1m EMAs)")
+                    help="query: 23PM/23PM_5PM setup - where rises start (1m EMAs)")
     ap.add_argument("--q23pm5px", action="store_true",
                     help="query: 23PM_5PX - 5m PVT cross-up in 2PM+3PM up, EMA4 exit")
     ap.add_argument("--q2pm3px", action="store_true",

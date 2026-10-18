@@ -16,7 +16,7 @@ This complements `forecasting/HANDOFF.md` (the PAInsight forecasting-engine note
 - Header vocabulary from the user's Numbers doc (`Nifty Data.numbers`): `3M1/3M2`, `2M1/2M2`, `DM1/DM2` = MACD pairs; `5m Stock D`/`30m Stock D` = Stoch D (typo normalized in code). Still absent: 2H Stoch, D Stoch, D VOC → `2SX`/`DSX`/`DOX` momentors remain pending (`2O` is now unblocked).
 
 ### New setup 23PM_5PX (`--q23pm5px`)
-- **Definition (user, 2026-10-18)**: 2PM uptrending (2H PVT>0 & 2H MACD_2452 up) + 3PM uptrending (30m PVT>0 & 30m MACD_2452 up), carried no-repaint values, sign-based — same convention as 235PM. M1 (12/26) pairs are NOT used by current setups — reserved for a future setup. Trigger = **5m PVT cross-up** (−1→+1, same-day contiguous, stamps ≤15:25).
+- **Definition (user, 2026-10-18)**: 2PM uptrending (2H PVT>0 & 2H MACD_2452 up) + 3PM uptrending (30m PVT>0 & 30m MACD_2452 up), carried no-repaint values, sign-based — same convention as 23PM_5PM. M1 (12/26) pairs are NOT used by current setups — reserved for a future setup. Trigger = **5m PVT cross-up** (−1→+1, same-day contiguous, stamps ≤15:25).
 - **Exit (user, 2026-10-18, replaced the original 1m-MACD-cross-down rule)**: **first 5m close below its own 5m EMA4** — price loses the micro-mean (5m EMA4 ≈ 1m EMA21, median 0.8 pts apart). EOD flat at 15:25 if unbroken. The 1m MACD_2452 cross-down is logged as a comparison note (`macd_xdn_note`), not an exit. Rationale: measured head-to-head on the first 17 episodes, the EMA4 exit captured +116.2 pts vs +63.9 for the MACD exit (better in 13/17; the 1m MACD lags and confirms after the fade). No trigger bar ever closed below its own EMA4 (no born-dead edge case).
 - Implemented: `q_23pm_5px()` + `--q23pm5px` in `forecasting/trend_insight.py`; entry = trigger 5m-bar close.
 - **113 episodes** (full 5m range Sep 2025 → Oct 2026 — the EMA4 exit needs no 1m data): **60 positive (53%), 20 EOD flats, total +1,148.6 pts, mean +10.2, median +1.6, best +295.7, worst −39.2**. All 113 appended to `setup_pa_tradecase.json` (Sno 113–225, Trend=Uptrend, Set Up=23PM_5PX, Tradecase=SCALP_23PM_5PX — draft text, user to refine).
@@ -29,7 +29,7 @@ This complements `forecasting/HANDOFF.md` (the PAInsight forecasting-engine note
 - **17 episodes** (full range Oct 2025 → Aug 2026; no 1m dependency): **11 positive (65%), 6 EOD flats, total +559.3 pts, mean +32.9, median +14.6** — deeper/rarer trigger + wider exit than 23PM_5PX (53% positive, mean +10.2). Best +162.3 (07 Apr 26), worst −38.0 (06 Feb 26). Rows **226–242** appended to `setup_pa_tradecase.json` (Trend=Uptrend, Set Up=2PM_3PX, **Tradecase=INTRA_5PM** — user-specified).
 
 ### Machine-setup row convention in the playbook (23PM_5PX / 2PM_3PX)
-`Price Action` = entry close vs an EMA ladder band: **1m ladder** where 1m coverage exists (Aug 3 2026+, `px_1m_band`: >1E9 / 1E9-21 / … / <1E200), else **5m ladder** basis (`px_5m_band`: >5E4 / 5E4-9 / … / <5E200). `Window` = `dd Mon yy-HH:MM-HH:MM`; `Note` documents entry/exit prices, swing minutes, EOD flag, the 1m MACD cross-down comparison where covered, and marks the row machine-detected. 23PM_5PX rows are appended after the 235PM family (Sno continues), chronological within the family; filter by Set Up in the grid.
+`Price Action` = entry close vs an EMA ladder band: **1m ladder** where 1m coverage exists (Aug 3 2026+, `px_1m_band`: >1E9 / 1E9-21 / … / <1E200), else **5m ladder** basis (`px_5m_band`: >5E4 / 5E4-9 / … / <5E200). `Window` = `dd Mon yy-HH:MM-HH:MM`; `Note` documents entry/exit prices, swing minutes, EOD flag, the 1m MACD cross-down comparison where covered, and marks the row machine-detected. 23PM_5PX rows are appended after the 23PM_5PM family (Sno continues), chronological within the family; filter by Set Up in the grid.
 
 ---
 
@@ -55,7 +55,7 @@ python -m forecasting.trend_insight --build    # 5-table insight pack -> data/in
 python -m forecasting.trend_insight --q2h      # 2H uptrend survival by D-context
 python -m forecasting.trend_insight --q5mxc    # 5m PVT cross-up context & follow-through
 python -m forecasting.trend_insight --q1m      # 1m EMA price action x HTF regime
-python -m forecasting.trend_insight --q23pm    # 23PM/235PM rise-origin validation
+python -m forecasting.trend_insight --q23pm    # 23PM/23PM_5PM rise-origin validation
 python -m forecasting.trend_insight --build is safe: writes only to data/insight/reports/.
 ```
 
@@ -81,7 +81,7 @@ TradingView limits to know: 1m history depth ≈ 2.5 months (verified twice) —
 
 ## 4. The playbook (112 records)
 
-One record per **235PM uptrend phase** (2H+30m+5m PVT/MACD all up; contiguous), chronological, Sep 2025 → Oct 16 2026. Columns: `Sno, Trend, Set Up, Price Action, Tradecase, Window, Points Moved, % Move, Momentors, Note`.
+One record per **23PM_5PM uptrend phase** (2H+30m+5m PVT/MACD all up; contiguous), chronological, Sep 2025 → Oct 16 2026. Columns: `Sno, Trend, Set Up, Price Action, Tradecase, Window, Points Moved, % Move, Momentors, Note`.
 
 - **Momentors** = cross-up ages at phase start: per TF a token `3`/`2`/`D` + active oscillator letters (P/M/S/O), joined by `_`; trailing `X` when the 1SPX_15PM entry trigger fired. Print windows: **30m ages 1–13** (cross candle = 1); **2H/D ages 0–4** (cross candle = 0); anything else → NA. Examples: `3PM_2P_DP_X`, `3O_2P_X`, `3PMS`.
 - Engine: `compute_momentor_ages()` in `forecasting/trend_insight.py`; `MOMENTOR_RULES = {"3": (1,1,13), "2": (0,0,4), "D": (0,0,4)}`.
@@ -96,12 +96,12 @@ Full tables: `data/insight/reports/trend_insight.md`. Highlights:
 - Intraday clock: BULL gains front-load 09:15–11:15; midday fade even in bull; BEAR accelerates into close (−2.33 pts/5m bar 14:15–15:30).
 - Levels: VWAP reject 33% (BULL) vs 53% (BEAR); PDL rejects 68% in BEAR; PDO holds 78% in BULL vs 28% in BEAR.
 - 5m PVT cross-up (1SPX-class trigger): with 2H+30m PVT+MACD aligned → 71% up +15 min (median +5.5 pts), edge dead by +60 min. Without MACD confirm → no edge (39% @30 m). No alignment → trap (−9.8 mean EOD).
-- 235PM rise origins: shallow dips end at 1E21/1E50 (holds 63/69%); 1m close below 1E21 usually extends to the 1E50–1E100 zone (55%) before rising; 5m-MACD-cooling phases (5m PVT still +) retrace to 1E100/1E200 within 2 h (78%) and rise after (73%).
+- 23PM_5PM rise origins: shallow dips end at 1E21/1E50 (holds 63/69%); 1m close below 1E21 usually extends to the 1E50–1E100 zone (55%) before rising; 5m-MACD-cooling phases (5m PVT still +) retrace to 1E100/1E200 within 2 h (78%) and rise after (73%).
 
 ## 6. Open work (not started)
 
 1. **Out-of-sample validation**: dev insight was built on Sep 2025–Mar 2026; **Apr–Jul 2026 is untouched**. Re-run `--build` scoped to OOS and compare tables (esp. the level/reject rates and the intraday clock).
-2. **235PM Downtrend mirror**: the JSON/Trend column supports it; define the trade case (mirror of S-rows) and compute its episodes (`reg235` with all signs negative).
+2. **23PM_5PM Downtrend mirror**: the JSON/Trend column supports it; define the trade case (mirror of S-rows) and compute its episodes (`reg235` with all signs negative).
 3. **2S/2O/DS/DO momentors** after the chart export adds those plots.
 4. **Deeper 1m-EMA integration** once longer 1m history exists (TradingView hard limit ~2.5 months).
 5. Momentors as a **predictor study**: does the launch code (e.g. `3PMS_X` vs `DP` vs blank) predict phase quality (Points Moved)? n=112 is enough for a first cut.
