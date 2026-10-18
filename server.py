@@ -1188,7 +1188,15 @@ def instruments_json():
 @app.route("/trading_view_webhook" , methods = ["POST"])
 def trading_view():
     logger.info("Received TradingView webhook")
-    data = request.json
+    # hardened parse: TradingView sends Content-Type text/plain whenever the
+    # alert message is not valid JSON (e.g. after re-creating an alert) -
+    # force=True parses the body regardless of Content-Type, silent=True
+    # returns None instead of raising 415 when the body is genuinely broken.
+    data = request.get_json(force=True, silent=True)
+    if data is None:
+        body = (request.get_data(as_text=True) or "")[:500]
+        logger.error(f"TradingView webhook: unparsable body (Content-Type: {request.content_type}): {body}")
+        return jsonify({"error": "unparsable webhook body"}), 400
     res = trading_view_handle_func(data, trader)
     return jsonify(res)
 
@@ -1473,7 +1481,7 @@ def setup_library_data():
     except FileNotFoundError:
         return jsonify({"error": "setup_library.json not found"}), 404
     except Exception as e:
-        logger.error("setup_library failed: %s", e)
+        logger.error(f"setup_library failed: {e}")
         return jsonify({"error": str(e)}), 500
 
 
@@ -1560,7 +1568,7 @@ def spatt_data():
     except FileNotFoundError:
         return jsonify({"error": "setup_pa_tradecase.json not found"}), 404
     except Exception as e:
-        logger.error("spatt_data failed: %s", e)
+        logger.error(f"spatt_data failed: {e}")
         return jsonify({"error": str(e)}), 500
 
 
