@@ -6802,6 +6802,12 @@ document.addEventListener('DOMContentLoaded', function () {
                 }
                 return -Infinity;
             }
+            if (col === 8) {                              // Duration: '2h 30m' | '45m' | legacy 'hh:mm'
+                var dh = first.match(/(\d+)\s*h/), dm = first.match(/(\d+)\s*m/);
+                if (dh || dm) return (dh ? parseInt(dh[1], 10) * 60 : 0) + (dm ? parseInt(dm[1], 10) : 0);
+                var td = first.match(/(\d{1,2}):(\d{2})/);
+                return td ? parseInt(td[1], 10) * 60 + parseInt(td[2], 10) : -Infinity;
+            }
             var t = first.match(/(\d{1,2}):(\d{2})/);
             return t ? parseInt(t[1], 10) * 60 + parseInt(t[2], 10) : -Infinity;
         }

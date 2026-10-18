@@ -1486,7 +1486,13 @@ def _spatt_split_window(txt):
                 mins = int(delta.total_seconds() // 60)
                 if mins < 0:
                     mins = 0
-                durs.append("%02d:%02d" % (mins // 60, mins % 60))
+                h, m = mins // 60, mins % 60
+                if h and m:
+                    durs.append("%dh %dm" % (h, m))
+                elif h:
+                    durs.append("%dh" % h)
+                else:
+                    durs.append("%dm" % m)
             except ValueError:
                 durs.append("")
         else:
