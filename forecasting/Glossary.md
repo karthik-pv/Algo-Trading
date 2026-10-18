@@ -188,6 +188,17 @@ R5/S5 default off. Unknown `Name`s: index by name gracefully (inputs change the 
 
 Dip depth ∝ 5m PVT state: marginal flip → the full ladder sweep to 1E200 + nearby-level confluence; 5m PVT positive → 1E21/1E50 hold and reclaim.
 
+## 1m micro calls (tracking layer, user 2026-10-18)
+
+| Call | Definition |
+|---|---|
+| `5m PVT Cross Down` | the 5m PVT cross-down event (= `5PX has happened — DOWN`) |
+| `1PX Up` / `1PX Down` | 1m PVT cross up / down (the bare PVT flip alone is just this event — **not** a trend start) |
+| `1PMX Up` / `1PMX Down` | **1m PVT + 1m MACD crossing together** (same close) — the 1m composite cross |
+| `1PME50 Trend Starts` | **the trend-start call**: within a 1PM uptrend (1m PVT/MACD up), the moment **price goes above 1E50** — the 1E50 cross is what confirms the trend start. Until price takes 1E50, a 1PX Up is only a candidate. Mirror for the downtrend (price below 1E50). |
+
+Tracking consequence: the old "1PM uptrend starts" line fires on the PVT flip alone — from now on the trend-start label is `1PME50 Trend Starts` and requires the 1E50 cross on top of the 1PM state. The nearby-levels lookahead (style rule 4) attaches to the `1PME50` call.
+
 ## Commentary style rules (Tracking session, user-specified 2026-10-18)
 
 1. **Track the setup states by name** — 2PM / 3PM / 5PM (+1PM, DPM) with sign and M2 status (`3P+ 3M2↓`), carried no-repaint.
