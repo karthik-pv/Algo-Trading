@@ -1763,19 +1763,23 @@ def px_5m_band(b5):
     return ">5E4"
 
 
-def q_23pm_5px(bars_5m, bars_1m):
-    """Detect 23PM_5PX episodes.
+def q_23pm_5px(bars_5m, bars_1m, direction="up"):
+    """Detect 23PM_5PX episodes (direction='up' | 'down' - exact mirrors).
 
-    Trigger: 5m PVT sign -1 -> +1 (contiguous same-day bars) with 2PM+3PM fully
-    up at the trigger bar (PVT sign +1 AND forward-filled MACD_2452 up on both
-    2H and 30m - sign-based, no-repaint, matches the 23PM_5PM playbook convention).
+    Trigger: 5m PVT sign -1 -> +1 (up) / +1 -> -1 (down), contiguous same-day
+    bars, with 2PM+3PM fully aligned at the trigger bar - PVT sign AND
+    forward-filled MACD_2452 state on both 2H and 30m (up: +1/up; down: -1/down),
+    sign-based no-repaint, matching the 23PM_5PM playbook convention.
 
-    Exit (user 2026-10-18): first 5m bar AFTER the trigger with close < its own
-    5m EMA4 - price loses the micro-mean (5m EMA4 ~ 1m EMA21). EOD flat at
-    15:25 if unbroken. The 1m MACD_2452 cross-down (legacy exit) is logged as
-    a comparison note when 1m coverage exists (Aug 3 2026+), not used to exit.
+    Exit: first 5m bar AFTER the trigger with close across its own 5m EMA4
+    (up: close < EMA4; down: close > EMA4) - price loses the micro-mean. EOD
+    flat at 15:25 if unbroken. The 1m MACD_2452 cross (legacy exit, mirrored)
+    is logged as a comparison note when 1m coverage exists (Aug 3 2026+).
+    pts/pct = move in trade direction (positive = trend move captured).
     """
     from datetime import datetime
+    s = 1 if direction == "up" else -1
+    want = direction == "up"  # ff MACD state wanted (True = up / False = down)
     last30 = last2h = None
     for b in bars_5m:
         if b.get("30m_macd") is not None and b.get("30m_signal") is not None:
@@ -1802,30 +1806,39 @@ def q_23pm_5px(bars_5m, bars_1m):
         day5 = [x for x in run if x["hhmm"] <= PX_LAST_5M]
         for i in range(1, len(day5)):
             p, b = day5[i - 1], day5[i]
-            if not (p["5m_pvt_sign"] == -1 and b["5m_pvt_sign"] == 1):
+            if not (p["5m_pvt_sign"] == -s and b["5m_pvt_sign"] == s):
                 continue
-            if not (b["30m_pvt_sign"] == 1 and b["2h_pvt_sign"] == 1
-                    and b["ff30"] and b["ff2h"]):
+            if not (b["30m_pvt_sign"] == s and b["2h_pvt_sign"] == s
+                    and b["ff30"] is want and b["ff2h"] is want):
                 continue
             entry = b["close"]
-            # exit: first LATER 5m bar closing below its own 5m EMA4
+            # exit: first LATER 5m bar closing across its own 5m EMA4
             end_bar, eod = None, True
             for x in day5[i + 1:]:
-                if x["5m_ema4"] is not None and x["close"] < x["5m_ema4"]:
+                if x["5m_ema4"] is None:
+                    continue
+                broke = x["close"] < x["5m_ema4"] if direction == "up" \
+                    else x["close"] > x["5m_ema4"]
+                if broke:
                     end_bar, eod = x, False
                     break
             if end_bar is None:
                 end_bar = day5[-1]
-            pts = end_bar["close"] - entry
-            # legacy exit note: 1m MACD_2452 cross-down at/after trigger (if covered)
+            pts = (end_bar["close"] - entry) if direction == "up" \
+                else (entry - end_bar["close"])
+            # legacy exit note: 1m MACD_2452 cross against the position (if covered)
             seq1 = [x for x in one.get(b["date"], []) if x["hhmm"] >= b["hhmm"]]
             macd_note = None
             if seq1:
                 st = ["up" if x["macd"] > x["signal"] else "dn" for x in seq1]
+                st_prev = "up" if direction == "up" else "dn"
+                st_hit = "dn" if direction == "up" else "up"
                 j = next((j2 for j2 in range(1, len(seq1))
-                          if st[j2 - 1] == "up" and st[j2] == "dn"), None)
+                          if st[j2 - 1] == st_prev and st[j2] == st_hit), None)
                 ref = seq1[-1] if j is None else seq1[j]
-                macd_note = {"time": ref["hhmm"], "pts": round(ref["close"] - entry, 1) + 0.0}
+                note_pts = (ref["close"] - entry) if direction == "up" \
+                    else (entry - ref["close"])
+                macd_note = {"time": ref["hhmm"], "pts": round(note_pts, 1) + 0.0}
             band = px_1m_band(seq1[0]) if seq1 else px_5m_band(b)
             episodes.append({
                 "date": b["date"], "from": b["hhmm"], "to": end_bar["hhmm"],
@@ -1833,21 +1846,28 @@ def q_23pm_5px(bars_5m, bars_1m):
                 "entry": round(entry, 2), "exit": round(end_bar["close"], 2),
                 "pts": round(pts, 1) + 0.0, "pct": round(100.0 * pts / entry, 2) + 0.0,
                 "eod": eod,
-                "macd_xdn_note": macd_note,
+                "macd_note": macd_note,
                 "momentors": px_momentor_string(mom, b["date"], b["hhmm"]),
                 "price_action_band": band,
                 "band_basis": "1m" if seq1 else "5m",
+                "direction": direction,
             })
 
     pts_all = sorted(e["pts"] for e in episodes)
     out = {
         "definition": (
-            "23PM_5PX = 2PM+3PM uptrending (PVT sign +1 AND MACD_2452 up, carried "
-            "no-repaint values) at a 5m PVT cross-up (-1 -> +1, same-day contiguous "
-            "bars, stamps <= 15:25). Exit = first 5m close below its own 5m EMA4 "
-            "(price loses the micro-mean); EOD flat at 15:25 if unbroken. "
-            "macd_xdn_note = where the legacy 1m MACD_2452 cross-down exit would "
-            "have landed (1m coverage Aug 3 2026+ only)."),
+            "23PM_5PX (%s) = 2PM+3PM %s (PVT sign %s AND MACD_2452 %s, carried "
+            "no-repaint values) at a 5m PVT %s (same-day contiguous bars, stamps "
+            "<= 15:25). Exit = first 5m close %s its own 5m EMA4; EOD flat at "
+            "15:25 if unbroken. pts/pct = move in trade direction. macd_note = "
+            "where the legacy 1m MACD_2452 cross exit would have landed (1m "
+            "coverage Aug 3 2026+ only).") % (
+            direction,
+            "uptrending" if direction == "up" else "downtrending",
+            "+1" if direction == "up" else "-1",
+            "up" if direction == "up" else "down",
+            "cross-up (-1 -> +1)" if direction == "up" else "cross-down (+1 -> -1)",
+            "below" if direction == "up" else "above"),
         "n_episodes": len(episodes),
         "n_positive": sum(1 for p in pts_all if p > 0),
         "n_eod_flat": sum(1 for e in episodes if e["eod"]),
@@ -1859,16 +1879,21 @@ def q_23pm_5px(bars_5m, bars_1m):
     return out
 
 
-def q_2pm_3px(bars_5m, bars_1m):
-    """Detect 2PM_3PX episodes.
+def q_2pm_3px(bars_5m, bars_1m, direction="up"):
+    """Detect 2PM_3PX episodes (direction='up' | 'down' - exact mirrors).
 
-    Trigger: 30m PVT sign -1 -> +1 (carried values, so the flip prints on the
-    30m close bar) with 2PM fully up at the trigger bar (2H PVT sign +1 AND
-    forward-filled 2H MACD_2452 > Signal - sign-based, no-repaint).
-    Exit (user 2026-10-18): first 5m bar AFTER the trigger with close < its own
-    5m EMA21; EOD flat at 15:25 if unbroken. No 3PM condition (per definition).
+    Trigger: 30m PVT sign -1 -> +1 (up) / +1 -> -1 (down) on carried values
+    (the flip prints on the 5m bar carrying the 30m close value), with 2PM
+    fully aligned at the trigger bar (2H PVT sign AND forward-filled 2H
+    MACD_2452 state: up = +1/up; down = -1/down - sign-based, no-repaint).
+    Exit: first 5m bar AFTER the trigger with close across its own 5m EMA21
+    (up: below; down: above); EOD flat at 15:25 if unbroken.
+    No 3PM condition (per definition).
+    pts/pct = move in trade direction (positive = trend move captured).
     """
     from datetime import datetime
+    s = 1 if direction == "up" else -1
+    want = direction == "up"
     last2h = None
     for b in bars_5m:
         if b.get("2h_macd") is not None and b.get("2h_signal") is not None:
@@ -1892,28 +1917,30 @@ def q_2pm_3px(bars_5m, bars_1m):
         day5 = [x for x in run if x["hhmm"] <= PX_LAST_5M]
         for i in range(1, len(day5)):
             p, b = day5[i - 1], day5[i]
-            if not (p["30m_pvt_sign"] == -1 and b["30m_pvt_sign"] == 1):
+            if not (p["30m_pvt_sign"] == -s and b["30m_pvt_sign"] == s):
                 continue
-            if not (b["2h_pvt_sign"] == 1 and b["ff2h"]):
+            if not (b["2h_pvt_sign"] == s and b["ff2h"] is want):
                 continue
             entry = b["close"]
-            # exit: first LATER 5m bar closing below its own 5m EMA21
+            # exit: first LATER 5m bar closing across its own 5m EMA21
             end_bar, eod = None, True
             for x in day5[i + 1:]:
-                if x["5m_ema21"] is not None and x["close"] < x["5m_ema21"]:
+                if x["5m_ema21"] is None:
+                    continue
+                broke = x["close"] < x["5m_ema21"] if direction == "up" \
+                    else x["close"] > x["5m_ema21"]
+                if broke:
                     end_bar, eod = x, False
                     break
             if end_bar is None:
                 end_bar = day5[-1]
-            pts = end_bar["close"] - entry
-            band = None
+            pts = (end_bar["close"] - entry) if direction == "up" \
+                else (entry - end_bar["close"])
             t1 = [x for x in one.get(b["date"], []) if x["hhmm"] >= b["hhmm"]]
             if t1:
-                band = px_1m_band(t1[0])
-                basis = "1m"
+                band, basis = px_1m_band(t1[0]), "1m"
             else:
-                band = px_5m_band(b)
-                basis = "5m"
+                band, basis = px_5m_band(b), "5m"
             episodes.append({
                 "date": b["date"], "from": b["hhmm"], "to": end_bar["hhmm"],
                 "duration_min": minutes(b["hhmm"], end_bar["hhmm"]),
@@ -1922,15 +1949,22 @@ def q_2pm_3px(bars_5m, bars_1m):
                 "eod": eod,
                 "momentors": px_momentor_string(mom, b["date"], b["hhmm"]),
                 "price_action_band": band, "band_basis": basis,
+                "direction": direction,
             })
 
     pts_all = sorted(e["pts"] for e in episodes)
     out = {
         "definition": (
-            "2PM_3PX = 2PM uptrending (2H PVT sign +1 AND 2H MACD_2452 up, carried "
-            "no-repaint values) at a 30m PVT cross-up (-1 -> +1 on carried values, "
-            "prints at the 30m close bar). Exit = first 5m close below its own "
-            "5m EMA21; EOD flat at 15:25 if unbroken. No 3PM condition."),
+            "2PM_3PX (%s) = 2PM %s (2H PVT sign %s AND 2H MACD_2452 %s, carried "
+            "no-repaint values) at a 30m PVT %s (prints at the 30m close bar). "
+            "Exit = first 5m close %s its own 5m EMA21; EOD flat at 15:25 if "
+            "unbroken. No 3PM condition. pts/pct = move in trade direction.") % (
+            direction,
+            "uptrending" if direction == "up" else "downtrending",
+            "+1" if direction == "up" else "-1",
+            "up" if direction == "up" else "down",
+            "cross-up (-1 -> +1)" if direction == "up" else "cross-down (+1 -> -1)",
+            "below" if direction == "up" else "above"),
         "n_episodes": len(episodes),
         "n_positive": sum(1 for p in pts_all if p > 0),
         "n_eod_flat": sum(1 for e in episodes if e["eod"]),
@@ -1938,6 +1972,99 @@ def q_2pm_3px(bars_5m, bars_1m):
         "mean_pts": round(sum(pts_all) / len(pts_all), 2) if pts_all else None,
         "median_pts": pts_all[len(pts_all) // 2] if pts_all else None,
         "episodes": episodes,
+    }
+    return out
+
+
+def q_23pm_5pm_down(bars_5m, bars_1m):
+    """Machine mirror of the hand-marked 23PM_5PM phases, downtrend side.
+
+    Phase = maximal same-day contiguous run of bars where 2H+30m+5m PVT/MACD
+    are all DOWN (2H/30m PVT sign -1, forward-filled MACD_2452 down on both,
+    5m PVT -1, 5m MACD_2452 < Signal) - exact mirror of the uptrend reg235
+    phase recipe. Rows record the phase window, the close-to-close move in
+    trend direction (positive = down-move), MFE (deepest low below the
+    phase-start close), Momentors and the EMA-ladder band at phase start.
+    """
+    from datetime import datetime
+    last30 = last2h = None
+    for b in bars_5m:
+        if b.get("30m_macd") is not None and b.get("30m_signal") is not None:
+            last30 = b["30m_macd"] > b["30m_signal"]
+        if b.get("2h_macd") is not None and b.get("2h_signal") is not None:
+            last2h = b["2h_macd"] > b["2h_signal"]
+        b["ff30"], b["ff2h"] = last30, last2h
+
+    mom = compute_momentor_ages(bars_5m)
+
+    one = {}
+    for b in bars_1m:
+        if b["hhmm"] <= PX_LAST_1M and b.get("close") is not None:
+            one.setdefault(b["date"], []).append(b)
+
+    def minutes(a, b):
+        d0 = datetime.strptime(a, "%H:%M")
+        d1 = datetime.strptime(b, "%H:%M")
+        return int((d1 - d0).total_seconds() // 60)
+
+    def down(b):
+        return (b["5m_pvt_sign"] == -1 and b["30m_pvt_sign"] == -1
+                and b["2h_pvt_sign"] == -1
+                and b["ff30"] is False and b["ff2h"] is False
+                and b["5m_macd"] is not None and b["5m_signal"] is not None
+                and b["5m_macd"] < b["5m_signal"])
+
+    phases = []
+    for run in contiguous_runs(bars_5m):
+        day5 = [x for x in run if x["hhmm"] <= PX_LAST_5M]
+        i = 0
+        while i < len(day5):
+            if not down(day5[i]):
+                i += 1
+                continue
+            j = i
+            while j + 1 < len(day5) and down(day5[j + 1]):
+                j += 1
+            phase = day5[i:j + 1]
+            entry = phase[0]["close"]
+            move = entry - phase[-1]["close"]
+            lows = [x["low"] for x in phase if x["low"] is not None]
+            mfe = (entry - min(lows)) if lows else None
+            t1 = [x for x in one.get(phase[0]["date"], []) if x["hhmm"] >= phase[0]["hhmm"]]
+            if t1:
+                band, basis = px_1m_band(t1[0]), "1m"
+            else:
+                band, basis = px_5m_band(phase[0]), "5m"
+            phases.append({
+                "date": phase[0]["date"], "from": phase[0]["hhmm"], "to": phase[-1]["hhmm"],
+                "duration_min": minutes(phase[0]["hhmm"], phase[-1]["hhmm"]),
+                "entry": round(entry, 2), "exit": round(phase[-1]["close"], 2),
+                "pts": round(move, 1) + 0.0, "pct": round(100.0 * move / entry, 2) + 0.0,
+                "mfe": round(mfe, 1) + 0.0 if mfe is not None else None,
+                "n_bars": len(phase),
+                "ends_at_close": phase[-1]["hhmm"] == PX_LAST_5M,
+                "momentors": px_momentor_string(mom, phase[0]["date"], phase[0]["hhmm"]),
+                "price_action_band": band, "band_basis": basis,
+            })
+            i = j + 1
+
+    pts_all = sorted(p["pts"] for p in phases)
+    out = {
+        "definition": (
+            "23PM_5PM downtrend phases (machine mirror of the hand-marked "
+            "uptrend phases): maximal same-day contiguous runs of 2H+30m+5m "
+            "PVT/MACD all DOWN (2H/30m PVT sign -1, ff MACD_2452 down on both, "
+            "5m PVT -1, 5m MACD_2452 < Signal). pts = close-to-close over the "
+            "phase in trend direction (positive = down-move); mfe = deepest "
+            "low below the phase-start close."),
+        "n_episodes": len(phases),
+        "n_positive": sum(1 for p in pts_all if p > 0),
+        "n_single_bar": sum(1 for p in phases if p["n_bars"] == 1),
+        "n_ending_at_close": sum(1 for p in phases if p["ends_at_close"]),
+        "total_pts": round(sum(pts_all), 1),
+        "mean_pts": round(sum(pts_all) / len(pts_all), 2) if pts_all else None,
+        "median_pts": pts_all[len(pts_all) // 2] if pts_all else None,
+        "episodes": phases,
     }
     return out
 
@@ -1959,6 +2086,12 @@ def main(argv=None):
                     help="query: 23PM_5PX - 5m PVT cross-up in 2PM+3PM up, EMA4 exit")
     ap.add_argument("--q2pm3px", action="store_true",
                     help="query: 2PM_3PX - 30m PVT cross-up in 2PM up, 5m EMA21 exit")
+    ap.add_argument("--q23pm5pxd", action="store_true",
+                    help="query: 23PM_5PX downtrend mirror (5m PVT cross-down in 2PM+3PM down)")
+    ap.add_argument("--q2pm3pxd", action="store_true",
+                    help="query: 2PM_3PX downtrend mirror (30m PVT cross-down in 2PM down)")
+    ap.add_argument("--q23pm5pmd", action="store_true",
+                    help="query: 23PM_5PM downtrend phases (machine mirror of the uptrend phases)")
     ap.add_argument("--csv-1m", default=os.path.join("data", "insight", "csv", "NSE_NIFTY1!, 1m.csv"))
     args = ap.parse_args(argv)
 
@@ -1997,6 +2130,18 @@ def main(argv=None):
         bars = load_bars(args.csv)
         one_m = load_1m_bars(args.csv_1m)
         print(json.dumps(q_2pm_3px(bars, one_m), indent=1))
+    if args.q23pm5pxd:
+        bars = load_bars(args.csv)
+        one_m = load_1m_bars(args.csv_1m)
+        print(json.dumps(q_23pm_5px(bars, one_m, direction="down"), indent=1))
+    if args.q2pm3pxd:
+        bars = load_bars(args.csv)
+        one_m = load_1m_bars(args.csv_1m)
+        print(json.dumps(q_2pm_3px(bars, one_m, direction="down"), indent=1))
+    if args.q23pm5pmd:
+        bars = load_bars(args.csv)
+        one_m = load_1m_bars(args.csv_1m)
+        print(json.dumps(q_23pm_5pm_down(bars, one_m), indent=1))
     if args.build:
         build(args.csv)
 
