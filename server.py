@@ -1211,8 +1211,9 @@ def trading_view():
         logger.error(f"TradingView webhook: unparsable body (Content-Type: {request.content_type}): {body}")
         return jsonify({"error": "unparsable webhook body"}), 400
     if data.get("MSG") == "LEVELS":
-        # levels-ladder message: no trade-logic consumer wired yet - acknowledge
-        return {"status": "success", "msg": "LEVELS received (no consumer wired yet)"}
+        # levels-ladder messages flow through to process_TradingView_Data
+        # (which stores them for the PA widget) - nothing more to do here
+        pass
     res = trading_view_handle_func(data, trader)
     return jsonify(res)
 

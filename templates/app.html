@@ -1460,6 +1460,73 @@
     }
     #spattScroll::-webkit-scrollbar-thumb:active { background: #9ec5fe; }
     #spattScroll::-webkit-scrollbar-corner { background: #191919; }
+
+    /* --- PA WIDGET (SetUps / Momentors / Levels Ladder) below Pending Orders --- */
+    #pa-widget-container { width: 100%; max-width: none; border-color: #3a5a8c; }
+    #pa-widget-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+        grid-template-areas:
+            "setups ladder"
+            "momentors ladder";
+        gap: 8px;
+    }
+    #pa-setups-section { grid-area: setups; }
+    #pa-momentors-section { grid-area: momentors; }
+    #pa-ladder-section { grid-area: ladder; }
+    .pa-section {
+        border: 1px solid #3a3a3a; border-radius: 8px;
+        padding: 6px 10px; min-width: 0; min-height: 0;
+    }
+    .pa-section-title {
+        display: flex; align-items: baseline; justify-content: space-between; gap: 8px;
+        font-weight: 700; font-size: 0.95em; color: #9ec5fe; margin-bottom: 6px;
+    }
+    .pa-updated { font-weight: 400; font-size: 0.78em; color: #777; }
+    #pa-setups-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+    .pa-setup-chip {
+        padding: 2px 10px; border-radius: 10px; border: 1px solid #555;
+        background: #222; color: #bbb; font-size: 0.85em; cursor: default;
+        white-space: nowrap;
+    }
+    .pa-setup-chip.active {
+        border-color: #2e7d32; background: rgba(46, 125, 50, 0.25);
+        color: #8ef58e; font-weight: 700;
+        box-shadow: 0 0 8px rgba(76, 175, 80, 0.35);
+    }
+    #pa-setups-state { font-size: 0.88em; margin-top: 6px; color: #999; }
+    #pa-momentors-body { font-family: Consolas, monospace; font-size: 0.85em; color: #ccc; }
+    .pa-momentors-line { margin-bottom: 5px; }
+    .pa-momentors-label { color: #888; font-family: inherit; }
+    .pa-momentors-token {
+        display: inline-block; padding: 1px 8px; margin: 2px 4px 2px 0;
+        border: 1px solid #4a4a6a; border-radius: 8px;
+        background: #23233a; color: #b9c7f7;
+    }
+    #pa-ladder-body table {
+        border-collapse: collapse; width: 100%;
+        font-family: Consolas, monospace; font-size: 0.85em;
+    }
+    /* CW-CD ladder (the chart's own table, from the LEVELS webhook) */
+    .pa-cwcd-title {
+        background: #ffd54f; color: #111; font-weight: 700;
+        text-align: center; padding: 3px 6px; font-size: 0.9em;
+        border: 1px solid #c8a415; border-radius: 2px;
+        margin: 4px 0 2px 0;
+    }
+    .pa-cwcd { width: 100%; border-collapse: collapse; font-family: Consolas, monospace; font-size: 0.85em; }
+    .pa-cwcd td { padding: 1px 8px; color: #e8e8e8; border-bottom: 1px solid #2a2a2a; }
+    .pa-cwcd td:first-child { text-align: right; }
+    .pa-cwcd td:nth-child(2) { text-align: center; }
+    .pa-cwcd td:last-child { text-align: right; color: #bbb; }
+    .pa-cwcd-close td { background: #8a8a8a; color: #111 !important; font-weight: 700; }
+    #pa-ladder-body th, #pa-ladder-body td {
+        padding: 2px 8px; text-align: right; border-bottom: 1px solid #333;
+    }
+    #pa-ladder-body th { color: #aaa; font-weight: 600; }
+    #pa-ladder-body th.pa-rung-label, #pa-ladder-body td.pa-rung-label { text-align: left; color: #aaa; }
+    td.pa-support { color: #66bb6a; }
+    td.pa-resistance { color: #ef5350; }
 </style>
 {% endblock %}
 
@@ -1659,6 +1726,28 @@
                 <tr><td colspan="17" class="no-options">No pending orders</td></tr>
             </tbody>
         </table>
+    </div>
+
+    <!-- === PA WIDGET (SetUps / Momentors / Levels Ladder) —
+         SetUps and Momentors stack on the left; the Levels Ladder
+         (raw EMA/VWAP rungs per timeframe from the TradingView webhook
+         JSON) spans both rows on the right. === -->
+    <div class="widget-container" id="pa-widget-container" style="display:none;">
+        <div id="pa-widget-grid">
+            <div class="pa-section" id="pa-setups-section">
+                <div class="pa-section-title">SetUps <span id="pa-setups-updated" class="pa-updated"></span></div>
+                <div id="pa-setups-chips" class="no-options">Loading setup library...</div>
+                <div id="pa-setups-state" title="Current Setup Call (detail in the Setup Call panel at the top)"></div>
+            </div>
+            <div class="pa-section" id="pa-momentors-section">
+                <div class="pa-section-title">Momentors <span id="pa-momentors-updated" class="pa-updated"></span></div>
+                <div id="pa-momentors-body" class="no-options">Loading momentors...</div>
+            </div>
+            <div class="pa-section" id="pa-ladder-section">
+                <div class="pa-section-title">Levels Ladder <span id="pa-ladder-updated" class="pa-updated"></span></div>
+                <div id="pa-ladder-body" class="no-options">Waiting for TradingView data...</div>
+            </div>
+        </div>
     </div>
 
     </div>
@@ -3069,6 +3158,12 @@ document.addEventListener('DOMContentLoaded', function() {
         // Setup Call panel: Forecast.setup_call rides every webhook emit.
         if (payload && payload.Forecast) applySetupCall(payload.Forecast);
 
+        // PA widget (below Pending Orders): mirror the active setup call
+        // into the SetUps chips and rebuild the Levels Ladder from the
+        // raw TradingView webhook JSON on every tick.
+        if (payload && payload.Forecast) applyPaSetupCall(payload.Forecast);
+        applyPaLevels(payload);
+
         // TradingView entry validation flags (TV_DATA_Validation_REQUIRED).
         // These gate the CE/PE Buy buttons on every webhook. The Trade
         // Setups table painting that used to live here is stashed in
@@ -3143,7 +3238,265 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
-    
+    // === PA widget (SetUps / Momentors / Levels Ladder) below Pending Orders ===
+
+    let paSetupLibrary = null;    // forecasting/setup_library.json payload
+    let paActiveSetupCall = null; // latest Forecast.setup_call (null = none)
+
+    function paWidgetShow() {
+        const w = document.getElementById('pa-widget-container');
+        if (w) w.style.display = '';
+    }
+
+    function paStamp(id) {
+        const el = document.getElementById(id);
+        if (el) el.textContent = '@ ' + new Date().toLocaleTimeString('en-IN', { hour12: false });
+    }
+
+    // --- SetUps: one chip per library setup; the active Setup Call id
+    // (from Forecast.setup_call) gets the green highlight. Full detail
+    // lives in the Setup Call panel at the top of the Trade tab. ---
+    function loadPaSetups() {
+        fetch('/setup/library')
+            .then((r) => r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)))
+            .then((lib) => {
+                if (!lib || lib.error || !Array.isArray(lib.setups)) return;
+                paSetupLibrary = lib;
+                renderPaSetups();
+            })
+            .catch((err) => console.warn('setup library fetch failed:', err));
+    }
+
+    function renderPaSetups() {
+        const body = document.getElementById('pa-setups-chips');
+        if (!body) return;
+        if (!paSetupLibrary) return; // fetch still in flight - keep placeholder
+        body.classList.remove('no-options');
+        body.innerHTML = '';
+        const setups = (paSetupLibrary && paSetupLibrary.setups) || [];
+        if (!setups.length) {
+            body.textContent = 'No setups in library.';
+            return;
+        }
+        setups.forEach((s) => {
+            const chip = document.createElement('span');
+            chip.className = 'pa-setup-chip' +
+                (paActiveSetupCall && s.id === paActiveSetupCall.id ? ' active' : '');
+            chip.title = [s.trend && 'Trend: ' + s.trend, s.liner,
+                          s.invalidation && 'Invalidation: ' + s.invalidation]
+                .filter(Boolean).join('\n');
+            chip.textContent = s.id + ' · ' + (s.name || '');
+            body.appendChild(chip);
+        });
+        const upd = document.getElementById('pa-setups-updated');
+        if (upd) upd.textContent = paSetupLibrary.version ? ('v' + paSetupLibrary.version) : '';
+    }
+
+    function applyPaSetupCall(forecast) {
+        paWidgetShow();
+        paActiveSetupCall = (forecast && forecast.setup_call) || null;
+        const stateEl = document.getElementById('pa-setups-state');
+        const call = paActiveSetupCall;
+        if (stateEl) {
+            if (call) {
+                const active = call.state === 'ACTIVE';
+                stateEl.textContent = (call.state || '?') + ' · ' + (call.id || '?') +
+                    (call.name ? ' — ' + call.name : '');
+                stateEl.style.color = active ? '#8ef58e' : (call.state === 'WATCH' ? '#ffb74d' : '#999');
+            } else {
+                stateEl.textContent = 'No active setup — stand aside';
+                stateEl.style.color = '#999';
+            }
+        }
+        renderPaSetups();
+    }
+
+    // --- Momentors: SPATT playbook token strings (setup_pa_tradecase.json
+    // via /spatt/data). Column indexes are on the window-split rows the
+    // endpoint returns (same layout as the SPATT grid: 2 = Set Up,
+    // 11 = Momentors). Shows the most recent tokens plus a frequency tally. ---
+    const PA_MOMENTORS_COL = 11;
+    const PA_MOMENTORS_SETUP_COL = 2;
+
+    function loadPaMomentors() {
+        fetch('/spatt/data')
+            .then((r) => r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)))
+            .then((d) => {
+                if (!d || d.error || !Array.isArray(d.rows)) return;
+                renderPaMomentors(d.rows);
+            })
+            .catch((err) => {
+                const body = document.getElementById('pa-momentors-body');
+                if (body) body.textContent = 'Momentors unavailable (' + err.message + ')';
+            });
+    }
+
+    function renderPaMomentors(rows) {
+        const body = document.getElementById('pa-momentors-body');
+        if (!body) return;
+        body.classList.remove('no-options');
+
+        const counts = new Map();
+        const recent = [];
+        for (let i = rows.length - 1; i >= 0; i--) {
+            const tok = String(rows[i][PA_MOMENTORS_COL] || '').trim();
+            if (!tok || tok.toUpperCase() === 'NA') continue;
+            counts.set(tok, (counts.get(tok) || 0) + 1);
+            if (recent.length < 6) recent.push({
+                tok,
+                setup: String(rows[i][PA_MOMENTORS_SETUP_COL] || ''),
+            });
+        }
+        if (!counts.size) {
+            body.textContent = 'No momentor tokens in the playbook yet.';
+            return;
+        }
+
+        body.innerHTML = '';
+
+        const recentLine = document.createElement('div');
+        recentLine.className = 'pa-momentors-line';
+        recentLine.appendChild(Object.assign(document.createElement('span'),
+            { className: 'pa-momentors-label', textContent: 'Recent: ' }));
+        recent.forEach((r) => {
+            const t = document.createElement('span');
+            t.className = 'pa-momentors-token';
+            t.title = 'Set Up ' + r.setup;
+            t.textContent = r.tok;
+            recentLine.appendChild(t);
+        });
+
+        const topLine = document.createElement('div');
+        topLine.className = 'pa-momentors-line';
+        topLine.appendChild(Object.assign(document.createElement('span'),
+            { className: 'pa-momentors-label', textContent: 'Most frequent: ' }));
+        [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8).forEach(([tok, n]) => {
+            const t = document.createElement('span');
+            t.className = 'pa-momentors-token';
+            t.textContent = tok + ' ×' + n;
+            topLine.appendChild(t);
+        });
+
+        body.appendChild(recentLine);
+        body.appendChild(topLine);
+        paStamp('pa-momentors-updated');
+    }
+
+    // --- Levels Ladder: raw EMA/VWAP rungs per timeframe, straight from
+    // the TradingView webhook JSON (INDICATORS blocks). Green = price
+    // above the rung (support below price), red = price below the rung
+    // (resistance above price). ---
+    const PA_LADDER_TFS = ['1M', '5M', '30M', '2H'];
+    const PA_LADDER_RUNGS = ['EMA200', 'EMA100', 'EMA50', 'EMA21', 'EMA9', 'VWAP'];
+
+    function applyPaLevels(payload) {
+        const body = document.getElementById('pa-ladder-body');
+        if (!body) return;
+        paWidgetShow();
+
+        let tvd = payload && payload.TradingView_Data;
+        if (typeof tvd === 'string') {
+            try { tvd = JSON.parse(tvd); } catch (e) { tvd = null; }
+        }
+        const ind = (tvd && tvd.INDICATORS) || {};
+        const num = (v) => { const x = parseFloat(v); return isFinite(x) ? x : null; };
+
+        // Price basis mirrors collect_levels(): 1M CLOSE -> 1M VWAP -> 5M CLOSE.
+        const m1 = ind['1M'] || {};
+        const m5 = ind['5M'] || {};
+        const price = num(m1.CLOSE) !== null ? num(m1.CLOSE)
+            : (num(m1.VWAP) !== null ? num(m1.VWAP) : num(m5.CLOSE));
+
+        const hasData = PA_LADDER_TFS.some((tf) =>
+            PA_LADDER_RUNGS.some((rung) => num((ind[tf] || {})[rung]) !== null));
+        if (price === null || !hasData) {
+            body.textContent = 'No price/levels in TradingView data yet.';
+            return;
+        }
+
+        const hasData = PA_LADDER_TFS.some((tf) =>
+            PA_LADDER_RUNGS.some((rung) => num((ind[tf] || {})[rung]) !== null));
+        if (price === null || !hasData) {
+            body.textContent = 'No price/levels in TradingView data yet.';
+            return;
+        }
+
+        // NEW (user): the Pine-built ladder from the LEVELS webhook - rendered
+        // exactly like the chart's CW-CD table: yellow title, rows sorted
+        // descending with the Close row (gray, <<<) inserted in place, and the
+        // distance column = points from the live close.
+        const levels = payload && payload.Levels;
+        if (levels && Object.keys(levels).length) {
+            let html = '';
+            Object.keys(levels).forEach((key) => {
+                const rows = (levels[key] || [])
+                    .map((r) => ({ label: String(r[0]), px: parseFloat(r[1]) }))
+                    .filter((r) => isFinite(r.px));
+                if (!rows.length) return;
+                rows.sort((a, b) => b.px - a.px);
+                html += '<div class="pa-cwcd-title">' + key.replace(/_/g, '-') + '</div>';
+                html += '<table class="pa-cwcd"><tbody>';
+                let closeShown = false;
+                rows.forEach((r) => {
+                    if (!closeShown && price >= r.px) {
+                        html += `<tr class="pa-cwcd-close"><td>${price.toFixed(0)}</td>` +
+                            `<td>Close</td><td>&lt;&lt;&lt;</td></tr>`;
+                        closeShown = true;
+                    }
+                    const d = Math.round(Math.abs(r.px - price));
+                    html += `<tr><td>${r.px.toFixed(0)}</td><td>${r.label}</td>` +
+                        `<td>${d || ''}</td></tr>`;
+                });
+                if (!closeShown) {
+                    html += `<tr class="pa-cwcd-close"><td>${price.toFixed(0)}</td>` +
+                        `<td>Close</td><td>&lt;&lt;&lt;</td></tr>`;
+                }
+                html += '</tbody></table>';
+            });
+            body.innerHTML = html;
+            const upd = document.getElementById('pa-ladder-updated');
+            if (upd) upd.textContent = 'px ' + price;
+            return;
+        }
+
+        let html = '<table><thead><tr><th class="pa-rung-label">Rung</th>';
+        PA_LADDER_TFS.forEach((tf) => {
+            const tfPrice = num((ind[tf] || {}).CLOSE);
+            html += `<th title="${tf} close ${tfPrice !== null ? tfPrice : 'n/a'}">` +
+                `${tf}${tfPrice !== null ? ' @' + tfPrice : ''}</th>`;
+        });
+        html += '</tr></thead><tbody>';
+        PA_LADDER_RUNGS.forEach((rung) => {
+            html += `<tr><td class="pa-rung-label">${rung}</td>`;
+            PA_LADDER_TFS.forEach((tf) => {
+                const v = num((ind[tf] || {})[rung]);
+                if (v === null) {
+                    html += '<td>--</td>';
+                } else {
+                    const cls = price >= v ? 'pa-support' : 'pa-resistance';
+                    html += `<td class="${cls}" ` +
+                        `title="price ${price} ${price >= v ? 'above' : 'below'} ${tf} ${rung}">${v.toFixed(2)}</td>`;
+                }
+            });
+            html += '</tr>';
+        });
+        html += '</tbody></table>';
+        body.innerHTML = html;
+
+        const upd = document.getElementById('pa-ladder-updated');
+        if (upd) upd.textContent = 'px ' + price;
+    }
+
+    // Initial loads: setup library once (it is static between edits);
+    // momentors on load and every 60s (the playbook file grows through
+    // the session). The ladder refreshes on every webhook tick.
+    loadPaSetups();
+    loadPaMomentors();
+    setInterval(() => {
+        if (socket.connected) loadPaMomentors();
+    }, 60000);
+
+
         
     // // const tradingViewData = JSON.parse(payload.TradingView_Data);
     // // const recommendation = msg.TradeRecommendation || '--';

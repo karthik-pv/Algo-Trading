@@ -7533,6 +7533,13 @@ class Trader_Singleton:
             self._tv_validation_required = self._is_tv_validation_required()
             self._update_tv_buy_validation(data)
 
+            # MSG-typed envelopes (new Pine script): a LEVELS message carries the
+            # pre-built levels ladder (CW-CD etc.) for the PA widget - store and
+            # skip trade logic (no INDICATORS in a LEVELS message).
+            if isinstance(data, dict) and data.get("MSG") == "LEVELS":
+                self._tv_levels = data.get("LEVELS") or {}
+                return []
+
             indicators = data["INDICATORS"]
             trade_setups = []
 
@@ -7570,6 +7577,7 @@ class Trader_Singleton:
             json_data = {
                 "TradingView_Data": data,
                 "TradeSetups": trade_setups,
+                "Levels": getattr(self, "_tv_levels", {}),
                 "TVValidationRequired": self._tv_validation_required,
                 "CE_BUY_ALLOWED": self._tv_ce_buy_allowed,
                 "PE_BUY_ALLOWED": self._tv_pe_buy_allowed,
