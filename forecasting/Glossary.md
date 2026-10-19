@@ -2,7 +2,8 @@
 
 Scope: the vocabulary for the **Forecasting**, **Tracking** and **Commentary** modules.
 Derived from the **Forecast** sessions ("Forecasting trading setups for scalping",
-"Forecasting good 1PM Swing conditions") + `forecasting/HANDOFF.md` + `SPATT_HANDOFF.md`.
+"Forecasting good 1PM Swing conditions") + `handoffs/PAInsight_forecasting_engine.md` +
+`handoffs/SPATT.md` (the handoffs live in `handoffs/` — start at `handoffs/README.md`).
 This is the canonical vocabulary for all Tracking / Commentary entries. If a term is used
 differently anywhere, this file wins.
 
