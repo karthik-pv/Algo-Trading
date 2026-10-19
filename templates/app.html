@@ -3414,13 +3414,6 @@ document.addEventListener('DOMContentLoaded', function() {
             return;
         }
 
-        const hasData = PA_LADDER_TFS.some((tf) =>
-            PA_LADDER_RUNGS.some((rung) => num((ind[tf] || {})[rung]) !== null));
-        if (price === null || !hasData) {
-            body.textContent = 'No price/levels in TradingView data yet.';
-            return;
-        }
-
         // NEW (user): the Pine-built ladder from the LEVELS webhook - rendered
         // exactly like the chart's CW-CD table: yellow title, rows sorted
         // descending with the Close row (gray, <<<) inserted in place, and the
