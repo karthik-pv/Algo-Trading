@@ -334,6 +334,11 @@ BROKER_MAP = {"KITE": KiteAdapter, "MSTOCK": MStockAdapter, "SIMULATOR": Simulat
 
 try:
     CURRENT_BROKER = fetch_from_json("appconfig.json" , "BROKER")
+    # machine-local override (.env / environment wins over the shared
+    # appconfig): the Dell can trade MSTOCK while the Mac runs KITE
+    # off the same repo.
+    if os.environ.get("BROKER"):
+        CURRENT_BROKER = os.environ["BROKER"].strip().upper()
     UNDERLYING = fetch_from_json("appconfig.json" , "UNDERLYING")
     CURRENT_MODE = str(fetch_from_json("appconfig.json", "MODE") or "ALERT").upper()
     VALID_MODES = {"LIVE", "PAPER", "SIMULATION", "PLAYBACK"}

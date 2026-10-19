@@ -5,7 +5,7 @@
   "TIME_LIMIT_ULTRA_SCALPING": "1",
   "session": {
     "MODE": "LIVE",
-    "BROKER": "KITE",
+    "BROKER": "MSTOCK",
     "UNDERLYING": "NIFTY"
   },
   "gating": {
@@ -84,5 +84,5 @@
     "STAMP_DUTY_BUY_PCT": "0.003",
     "STAMP_DUTY_MIN": "1"
   },
-  "AUTO_SHUTDOWN_NO_BROWSER": false
+  "AUTO_SHUTDOWN_NO_BROWSER": true
 }

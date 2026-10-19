@@ -11,18 +11,11 @@ if [ -d .venv ]; then PY=.venv/bin/python
 elif [ -d venv ]; then PY=venv/bin/python
 else PY=python3; fi
 
+# machine-local settings (BROKER / AUTO_SHUTDOWN_NO_BROWSER / NGROK_*) -
+# .env is gitignored, so the Dell and the Mac can differ from one repo
+if [ -f .env ]; then set -a; . ./.env; set +a; fi
+
 "$PY" server.py &
 APP_PID=$!
-
-# open the page once the server answers (cancels the shutdown timer)
-(
-    for i in $(seq 1 30); do
-        if curl -s -o /dev/null --max-time 1 http://localhost:5050/; then
-            open "http://localhost:5050"
-            break
-        fi
-        sleep 1
-    done
-) &
 
 wait $APP_PID

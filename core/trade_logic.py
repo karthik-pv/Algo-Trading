@@ -176,6 +176,9 @@ class Trader_Singleton:
     _use_max_margin = True
     _mode = fetch_from_json("appconfig.json" , "MODE")
     _broker_string = fetch_from_json("appconfig.json" , "BROKER")
+    # machine-local override (see server.py: BROKER env > appconfig)
+    if os.environ.get("BROKER"):
+        _broker_string = os.environ["BROKER"].strip().upper()
     _exchange = get_exchange_for_underlying(fetch_from_json("appconfig.json" , "UNDERLYING"))
     _underlying = fetch_from_json("appconfig.json" , "UNDERLYING")
 
@@ -8560,7 +8563,14 @@ class Trader_Singleton:
         is stopped manually.
         """
         try:
-            if not fetch_from_json("appconfig.json", "AUTO_SHUTDOWN_NO_BROWSER", True):
+            # machine-local override first (.env / environment), then the
+            # shared appconfig default
+            env_flag = os.environ.get("AUTO_SHUTDOWN_NO_BROWSER")
+            if env_flag is not None:
+                enabled = env_flag.strip().lower() not in ("0", "false", "no")
+            else:
+                enabled = fetch_from_json("appconfig.json", "AUTO_SHUTDOWN_NO_BROWSER", True)
+            if not enabled:
                 return
         except Exception:
             pass  # config unreadable -> default behaviour
