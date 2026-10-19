@@ -8551,7 +8551,19 @@ class Trader_Singleton:
         with nobody watching). A window close may not stop the engine
         while a position depends on it: keep the watcher alive, keep
         re-arming this check, and shut down only when flat.
+
+        ALSO EXCEPT when appconfig AUTO_SHUTDOWN_NO_BROWSER is false
+        (2026-10-19: the Mac replaces the Dell as the trading machine;
+        the Windows console-cleanup rationale does not apply there,
+        and the auto-exit was killing the app mid-testing every time
+        a tab was closed). The app then stays up until the terminal
+        is stopped manually.
         """
+        try:
+            if not fetch_from_json("appconfig.json", "AUTO_SHUTDOWN_NO_BROWSER", True):
+                return
+        except Exception:
+            pass  # config unreadable -> default behaviour
         if self._browser_sids:
             return
 
