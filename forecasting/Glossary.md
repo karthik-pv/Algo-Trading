@@ -69,7 +69,7 @@ Same pattern per TF:
 
 These are **states** (no cross required) — the cross events (`5PX`, `3M2X`, `3MX` = both together, …) live in Cross-event naming above. Multi-TF playbook setups (23PM_5PX etc.) = logical ANDs of these states + a trigger cross.
 
-Data availability: `1O`/`5O`/`3OX`/`2OX` tracked (VOC in exports) · `DS` from the D file · `2S`/`DO` pending export plots · `WS` limited.
+Data availability: `1O`/`5O`/`3OX`/`2OX` tracked (VOC in exports) · `DS` from the D file · `2S`/`DO` pending export plots · `WS` limited. The `30m 5m 1m` export adds `1S`/`5S`/`5M1` (map below).
 
 ## Indicator shorthand
 
@@ -138,6 +138,40 @@ All exits EOD-flat at 15:25. "Points Moved" = move in trend direction (positive 
 User's pane scan order (read right→left): 5m PVT → 5m MACD → 1m Stoch → 1m PVT → 1m VOC → 1m MACD → 15s MACD.
 No 5m Stoch / 5m VOC in this export. File lives in `data/insight/csv/` (copied from Downloads 2026-10-18).
 
+## `30m 5m 1m` export column map (`NSE_NIFTY1!, 30m 5m 1m.csv` — 57 cols, verified 2026-10-19)
+
+1m bars 2026-08-03 → present. User's pane scan order (right→left): **30m VOC (in 5m mode) ·
+30m MACD2 / MACD1 / Stoch / PVT · 5m MACD2 / MACD1 / Stoch / PVT / VOC · 1m Stoch / PVT / VOC /
+MACD2 · chart (EMAs + VWAP + levels)**.
+
+| Cols | Content |
+|---|---|
+| 1–5 | time (1m stamps), OHLC |
+| 6–18 | 1m EMA9/21/50/100/200 · 5m/30m/2H EMA50/100/200 |
+| 19–24 | D/W/M EMA100/200 — **EMPTY in this export** (empty-column trap applies) |
+| 25 | VWAP (session) |
+| 26–27 | **1m MACD2** (24/52) — no 1m M1 in this export |
+| 28 | 1m VOC |
+| 29–32 | 1m PVT + dead Plot (const 0) + PVT Cross Up/Down markers |
+| 33–34 | 1m Stoch K/D |
+| 35 | 5m VOC |
+| 36–39 | 5m PVT + dead Plot + markers — carried on EVERY 1m bar (×5 repeats, no-repaint) |
+| 40–41 | 5m Stoch K/D (5m-close stamps `:19/:24/…`) |
+| 42–45 | 5m MACD1 (12/26) then MACD2 (24/52) |
+| 46–49 | 30m PVT + dead Plot + markers — carried on every 1m bar (×30 repeats) |
+| 50–55 | 30m Stoch K/D · 30m MACD1 (12/26) · MACD2 (24/52) — populated ONLY at 30m closes (`:44/:14` stamps, 13/day) |
+| 56 | **30m VOC "in 5m mode"** = 5m-computed with periods ×6 (the 2H-VOC pattern, user-confirmed), updating on **every 5m close** (range seen −32…+40) |
+
+Verified semantics (2026-10-19): M1 = 12/26 / M2 = 24/52 by the median-|MACD| ratio check —
+same convention as the 5m file (M1 discard, M2 use) · PVT Cross Up/Down markers = PVT zero-cross
+events (`0` on event bars; a stale carry marker can ride the 09:15 row — verify via sign flips)
+· 5m/30m PVT columns mix raw normalized values with ±1 saturation flags — signs & zero-crosses
+only (the handoff rule).
+
+**Adds vs the 5m file:** 1S (1m Stoch), 5S, 5M1 (5M1X now callable), 1m-resolution no-repaint
+carries of 5m/30m PVT. **Still missing:** 2H Stoch/VOC, D Stoch/VOC, D/W/M EMAs, 2H/D PVT —
+`2SX`/`DSX`/`DOX` stay pending and the regime's D/2H components must come from the 5m file or logs.
+
 ## Cross-event naming — the full momentor net (confirmed against `MOMENTOR_COLS`, trend_insight.py)
 
 | Momentor | Meaning | Tracked from |
@@ -153,7 +187,7 @@ No 5m Stoch / 5m VOC in this export. File lives in `data/insight/csv/` (copied f
 
 - `3PMX` (the v2 setup acronym, credit 1–13) is a **state** triggered by a same-day `3M2X` UP — never call the composite without naming the trigger event.
 - Ages: 30m counts the cross candle as 1 (valid 1–13); 2H/D count it as 0 (valid 0–4); outside → NA.
-- Not callable: 1M1X / 5M1X (no M1 columns for 1m/5m in any export) · 2SX / DSX / DOX (plots not yet added to the TradingView export).
+- Not callable: 1M1X (no 1m M1 in any export) · 2SX / DSX / DOX (plots not yet added to the TradingView export). 5M1X is callable from the `30m 5m 1m` export only.
 - **Module note:** the SPATT engine's `MX` momentor column (`compute_momentor_ages`) tracks the M2-pair state/age — in commentary the user's combined definition above wins; a log line meaning the M2-pair cross alone says `3M2X`.
 - **Empty-column trap:** HTF MACD/Stoch/VOC are populated ONLY at the TF's closing bars — before the day's first 2H close (11:15) those columns are empty; never read "+/−" from empty (the `sgn(False)==0` trap) — carry the previous day's final TF state instead.
 
@@ -189,6 +223,17 @@ R5/S5 default off. Unknown `Name`s: index by name gracefully (inputs change the 
 
 Dip depth ∝ 5m PVT state: marginal flip → the full ladder sweep to 1E200 + nearby-level confluence; 5m PVT positive → 1E21/1E50 hold and reclaim.
 
+## Replay insights — 1m×5m×30m correlations (mined 2026-10-19, full Aug 3→Oct 19 sample of the `30m 5m 1m` export)
+
+1. **Bare 1PX/1MX flips are noise** — median adverse excursion ~4–5 pts (30-bar window), 80 %+ stay within 15 pts, ~⅔ of 1m PVT flips reclaim within 10 bars, regardless of 5m PVT sign. Never a trend start alone (the 1PME50 gate stands).
+2. **1PME50 UP against 5m PVT − = fade bait** — forward 30 bars: median −6.2 pts, P(up) 40 % (n=227). With 5m PVT +: ≈flat (−0.7, 47 %, n=38). Only the 5m-aligned version pays.
+3. **VOC flood semantics — the strongest edge found**: 1m VOC > +40 on a DOWN bar with 5m PVT − → **distribution, continuation is the base case** (fwd-10 median −4.3, P(up) 39 %, n=285). The same flood with 5m PVT + → absorption, the flush fails (+0.8, 52 %). Floods on up-bars ≈ neutral.
+4. **1m Stoch extremes are 5-minute scalps only** — OS & 3M2+ → median +2.1 in 5 bars (57 % up); the edge is gone by 15 bars. OB fades work mildly under 3M2 − (45 % up at 15 bars).
+5. **1SX UP pays only with 5m PVT +** (fwd-10 +0.8, 52 %) vs flat-to-negative against it (−0.3, 49 %).
+6. **5m-PVT+ 1m dips slice the ladder deep but reclaim** — 85 % pierce 1E50, 62 % pierce 1E200 before the 1m PVT flips back; still ⅔ reclaim ≤10 bars. The dip = scalp-entry rule, quantified.
+7. **VWAP dips reclaim fast by default** — median ~4 bars below, only 6–8 % still below after 30 min. A CV-below persisting >30 min is the distribution-day marker (Oct 19 qualified at 09:56).
+8. **The 30m M1/M2 poise rule (user, 2026-10-19) — the primary input for the 1PME50 swing-direction forecast**: when 3PVT is green but *retracing* while **3M1 is down and/or 3M2 is poised down** (diff still >0 but compressing ≥3 closes) or crossed down, the 1PME50 swing direction is **DOWN** — the day resolves down after the morning consolidation: 1m UP attempts are fades, and once 3PX confirms, no looking up; 5m PVT then stays red for an extended run. **Mirror for 3M1 up / 3M2 poised up** (even under a red-but-curling 3PVT): the same 1m structures become buyable. The 3PVT sign alone is the *weakest* of the three tells — momentum (M1/M2 poise) leads, PVT confirms.
+
 ## 1m micro calls (tracking layer, user 2026-10-18)
 
 | Call | Definition |
@@ -209,3 +254,131 @@ Tracking consequence: the old "1PM uptrend starts" line fires on the PVT flip al
 5. **Don't repeat the Nifty print unnecessarily** — level values and key extremes only (day high/low, closes at section boundaries); never a price on every line.
 6. **Role reversals are always flagged** (morning resistance → afternoon support).
 7. 15PM: not present in CSV exports — only trackable live from the 15s webhook feed.
+
+## 5m export 2026-10-20 (`NSE_NIFTY1!, 5_c8600.csv` — 59 cols) — EXPORT TRAP + the 30/5/1 update
+
+**The trap:** this 5m-chart export's MACD/PVT/Stoch panes are **D-resolved** — all four
+indicator blocks show identical values (e.g. D MACD −388.7/−382.7), populating only at
+day boundaries (MACD at the last row, PVT at 09:15). Useless for 5m/30m indicator columns.
+Probably the wrong chart template / pane resolutions when exporting. Verify a new export's
+blocks by change-frequency before trusting it (`scripts/verify2.py` pattern).
+
+**What it IS good for (verified against the old files on the Aug 3→Sep 25 overlap):**
+TRUE 5m HA OHLC (Oct 9→19) · 5m EMA4/9/21 (new) · 1m/5m/30m/2H EMA carries (= the containing
+bar's final value, 1.0000) · D EMA100/200 + 2H carries = **frozen at the day's first minute**
+(the chart-displayed state; the implied-close check proves it: Oct 19's carry implies the
+first-minute print 22889, not the 22897 close) · session VWAP (5m-based).
+
+**The 30/5/1 update (Sep 28 → Oct 19, `scripts/update_nifty_store.py --write`,
+backups in `csv/backup_2026-10-20/`):** sources = the combined `30m 5m 1m` export
+(verified blocks: the 5m MACD/Stoch/PVT populate on the 5m close-minute rows +4, the 30m on
++29; the old M1 = 12/26 discard, M2 = 24/52 use — the 1m pairs recompute EXACTLY from the
+HA closes) + the 5m export (the true 5m bars, the D/2H EMA carries). Appended: 1m +5775,
+5m +1147, 30m +195, 1D +15; `store.json` + `setup_occurrences_v2.csv` rebuilt.
+**Known gaps in the appended rows:** 5m 15:30 bars missing Sep 28→Oct 8 (no 1m source rows
+for 15:30-15:34); D EMA50 / W/M EMA columns empty (no source anywhere); 1D PVT/K/D empty
+(volume / unresolved Stoch convention); the 1D close + 30m OHLC = 1m-bucket approximations
+(~1 pt intraday, worse on gap opens); the 2H EMA200 in the combined export = warmup-divergent
+→ continued from the old chain (validated 0.5 pt vs the 5m export). The 2H file still ends
+Sep 25, the 15S file Oct 16.
+
+**The "3M-crack morning" scan (`scripts/scan_morning_setup.py`,
+`csv/morning_setup_30m_occurrences.csv`):** the user's 20 Oct morning state =
+30m MACD1 < signal · MACD2 > signal but falling + the gap shrinking (2 bars) · PVT > 0 but
+falling (2 bars, unsaturated). Calibrated: Oct 16 15:15 bar = the exact bell state; the
+cross fired at the 09:45-stamped bar (closes 10:14:59) = the logged "3M2X DOWN 10:14".
+Found: 34 bell-carried days (next day down 13/34; but Sep 2025+ regime: 6/9 down) and 98
+intraday formations (rest-of-day negative 64/98, median −16 pts) — the intraday version is
+the same-day fade tell; the bell version alone was a bull-era continuation signal until the
+2025 regime change.
+
+## The 5PM-pullback-1E50 validation (user insight, 20 Oct 2026 — `scripts/validate_1e_pullback.py`)
+
+Setup: 30m PVT sign (last completed 30m bar) + 5PM (5m PVT sign + 5M2 vs signal) +
+the touch-and-reclaim of the 1m-EMA rungs. Window 2025-10-20 → 2026-10-19, 5m bars;
+the 1m-EMA rungs = span-matched EMAs over the 5m closes (1mE50→5mEMA10, 1mE100→5mEMA20,
+1mE200→5mEMA40 — the decay-exact match; median error 1.2–1.7 pts vs the carried values —
+the carried 1m EMA columns in the 5m file only populate from 2026-07-13, TradingView's
+1m-history limit). Events: 3,737 (`csv/validate_1e_pullback_events.csv`).
+
+**Validated:** (1) the 1E50 bounce rarely holds as touched — the strict 15-min hold 16–48%,
+the soft (the close 3 bars beyond) 55–74%. (2) **The depth clause**: with 5P up but 5M2
+retracing, the 1E50 strict-hold collapses 48%→19% (bull) and the touch extends to the
+deeper rung (84% of the 1E100 touches happen in the 5M2-retracing state). (3) The BEAR
+side end-to-end: the 1E50 rejection with 5M2 curling up → the EOD median **−12.3** (the
+best cell); the 1E100/1E200 + the 5M2-curl-up entry → the next-30-min down 53%/58%,
+EOD −8.6/−4.7.
+
+**Not validated:** the bull-side deep-rung auto-bounce — the 1E100+retrace = a coin flip
+(48% up, med −1.7, R/R 16.2 fav vs 20.2 adv); the **1E200 touch with 5M2 retracing =
+the trend-fail warning** (EOD −11.5, max-adv 25.2 > max-fav 16.8), not an entry. The
+bull's clean cell = the 1E50 touch with 5M2 still RISING (the soft-hold 74%, EOD +2.4).
+The year = a bear year (26.4k→22.9k) — the bull cells are counter-trend; re-test by regime.
+
+## Capture test — the 1E100/200 rise with 1PM / 15SW triggers (`scripts/validate_capture_1e100.py`, 20 Oct)
+
+Question: with **3PM still up** (30m PVT>0 + 30m M2>signal, completed-bar carry) and
+**5m MACD2 retracing** (still above signal but falling/gap-shrinking, last completed 5m
+bar), can the rise off the 1E100/200 touch be captured with a 1PM (1m PVT>0 + 1m M2>signal
+flip-on) or a 15m-MACD-swing trigger? Window = the 1m era (Jul 13 → Oct 19; the 1m PVT
+exists only here), 1m resolution, exact carried 1m EMAs. Events: 112 × 1E100, 41 × 1E200
+(one per pullback leg until the reclaim). 15m MACD = 24/52 over the 15m-close proxies
+(the last 1m HA-close of the 15m window); **the 15m PVT = payload-only, not testable**.
+
+| 1E100 entry | n | 30min up | 30min med | EOD med |
+|---|---|---|---|---|
+| T0 (the touch close) | 112 | 48% | −0.7 | −5.6 |
+| 1PM flip-on | 68 | 53% | +0.7 | −10.5 |
+| **15m swing (line>sig & rising)** | 82 | **57%** | **+3.7** | −1.3 |
+
+1E200: too rare (41/21/16) — T0 EOD +17.4 (the deep-flush recovery), but the 15SW entry =
+25% up, max-adv **44.7** — the swing confirmation arrives late at the deepest rung and
+enters INTO the continuation. **Verdict: capture = a 30-min SCALP at 1E100 with the 15m
+swing trigger (57%/+3.7); the 1PM adds little (53%); do NOT hold (the EOD ≈ flat/negative);
+the 1E200 + the 15m-swing = the danger cell.** The EOD bleed (−1.3…−10.5) says the 3PM-up
++ 5M2-retrace context is itself fragile this era — the bounce = the exit, not a hold.
+
+## Scalp refinement — the swing-FIRST entry (`scripts/validate_scalp_1pvt_15s.py`, 20 Oct)
+
+The trigger-order test on the same event set (the 3PM up + the 5m M2 retracing + the
+1E100/200 touch, Jul 13 → Oct 19, 1m): **the 15s-MACD swing = the EARLY trigger, the 1m
+PVT cross = the LATE one** — the swing fires ~2 min after the touch, the PVT cross ~11 min.
+
+| 1E100 entry | n | 30min up | 30min med | fav/adv | EOD med |
+|---|---|---|---|---|---|
+| T0 the touch close | 112 | 48% | −0.7 | 13.2/17.2 | −5.6 |
+| **SWING alone (15s-proxy, ~2 min)** | 110 | **53%** | **+1.9** | **14.9/16.2** | −3.4 |
+| XPVT (the 1m PVT cross, ~11 min) | 83 | 48% | −0.1 | 13.8/18.2 | −7.6 |
+| PVT + swing together | 83 | 45% | −0.7 | 13.5/18.2 | −7.6 |
+
+1E200 (n=41): the SWING entry = 46%, the fav/adv 14.6/13.6 (the R/R>1), the EOD +18.0
+(the deep-flush recovery); waiting for the PVT = the worst cell (37%, −7.4).
+**Verdict: the entry = the 15s-MACD swing (the timing tool); the 1m PVT cross = the
+confirmation, not the trigger (waiting for it costs the edge). The 15s MACD itself =
+validated only on Oct 14-16 (the one textbook leg: the swing +0.2-2.8 min → the +58-64
+runs, the max-adv 1.8-19) — collect the 15s exports daily to build the sample.** The
+proxy = MACD(3,6)+sig2 of the 1m closes (the span-match for the 15s 12/26/9).
+
+## The 3PM-DT fade playbook — validated across days (`scripts/validate_3pm_dt_fades.py`, 20 Oct)
+
+The Oct-19 frame (the 3PM downtrend → the retrace-ups die at the 1m rungs → the fall
+triggers) tested on every 3PM-down window (the 30m PVT<0 + the 30m M2<signal, completed-bar
+carry) in the 1m era (Jul 13 → Oct 19): **273 legs on 43 of 69 days**
+(`csv/threepm_dt_fade_events.csv`).
+
+- **The triggers (the fall ≥10 pts = win):** ① the 15s-MACD2-proxy cross-down alone = the
+  workhorse (n=174, win 80%/70% by phase, the fall med 19.2/15.7) · ③ the 1m PVT X-DN +
+  the 1m MACD2 X-DN together = the quality trigger (n=83, win 67% in the 5PM-down, **76% in
+  the 5M2-retrace-up phase, the fall med 20.8**) · ② the 1m PVT + the proxy = n=16 (80% in
+  the retrace-up phase, small n).
+- **The phase-2 claim validated and stronger:** with the 5m M2 retracing up (the 5P red),
+  the rallies STILL die — the T3 = 76% win / the fall med 20.8 — "the 5M2 retrace-up = still
+  a sell" confirmed in the 3PM-down context.
+- **The rung ladder:** the fades mostly die at the 1E9/1E21 already (n=180, the win
+  74–81%, the 1E9 = the R/R 21.5/14.5); the 1E50+ = rarer (n=93) but 65–67%.
+- **The expectancy** (the win% × the fall med − the loss% × the adv med): the T3-retrace-up
+  ≈ +12, the T1-5PM-down ≈ +12, the T3-5PM-down ≈ +5, the 1E9 fades ≈ +13 — all positive,
+  the adverse med 14–19 = the stop budget.
+- **The day spread:** 36/43 days = the win-rate ≥50%; the best = the breakdown days
+  (Oct 8: 12 legs 92%, the med 43.2 · Sep 16: 68.9 · Oct 1: 60.4); the chop-day failures =
+  Aug 17, Oct 13 (0%, the med <8).
