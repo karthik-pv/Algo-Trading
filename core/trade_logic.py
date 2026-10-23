@@ -34,7 +34,7 @@ from core.shared_state import latest_tradingview_data
 from core.audit_log import trade_audit
 
 
-from core.utils import fetch_from_json , find_matching_object , is_market_open , write_to_json , compute_limit_margin , get_exchange_for_underlying , get_underlying_for_symbol , resolve_data_path
+from core.utils import fetch_from_json , find_matching_object , is_market_open , write_to_json , compute_limit_margin , get_exchange_for_underlying , get_underlying_for_symbol , resolve_data_path , DATA_DIR
 import time
 
 # NOTE: Trading thresholds (PCT/PTS book-profit, stop loss, strategy
@@ -176,9 +176,6 @@ class Trader_Singleton:
     _use_max_margin = True
     _mode = fetch_from_json("appconfig.json" , "MODE")
     _broker_string = fetch_from_json("appconfig.json" , "BROKER")
-    # machine-local override (see server.py: BROKER env > appconfig)
-    if os.environ.get("BROKER"):
-        _broker_string = os.environ["BROKER"].strip().upper()
     _exchange = get_exchange_for_underlying(fetch_from_json("appconfig.json" , "UNDERLYING"))
     _underlying = fetch_from_json("appconfig.json" , "UNDERLYING")
 
@@ -247,6 +244,17 @@ class Trader_Singleton:
     # cycle - it stops ONLY when the position is sold and the app has
     # reconciled it (the token is pruned from the RMS state).
     _exit_blocked_voice_tokens = set()
+
+    # SPATAM alert speech: normal-priority queue fed by the SPATAM
+    # indicator's alert flushes (MSG='ALERTS' webhook). Shares the
+    # single speaker with the time/P&L readouts, waits for the urgent
+    # channel and pre-empts nothing; gated by the voice checkbox at
+    # pop time (muted -> drained without speaking; the text is on file
+    # regardless).
+    _spatam_voice_queue = []
+    _spatam_voice_lock = threading.Lock()
+    # One batched append per flush (per-day alert file).
+    _spatam_alert_file_lock = threading.Lock()
 
     # ---------------------------------------------------------
     # Paper trading store
@@ -2084,6 +2092,62 @@ class Trader_Singleton:
             )
         except Exception:
             pass
+
+    def _sync_paper_pending_exit_price(self, key):
+        """
+        PAPER twin of _sync_bp_resting_exit: re-price the virtual
+        resting SELL LIMIT of a U/D leg so a BK% grid edit actually
+        governs the exit price. The target anchors on the leg's
+        average BUY price (BK% = "% over my buy price", user decision
+        2026-10-13) - the same convention as the LIVE sync. An LTP
+        already above the new target makes the exit marketable: the
+        next _check_paper_pending_exits cycle fills it at the new
+        price, exactly like a broker modify would.
+        """
+        leg = self._position_data.get(key) or {}
+        mode_u_d = str(leg.get("sell_mode") or "").strip().upper()
+        if mode_u_d not in ("U", "D"):
+            return
+        token = str(leg.get("instrument_token") or "")
+        if not token:
+            return
+        override_pct = leg.get("override_book_profit_pct")
+        if override_pct is None:
+            return
+        anchor = float(leg.get("average_price") or 0) or float(
+            leg.get("latest_price") or 0
+        )
+        if anchor <= 0:
+            return
+        exit_price = self._exit_target_price(
+            anchor,
+            leg.get("order_strategy"),
+            override_pct=float(override_pct),
+        )
+        if exit_price <= 0:
+            return
+
+        changed = False
+        for order_id, ex in self._paper_pending_exits.items():
+            if str(ex.get("token")) != token:
+                continue
+            old_price = float(ex.get("exit_price") or 0)
+            if abs(old_price - exit_price) < 1e-9:
+                continue
+            ex["exit_price"] = exit_price
+            changed = True
+            logger.info(
+                f"PAPER: pending exit re-priced {old_price} -> "
+                f"{exit_price} for {ex.get('tradingsymbol')} after "
+                f"BP override {override_pct}% [{order_id}]"
+            )
+        if changed:
+            try:
+                self.frontend_data_socket.emit(
+                    'update_pending_orders', self._merged_pending_orders()
+                )
+            except Exception:
+                pass
 
     def _paper_pending_exit_rows(self):
         """Orders-panel rows for the virtual paper exits (same shape as
@@ -4234,6 +4298,19 @@ class Trader_Singleton:
                 self._stop_event.wait(timeout=0.25)
                 continue
 
+            # SPATAM alerts next: normal priority - waits for the
+            # urgent channel, pre-empts the clock/P&L, checkbox-gated
+            # (a muted checkbox drains the queue without speaking).
+            spatam_text = self._spatam_voice_pop(enabled=self._voice_announcement_enabled)
+            if spatam_text is not None:
+                try:
+                    speaker_process = subprocess.Popen(["say", spatam_text])
+                except Exception:
+                    speaker_process = None
+                    logger.warning("Voice readout: failed to start `say`")
+                self._stop_event.wait(timeout=0.25)
+                continue
+
             if not (self._voice_announcement_enabled or self._time_announcement_enabled):
                 stop_speaking()
                 self._stop_event.wait(timeout=0.25)
@@ -4312,6 +4389,14 @@ class Trader_Singleton:
             # Check if the speaker is currently busy (RunningState 2 means it is speaking)
             # If it's done (RunningState 1), give it the newest value.
             if speaker.Status.RunningState != 2:
+                # SPATAM alerts next: normal priority - waits for the
+                # urgent channel, pre-empts the clock/P&L, checkbox-
+                # gated (a muted checkbox drains without speaking).
+                spatam_text = self._spatam_voice_pop(enabled=self._voice_announcement_enabled)
+                if spatam_text is not None:
+                    speaker.Speak(spatam_text, SVSFlagsAsync)
+                    self._stop_event.wait(timeout=0.25)
+                    continue
                 # Time first: a minute boundary that arrived while P&L
                 # was speaking goes out ahead of the next P&L readout.
                 if self._time_announcement_enabled:
@@ -7523,6 +7608,63 @@ class Trader_Singleton:
             self._tv_pe_reason = f"Invalid TradingView data: {e}"
             logger.warning(f"TradingView buy validation failed, blocking CE and PE buys: {e}")
 
+    # ---------------------------------------------------------
+    # SPATAM alert flush (MSG = 'ALERTS' from the Pine indicator)
+    # ---------------------------------------------------------
+
+    def queue_spatam_speech(self, text):
+        """Queue one flush's alert texts (pre-joined with spaces) for
+        the shared voice channel; bounded so a long mute or a chatty
+        session cannot backlog stale speech."""
+        with self._spatam_voice_lock:
+            self._spatam_voice_queue.append(str(text))
+            while len(self._spatam_voice_queue) > 5:
+                self._spatam_voice_queue.pop(0)
+
+    def _spatam_voice_pop(self, enabled=True):
+        """Next SPATAM utterance for the voice loops. With the voice
+        checkbox off the queue still drains (dropped) - alerts are
+        persisted regardless and must not survive a mute."""
+        with self._spatam_voice_lock:
+            if not self._spatam_voice_queue:
+                return None
+            text = self._spatam_voice_queue.pop(0)
+            return text if enabled else None
+
+    def process_spatam_alerts(self, data):
+        """SPATAM alert flush: iterate the ALERTS records ({'T','TXT'}),
+        append each 'T | TXT' line to the per-day alert file (one
+        batched write per flush) and speak the TXTs (joined with
+        spaces) through the existing time/PnL voice channel. Never
+        touches trade logic - an ALERTS message carries no INDICATORS."""
+        try:
+            if not isinstance(data, dict) or data.get("MSG") != "ALERTS":
+                return []
+            lines = []
+            spoken = []
+            for rec in data.get("ALERTS") or []:
+                if not isinstance(rec, dict):
+                    continue
+                txt = str(rec.get("TXT") or "").strip()
+                if not txt:
+                    continue
+                stamp = str(rec.get("T") or "").strip()
+                lines.append((stamp + " | " + txt) if stamp else txt)
+                spoken.append(txt)
+            if not lines:
+                return []
+            path = os.path.join(DATA_DIR, time.strftime("SPATAM_Alerts_%Y-%m-%d.txt"))
+            with self._spatam_alert_file_lock:
+                with open(path, "a", encoding="utf-8") as f:
+                    f.write("\n".join(lines) + "\n")
+            logger.info(f"SPATAM: {len(lines)} alert(s) persisted -> {path}")
+            if spoken:
+                self.queue_spatam_speech(" ".join(spoken))
+            return [{"status": "success", "alerts": len(lines)}]
+        except Exception as e:
+            logger.error(f"SPATAM alert processing failed: {e}")
+            return []
+
     def process_TradingView_Data(self , data):
         try:
             recommendation = ""
@@ -8524,6 +8666,28 @@ class Trader_Singleton:
         """
         return self.frontend_seconds_since_activity() <= self._FRONTEND_ALIVE_MAX_AGE_SECONDS
 
+    def engine_guard_active(self):
+        """
+        True while the engine still holds work it must protect: open
+        legs or active auto-sell (RMS) blocks. The macOS dock_shell
+        consults this (via /session_state) when the app window is
+        closed: with guard work pending it HIDES the window instead of
+        ending the session, so the engine keeps running WITH a
+        reachable UI - the same policy as _shutdown_if_no_browser's
+        open-legs exception, but without losing the Dock icon.
+        """
+        try:
+            if self._position_data:
+                return True
+        except Exception:
+            pass
+        try:
+            if self._auto_sell_rms_state:
+                return True
+        except Exception:
+            pass
+        return False
+
     def _recalc_weekly_option_lots(self):
         """
         Re-size every weekly option contract's lots from its current
@@ -8622,6 +8786,13 @@ class Trader_Singleton:
             "App window closed - no browser clients remain. "
             "Shutting down the application."
         )
+        # The webhook tunnel must not survive the session as an orphan
+        # holding the static domain - the next start would fail to bind.
+        from core.ngrok_tunnel import stop_ngrok_tunnel
+        try:
+            stop_ngrok_tunnel()
+        except Exception:
+            pass
         try:
             self._stop_event.set()
         except Exception:
@@ -9278,12 +9449,12 @@ class Trader_Singleton:
             # target anchors on the leg's real average buy price for
             # both U and D).
             # ----------------------------------------------------
+            affected_keys = (
+                [position_key]
+                if position_key and ":" in position_key and position_key in self._position_data
+                else self._legs_for_token(str(bp_details.get("instrument_token", "")))
+            )
             if self._mode == "LIVE":
-                affected_keys = (
-                    [position_key]
-                    if position_key and ":" in position_key and position_key in self._position_data
-                    else self._legs_for_token(str(bp_details.get("instrument_token", "")))
-                )
                 for key in affected_keys:
                     try:
                         self._sync_bp_resting_exit(key)
@@ -9291,6 +9462,21 @@ class Trader_Singleton:
                         logger.error(
                             f"BP override {new_pct}%: resting-exit sync "
                             f"failed for {key}: {sync_error}"
+                        )
+            elif self._mode == "PAPER":
+                # The paper leg's profit is owned by the VIRTUAL
+                # resting exit (_paper_pending_exits) - it must be
+                # re-priced too, or the BK edit is acknowledged and
+                # then silently discarded (2026-10-21 15:02: a 3% BP
+                # edit on a SCALPING D leg left the virtual exit at
+                # the 6% default and the leg booked 6.03%).
+                for key in affected_keys:
+                    try:
+                        self._sync_paper_pending_exit_price(key)
+                    except Exception as sync_error:
+                        logger.error(
+                            f"BP override {new_pct}%: paper pending-exit "
+                            f"sync failed for {key}: {sync_error}"
                         )
 
             self._save_position_ledger()

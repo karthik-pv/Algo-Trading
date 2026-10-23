@@ -29,6 +29,7 @@ from adapter.playback_adapter import PlaybackAdapter
 from core.trading_view_handler import trading_view_handle_func
 
 from core.utils import is_market_open, fetch_from_json, load_json_with_retry, backup_old_logs, resolve_day_start_cash, check_internet_connectivity, clear_json_cache, UNDERLYING_TO_EXCHANGE, resolve_data_path, DATA_DIR, _flatten_config
+from core.ngrok_tunnel import start_ngrok_tunnel, stop_ngrok_tunnel, set_notifier as set_ngrok_notifier
 
 from adapter.mstock_utils import save_orders_to_xlsx, build_orders_export,write_orders_workbook
 from adapter.kite_utils import parse_kite_tradebook_csv
@@ -334,11 +335,6 @@ BROKER_MAP = {"KITE": KiteAdapter, "MSTOCK": MStockAdapter, "SIMULATOR": Simulat
 
 try:
     CURRENT_BROKER = fetch_from_json("appconfig.json" , "BROKER")
-    # machine-local override (.env / environment wins over the shared
-    # appconfig): the Dell can trade MSTOCK while the Mac runs KITE
-    # off the same repo.
-    if os.environ.get("BROKER"):
-        CURRENT_BROKER = os.environ["BROKER"].strip().upper()
     UNDERLYING = fetch_from_json("appconfig.json" , "UNDERLYING")
     CURRENT_MODE = str(fetch_from_json("appconfig.json", "MODE") or "ALERT").upper()
     VALID_MODES = {"LIVE", "PAPER", "SIMULATION", "PLAYBACK"}
@@ -721,6 +717,22 @@ def frontend_alive():
             None if seconds_since == float("inf")
             else round(seconds_since, 1)
         ),
+    })
+
+
+@app.route("/session_state")
+def session_state():
+    """
+    Session state for the macOS dock_shell's window-close decision:
+    whether the engine still holds guard work (open legs / RMS blocks).
+    A window closed while engine_busy is true must NOT end the session
+    (the window-close shutdown refuses to stop a protected position) -
+    dock_shell hides the window instead, keeping the Dock icon and the
+    UI reachable.
+    """
+    return jsonify({
+        "alive": bool(trader.frontend_is_alive()),
+        "engine_busy": bool(trader.engine_guard_active()),
     })
 
 
@@ -1204,7 +1216,7 @@ def trading_view():
         # TEST-FEED REPAIR: the alert's SYM field can arrive as a study-object
         # dump with unescaped inner quotes (seen on the BTCUSD test chart),
         # shredding the JSON. SYM is unused downstream - strip it and re-parse.
-        fixed = re.sub(r'"SYM"\s*:\s*".*?",\s*"(INDICATORS|LEVELS|SETUPS)"',
+        fixed = re.sub(r'"SYM"\s*:\s*".*?",\s*"(INDICATORS|LEVELS|SETUPS|ALERTS)"',
                        r'"SYM":"REPAIRED","\1"', raw, count=1, flags=re.S)
         try:
             data = json.loads(fixed)
@@ -1219,6 +1231,12 @@ def trading_view():
         # levels-ladder messages flow through to process_TradingView_Data
         # (which stores them for the PA widget) - nothing more to do here
         pass
+    if data.get("MSG") == "ALERTS":
+        # SPATAM alert flush (indicator alert-log → speak + persist):
+        # handled here so it never touches trade logic - an ALERTS
+        # message carries no INDICATORS.
+        trader.process_spatam_alerts(data)
+        return jsonify({"status": "success", "msg": "alerts processed"})
     res = trading_view_handle_func(data, trader)
     return jsonify(res)
 
@@ -2523,6 +2541,25 @@ if 1==1: #__name__ == "__main__":
             flask_thread.start()
             logger.info("FLASK: Flask thread launched.")
 
+        # TradingView webhook tunnel (ngrok): owned by the server so
+        # EVERY startup path (Dock launcher, start.sh, run.ps1,
+        # start_app.bat, silent splash) brings it up. Non-blocking -
+        # sweep + start + verify run in a background thread, and a
+        # watchdog restarts the tunnel if it dies mid-session. Failures
+        # are toasted (down AND recovered) but can never touch trading:
+        # the tunnel runs in a daemon thread that swallows everything.
+        def _ngrok_tunnel_notify(down, message):
+            try:
+                trader.frontend_data_socket.emit(
+                    'status_message',
+                    {"success": not down, "message": message}
+                )
+            except Exception:
+                pass  # a UI toast must never break the tunnel thread
+
+        set_ngrok_notifier(_ngrok_tunnel_notify)
+        start_ngrok_tunnel(SERVER_PORT)
+
         trader.on_start()
 
         # Audit enrichment: fold the broker order book into the audit
@@ -2557,6 +2594,10 @@ if 1==1: #__name__ == "__main__":
     except KeyboardInterrupt:
         shutdown_event.set()
         logger.info("Shutting down server...")
+        # The TradingView webhook tunnel must not outlive the session:
+        # a stale ngrok keeps the static domain bound to a dead port and
+        # the next session's fresh bind would fail.
+        stop_ngrok_tunnel()
         # The last clock-hour's tick buckets never see an hour-boundary
         # rollover if the app closes first - flush them to disk here.
         try:

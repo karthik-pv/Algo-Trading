@@ -3174,6 +3174,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // === Setup Call panel rendering ===
     const TC_MODES = ['ultra_scalp', 'scalp', 'intraday'];
     function applySetupCall(forecast) {
+        if (typeof PA_WIDGET_HIDDEN !== 'undefined' && PA_WIDGET_HIDDEN) return; // HIDDEN-FOR-SESSION: same WIP module
         const widget = document.getElementById('setup-call-widget');
         if (!widget) return;
         widget.style.display = '';
@@ -3243,7 +3244,13 @@ document.addEventListener('DOMContentLoaded', function() {
     let paSetupLibrary = null;    // forecasting/setup_library.json payload
     let paActiveSetupCall = null; // latest Forecast.setup_call (null = none)
 
+    // PA module (SetUps / Momentors / Levels Ladder) is WIP - kept hidden so
+    // the trading session runs clean. HIDDEN-FOR-SESSION: set to false (or
+    // delete this flag) to bring the module back.
+    const PA_WIDGET_HIDDEN = true;
+
     function paWidgetShow() {
+        if (PA_WIDGET_HIDDEN) return; // HIDDEN-FOR-SESSION
         const w = document.getElementById('pa-widget-container');
         if (w) w.style.display = '';
     }
@@ -3682,6 +3689,21 @@ document.addEventListener('DOMContentLoaded', function() {
         if (!wanted) return { token: '', ltp: NaN, lotsize: 0 };
         // Try the normalized (exchange-format) name first, then the raw.
         const candidates = [window.__normalizeContractSymbol(wanted), wanted];
+        // Monthly-style chain name ({SYM}{YY}{MON}{STRIKE}{CE|PE}): the
+        // normalized candidate emits the WEEKLY single-letter month +
+        // day form, which never matches a chain whose expiry spells
+        // the month out - month-end / monthly contracts (2026-10-23:
+        // broker rows NIFTY27OCT202622600CE vs chain names
+        // NIFTY26OCT22600CE left every LTP cell blank + unflashed and
+        // Qty. stuck in raw units instead of lots).
+        const parts = wanted.match(
+            /^([A-Z]+)-?(\d{1,2})-?([A-Z]{3})-?(\d{4})-?(\d+)-?(CE|PE)$/
+        );
+        if (parts) {
+            candidates.push(
+                `${parts[1]}${parts[4].slice(-2)}${parts[3]}${parts[5]}${parts[6]}`
+            );
+        }
         for (const name of candidates) {
             for (const token in allContracts) {
                 if (String((allContracts[token] || {}).name || '').toUpperCase() === name) {
@@ -3811,7 +3833,8 @@ document.addEventListener('DOMContentLoaded', function() {
         const symbolName = String(tick.name || '').toUpperCase();
         document.querySelectorAll(
             `#ordersTableBody td.order-ltp-cell[data-ltp-token="${token}"],` +
-            `#ordersTableBody td.order-ltp-cell[data-ltp-symbol="${symbolName}"]`
+            `#ordersTableBody td.order-ltp-cell[data-ltp-symbol="${symbolName}"],` +
+            `#ordersTableBody td.order-ltp-cell[data-ltp-raw-symbol="${symbolName}"]`
         ).forEach(cell => {
             const prevLtp = Number(cell.textContent);
             cell.textContent = ltp.toFixed(2);
@@ -4329,6 +4352,13 @@ filteredContracts.sort(([, a], [, b]) => {
             inlineStatusTimer = null;
         }, duration);
     }
+
+    // The Orders page JS lives in a separate IIFE - expose the toast so
+    // its download button can show the same styled confirmation
+    // (a silent save read as a broken button: the user clicked
+    // Download 4x on 2026-10-19 convinced nothing was happening,
+    // while all four files had landed in ~/Downloads).
+    window.showInlineStatus = showInlineStatus;
 
     function showTransactionSuccess(message) {
         showInlineStatus(message, 'success', 5000);
@@ -5502,6 +5532,11 @@ document.addEventListener('DOMContentLoaded', function() {
                     // the chain already resolves the row.
                     td.classList.add('order-ltp-cell');
                     td.dataset.ltpSymbol = window.__normalizeContractSymbol(row['CONT']);
+                    // Raw broker symbol too: ticks carry the CHAIN's own
+                    // name, and for monthly-format expiries that IS the
+                    // raw form - the normalized stamp above is the weekly
+                    // single-letter form and would never match.
+                    td.dataset.ltpRawSymbol = String(row['CONT'] || '').toUpperCase();
                     const info = getOrderLtpInfo(row['CONT']);
                     if (info.token) {
                         td.dataset.ltpToken = info.token;
@@ -5816,6 +5851,8 @@ document.addEventListener('DOMContentLoaded', function() {
             a.click();
             a.remove();
             window.URL.revokeObjectURL(url);
+            // Return the saved filename so the caller can confirm it.
+            return a.download;
         });
     }
 
@@ -5877,10 +5914,21 @@ document.addEventListener('DOMContentLoaded', function() {
             // Download exactly what the grid is showing: uploaded
             // contract-note rows when present, else the selected date's
             // broker trades.
+            let savedName;
             if (ordersSource === 'upload' && ordersRowsCache.length > 0) {
-                await downloadUploadedOrders();
+                savedName = await downloadUploadedOrders();
             } else {
-                await downloadBrokerOrders();
+                savedName = await downloadBrokerOrders();
+            }
+            // Visible confirmation: the save itself is silent (Safari
+            // shows no download bar), so without this a successful
+            // download is indistinguishable from a dead button.
+            if (typeof showInlineStatus === 'function') {
+                showInlineStatus(
+                    `Orders downloaded to your Downloads folder as ${savedName || 'Excel file'}`,
+                    'success',
+                    6000
+                );
             }
         } catch (error) {
             console.error("Could not download trades:", error);

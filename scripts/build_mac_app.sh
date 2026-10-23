@@ -252,6 +252,28 @@ func scheduleWindowStateSave(_ window: NSWindow) {
 }
 
 // ----------------------------------------------------- app + window
+// Synchronous GET of /session_state (1s timeout). Consulted on window
+// close: while the engine is protecting positions the window HIDES
+// instead of ending the session (see windowShouldClose). Server down
+// or answer unparsable -> not busy -> flat-close semantics.
+func engineBusy() -> Bool {
+    guard let url = URL(string: "http://127.0.0.1:\(serverPort)/session_state")
+    else { return false }
+    var req = URLRequest(url: url)
+    req.timeoutInterval = 1
+    let sem = DispatchSemaphore(value: 0)
+    var busy = false
+    URLSession.shared.dataTask(with: req) { data, _, _ in
+        if let data = data,
+           let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] {
+            busy = obj["engine_busy"] as? Bool ?? false
+        }
+        sem.signal()
+    }.resume()
+    sem.wait()
+    return busy
+}
+
 final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKUIDelegate,
                          WKNavigationDelegate, WKDownloadDelegate {
     var window: NSWindow!
@@ -297,7 +319,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKUI
     // report, the window server closes the window as the process
     // dies. The server stops via the socket disconnect (page dies
     // with the process) or the launcher's cleanup.
+    //
+    // EXCEPT while the engine is protecting work (open legs / RMS
+    // blocks): the server-side window-close shutdown refuses to stop
+    // a protected position - and a dead dock_shell would make the
+    // app UNREACHABLE (the Dock icon dies with this process, so a
+    // later Dock click only bounces). Hide instead: the icon stays,
+    // a Dock click reopens via applicationShouldHandleReopen.
     func windowShouldClose(_ sender: NSWindow) -> Bool {
+        if engineBusy() {
+            log("window close deferred - engine is protecting positions; hiding window")
+            window.miniaturize(nil)
+            DispatchQueue.main.async {
+                let note = Process()
+                note.executableURL =
+                    URL(fileURLWithPath: "/usr/bin/osascript")
+                note.arguments = ["-e",
+                    "display notification \"Engine still protecting open positions - click the Dock icon to reopen the window.\" with title \"AlgoOptionScalper\""]
+                try? note.run()
+            }
+            return false
+        }
         log("window close requested - ending session")
         DispatchQueue.main.async { exit(0) }
         return false
@@ -682,8 +724,13 @@ reap_orphan_helpers() {
     done
 }
 
-other_launcher_running() {
-    # True when a launcher OTHER than this one is alive. Used to make
+# ------------------------------------------------------------
+# TradingView webhook tunnel lifecycle: the SERVER owns the ngrok
+# process now (core/ngrok_tunnel.py) - every startup path gets the
+# tunnel for free, and a leftover tunnel is swept by the next
+# server start, so the launcher carries no ngrok code at all.
+# ------------------------------------------------------------
+other_launcher_running() {    # True when a launcher OTHER than this one is alive. Used to make
     # the exit cleanup race-safe: with a rapid close-and-relaunch the
     # dying session's cleanup can run up to ~5s after its server died
     # (watchdog sleep) - by then the next session's Chrome window may
@@ -776,7 +823,32 @@ start_dock_shell() {
 RESP="$(curl -s --max-time 2 -o /dev/null -w '%{http_code} %{content_type}' "http://127.0.0.1:$SERVER_PORT/" 2>/dev/null || true)"
 if [[ "$RESP" == "200 text/html"* ]]; then
     reap_orphan_helpers
-    exit 0
+    if pgrep -f "AlgoOptionScalper.app/Contents/MacOS/dock_shell" >/dev/null 2>&1; then
+        # Live window shell: it raises the app window on the reopen
+        # event - nothing to start here.
+        exit 0
+    fi
+    # Windowless zombie: the server answers but no dock_shell is
+    # alive - the window closed while AUTO_SHUTDOWN_NO_BROWSER=false
+    # deliberately kept the engine up, and its own launcher watchdog
+    # never ended the session. The ONLY useful thing this click can
+    # do is open the app: stop the stale server and start a fresh
+    # session below (2026-10-20: such a session bounced the Dock
+    # icon for 2.5h instead of opening).
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] windowless session (no dock_shell) - restarting it" \
+        >>"$LOG_DIR/launcher.log" 2>/dev/null
+    osascript -e 'display notification "Previous session had no window - restarting the app." with title "AlgoOptionScalper"' \
+        >/dev/null 2>&1 || true
+    for pid in $(pgrep -fi 'python.*[[:space:]/]server\.py$' 2>/dev/null); do
+        kill -TERM "$pid" 2>/dev/null || true
+    done
+    i=0
+    while pgrep -fi 'python.*[[:space:]/]server\.py$' >/dev/null 2>&1 && [ "$i" -lt 20 ]; do
+        sleep 0.5
+        i=$((i + 1))
+    done
+    pkill -KILL -fi 'python.*[[:space:]/]server\.py$' 2>/dev/null || true
+    sleep 1
 fi
 
 # A server process exists but the port is not serving: either it is
@@ -881,6 +953,22 @@ PAGE_SEEN=0
 PAGE_GONE_POLLS=0
 STALE_POLLS=0
 while server_alive; do
+    # The dock_shell IS the session's only UI: if it is gone (flat
+    # window close / app quit / crash) nothing can ever show the app
+    # again. End the session now instead of lingering as an invisible
+    # server - with AUTO_SHUTDOWN_NO_BROWSER=false the server stays up
+    # on a window close by design, and a later Dock click would then
+    # only bounce the icon (2026-10-20: a windowless session bounced
+    # the icon for 2.5h before the cause was found). dock_shell only
+    # exits while the engine is NOT protecting positions (see
+    # windowShouldClose) - so stopping the server here never abandons
+    # a guarded position.
+    if [ -n "$DOCK_SHELL_PID" ] && ! kill -0 "$DOCK_SHELL_PID" 2>/dev/null; then
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] dock_shell gone - ending session" \
+            >>"$LOG_DIR/launcher.log" 2>/dev/null
+        kill -TERM "$SERVER_PID" 2>/dev/null
+        break
+    fi
     if [ "$(page_socket_count)" -gt 0 ]; then
         PAGE_SEEN=1
         PAGE_GONE_POLLS=0
