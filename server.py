@@ -2,6 +2,7 @@ import json
 import threading
 import logging
 import asyncio
+import csv
 import os
 import signal
 import subprocess
@@ -1609,6 +1610,43 @@ def spatt_data():
         return jsonify({"error": "setup_pa_tradecase.json not found"}), 404
     except Exception as e:
         logger.error(f"spatt_data failed: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+# --- 2PMM Grid: the 2PM Matrix built by forecasting/pmmEngine.py -----------
+# The engine (stdlib-only, run by the user: `python -m forecasting.pmmEngine`)
+# writes data/insight/csv/2pmm_matrix.csv; this tab only renders it.
+_PMM_CSV = os.path.join(DATA_DIR, "insight", "csv", "2pmm_matrix.csv")
+_pmm_cache = {"payload": None, "mtime": None}
+
+
+def _pmm_read():
+    mtime = os.path.getmtime(_PMM_CSV)
+    if _pmm_cache["payload"] is None or _pmm_cache["mtime"] != mtime:
+        with open(_PMM_CSV, newline="", encoding="utf-8") as f:
+            reader = csv.reader(f)
+            headers = next(reader)
+            rows = [r for r in reader]
+        _pmm_cache["payload"] = {"headers": headers, "rows": rows}
+        _pmm_cache["mtime"] = mtime
+    return _pmm_cache["payload"], _pmm_cache["mtime"]
+
+
+@app.route("/2pmm")
+def pmm_page():
+    return render_template("app.html", active_tab="2pmm")
+
+
+@app.route("/2pmm/data")
+def pmm_data():
+    try:
+        data, mtime = _pmm_read()
+        return jsonify({"headers": data["headers"], "rows": data["rows"],
+                        "mtime": datetime.fromtimestamp(mtime).strftime("%d %b %Y %H:%M:%S")})
+    except FileNotFoundError:
+        return jsonify({"error": "2pmm_matrix.csv not found - run: python -m forecasting.pmmEngine"}), 404
+    except Exception as e:
+        logger.error(f"pmm_data failed: {e}")
         return jsonify({"error": str(e)}), 500
 
 

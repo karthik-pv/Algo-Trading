@@ -53,9 +53,16 @@ def read_tv_csv(path):
         for name in raw_header:
             counts[name] = counts.get(name, 0) + 1
             if name == "MACD Line":
-                header.append("MACD_Line_1226" if counts[name] == 1 else "MACD_Line_2452")
+                # Occurrence-based: pair 1 = 12/26, pair 2 = 24/52 (the used
+                # pair), further pairs (2H/D blocks, e.g. DM1/DM2) = _3, _4, ...
+                # Kept distinct so later pairs never collide in the row dict.
+                idx = counts[name]
+                suffix = "1226" if idx == 1 else ("2452" if idx == 2 else str(idx))
+                header.append("MACD_Line_%s" % suffix)
             elif name == "Signal Line":
-                header.append("Signal_Line_1226" if counts[name] == 1 else "Signal_Line_2452")
+                idx = counts[name]
+                suffix = "1226" if idx == 1 else ("2452" if idx == 2 else str(idx))
+                header.append("Signal_Line_%s" % suffix)
             elif counts[name] > 1:
                 header.append("%s#%d" % (name, counts[name]))
             else:
@@ -646,7 +653,7 @@ def build_daily(daily_by_date, daily_dates):
 def load_all(csv_dir):
     files = {
         "1m": os.path.join(csv_dir, "NSE_NIFTY1!, 1_20adf.csv"),
-        "5m": os.path.join(csv_dir, "NSE_NIFTY1!, 5_be22a.csv"),
+        "5m": os.path.join(csv_dir, "NSE_NIFTY1!, 5_Sep 2025-Oct 2026.csv"),
         "30m": os.path.join(csv_dir, "NSE_NIFTY1!, 30_42a03.csv"),
         "2h": os.path.join(csv_dir, "NSE_NIFTY1!, 120_93fb3.csv"),
         "1d": os.path.join(csv_dir, "NSE_NIFTY1!, 1D_6b212.csv"),

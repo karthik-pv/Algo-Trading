@@ -7442,6 +7442,579 @@ document.addEventListener('DOMContentLoaded', function () {
     };
 })();
 </script>
+<style>
+    /* ===== 2PMM Grid ===== */
+    /* prominent scrollbars (the grid is the point) */
+    #pmmScroll::-webkit-scrollbar { width: 14px; height: 14px; }
+    #pmmScroll::-webkit-scrollbar-track { background: #26262a; }
+    #pmmScroll::-webkit-scrollbar-thumb { background: #63636d; border-radius: 7px;
+                                          border: 3px solid #26262a; }
+    #pmmScroll::-webkit-scrollbar-thumb:hover { background: #82828e; }
+    #pmmScroll::-webkit-scrollbar-corner { background: #26262a; }
+    #pmmTable thead th { position: sticky; z-index: 3; background: #202024;
+                         box-sizing: border-box; }
+    #pmmTable thead tr.grp th { top: 0; z-index: 4; background: #2a2a30; height: 20px;
+                                font-size: 0.68rem; color: #9ab; text-align: center; }
+    #pmmTable thead tr.cols th { top: 20px; height: 26px; font-size: 0.68rem;
+                                 color: #ccd; cursor: pointer; }
+    #pmmTable thead tr.flt th { top: 46px; height: 46px; padding: 1px 3px;
+                                background: #26262b; }
+    #pmmTable th, #pmmTable td { white-space: nowrap; padding: 2px 7px;
+                                 border-bottom: 1px solid #303034; }
+    #pmmTable td.num { text-align: right; font-variant-numeric: tabular-nums; }
+    #pmmTable td.lv { max-width: 300px; overflow: hidden; text-overflow: ellipsis; }
+    #pmmTable td.lvq { max-width: 360px; overflow: hidden; text-overflow: ellipsis; }
+    #pmmTable td.lvc { max-width: 240px; overflow: hidden; text-overflow: ellipsis; }
+    #pmmTable .stick1, #pmmTable .stick2 { position: sticky; }
+    #pmmTable .stick1 { left: 0; z-index: 3; }
+    #pmmTable .stick1 { left: 0; z-index: 3; }
+    #pmmTable .stick2 { left: var(--s1w, 92px); z-index: 2; }
+    #pmmTable thead .stick1, #pmmTable thead .stick2 { z-index: 5; }
+    /* alternate row colors per date (d0/d1), + the active event-block tint */
+    #pmmTable tbody tr.d0 td { background: #1d1d21; }
+    #pmmTable tbody tr.d1 td { background: #25252b; }
+    #pmmTable tbody tr.d0 td.b3 { background: #22301f; }
+    #pmmTable tbody tr.d1 td.b3 { background: #2a3827; }
+    #pmmTable tbody tr.d0 td.b5 { background: #322023; }
+    #pmmTable tbody tr.d1 td.b5 { background: #3a272a; }
+    /* run & trend tints (light = single factor, dark = confluence); declared
+       after b3/b5 so they win on the shared event-block cells */
+    #pmmTable tbody tr.d0 td.rnt-up { background: #17301f; }
+    #pmmTable tbody tr.d1 td.rnt-up { background: #1d3a26; }
+    #pmmTable tbody tr.d0 td.rnt-dn { background: #351d20; }
+    #pmmTable tbody tr.d1 td.rnt-dn { background: #3f2427; }
+    #pmmTable tbody tr.d0 td.trd2-up { background: #2e6b40; }
+    #pmmTable tbody tr.d1 td.trd2-up { background: #35794a; }
+    #pmmTable tbody tr.d0 td.trd1-up { background: #20402b; }
+    #pmmTable tbody tr.d1 td.trd1-up { background: #264b32; }
+    #pmmTable tbody tr.d0 td.trd2-dn { background: #7c3a3a; }
+    #pmmTable tbody tr.d1 td.trd2-dn { background: #8a4545; }
+    #pmmTable tbody tr.d0 td.trd1-dn { background: #46262a; }
+    #pmmTable tbody tr.d1 td.trd1-dn { background: #522e31; }
+    #pmmTable tbody tr:hover td { background: #2f2f36 !important; }
+    #pmmTable .gsep { border-left: 1px solid #555; }
+    /* per-column filter widgets — positioned inside their sticky th so they
+       never force a column wider than its data (column widths stay as the
+       data sizes them, like v1) */
+    #pmmTable thead tr.flt th .fin,
+    #pmmTable thead tr.flt th .fbtn { position: absolute; left: 3px; right: 3px;
+                                      top: 2px; width: auto; min-width: 0;
+                                      overflow: hidden; }
+    /* quick-filter dropdown / date picker sit under the text filter in their cell */
+    #pmmTable thead tr.flt th .fsel,
+    #pmmTable thead tr.flt th .fdate { position: absolute; left: 3px; right: 3px;
+                                      top: 24px; width: auto; min-width: 0;
+                                      background: #1b1b1f; color: #bcd;
+                                      border: 1px solid #4a4a52; border-radius: 3px;
+                                      font-size: 0.6rem; padding: 0 1px; }
+    #pmmTable thead tr.flt th .fdate::-webkit-calendar-picker-indicator {
+        filter: invert(0.7); }
+    #pmmTable thead tr.flt th .evsel { top: 2px; }  /* O column: no text above */
+    #pmmTable thead input.fin { background: #1b1b1f; color: #ddd;
+                                border: 1px solid #4a4a52; border-radius: 3px;
+                                font-size: 0.62rem; padding: 1px 3px; }
+    #pmmTable thead .fbtn { background: #1b1b1f; color: #bcd;
+                            border: 1px solid #4a4a52; border-radius: 3px;
+                            font-size: 0.62rem; padding: 1px 3px; cursor: pointer; }
+    #pmmTable thead .fbtn.on { background: #2d4a35; color: #cfc; border-color: #4a7a4a; }
+    #pmmFly { position: fixed; z-index: 99; background: #26262c; border: 1px solid #555;
+              border-radius: 6px; padding: 8px 10px; max-height: 320px; overflow-y: auto;
+              box-shadow: 0 6px 24px rgba(0,0,0,0.6); display: none; }
+    #pmmFly label { display: flex; gap: 6px; align-items: center; font-size: 0.72rem;
+                    color: #ccd; padding: 1px 2px; white-space: nowrap; cursor: pointer; }
+    #pmmFly .flyclear { margin-top: 6px; font-size: 0.7rem; color: #89f; cursor: pointer;
+                        text-decoration: underline; }
+</style>
+<section class="tab-panel" id="panel-2pmm" data-tab="2pmm">
+  <div style="padding: 12px 16px;">
+    <div style="display:flex; align-items:center; gap:10px; margin-bottom:8px; flex-wrap:wrap;">
+      <h2 style="margin:0; font-size:1rem;">2PMM Grid</h2>
+      <button id="pmmClear" type="button" style="font-size:0.75rem; padding:2px 10px; background:#383838; color:#ddd; border:1px solid #555; border-radius:4px; cursor:pointer;">Clear filters</button>
+      <button id="pmmRefresh" type="button" style="font-size:0.75rem; padding:2px 10px; background:#383838; color:#ddd; border:1px solid #555; border-radius:4px; cursor:pointer;">Refresh</button>
+      <button id="pmmExport" type="button" style="font-size:0.75rem; padding:2px 10px; background:#2d5a2d; color:#ddd; border:1px solid #4a7a4a; border-radius:4px; cursor:pointer;">Export CSV</button>
+      <span id="pmmMeta" style="font-size:0.7rem; color:#888;"></span>
+    </div>
+    <div id="pmmScroll" style="overflow:scroll; max-height: calc(100vh - 150px); border:1px solid #555; border-radius:6px;">
+      <table id="pmmTable" style="border-collapse:separate; border-spacing:0; font-size:0.72rem;">
+        <thead id="pmmHead"></thead>
+        <tbody id="pmmBody"></tbody>
+      </table>
+    </div>
+  </div>
+  <div id="pmmFly"></div>
+</section>
+<script>
+// ===== 2PMM Grid: renders data/insight/csv/2pmm_matrix.csv (the output of
+// forecasting/pmmEngine.py). The 3O/5O event blocks are merged into one set of
+// columns (O filters 3o / 5o / All, default 3o). Every column is sortable
+// (click its header; Date starts sorted newest-first) and filterable from the
+// row under the headers: a live text filter, or a checkbox picker when the
+// column holds few distinct values. Rows band by date. All client-side.
+(function () {
+    // display order — [column name, header label]. Gap sits next to No. The two
+    // event blocks (3O/5O) are MERGED into one set of columns: every row shows
+    // its own event — a 3OX-up row shows the 3O block, a 5O-only row the 5O
+    // block (resolveRows() picks the source per row at load). The O column
+    // filters 3o / 5o / All and defaults to 3o.
+    var COLS = [
+        ['date', 'Date'], ['record_no', 'No.'], ['gap', 'Gap'],
+        ['ev', 'O'], ['ev_time', 'Time'], ['ev_mderun', 'Session'],
+        ['ev_slevels', 'SL Levels'], ['ev_rlevels', 'RL Levels'],
+        ['ev_crossed', 'Levels Crossed'],
+        ['ev_synchers', 'Synchers'], ['ev_run', 'Run'],
+        ['3s', '3s'], ['3sz', '3sz'], ['3sn', '3sn'], ['3p', '3p'], ['3pn', '3pn'],
+        ['3m1', '3m1'], ['3m2', '3m2'], ['3ov', '3o'], ['3on', '3on'],
+        ['2s', '2s'], ['2sz', '2sz'], ['2sn', '2sn'], ['2p', '2p'], ['2pn', '2pn'],
+        ['2m1', '2m1'], ['2m2', '2m2'], ['2o', '2o'], ['2on', '2on'],
+        ['ds', 'ds'], ['dsz', 'dsz'], ['dsn', 'dsn'], ['dp', 'dp'], ['dpn', 'dpn'],
+        ['dm1', 'dm1'], ['dm2', 'dm2'], ['do', 'do'], ['don', 'don']
+    ];
+    var GROUPS = [                       // [label, column names] — the merged header row
+        ['Session', ['date', 'record_no', 'gap']],
+        ['O \u00B7 VOC up', ['ev', 'ev_time', 'ev_mderun', 'ev_slevels', 'ev_rlevels',
+                             'ev_crossed', 'ev_synchers', 'ev_run']],
+        ['30m', ['3s', '3sz', '3sn', '3p', '3pn', '3m1', '3m2', '3ov', '3on']],
+        ['2H', ['2s', '2sz', '2sn', '2p', '2pn', '2m1', '2m2', '2o', '2on']],
+        ['Daily', ['ds', 'dsz', 'dsn', 'dp', 'dpn', 'dm1', 'dm2', 'do', 'don']]
+    ];
+    var NUM = { record_no: 1, gap: 1, '3s': 1, '3p': 1, '3pn': 1,
+                '3ov': 1, '3on': 1,
+                '2s': 1, '2p': 1, '2pn': 1, '2o': 1, '2on': 1, ds: 1, dp: 1, dpn: 1,
+                do: 1, don: 1, '3sn': 1, '2sn': 1, dsn: 1,
+                'ev_run': 1 };
+    var ZONES = { '3sz': 1, '2sz': 1, dsz: 1 };
+    var ZONE_ORD = { OSZ: 0, NOSZ: 1, MZ: 2, NOBZ: 3, OBZ: 4 };
+    var MACD = /^(3m1|3m2|2m1|2m2|dm1|dm2)$/;
+    var LVCOLS = { 'ev_slevels': 1, 'ev_rlevels': 1, 'ev_crossed': 1,
+                   'ev_synchers': 1 };
+    // run & trend tints — the Session block (date..Run) tints by the Run sign
+    // (light green uprun / light red downrun); the 30m/2H/Daily blocks tint by
+    // PVT x MACD2 trend confluence: both up = dark green, PVT alone = lighter
+    // green, mirrored red for downtrends.
+    var SESSION_SPAN = ['date', 'record_no', 'gap', 'ev', 'ev_time',
+                        'ev_mderun', 'ev_slevels', 'ev_rlevels', 'ev_crossed',
+                        'ev_synchers', 'ev_run'];
+    var TINT_GROUPS = [                // [PVT age cell, MACD2 cell]
+        ['3pn', '3m2'], ['2pn', '2m2'], ['dpn', 'dm2']
+    ];
+    var GROUP_SPAN = {
+        '3pn': ['3s', '3sz', '3sn', '3p', '3pn', '3m1', '3m2', '3ov', '3on'],
+        '2pn': ['2s', '2sz', '2sn', '2p', '2pn', '2m1', '2m2', '2o', '2on'],
+        'dpn': ['ds', 'dsz', 'dsn', 'dp', 'dpn', 'dm1', 'dm2', 'do', 'don']
+    };
+    function rowTints(r) {             // column name -> tint class for this row
+        var tint = {}, runV = parseFloat(r[idx.ev_run]);
+        if (!isNaN(runV) && runV !== 0) {
+            var rc = runV > 0 ? 'rnt-up' : 'rnt-dn';
+            SESSION_SPAN.forEach(function (n) { tint[n] = rc; });
+        }
+        TINT_GROUPS.forEach(function (g) {
+            var pv = parseFloat(r[idx[g[0]]]), mv = r[idx[g[1]]] || '';
+            var pvUp = !isNaN(pv) && pv >= 0, pvDn = !isNaN(pv) && pv < 0;
+            var mvUp = mv.charAt(0) === 'X', mvDn = mv.charAt(0) === 'Y';
+            var c = (pvUp && mvUp) ? 'trd2-up' : pvUp ? 'trd1-up' :
+                    (pvDn && mvDn) ? 'trd2-dn' : pvDn ? 'trd1-dn' : '';
+            if (c) GROUP_SPAN[g[0]].forEach(function (n) { tint[n] = c; });
+        });
+        return tint;
+    }
+    var QCOLS = { 'ev_slevels': 'lvq', 'ev_rlevels': 'lvq',  // capped-width cols
+                  'ev_crossed': 'lvc' };                     // (lvq 360, lvc 240)
+    // columns with a quick-filter dropdown in addition to the text filter.
+    // 'sign' = Above 0 / Below 0 by value, 'xy' = X (above) / Y (below),
+    // zone lists match exactly.
+    var A0 = [['A', '\u22650'], ['B', '<0']];
+    var AXY = [['A', 'X \u22650'], ['B', 'Y <0']];
+    var DDSPEC = {
+        '3sz': [['OSZ', 'OSZ'], ['NOSZ', 'NOSZ'], ['MZ', 'MZ'],
+                ['NOBZ', 'NOBZ'], ['OBZ', 'OBZ']],
+        '3sn': A0, '3on': A0, '3p': A0, '3ov': A0, '3m1': AXY, '3m2': AXY
+    };
+    function ddMatch(name, v, opt) {
+        if (name === '3sz') return v === opt;
+        if (name === '3m1' || name === '3m2')
+            return v.slice(0, 1) === (opt === 'A' ? 'X' : 'Y');
+        var n = parseFloat(v);
+        if (isNaN(n)) return false;
+        return opt === 'A' ? n >= 0 : n < 0;
+    }
+    var MONS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    var GROUP_FIRST = {};
+    GROUPS.forEach(function (g) { GROUP_FIRST[g[1][0]] = 1; });
+
+    var headers = [], rows = [], view = [], builtMtime = '';
+    var idx = {};                        // csv name -> column index
+    var filters = {};                    // csv name -> {type:'text',text} | {type:'check',items,sel}
+    var sortState = { name: 'date', dir: -1 };   // default: Date, newest first
+    var flyCol = null, loaded = false;
+
+    function el(id) { return document.getElementById(id); }
+    function esc(s) {
+        return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+    }
+    function labelOf(name) {
+        for (var i = 0; i < COLS.length; i++) if (COLS[i][0] === name) return COLS[i][1];
+        return name;
+    }
+
+    function fmtDate(v) {                // 2025-09-16 -> 16-Sep-25
+        var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(v || '');
+        return m ? parseInt(m[3], 10) + '-' + MONS[parseInt(m[2], 10) - 1] +
+                   '-' + m[1].slice(2) : v;
+    }
+    function disp(name, v) {             // the displayed value of a cell
+        if (name === 'date') return fmtDate(v);
+        if (name === 'ev_run') {
+            return (v === '' || v === undefined || v === null) ? ''
+                : String(Math.round(parseFloat(v)));      // Run: signed, no decimals
+        }
+        return (v === undefined || v === null) ? '' : String(v);
+    }
+
+    function resolveRows() {             // merge the 3O/5O blocks into ev_* cells:
+        var raw = rows;                  // each row keeps its own event's values —
+        rows = raw.map(function (r) {    // a 3OX-up row shows the 3O block, a
+            var is3 = r[idx['3o']] === '1';   // 5O-only row the 5O block. The CSV
+            var src = is3 ? '3o' : '5o';     // itself is untouched (paired riders
+            return COLS.map(function (c) {   // stay in the 5o* columns there).
+                var n = c[0], v;
+                if (n === 'ev')
+                    return is3 ? '3o' : (r[idx['5o']] === '1' ? '5o' : '');
+                if (n.slice(0, 3) === 'ev_') v = r[idx[src + n.slice(2)]];
+                else v = r[idx[n]];
+                return (v === undefined || v === null) ? '' : String(v);
+            });
+        });
+        headers = COLS.map(function (c) { return c[0]; });
+        idx = {};
+        headers.forEach(function (h, i) { idx[h] = i; });
+    }
+
+    function load() {
+        fetch('/2pmm/data').then(function (r) { return r.json(); }).then(function (d) {
+            if (d.error) { el('pmmMeta').textContent = d.error; return; }
+            headers = d.headers; rows = d.rows; builtMtime = d.mtime || '';
+            idx = {};
+            headers.forEach(function (h, i) { idx[h] = i; });
+            resolveRows();
+            buildFilters();
+            buildHead();
+            apply();
+        }).catch(function (e) { el('pmmMeta').textContent = 'load failed: ' + e; });
+    }
+
+    function buildFilters() {
+        filters = {};
+        COLS.forEach(function (c) {
+            var name = c[0];
+            if (name === 'date') {       // text filter + a date picker
+                filters[name] = { type: 'date', text: '', date: '' };
+                return;
+            }
+            if (name === 'ev') {         // O column: 3o / 5o / All selector
+                filters[name] = { type: 'ev', val: '3o' };   // default: 3o rows
+                return;
+            }
+            if (DDSPEC[name]) {          // dropdown columns: text + quick filter
+                filters[name] = { type: 'dd', text: '', dd: '' };
+                return;
+            }
+            var seen = {};
+            rows.forEach(function (r) {
+                var v = disp(c[0], r[idx[c[0]]]);
+                if (v !== '') seen[v] = (seen[v] || 0) + 1;
+            });
+            var keys = Object.keys(seen);
+            filters[c[0]] = keys.length && keys.length <= 8
+                ? { type: 'check', items: keys.sort().map(function (k) {
+                        return [k, seen[k]]; }), sel: null }
+                : { type: 'text', text: '' };
+        });
+    }
+
+    function buildHead() {
+        var h = ['<tr class="grp">'];
+        GROUPS.forEach(function (g, gi) {
+            h.push('<th colspan="' + g[1].length + '"' +
+                   (gi ? ' class="gsep"' : '') + '>' + g[0] + '</th>');
+        });
+        h.push('</tr><tr class="cols">');
+        COLS.forEach(function (c, ci) {
+            var cls = [];
+            if (c[0] === 'date') cls.push('stick1');
+            if (c[0] === 'record_no') cls.push('stick2');
+            if (GROUP_FIRST[c[0]]) cls.push('gsep');
+            h.push('<th class="' + cls.join(' ') + '" onclick="pmmSort(\'' + c[0] + '\')">' +
+                   esc(c[1]) + '<span class="arr"></span></th>');
+        });
+        h.push('</tr><tr class="flt">');
+        COLS.forEach(function (c) {
+            var cls = [], name = c[0], f = filters[name], inner;
+            if (name === 'date') cls.push('stick1');
+            if (name === 'record_no') cls.push('stick2');
+            if (name === 'date') {
+                inner = '<input type="text" class="fin" data-col="date" ' +
+                        'placeholder="filter" oninput="pmmText(\'date\', this.value)">' +
+                        '<input type="date" class="fdate" title="pick a date" ' +
+                        'onchange="pmmDate(this.value)">';
+            } else if (f.type === 'ev') {
+                inner = '<select class="fsel evsel" title="event type" ' +
+                        'onchange="pmmEv(this.value)">' +
+                        '<option value="3o"' + (f.val === '3o' ? ' selected' : '') +
+                        '>3o</option><option value="5o"' +
+                        (f.val === '5o' ? ' selected' : '') + '>5o</option>' +
+                        '<option value="all"' + (f.val === 'all' ? ' selected' : '') +
+                        '>All</option></select>';
+            } else if (f.type === 'dd') {
+                var opts = ['<option value="">All</option>'];
+                DDSPEC[name].forEach(function (o) {
+                    opts.push('<option value="' + o[0] + '">' + esc(o[1]) + '</option>');
+                });
+                inner = '<input type="text" class="fin" data-col="' + name +
+                        '" placeholder="filter" oninput="pmmText(\'' + name +
+                        '\', this.value)">' +
+                        '<select class="fsel" title="quick filter" onchange="pmmDD(\'' +
+                        name + '\', this.value)">' + opts.join('') + '</select>';
+            } else if (f.type === 'check') {
+                inner = '<button type="button" class="fbtn" data-col="' + c[0] +
+                        '" onclick="pmmFly(\'' + c[0] + '\')">All \u25BE</button>';
+            } else {
+                inner = '<input type="text" class="fin" data-col="' + c[0] +
+                        '" placeholder="filter" oninput="pmmText(\'' + c[0] +
+                        '\', this.value)">';
+            }
+            h.push('<th class="' + cls.join(' ') + '">' + inner + '</th>');
+        });
+        h.push('</tr>');
+        el('pmmHead').innerHTML = h.join('');
+    }
+
+    function sortKey(r, name) {          // raw (csv) values; empties always last
+        var v = r[idx[name]];
+        v = (v === undefined || v === null) ? '' : String(v).trim();
+        if (v === '') return null;
+        if (name === 'date') return v;   // ISO sorts correctly as a string
+        if (NUM[name]) return parseFloat(v);
+        if (ZONES[name]) return ZONE_ORD[v];
+        if (MACD.test(name)) {           // 'X_8' / 'Y_3': X first, then n
+            var m = v.match(/^([XY])_(\d+)$/);
+            return m ? (m[1] === 'X' ? 0 : 1000) + parseInt(m[2], 10) : 9999;
+        }
+        if (/_time$/.test(name)) {
+            var t = v.match(/(\d{1,2}):(\d{2})/);
+            return t ? parseInt(t[1], 10) * 60 + parseInt(t[2], 10) : null;
+        }
+        return v.toLowerCase();
+    }
+
+    function apply() {
+        view = rows.filter(function (r) {
+            for (var i = 0; i < COLS.length; i++) {
+                var name = COLS[i][0], f = filters[name];
+                var v = disp(name, r[idx[name]]);
+                if (f.type === 'text') {
+                    if (f.text && v.toLowerCase().indexOf(f.text.toLowerCase()) < 0)
+                        return false;
+                } else if (f.type === 'dd') {
+                    if (f.text && v.toLowerCase().indexOf(f.text.toLowerCase()) < 0)
+                        return false;
+                    if (f.dd && !ddMatch(name, v, f.dd)) return false;
+                } else if (f.type === 'date') {
+                    if (f.text && v.toLowerCase().indexOf(f.text.toLowerCase()) < 0)
+                        return false;
+                    if (f.date && r[idx[name]] !== f.date) return false;  // raw ISO
+                } else if (f.type === 'ev') {
+                    if (f.val !== 'all' && v !== f.val) return false;
+                } else if (f.sel && f.sel.size && !f.sel.has(v)) return false;
+            }
+            return true;
+        });
+        var name = sortState.name, dir = sortState.dir;
+        view.sort(function (a, b) {
+            var ka = sortKey(a, name), kb = sortKey(b, name);
+            if (ka === null && kb === null) return 0;
+            if (ka === null) return 1;
+            if (kb === null) return -1;
+            return (ka < kb ? -1 : ka > kb ? 1 : 0) * dir;
+        });
+        updateArrows();
+        render();
+        el('pmmMeta').textContent = 'showing ' + view.length + ' of ' + rows.length +
+            ' records \u00B7 matrix built ' + builtMtime;
+    }
+
+    function updateArrows() {
+        var cells = el('pmmHead').rows[1].cells;
+        for (var i = 0; i < cells.length; i++) {
+            var arr = cells[i].querySelector('.arr');
+            if (arr) arr.textContent = COLS[i][0] === sortState.name
+                ? (sortState.dir > 0 ? ' \u25B2' : ' \u25BC') : '';
+        }
+    }
+
+    function render() {
+        var h = [], lastDate = null, band = -1;
+        view.forEach(function (r) {
+            if (r[idx.date] !== lastDate) { band = 1 - band; lastDate = r[idx.date]; }
+            var is3 = r[idx.ev] === '3o', is5 = r[idx.ev] === '5o';
+            var tint = rowTints(r);
+            h.push('<tr class="' + (band ? 'd1' : 'd0') + (is3 ? ' blk3' : '') +
+                   (is5 ? ' blk5' : '') + '">');
+            COLS.forEach(function (c) {
+                var name = c[0], v = disp(name, r[idx[name]]);
+                var cls = [];
+                if (tint[name]) cls.push(tint[name]);
+                if (name === 'date') cls.push('stick1');
+                if (name === 'record_no') cls.push('stick2');
+                if (NUM[name]) cls.push('num');
+                if (GROUP_FIRST[name]) cls.push('gsep');
+                if (name === 'ev' || name.slice(0, 3) === 'ev_') {
+                    if (is3) cls.push('b3');          // the merged event block takes
+                    else if (is5) cls.push('b5');     // its row event's tint
+                }
+                if (QCOLS[name]) cls.push(QCOLS[name]);
+                else if (LVCOLS[name]) cls.push('lv');
+                if (LVCOLS[name]) {
+                    h.push('<td class="' + cls.join(' ') + '" title="' + esc(v) + '">' +
+                           esc(v) + '</td>');
+                } else {
+                    h.push('<td class="' + cls.join(' ') + '">' + esc(v) + '</td>');
+                }
+            });
+            h.push('</tr>');
+        });
+        el('pmmBody').innerHTML = h.join('');
+        if (el('pmmBody').rows.length) {       // glue the sticky No. column to
+            el('pmmTable').style.setProperty(  // the Date column's real width so
+                '--s1w',                       // banding stays continuous there
+                el('pmmBody').rows[0].cells[0].offsetWidth + 'px');
+        }
+    }
+
+    function exportCsv() {               // raw (unformatted) values, view order
+        var quote = function (v) {
+            v = (v === undefined || v === null) ? '' : String(v);
+            return (v.indexOf(',') >= 0 || v.indexOf('"') >= 0 || v.indexOf('\n') >= 0)
+                ? '"' + v.replace(/"/g, '""') + '"' : v;
+        };
+        var lines = [headers.map(quote).join(',')];
+        view.forEach(function (r) { lines.push(r.map(quote).join(',')); });
+        var a = document.createElement('a');
+        a.href = URL.createObjectURL(new Blob([lines.join('\n')], { type: 'text/csv' }));
+        a.download = '2pmm_view.csv';
+        a.click();
+    }
+
+    // ---- per-column filter hooks (inline handlers above) ----
+    window.pmmText = function (name, val) {
+        filters[name].text = val;
+        apply();
+    };
+    window.pmmDD = function (name, val) {
+        filters[name].dd = val;
+        apply();
+    };
+    window.pmmEv = function (val) {      // O column: 3o / 5o / All
+        filters.ev.val = val;
+        apply();
+    };
+    window.pmmDate = function (val) {    // Date column picker (raw ISO value)
+        filters.date.date = val;
+        apply();
+    };
+    window.pmmSort = function (name) {
+        if (sortState.name === name) sortState.dir = -sortState.dir;
+        else sortState = { name: name, dir: name === 'date' ? -1 : 1 };
+        apply();
+    };
+    window.pmmFly = function (name) {
+        var fly = el('pmmFly');
+        if (flyCol === name) { fly.style.display = 'none'; flyCol = null; return; }
+        var f = filters[name];
+        var h = ['<div style="margin-bottom:4px; font-size:0.72rem; color:#9ab;">' +
+                 esc(labelOf(name)) + '</div>'];
+        f.items.forEach(function (it) {
+            var on = f.sel && f.sel.has(it[0]);
+            h.push('<label><input type="checkbox" value="' + esc(it[0]) + '"' +
+                   (on ? ' checked' : '') + ' onchange="pmmCheck(\'' + name + '\')"> ' +
+                   esc(it[0]) + ' <span style="color:#777;">(' + it[1] + ')</span></label>');
+        });
+        h.push('<div class="flyclear" onclick="pmmFlyClear(\'' + name +
+               '\')">clear selection</div>');
+        fly.innerHTML = h.join('');
+        var btn = el('pmmHead').querySelector('.fbtn[data-col="' + name + '"]');
+        var rc = btn.getBoundingClientRect();
+        fly.style.left = Math.max(8, Math.min(rc.left, window.innerWidth - 250)) + 'px';
+        fly.style.top = (rc.bottom + 4) + 'px';
+        fly.style.display = 'block';
+        flyCol = name;
+    };
+    window.pmmCheck = function (name) {
+        var f = filters[name], sel = new Set(), boxes;
+        boxes = el('pmmFly').querySelectorAll('input[type="checkbox"]');
+        for (var i = 0; i < boxes.length; i++) {
+            if (boxes[i].checked) sel.add(boxes[i].value);
+        }
+        f.sel = sel.size ? sel : null;
+        syncFlyBtn(name);
+        apply();
+    };
+    window.pmmFlyClear = function (name) {
+        filters[name].sel = null;
+        var boxes = el('pmmFly').querySelectorAll('input[type="checkbox"]');
+        for (var i = 0; i < boxes.length; i++) boxes[i].checked = false;
+        syncFlyBtn(name);
+        apply();
+    };
+    function syncFlyBtn(name) {
+        var f = filters[name];
+        var btn = el('pmmHead').querySelector('.fbtn[data-col="' + name + '"]');
+        if (!btn) return;
+        btn.textContent = f.sel ? (f.sel.size + '/' + f.items.length + ' \u25BE')
+                                : 'All \u25BE';
+        btn.className = 'fbtn' + (f.sel ? ' on' : '');
+    }
+
+    function clearAll() {
+        COLS.forEach(function (c) {
+            var f = filters[c[0]];
+            if (f.type === 'text') f.text = '';
+            else if (f.type === 'dd') { f.text = ''; f.dd = ''; }
+            else if (f.type === 'ev') f.val = '3o';
+            else if (f.type === 'date') { f.text = ''; f.date = ''; }
+            else f.sel = null;
+        });
+        sortState = { name: 'date', dir: -1 };
+        buildHead();
+        apply();
+    }
+
+    function wire() {
+        el('pmmClear').addEventListener('click', clearAll);
+        el('pmmRefresh').addEventListener('click', function () { loaded = false; load(); });
+        el('pmmExport').addEventListener('click', exportCsv);
+        document.addEventListener('click', function (e) {
+            if (!flyCol) return;
+            if (el('pmmFly').contains(e.target)) return;
+            if (e.target.closest && e.target.closest('.fbtn')) return;
+            el('pmmFly').style.display = 'none';
+            flyCol = null;
+        });
+    }
+
+    function init() {
+        if (loaded) return;
+        loaded = true;
+        wire();
+        load();
+    }
+    document.addEventListener('DOMContentLoaded', function () {
+        if (el('panel-2pmm')) init();
+    });
+    if (el('panel-2pmm') && document.readyState !== 'loading') init();
+})();
+</script>
 <script>
         // Client-side tab switching: panels live in one document, so switching
         // tabs never reloads the page and all JS state / sockets stay alive.

@@ -160,11 +160,15 @@ def _read_raw_csv(path):
 def _load_bars_positional(csv_path):
     """Current unprefixed layout: repeated generic headers, blocks anchored from the right.
 
-    0-indexed (59 cols): 0-4 time/OHLC | 5-20 EMAs (1m E100/E200, 5m E4/E9/E21/E50/
-    E100/E200, 30m/2H/D) | 21 VWAP | 5m: MACD 22-23, VOC 24, PVT 25, X-markers
-    26-28, Stoch 29-30 | 30m: VOC 31, Stoch 32-33, MACD M1 34-35, M2 36-37, PVT 38,
-    markers 39-41 | 2H: MACD M1 42-43, M2 44-45, VOC 46, PVT 47, markers 48-50 |
-    D: MACD M1 51-52, M2 53-54, PVT 55, markers 56-58.
+    FINAL LAYOUT (2026-10-25, 60 cols — D VOC added to the 5m export):
+    0-4 time/OHLC | 5-20 EMAs (1m E100/E200, 5m E4/E9/E21/E50/E100/E200, 30m/2H/D)
+    | 21 VWAP | 5m: MACD 22-23, VOC 24, PVT 25, X-markers 26-28, Stoch 29-30 |
+    30m: VOC 31, Stoch 32-33, MACD M1 34-35, M2 36-37, PVT 38, markers 39-41 |
+    2H: MACD M1 42-43, M2 44-45, VOC 46, PVT 47, markers 48-50 |
+    D: MACD M1 51-52, M2 53-54, VOC 55 (NEW — updates per 30m step), PVT 56,
+    markers 57-59.
+
+    Pre-2025-09-22 rows (prepended from the 59-col export) have D VOC empty.
     """
     header, raw = _read_raw_csv(csv_path)
 
@@ -176,7 +180,7 @@ def _load_bars_positional(csv_path):
                 "(layout changed? update _load_bars_positional)" % (idx, got, name))
 
     for idx, name in ((5, "1m EMA100"), (6, "1m EMA200"), (7, "5m EMA4"), (21, "VWAP"),
-                      (25, "PVT"), (38, "PVT"), (47, "PVT"), (55, "PVT")):
+                      (25, "PVT"), (38, "PVT"), (47, "PVT"), (56, "PVT")):
         expect(idx, name)
 
     def fv(v):
@@ -195,7 +199,7 @@ def _load_bars_positional(csv_path):
             "date": ts[:10], "hhmm": ts[11:16] if len(ts) > 15 else "",
             "open": fv(r[1]), "high": fv(r[2]), "low": fv(r[3]), "close": fv(r[4]),
             "vwap": fv(r[21]),
-            "5m_pvt": fv(r[25]), "30m_pvt": fv(r[38]), "2h_pvt": fv(r[47]), "1d_pvt": fv(r[55]),
+            "5m_pvt": fv(r[25]), "30m_pvt": fv(r[38]), "2h_pvt": fv(r[47]), "1d_pvt": fv(r[56]),
             # MACD pairs: use M2 (24/52, the research pair);
             # M1 (12/26) NOT used by current setups - reserved for a future setup
             "5m_macd": fv(r[22]), "5m_signal": fv(r[23]),
@@ -207,7 +211,7 @@ def _load_bars_positional(csv_path):
             "1d_macd_1226": fv(r[51]), "1d_signal_1226": fv(r[52]),
             "5m_k": fv(r[29]), "5m_d": fv(r[30]),
             "30m_k": fv(r[32]), "30m_d": fv(r[33]),
-            "5m_voc": fv(r[24]), "30m_voc": fv(r[31]), "2h_voc": fv(r[46]),
+            "5m_voc": fv(r[24]), "30m_voc": fv(r[31]), "2h_voc": fv(r[46]), "1d_voc": fv(r[55]),
             "5m_ema4": fv(r[7]), "ema100_1m": fv(r[5]), "ema200_1m": fv(r[6]),
             "5m_ema9": fv(r[8]), "5m_ema21": fv(r[9]), "5m_ema50": fv(r[10]),
             "5m_ema100": fv(r[11]), "5m_ema200": fv(r[12]),

@@ -85,9 +85,32 @@ Data availability: `1O`/`5O`/`3OX`/`2OX` tracked (VOC in exports) · `DS` from t
 
 - Regime notation: `D−|2H+|30−` — PVT signs per TF; **D = previous day's D-PVT sign**
 - **PDH / PDL / PDC / PDOpen** = prior-day high / low / close / open · **Round100** = 100-pt NIFTY multiples (23000, 23100, …)
-- EMA rungs: `3E50` = 30m EMA50, `5E200` = 5m EMA200, `1E100` = 1m EMA100, `D E100` = Daily EMA100
+- EMA rungs: `3E50` = 30m EMA50, `5E200` = 5m EMA200, `2HE50` = 2H EMA50, `1E100` = 1m EMA100, `D E100` = Daily EMA100
 - Major rung set for Price Action labels: 1E100, 1E200, 3E50, 3E100, 5E50, 5E100, 5E200
 - **Touch** = high ≥ level · **Reject** = close back below · **Hold** = close back above · **FT** = follow-through (Y/N, next-30m-bar)
+- In the 2PMM, `RLevels` and `SLevels` are RUN-DERIVED (one run per event). For a DOWN
+  run: `RLevels` = the TRIGGER ZONE — rungs whose rejection started the fall (touched
+  and rejected during the rise into it) AND within one event-candle-range of the rise's
+  swing high (threshold = mean 5m bar range of the 5 candles ending at the turn; several
+  rungs can qualify), highest first. `SLevels` = the rung that STOPPED the fall —
+  bracketing the fall's last candle (low ≤ rung ≤ close there; the 5m MACD2 cross-up at
+  that candle confirms; `+` joins an exact confluence). UP runs mirror: `SLevels` =
+  support zone that triggered the rise (within one event-candle-range of the fall's
+  swing low), `RLevels` = the rung holding the rise's last candle (MACD2 cross-down
+  confirms).
+- 2PMM runs are ONE signed `Run` column per event: positive = uprun, negative =
+  downrun (1 decimal). Direction = the first 5m MACD2 cross after the event, else the
+  net event-close → session-close move; the confirming endpoint = the next cross in the
+  same direction, else the session's last bar (unconfirmed moves run to the close).
+  DRun = held support − swing high (negative); URun = held resistance − swing low.
+  `Levels Crossed` = for a down run, the rungs BELOW the trigger zone price crossed down
+  through during the fall (run low → zone bottom); mirrored for up runs; excluding
+  levels named in SLevels/RLevels.
+- 2PMM ladder (2026-10-26): base rungs + the 56 TradingView PSR series — `D-P…Q-S3`
+  (Standard) and `Dh-P…Qh-S3` (Heikin Ashi), from the canonical's appended
+  columns. Pivots are NOT house-computed — TradingView's own plotted values are
+  the pivot ladder (the `TV-` prefix marks them; the old house `D-P…M-S4` set is
+  retired, including its R4/S4 depth which TV does not plot).
 - Window format: `Date | Start→End` in 30m steps; same-class windows <10 min apart merge
 
 ## Commentary vocabulary (1PM Swing session)
@@ -382,3 +405,80 @@ carry) in the 1m era (Jul 13 → Oct 19): **273 legs on 43 of 69 days**
 - **The day spread:** 36/43 days = the win-rate ≥50%; the best = the breakdown days
   (Oct 8: 12 legs 92%, the med 43.2 · Sep 16: 68.9 · Oct 1: 60.4); the chop-day failures =
   Aug 17, Oct 13 (0%, the med <8).
+
+## FINAL export layout (2026-10-25 — the go-forward format for future downloads)
+
+The user locked the chart layouts; future 5m/30m exports match byte-for-byte. Verified
+2026-10-25 by value-identity on the overlap (PVTs bit-exact; D block bit-exact; the rest
+float-noise from re-export).
+
+**5m export — 60 cols** (canonical `5_Sep 2025-Oct 2026.csv`, 20,601 rows,
+2025-09-15 → 2026-10-23): 0-4 time/OHLC · 5-20 EMAs (1m E100/E200, 5m E4/9/21/50/100/200,
+30m/2H/D) · 21 VWAP · **5m block** MACD 22-23, VOC 24, PVT 25, markers 26-28, Stoch 29-30 ·
+**30m block** VOC 31, Stoch 32-33, M1 34-35, M2 36-37, PVT 38, markers 39-41 ·
+**2H block** M1 42-43, M2 44-45, VOC 46, PVT 47, markers 48-50 ·
+**D block** M1 51-52, M2 53-54, **VOC 55 (the DO — new; updates per 30m step)**,
+PVT 56, markers 57-59. Rows before 2025-09-22 carry D VOC empty (TV's export window
+starts there; prepended from the 59-col layout). The 2026-10-22 14:40 5m bar (missing
+from the old export) is healed.
+
+**30m export — 58 cols** (canonical `30_42a03.csv`, 21,910 rows, 2020-01-01 → 2026-10-23):
+blocks standardized to `M1, M2, Plot, PVT, dead-Plot, XU, XD, K, D` per TF —
+**30m** @26-36 · **2H** @37-47 (Stoch moved AFTER the PVT block) ·
+**D** @48-58 (**VOC 48 = the DO, 30m-computed** — new; M1 49-50, M2 51-52, PVT 53,
+Stoch 57-58 moved to the end). read_tv_csv occurrence naming unchanged:
+MACD_Line_1226/2452 = 3M1/3M2, _3/_4 = 2M1/2M2, _5/_6 = DM1/DM2; PVT/#2/#3 =
+30m/2H/D; K/D, K#2/D#2, K#3/D#3 = 3S/2S/**DS (now confirmed live since 2020 —
+the "DS absent" note above is superseded)**.
+
+**VOC cadences (verified):** 5m VOC = every row (~3.3 zero-X/day) · 30m VOC = every 5m
+close (the ×6 pattern) · 2H VOC = per 30m step · D VOC = per 30m step in both files
+(scales differ per file — the volume series differs, the 30m file tracks the other
+price/volume series; signs & zero-crosses only, the house rule).
+
+**Note:** the 2026-10-25 downloads still end 2026-10-23 (a layout refresh, not a data
+refresh) — Friday 2026-10-24's session arrives with the next export. Backups:
+`csv/backup_2026-10-25/`.
+
+## 2PMM — 2PM Matrix (module registered 2026-10-25)
+
+The user's new module (session "2PMM"). **Ultimate goal:** mine the pattern of **when 3O
+comes up — DEFINED = the 30m VOC crossing above the zero line (`3OX up` event)** — and its
+price-moving direction; forecast from that pattern; capture the swings as Swing / Intra /
+Scalp. Sequence: historical matrix → indicator correlations → pattern repetition (does
+price action repeat when the trend setup repeats?) → forecasting. The full O-ladder
+(5O/3O/2O/DO) + PM states + the 2S/DS Stoch layer feed the matrix; 3OX-up is the
+centerpiece trigger.
+
+### 2PMM level semantics (2026-10-25, revised 2026-10-26 — hybrid)
+
+- **SL Levels (both event blocks)** — RUN-DERIVED (2026-10-26 semantics): for a down run,
+  the ladder rung that STOPPED the fall — bracketing the fall's last candle (low ≤ rung ≤
+  close there), the 5m MACD2 cross-up at that candle confirming the stop; '+' joins labels
+  on an exact confluence (e.g. `PDH+VWAP`). Mirrored for up runs: the support ZONE that
+  triggered the rise (touched-and-rejected rungs within one event-candle-range of the
+  fall's swing low).
+- **RL Levels (both event blocks)** — RUN-DERIVED trigger zone: for a down run, the rungs
+  whose rejection started the fall — touched and rejected during the rise into it AND
+  within one event-candle-range of the rise's swing high (threshold = mean 5m bar range
+  of the 5 candles ending at the turn; several rungs can qualify), highest first. Mirrored
+  for up runs: the single rung holding the rise's last candle (MACD2 cross-down confirms).
+  Oct 23 09:30 now lists `ORH,3E200,R1-of-Q,2HE50,3E100,3E50` (see the matrix).
+- **Levels Crossed (`<prefix>o_crossed`)** — for a down run, the rungs BELOW the trigger
+  zone price crossed down through during the fall (run low → zone bottom); mirrored for
+  up runs (zone top → run high); excluding levels named in SLevels/RLevels. The run = one
+  direction per event, the first 5m MACD2 cross after the event.
+  Ladder = PDH/PDL/PDC/PDOpen, ORH/ORL,
+  1E/3E/5E rungs, VWAP, Round-100s, and the 56 TradingView PSR rungs (`D-P…Qh-S3`).
+  Matrix is now **48 columns** (`3ov`/`3on` = the
+  carried 30m VOC value + age, displayed `3o`/`3on`).
+- **2PMM state cells** — MACD cells `X_n`/`Y_n`, n unsigned (Y = below zero, the sign
+  is implicit); PVT (3p/2p/dp) 1 decimal; ages signed (+ = since up-cross, − = since
+  down-cross, 0 = crossed this bucket).
+- **2PMM level cells** — NAME-ONLY tokens, comma separated (`PDH+ORH`,
+  `D-S2,R100|VWAP`): no Nifty price, no time; R100 dropped its price suffix
+  (`R100-25300` → `R100`) and repeated tokens dedupe across the whole cell.
+- **2PMM merged view** — the grid renders the two event blocks as one set of
+  `ev_*` columns; each row shows its own event (3O row or 5O-only row). The `O`
+  column filters **3o / 5o / All** (default 3o). Paired rows display as 3O rows;
+  their 5O rider stays in the CSV only.
