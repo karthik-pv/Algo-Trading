@@ -5246,11 +5246,44 @@ document.addEventListener('DOMContentLoaded', function() {
                     bp: pick('PCT_BOOK_PROFIT', s),
                     sl: pick('PCT_STOP_LOSS', s),
                 };
+                // Keep the pending-orders/positions SL% columns in sync
+                // with the same fresh config (stopLossMapping used to
+                // only arrive on the setup_data socket event, so it
+                // stayed stale after an App Config save).
+                if (strategyThresholds[s].sl !== null) {
+                    stopLossMapping[s] = strategyThresholds[s].sl;
+                }
             }
         } catch (e) { /* keep previous values; tag degrades to '?' parts */ }
     }
 
     // --- ORDERS GRID: current day executed trades ---
+    // Live BP/SL display: poll the config every 30s and re-render the
+    // Orders grid from cache when the thresholds change. Previously the
+    // BP#SL tag (and SL% columns) only refreshed on a full grid reload,
+    // so they could disagree with the thresholds the watcher was
+    // actually using after an App Config save.
+    setInterval(async () => {
+        const before = JSON.stringify(strategyThresholds);
+        await loadStrategyThresholds();
+        if (JSON.stringify(strategyThresholds) !== before) {
+            if (ordersRowsCache && ordersRowsCache.length && ordersTableBody) {
+                renderOrders(ordersRowsCache);
+            }
+        }
+    }, 30000);
+
+    // Immediate refresh when the backend saves App Config (pushes the
+    // fresh stop_loss_mapping on 'config_updated').
+    socket.on('config_updated', (data) => {
+        if (data && data.stop_loss_mapping) {
+            stopLossMapping = data.stop_loss_mapping;
+            if (ordersRowsCache && ordersRowsCache.length && ordersTableBody) {
+                renderOrders(ordersRowsCache);
+            }
+        }
+    });
+
     function getTodayTradeDate() {
         const now = new Date();
         const yyyy = now.getFullYear();
@@ -5558,6 +5591,11 @@ document.addEventListener('DOMContentLoaded', function() {
                     if (value !== '' && value !== null && value !== undefined && !Number.isNaN(pnlValue)) {
                         // Whole rupees - no decimals.
                         displayValue = pnlValue.toLocaleString('en-IN', { maximumFractionDigits: 0 });
+                        // Sign color as well - green for profit / red for
+                        // loss (same classes the PnL% column uses), so the
+                        // P&L cell itself is colored as listed in the grid.
+                        if (pnlValue > 0) td.classList.add('pnl-pos');
+                        else if (pnlValue < 0) td.classList.add('pnl-neg');
                     }
                 }
                 if (column === 'PnL_Rate') {

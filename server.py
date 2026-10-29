@@ -620,6 +620,16 @@ def save_appconfig():
         # runtime re-reads (e.g. MODE in the order handlers) see the
         # new values instead of the stale import-time cache.
         clear_json_cache(APPCONFIG_FILE)
+        # Push the fresh per-strategy stop-loss mapping so the UI's SL%
+        # columns (positions, pending orders) and the Orders-grid BP#SL
+        # tag reflect the new config immediately instead of staying
+        # stale until the next page reload.
+        try:
+            trader.frontend_data_socket.emit('config_updated', {
+                "stop_loss_mapping": trader._stop_loss_pct_mapping(),
+            })
+        except Exception:
+            pass
         # Rebuild the Trade/Buy option grid when a WOC strike factor
         # (or the underlying) changed, so the new strikes show up
         # immediately instead of only after a restart. The setup is
