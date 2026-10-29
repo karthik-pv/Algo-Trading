@@ -260,7 +260,8 @@ class Trader_Singleton:
     # Paper trading store
     # ---------------------------------------------------------
     _paper_trade_lock = threading.Lock()
-    _PAPER_TRADE_FILENAME = resolve_data_path("PaperTrading.txt")
+    _PAPER_TRADE_FILENAME = os.path.join(DATA_DIR, "paper_trading", "PaperTrading.txt")
+    os.makedirs(os.path.dirname(_PAPER_TRADE_FILENAME), exist_ok=True)
     _paper_realized_pnl = 0.0
 
     # Serializes weekly-option table builds: websocket reconnects
@@ -2466,11 +2467,15 @@ class Trader_Singleton:
         """
         Per-strategy time-limit in SECONDS (TIME_LIMIT_<strategy>).
 
-        Decimal minutes: 1 = 1m, 1.5 = 1m30s, 3.3 = 3m18s (the decimal
-        part x 60). 0, missing or unparsable -> 0.0 = guard DISABLED
-        (no warning spam - "off" is a normal, common state). Read fresh
-        on every call so a config-screen edit applies without a
-        restart, matching the other per-strategy thresholds.
+        Accepts either format (value is stored as a string, read fresh on
+        every call so a config-screen edit applies without a restart):
+          - duration string: "30s", "2m", "2m30s", "1h5m20s" (case-
+            insensitive, optional spaces between parts)
+          - decimal minutes (legacy): 1 = 1m, 1.5 = 1m30s, 3.3 = 3m18s
+
+        0, missing or unparsable -> 0.0 = guard DISABLED (no warning
+        spam - "off" is a normal, common state), matching the other
+        per-strategy thresholds.
         """
         try:
             raw = fetch_from_json(
@@ -2478,13 +2483,32 @@ class Trader_Singleton:
             )
         except Exception:
             raw = None
-        try:
-            minutes = float(raw)
-        except (TypeError, ValueError):
+        if raw is None:
             return 0.0
-        if not minutes or minutes <= 0:
+        text = str(raw).strip().lower()
+        if not text:
             return 0.0
-        return minutes * 60.0
+        # Legacy decimal minutes: plain number = minutes (1.5 -> 90s)
+        if text.replace(".", "", 1).isdigit():
+            try:
+                minutes = float(text)
+            except ValueError:
+                return 0.0
+            if not minutes or minutes <= 0:
+                return 0.0
+            return minutes * 60.0
+        # Duration string: "30s" / "2m" / "2m30s" / "1h5m20s"
+        parts = re.findall(r"(\d+)\s*([hms])", text)
+        if not parts or not re.fullmatch(r"(?:\d+\s*[hms]\s*)+", text):
+            return 0.0
+        seconds = 0.0
+        used = set()
+        for amount, unit in parts:
+            if unit in used:  # e.g. "2m30m" - reject double units
+                return 0.0
+            used.add(unit)
+            seconds += int(amount) * {"h": 3600, "m": 60, "s": 1}[unit]
+        return seconds if seconds > 0 else 0.0
 
     def _watcher_time_limit_decision(self, position_key):
         """
@@ -7653,7 +7677,9 @@ class Trader_Singleton:
                 spoken.append(txt)
             if not lines:
                 return []
-            path = os.path.join(DATA_DIR, time.strftime("SPATAM_Alerts_%Y-%m-%d.txt"))
+            spatam_log_dir = os.path.join(DATA_DIR, "logs", "SPATAM")
+            os.makedirs(spatam_log_dir, exist_ok=True)
+            path = os.path.join(spatam_log_dir, time.strftime("SPATAM_Alerts_%Y-%m-%d.txt"))
             with self._spatam_alert_file_lock:
                 with open(path, "a", encoding="utf-8") as f:
                     f.write("\n".join(lines) + "\n")

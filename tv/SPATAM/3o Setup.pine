@@ -1,0 +1,343 @@
+//@version=5
+indicator("3o SetUp Downtrend", "3o SetUp Downtrend", overlay = true, dynamic_requests = true)
+
+f_volumeOscillator(int _multiplier) =>
+    float volFast = ta.ema(volume, 9 * _multiplier)
+    float volSlow = ta.ema(volume, 21 * _multiplier)
+    volSlow != 0 ? 100 * (volFast - volSlow) / volSlow : na
+
+f_volumeOscillatorStats(int _multiplier) =>
+    float value = f_volumeOscillator(_multiplier)
+    int crossIndex = ta.barssince(ta.crossover(value, 0)) + 1
+    bool increasing = value > value[1]
+    bool decreasing = value < value[1]
+    [value, crossIndex, increasing, decreasing]
+
+f_vocStats() =>
+    float value = f_volumeOscillator(1)
+    int crossIndex = ta.barssince(ta.crossover(value, 0)) + 1
+    [value, value > value[1], crossIndex]
+
+f_pvt() =>
+    float cumulative = ta.cum(ta.change(close) / close[1] * volume)
+    float raw = ta.ema(cumulative, 3) - ta.ema(cumulative, 10)
+    float scale = ta.highest(math.abs(raw), 25)
+    scale > 0 ? raw / scale : 0.0
+
+f_macdTrends() =>
+    [m2, s2, _] = ta.macd(close, 24, 52, 9)
+    [m1, s1, _] = ta.macd(close, 12, 26, 9)
+    [m1 < s1, m2 < s2, m2 > s2]
+
+f_oneMinutePriceStats() =>
+    [close, ta.vwap(hlc3), ta.ema(close, 21)]
+
+f_stochStats() =>
+    float rsi = ta.rsi(close, 14)
+    float rawK = ta.stoch(rsi, rsi, rsi, 14)
+    float k = ta.sma(rawK, 3)
+    float d = ta.sma(ta.sma(rawK, 3), 3)
+    [k, ta.crossunder(k, d), ta.crossover(k, d)]
+
+f_emaSet() =>
+    [ta.ema(close, 50), ta.ema(close, 100), ta.ema(close, 200)]
+
+f_emaDailyWeekly() =>
+    [ta.ema(close, 100), ta.ema(close, 200)]
+
+f_addLevel(array<float> prices, array<string> names, float price, string name) =>
+    if not na(price)
+        array.push(prices, price)
+        array.push(names, name)
+
+f_addPivotLevels(array<float> prices, array<string> names, string prefix, float h, float l, float c) =>
+    if not na(h) and not na(l) and not na(c)
+        float pivot = (h + l + c) / 3
+        float priceRange = h - l
+        f_addLevel(prices, names, pivot, "P " + prefix)
+        f_addLevel(prices, names, pivot * 2 - l, "R1 " + prefix)
+        f_addLevel(prices, names, pivot + priceRange, "R2 " + prefix)
+        f_addLevel(prices, names, pivot * 2 + (h - 2 * l), "R3 " + prefix)
+        f_addLevel(prices, names, pivot * 3 + (h - 3 * l), "R4 " + prefix)
+        f_addLevel(prices, names, pivot * 4 + (h - 4 * l), "R5 " + prefix)
+        f_addLevel(prices, names, pivot * 2 - h, "S1 " + prefix)
+        f_addLevel(prices, names, pivot - priceRange, "S2 " + prefix)
+        f_addLevel(prices, names, pivot * 2 - (2 * h - l), "S3 " + prefix)
+        f_addLevel(prices, names, pivot * 3 - (3 * h - l), "S4 " + prefix)
+        f_addLevel(prices, names, pivot * 4 - (4 * h - l), "S5 " + prefix)
+
+[threeO, _, threeOIncreasing, threeODecreasing] = request.security(syminfo.tickerid, "5", f_volumeOscillatorStats(6), gaps = barmerge.gaps_off, lookahead = barmerge.lookahead_off)
+[voc30, vocRising30, voc30Index] = request.security(syminfo.tickerid, "30", f_vocStats(), gaps = barmerge.gaps_off, lookahead = barmerge.lookahead_off)
+[voc120, vocRising120, voc120Index] = request.security(syminfo.tickerid, "120", f_vocStats(), gaps = barmerge.gaps_off, lookahead = barmerge.lookahead_off)
+
+float pvt1 = request.security(syminfo.tickerid, "1", f_pvt(), gaps = barmerge.gaps_off, lookahead = barmerge.lookahead_off)
+float pvt5 = request.security(syminfo.tickerid, "5", f_pvt(), gaps = barmerge.gaps_off, lookahead = barmerge.lookahead_off)
+float pvt30 = request.security(syminfo.tickerid, "30", f_pvt(), gaps = barmerge.gaps_off, lookahead = barmerge.lookahead_off)
+float pvt120 = request.security(syminfo.tickerid, "120", f_pvt(), gaps = barmerge.gaps_off, lookahead = barmerge.lookahead_off)
+
+[_, macd2Down1, macd2Up1] = request.security(syminfo.tickerid, "1", f_macdTrends(), gaps = barmerge.gaps_off, lookahead = barmerge.lookahead_off)
+[_, macd2Down5, _] = request.security(syminfo.tickerid, "5", f_macdTrends(), gaps = barmerge.gaps_off, lookahead = barmerge.lookahead_off)
+[macd1Down30, macd2Down30, _] = request.security(syminfo.tickerid, "30", f_macdTrends(), gaps = barmerge.gaps_off, lookahead = barmerge.lookahead_off)
+[macd1Down120, macd2Down120, _] = request.security(syminfo.tickerid, "120", f_macdTrends(), gaps = barmerge.gaps_off, lookahead = barmerge.lookahead_off)
+
+[stoch30, stochCrossDown30, stochCrossUp30] = request.security(syminfo.tickerid, "30", f_stochStats(), gaps = barmerge.gaps_off, lookahead = barmerge.lookahead_off)
+[stoch120, stochCrossDown120, stochCrossUp120] = request.security(syminfo.tickerid, "120", f_stochStats(), gaps = barmerge.gaps_off, lookahead = barmerge.lookahead_off)
+
+[close1, vwap1, ema21_1] = request.security(syminfo.tickerid, "1", f_oneMinutePriceStats(), gaps = barmerge.gaps_off, lookahead = barmerge.lookahead_off)
+[ema50_1, ema100_1, ema200_1] = request.security(syminfo.tickerid, "1", f_emaSet(), gaps = barmerge.gaps_off, lookahead = barmerge.lookahead_off)
+[ema50_5, ema100_5, ema200_5] = request.security(syminfo.tickerid, "5", f_emaSet(), gaps = barmerge.gaps_off, lookahead = barmerge.lookahead_off)
+[ema50_30, ema100_30, ema200_30] = request.security(syminfo.tickerid, "30", f_emaSet(), gaps = barmerge.gaps_off, lookahead = barmerge.lookahead_off)
+[ema50_120, ema100_120, ema200_120] = request.security(syminfo.tickerid, "120", f_emaSet(), gaps = barmerge.gaps_off, lookahead = barmerge.lookahead_off)
+[ema100_d, ema200_d] = request.security(syminfo.tickerid, "D", f_emaDailyWeekly(), gaps = barmerge.gaps_off, lookahead = barmerge.lookahead_off)
+[ema100_w, ema200_w] = request.security(syminfo.tickerid, "W", f_emaDailyWeekly(), gaps = barmerge.gaps_off, lookahead = barmerge.lookahead_off)
+
+float vwapSession = ta.vwap(hlc3)
+bool newDay = ta.change(time("D")) != 0
+bool vwapTouchReject = not na(vwapSession) and high >= vwapSession and close < vwapSession
+bool vwapTouchHold = not na(vwapSession) and low <= vwapSession and close > vwapSession
+var bool vwapRetestedDown = false
+var bool vwapRetestedUp = false
+if newDay
+    vwapRetestedDown := false
+    vwapRetestedUp := false
+if vwapTouchReject
+    vwapRetestedDown := true
+if vwapTouchHold
+    vwapRetestedUp := true
+
+[prevDayHigh, prevDayLow, prevDayClose] = request.security(syminfo.tickerid, "D", [high[1], low[1], close[1]], gaps = barmerge.gaps_off, lookahead = barmerge.lookahead_on)
+float dailyOpen = request.security(syminfo.tickerid, "D", open, gaps = barmerge.gaps_off, lookahead = barmerge.lookahead_on)
+[prevWeekHigh, prevWeekLow, prevWeekClose] = request.security(syminfo.tickerid, "W", [high[1], low[1], close[1]], gaps = barmerge.gaps_off, lookahead = barmerge.lookahead_on)
+[prevMonthHigh, prevMonthLow, prevMonthClose] = request.security(syminfo.tickerid, "M", [high[1], low[1], close[1]], gaps = barmerge.gaps_off, lookahead = barmerge.lookahead_on)
+[prevQuarterHigh, prevQuarterLow, prevQuarterClose] = request.security(syminfo.tickerid, "3M", [high[1], low[1], close[1]], gaps = barmerge.gaps_off, lookahead = barmerge.lookahead_on)
+
+var float openingRangeHigh = na
+var float openingRangeLow = na
+if newDay
+    openingRangeHigh := na
+    openingRangeLow := na
+int sessionStart = timestamp("Asia/Kolkata", year, month, dayofmonth, 9, 15)
+bool inRegularSession = not na(time(timeframe.period, "0915-1530:23456", "Asia/Kolkata"))
+bool inOpeningRange = inRegularSession and time < sessionStart + 15 * 60 * 1000
+if inOpeningRange
+    openingRangeHigh := na(openingRangeHigh) ? high : math.max(openingRangeHigh, high)
+    openingRangeLow := na(openingRangeLow) ? low : math.min(openingRangeLow, low)
+
+var array<float> resistancePrices = array.new_float(0)
+var array<string> resistanceNames = array.new_string(0)
+array.clear(resistancePrices)
+array.clear(resistanceNames)
+
+f_addLevel(resistancePrices, resistanceNames, ema50_1, "1m EMA50")
+f_addLevel(resistancePrices, resistanceNames, ema100_1, "1m EMA100")
+f_addLevel(resistancePrices, resistanceNames, ema200_1, "1m EMA200")
+f_addLevel(resistancePrices, resistanceNames, ema50_5, "5m EMA50")
+f_addLevel(resistancePrices, resistanceNames, ema100_5, "5m EMA100")
+f_addLevel(resistancePrices, resistanceNames, ema200_5, "5m EMA200")
+f_addLevel(resistancePrices, resistanceNames, ema50_30, "30m EMA50")
+f_addLevel(resistancePrices, resistanceNames, ema100_30, "30m EMA100")
+f_addLevel(resistancePrices, resistanceNames, ema200_30, "30m EMA200")
+f_addLevel(resistancePrices, resistanceNames, ema50_120, "2h EMA50")
+f_addLevel(resistancePrices, resistanceNames, ema100_120, "2h EMA100")
+f_addLevel(resistancePrices, resistanceNames, ema200_120, "2h EMA200")
+f_addLevel(resistancePrices, resistanceNames, ema100_d, "D EMA100")
+f_addLevel(resistancePrices, resistanceNames, ema200_d, "D EMA200")
+f_addLevel(resistancePrices, resistanceNames, ema100_w, "W EMA100")
+f_addLevel(resistancePrices, resistanceNames, ema200_w, "W EMA200")
+f_addLevel(resistancePrices, resistanceNames, prevDayHigh, "PDH")
+f_addLevel(resistancePrices, resistanceNames, prevDayLow, "PDL")
+f_addLevel(resistancePrices, resistanceNames, prevDayClose, "PDC")
+f_addLevel(resistancePrices, resistanceNames, prevWeekHigh, "PWH")
+f_addLevel(resistancePrices, resistanceNames, prevWeekLow, "PWL")
+f_addLevel(resistancePrices, resistanceNames, prevWeekClose, "PWC")
+f_addLevel(resistancePrices, resistanceNames, prevMonthHigh, "PMH")
+f_addLevel(resistancePrices, resistanceNames, prevMonthLow, "PML")
+f_addLevel(resistancePrices, resistanceNames, prevQuarterHigh, "PQH")
+f_addLevel(resistancePrices, resistanceNames, prevQuarterLow, "PQL")
+f_addLevel(resistancePrices, resistanceNames, prevQuarterClose, "PQC")
+f_addLevel(resistancePrices, resistanceNames, vwapSession, "VWAP D")
+f_addLevel(resistancePrices, resistanceNames, ta.vwap(hlc3, timeframe.change("W")), "VWAP W")
+f_addLevel(resistancePrices, resistanceNames, openingRangeHigh, "ORH")
+f_addLevel(resistancePrices, resistanceNames, openingRangeLow, "ORL")
+f_addLevel(resistancePrices, resistanceNames, prevDayLow + (prevDayHigh - prevDayLow) * 0.382, "Fib 38.2 D")
+f_addLevel(resistancePrices, resistanceNames, prevDayLow + (prevDayHigh - prevDayLow) * 0.5, "Fib 50 D")
+f_addLevel(resistancePrices, resistanceNames, prevDayLow + (prevDayHigh - prevDayLow) * 0.618, "Fib 61.8 D")
+
+f_addPivotLevels(resistancePrices, resistanceNames, "D", prevDayHigh, prevDayLow, prevDayClose)
+f_addPivotLevels(resistancePrices, resistanceNames, "W", prevWeekHigh, prevWeekLow, prevWeekClose)
+f_addPivotLevels(resistancePrices, resistanceNames, "M", prevMonthHigh, prevMonthLow, prevMonthClose)
+f_addPivotLevels(resistancePrices, resistanceNames, "Q", prevQuarterHigh, prevQuarterLow, prevQuarterClose)
+
+float dayRange = prevDayHigh - prevDayLow
+f_addLevel(resistancePrices, resistanceNames, prevDayClose + dayRange * 1.1 / 12, "Cam R1")
+f_addLevel(resistancePrices, resistanceNames, prevDayClose + dayRange * 1.1 / 6, "Cam R2")
+f_addLevel(resistancePrices, resistanceNames, prevDayClose + dayRange * 1.1 / 4, "Cam R3")
+f_addLevel(resistancePrices, resistanceNames, prevDayClose + dayRange * 1.1 / 2, "Cam R4")
+f_addLevel(resistancePrices, resistanceNames, prevDayClose - dayRange * 1.1 / 12, "Cam S1")
+f_addLevel(resistancePrices, resistanceNames, prevDayClose - dayRange * 1.1 / 6, "Cam S2")
+f_addLevel(resistancePrices, resistanceNames, prevDayClose - dayRange * 1.1 / 4, "Cam S3")
+f_addLevel(resistancePrices, resistanceNames, prevDayClose - dayRange * 1.1 / 2, "Cam S4")
+f_addLevel(resistancePrices, resistanceNames, math.ceil(close / 50) * 50, "RN +")
+f_addLevel(resistancePrices, resistanceNames, math.floor(close / 50) * 50, "RN -")
+f_addLevel(resistancePrices, resistanceNames, dailyOpen, "D Open")
+
+string resistanceHits = ""
+int resistanceHitCount = 0
+string supportHits = ""
+int supportHitCount = 0
+if array.size(resistancePrices) > 0
+    for i = 0 to array.size(resistancePrices) - 1
+        float level = array.get(resistancePrices, i)
+        string name = array.get(resistanceNames, i)
+        bool rejected = false
+        bool supported = false
+        for barsBack = 0 to 2
+            rejected := rejected or (level > ema100_1 and high[barsBack] >= level and close[barsBack] < level)
+            supported := supported or (level < ema100_1 and low[barsBack] <= level and close[barsBack] > level)
+        if rejected
+            if resistanceHitCount < 3
+                resistanceHits := resistanceHits + (resistanceHitCount > 0 ? ", " : "") + name + " @ " + str.tostring(level, format.mintick)
+            resistanceHitCount += 1
+        if supported
+            if supportHitCount < 3
+                supportHits := supportHits + (supportHitCount > 0 ? ", " : "") + name + " @ " + str.tostring(level, format.mintick)
+            supportHitCount += 1
+
+bool resistanceRejected = resistanceHitCount > 0
+bool supportHeld = supportHitCount > 0
+bool onePmSwingDown = pvt1 < 0 and macd2Down1 and close < ema50_1
+bool rejectedIntoOnePmSwing = resistanceRejected and onePmSwingDown
+bool onePmSwingUp = pvt1 > 0 and macd2Up1 and close > ema50_1
+bool supportedIntoOnePmSwing = supportHeld and onePmSwingUp
+bool threeOPositive = threeO > 0
+bool threeOIndexValid = not na(voc30Index) and voc30Index > 0 and voc30Index <= 4
+bool callBias = threeOPositive and threeOIncreasing and pvt1 > 0 and macd2Up1 and close1 > vwap1 and close1 > ema21_1
+bool putBias = threeO < 0 and threeODecreasing and pvt1 < 0 and macd2Down1 and close1 < vwap1 and close1 < ema21_1
+bool belowEma21_1 = close < ema21_1
+bool belowEma50_1 = close < ema50_1
+bool belowEma100_1 = close < ema100_1
+bool belowEma200_1 = close < ema200_1
+bool belowEma100_5 = close < ema100_5
+bool belowEma200_5 = close < ema200_5
+bool stoch30AboveMidZone = stoch30 >= 40
+bool stoch120AboveMidZone = stoch120 >= 40
+bool aboveEma21_1 = close > ema21_1
+bool aboveEma50_1 = close > ema50_1
+bool aboveEma100_1 = close > ema100_1
+bool aboveEma200_1 = close > ema200_1
+bool aboveEma100_5 = close > ema100_5
+bool aboveEma200_5 = close > ema200_5
+
+f_drawItem(table _table, int _row, int _column, bool _passed, string _label) =>
+    color statusBg = _passed ? color.rgb(28, 128, 82) : color.rgb(130, 48, 53)
+    table.cell(_table, _column, _row, _passed ? "✓" : "×", text_color = color.white, bgcolor = statusBg, text_halign = text.align_center, text_size = size.small)
+    table.cell(_table, _column + 1, _row, _label, text_color = color.rgb(235, 239, 244), bgcolor = color.rgb(42, 48, 58), text_halign = text.align_left, text_size = size.small)
+
+f_drawRowLabel(table _table, int _row, string _label) =>
+    table.cell(_table, 0, _row, _label, text_color = color.rgb(225, 188, 100), bgcolor = color.rgb(34, 40, 50), text_halign = text.align_center, text_size = size.small)
+
+var table checklist = table.new(position.top_right, 9, 20, frame_width = 1, frame_color = color.rgb(75, 85, 100), border_width = 1, border_color = color.rgb(60, 70, 85))
+
+if barstate.isfirst
+    table.merge_cells(checklist, 0, 0, 8, 0)
+    table.merge_cells(checklist, 0, 11, 8, 11)
+    table.merge_cells(checklist, 2, 2, 4, 2)
+    table.merge_cells(checklist, 2, 13, 4, 13)
+    table.merge_cells(checklist, 0, 5, 0, 6)
+    table.merge_cells(checklist, 0, 7, 0, 8)
+    table.merge_cells(checklist, 0, 16, 0, 17)
+    table.merge_cells(checklist, 0, 18, 0, 19)
+
+if barstate.islast
+    string resistanceText = resistanceHitCount > 3 ? resistanceHits + " +" + str.tostring(resistanceHitCount - 3) : resistanceHits
+    resistanceText := rejectedIntoOnePmSwing ? resistanceText : onePmSwingDown ? "No level rejected" : "Waiting for 1PM swing down"
+    string supportText = supportHitCount > 3 ? supportHits + " +" + str.tostring(supportHitCount - 3) : supportHits
+    supportText := supportedIntoOnePmSwing ? supportText : onePmSwingUp ? "No level supported" : "Waiting for 1PM swing up"
+    for spacerRow = 9 to 10
+        for column = 0 to 8
+            table.cell(checklist, column, spacerRow, " ", text_color = color.new(color.white, 100), bgcolor = na, text_size = size.normal)
+    string uptrendCaption = callBias ? ">>>>>>> 3o SetUp Uptrend <<<<<<<" : "3o SetUp Uptrend"
+    string downtrendCaption = putBias ? ">>>>>>> 3o SetUp Downtrend <<<<<<<" : "3o SetUp Downtrend"
+    table.cell(checklist, 0, 0, uptrendCaption, text_color = color.white, bgcolor = color.rgb(35, 76, 61), text_halign = text.align_center, text_size = size.normal)
+
+    f_drawRowLabel(checklist, 1, "3o")
+    f_drawItem(checklist, 1, 1, threeOPositive, ">0")
+    f_drawItem(checklist, 1, 3, threeOIndexValid, "Index")
+    f_drawItem(checklist, 1, 5, threeOIncreasing, "Rising")
+
+    f_drawRowLabel(checklist, 2, "PA")
+    f_drawItem(checklist, 2, 1, supportedIntoOnePmSwing, supportText)
+    f_drawItem(checklist, 2, 5, close > vwapSession, "VWAP ↑")
+    f_drawItem(checklist, 2, 7, vwapRetestedUp, "VWAP Retest ↑")
+
+    f_drawRowLabel(checklist, 3, "1m")
+    f_drawItem(checklist, 3, 1, pvt1 > 0, "PVT ↑")
+    f_drawItem(checklist, 3, 3, not macd2Down1, "M2 ↑")
+    f_drawItem(checklist, 3, 5, aboveEma21_1, "1E21 ↑")
+
+    f_drawRowLabel(checklist, 4, "5m")
+    f_drawItem(checklist, 4, 1, pvt5 > 0, "PVT ↑")
+    f_drawItem(checklist, 4, 3, not macd2Down5, "M2 ↑")
+    f_drawItem(checklist, 4, 5, aboveEma50_1, "1E50 ↑")
+
+    f_drawItem(checklist, 5, 1, voc30 > 0, "VOC ↑")
+    f_drawItem(checklist, 5, 3, stoch30AboveMidZone, "Stoch AMZ")
+    f_drawItem(checklist, 5, 5, stochCrossUp30, "Stoch ↑")
+    f_drawItem(checklist, 5, 7, pvt30 > 0, "PVT ↑")
+    f_drawRowLabel(checklist, 5, "30m")
+    f_drawItem(checklist, 6, 1, not macd1Down30, "M1 ↑")
+    f_drawItem(checklist, 6, 3, not macd2Down30, "M2 ↑")
+    f_drawItem(checklist, 6, 5, aboveEma100_1, "1E100 ↑")
+    f_drawItem(checklist, 6, 7, aboveEma200_1, "1E200 ↑")
+
+    f_drawItem(checklist, 7, 1, vocRising120, "VOC ↑")
+    f_drawItem(checklist, 7, 3, stoch120AboveMidZone, "Stoch AMZ")
+    f_drawItem(checklist, 7, 5, stochCrossUp120, "Stoch ↑")
+    f_drawItem(checklist, 7, 7, pvt120 > 0, "PVT ↑")
+    f_drawRowLabel(checklist, 7, "2h")
+    f_drawItem(checklist, 8, 1, not macd1Down120, "M1 ↑")
+    f_drawItem(checklist, 8, 3, not macd2Down120, "M2 ↑")
+    f_drawItem(checklist, 8, 5, aboveEma100_5, "5E100 ↑")
+    f_drawItem(checklist, 8, 7, aboveEma200_5, "5E200 ↑")
+
+    table.cell(checklist, 0, 11, downtrendCaption, text_color = color.white, bgcolor = color.rgb(75, 42, 48), text_halign = text.align_center, text_size = size.normal)
+
+    f_drawRowLabel(checklist, 12, "3o")
+    f_drawItem(checklist, 12, 1, threeOPositive, ">0")
+    f_drawItem(checklist, 12, 3, threeOIndexValid, "Index")
+    f_drawItem(checklist, 12, 5, threeOIncreasing, "Rising")
+
+    f_drawRowLabel(checklist, 13, "PA")
+    f_drawItem(checklist, 13, 1, rejectedIntoOnePmSwing, resistanceText)
+    f_drawItem(checklist, 13, 5, close < vwapSession, "VWAP ↓")
+    f_drawItem(checklist, 13, 7, vwapRetestedDown, "VWAP Retest ↓")
+
+    f_drawRowLabel(checklist, 14, "1m")
+    f_drawItem(checklist, 14, 1, pvt1 < 0, "PVT ↓")
+    f_drawItem(checklist, 14, 3, macd2Down1, "M2 ↓")
+    f_drawItem(checklist, 14, 5, belowEma21_1, "1E21 ↓")
+
+    f_drawRowLabel(checklist, 15, "5m")
+    f_drawItem(checklist, 15, 1, pvt5 < 0, "PVT ↓")
+    f_drawItem(checklist, 15, 3, macd2Down5, "M2 ↓")
+    f_drawItem(checklist, 15, 5, belowEma50_1, "1E50 ↓")
+
+    f_drawItem(checklist, 16, 1, voc30 > 0, "VOC ↑")
+    f_drawItem(checklist, 16, 3, stoch30AboveMidZone, "Stoch AMZ")
+    f_drawItem(checklist, 16, 5, stochCrossDown30, "Stoch ↓")
+    f_drawItem(checklist, 16, 7, pvt30 < 0, "PVT ↓")
+    f_drawRowLabel(checklist, 16, "30m")
+    f_drawItem(checklist, 17, 1, macd1Down30, "M1 ↓")
+    f_drawItem(checklist, 17, 3, macd2Down30, "M2 ↓")
+    f_drawItem(checklist, 17, 5, belowEma100_1, "1E100 ↓")
+    f_drawItem(checklist, 17, 7, belowEma200_1, "1E200 ↓")
+
+    f_drawItem(checklist, 18, 1, vocRising120, "VOC ↑")
+    f_drawItem(checklist, 18, 3, stoch120AboveMidZone, "Stoch AMZ")
+    f_drawItem(checklist, 18, 5, stochCrossDown120, "Stoch ↓")
+    f_drawItem(checklist, 18, 7, pvt120 < 0, "PVT ↓")
+    f_drawRowLabel(checklist, 18, "2h")
+    f_drawItem(checklist, 19, 1, macd1Down120, "M1 ↓")
+    f_drawItem(checklist, 19, 3, macd2Down120, "M2 ↓")
+    f_drawItem(checklist, 19, 5, belowEma100_5, "5E100 ↓")
+    f_drawItem(checklist, 19, 7, belowEma200_5, "5E200 ↓")

@@ -1,0 +1,1307 @@
+//@version=5
+indicator("Strategy_TradingInvestAlgo_Data", "", false)
+
+//EXTRA S/R LEVELS - inputs (from Strategy_EMAs_OCHL_cwcd v1.1)--------------------------------
+
+bool showPDHL  = input.bool(true, "Show PDH / PDL / PDC / Daily Open", group="Extra S/R Levels")
+bool showCam   = input.bool(true, "Show Camarilla R1-R4 / S1-S4 (prev day)", group="Extra S/R Levels")
+bool showVwap  = input.bool(true, "Show VWAP (session + week)", group="Extra S/R Levels")
+bool showPW    = input.bool(true, "Show PWH / PWL / PWC", group="Extra S/R Levels")
+bool showPM    = input.bool(true, "Show PMH / PML", group="Extra S/R Levels")
+bool showRN    = input.bool(true, "Show Round Numbers", group="Extra S/R Levels")
+int  rnStepPts = input.int(50, "Round number step (points)", minval=1, group="Extra S/R Levels")
+bool showOR    = input.bool(true, "Show Opening Range H/L", group="Extra S/R Levels")
+int  orMinutes = input.int(15, "Opening range minutes", minval=1, maxval=240, group="Extra S/R Levels")
+bool showFib   = input.bool(true, "Show Fib 38.2 / 50 / 61.8 (prev day range)", group="Extra S/R Levels")
+bool showR4    = input.bool(true, "Show R4 / S4 (D/W/M/Q)", group="Extra S/R Levels")
+bool showR5    = input.bool(false, "Show R5 / S5 (D/W/M/Q)", group="Extra S/R Levels")
+
+//PVT------------------------------------------------------------------------------------------
+
+kEma = "EMA"
+kSma = "SMA"
+kVwma = "VWMA"
+kWma = "WMA"
+
+
+// Input
+pvt_maType = kEma 
+pvt_short = 3
+pvt_long = 10
+pvt_showTrend = false
+pvt_showFill = true
+pvt_showMa = true
+pvt_oscMaType = kSma
+pvt_maLength = 13
+pvt_cross = true
+pvt_shouldNormalize = true
+pvt_normalizeLookback = 25
+
+smooth(t, sig, len) =>
+    ma = float(sig)         // None
+    if t == kSma            // Simple
+        ma := ta.sma(sig, len)
+    if t == kEma            // Exponential
+        ma := ta.ema(sig, len)
+    if t == kWma            // Weighted
+        ma := ta.wma(sig, len)
+    if t == kVwma           // Volume Weighted
+        ma := ta.vwma(sig, len)
+    ma
+
+calc_pvt(ma, sig, short, long) =>
+    src = sig
+    vt = ta.cum(ta.change(src) / src[1] * volume)
+    sh = smooth(ma, vt, short)
+    lg = smooth(ma, vt, long)
+    sh - lg
+
+
+maxAbs(series, len) =>
+    max = float(0)
+    for i = 0 to len-1
+        max := math.max(max, math.abs(series[i]))
+    max
+
+pvt_stats()=>
+    raw_pvt = calc_pvt(pvt_maType, close, pvt_short, pvt_long)
+    maxAbs_pvt = maxAbs(raw_pvt, pvt_normalizeLookback)
+    range_pvt = 1.0 // range to fit values into
+    value_pvt= pvt_shouldNormalize? raw_pvt / maxAbs_pvt * range_pvt: raw_pvt
+    
+    pvt_poise_flag = value_pvt > value_pvt[1] ? 1 : -1
+    pvt_trend_flag = value_pvt > 0 ? 1 : -1
+    pvt_cross_over_index = ta.barssince(ta.crossover(value_pvt,0))+1
+    pvt_cross_under_index = ta.barssince(ta.crossunder(value_pvt,0))+1
+    
+    [value_pvt,pvt_poise_flag,pvt_trend_flag,pvt_cross_over_index,pvt_cross_under_index]
+
+pvt(_res)=>
+    [value_pvt1,pvt_poise_flag1,pvt_trend_flag1,pvt_cross_over_index1,pvt_cross_under_index1] = request.security(syminfo.tickerid, _res,pvt_stats() , lookahead = barmerge.lookahead_on)
+    
+get_pvt_bgcolor(value_pvt)=>
+    (value_pvt < 0.1 and value_pvt > -0.1) ? color.yellow: value_pvt > 0.1 ? color.green : color.red
+
+
+//PVT------------------------------------------------------------------------------------------
+
+get_Close_EMA200_Stats()=>
+    (close - ta.ema(close,200)) *100 / close
+
+get_Close_EMA200_Stats_res(_res)=>
+    request.security(syminfo.tickerid, _res,get_Close_EMA200_Stats() , lookahead = barmerge.lookahead_on)
+    
+//EMA200---------------------------------------------------------------------------------------
+
+roundn(x, n) => 
+    mult = 1 
+    if n != 0
+        for i = 1 to math.abs(n)
+            mult := mult * 10
+    
+    n >= 0 ? math.round(x * mult) / mult : math.round(x / mult) * mult 
+
+//GETTING VALUES FOR ALL TIMEFRAMES-------------------------------------------------------
+
+pad_tostring(num,reqLength) => 
+    if reqLength - str.length(str.tostring(num)) == 1
+        " " + str.tostring(num)
+    else if reqLength - str.length(str.tostring(num)) == 2
+        "  " + str.tostring(num)
+    else if reqLength - str.length(str.tostring(num)) == 3
+        "   " + str.tostring(num)
+    else if reqLength - str.length(str.tostring(num)) == 4
+        "    " + str.tostring(num)
+    else if reqLength - str.length(str.tostring(num)) == 5
+        "     " + str.tostring(num)
+    else if reqLength - str.length(str.tostring(num)) == 6
+        "      " + str.tostring(num)
+
+//STOCHASTIC--------------------------------------------------------------------------------
+
+// --------------------
+// Helper function
+// --------------------
+f_json_pair(key, val) =>
+    "\"" + key + "\":" + str.tostring(val)
+
+f_json_pair_str(key, val) =>
+    "\"" + key + "\":\"" + val + "\""
+
+
+f_calc_all() =>
+    //PVT
+    raw_pvt = calc_pvt(pvt_maType, close, pvt_short, pvt_long)
+    maxAbs_pvt = maxAbs(raw_pvt, pvt_normalizeLookback)
+    range_pvt = 1.0 // range to fit values into
+    value_pvt= pvt_shouldNormalize? raw_pvt / maxAbs_pvt * range_pvt: raw_pvt
+    
+    pvt_poise_flag = value_pvt > value_pvt[1] ? 1 : -1
+    pvt_trend_flag = value_pvt > 0 ? 1 : -1
+    pvt_cross_over_index = ta.barssince(ta.crossover(value_pvt,0))+1
+    pvt_cross_under_index = ta.barssince(ta.crossunder(value_pvt,0))+1
+    
+    //EMAs
+    ema9   = ta.ema(close, 9)
+    ema21  = ta.ema(close, 21)
+    ema50  = ta.ema(close, 50)
+    ema100 = ta.ema(close, 100)
+    ema200 = ta.ema(close, 200)
+
+    //MACD
+    fastMA     = ta.ema(close, 24)
+    slowMA     = ta.ema(close, 52)
+    macdDiff   = fastMA - slowMA
+    macdSignal = ta.ema(macdDiff, 9)
+    macdHist   = macdDiff - macdSignal
+
+    fastMA1     = ta.ema(close, 12)
+    slowMA1     = ta.ema(close, 26)
+    macdDiff1   = fastMA1 - slowMA1
+    macdSignal1 = ta.ema(macdDiff1, 9)
+    macdHist1   = macdDiff1 - macdSignal1
+
+    [macdline_2452, signalLine_2452, histLine_2452] = ta.macd(close, 24, 52, 9)
+    [macdline_1226, signalLine_1226, histLine_1226] = ta.macd(close, 12, 26, 9)
+    
+    crossTrend = ""
+    zCrossFlag = 0
+
+    if macdline_1226 < signalLine_1226 and macdline_1226  > macdline_1226[1] and macdline_2452 < signalLine_2452 and macdline_2452  > macdline_2452[1]
+        zCrossFlag := 3
+        crossTrend := "U"
+    else if macdline_1226 < signalLine_1226 and macdline_1226  > macdline_1226[1]
+        zCrossFlag := 1  
+        crossTrend := "U"          
+    else if macdline_2452 < signalLine_2452 and macdline_2452  > macdline_2452[1]
+        zCrossFlag := 2
+        crossTrend := "U"
+    
+    if macdline_1226 > signalLine_1226 and macdline_1226  < macdline_1226[1] and macdline_2452 > signalLine_2452 and macdline_2452  < macdline_2452[1]
+        zCrossFlag := -3
+    else if macdline_1226 > signalLine_1226 and macdline_1226  < macdline_1226[1]
+        zCrossFlag := -1            
+    else if macdline_2452 > signalLine_2452 and macdline_2452  < macdline_2452[1]
+        zCrossFlag := -2
+
+
+    trend_1226 = macdline_1226 >  signalLine_1226 ? 1: -1
+    x_1226 = ta.barssince(ta.crossover(macdline_1226,signalLine_1226))+1
+    y_1226 = ta.barssince(ta.crossunder(macdline_1226,signalLine_1226))+1
+
+    trend_2452 = macdline_2452 >  signalLine_2452 ? 1: -1
+    x_2452 = ta.barssince(ta.crossover(macdline_2452,signalLine_2452))+1
+    y_2452 = ta.barssince(ta.crossunder(macdline_2452,signalLine_2452))+1
+    
+    //STOCHASTIC
+
+    k = ta.sma(ta.stoch(ta.rsi(close, 14), ta.rsi(close, 14), ta.rsi(close, 14), 14), 6)
+    d = ta.sma(ta.sma(ta.stoch(ta.rsi(close, 14), ta.rsi(close, 14), ta.rsi(close, 14), 14), 6), 6)
+    k_trend_flag = k > d ? 1 :-1
+    stoch_poise_flag = k>k[1] ? 1: -1
+    k_crossover_index = ta.barssince(ta.crossover(k,d))+1
+    k_crossunder_index = ta.barssince(ta.crossunder(k,d))+1
+
+    //VWAP
+    vwap_val = ta.vwap(hlc3)
+
+
+    //VOC
+    short = ta.ema(volume, 9)
+    long = ta.ema(volume, 21)
+    voc = 100 * (short - long) / long
+    voc_trend_flag = voc>voc[1] ? 1:-1
+    voc_cross_over_index = ta.barssince(ta.crossover(voc,0))+1
+    voc_cross_under_index = ta.barssince(ta.crossunder(voc,0))+1
+
+    [value_pvt,pvt_poise_flag,pvt_trend_flag,pvt_cross_over_index,pvt_cross_under_index, trend_1226,x_1226,y_1226,macdline_1226,signalLine_1226, histLine_1226,trend_2452,x_2452,y_2452, macdline_2452, signalLine_2452, histLine_2452,zCrossFlag,k,k_trend_flag,stoch_poise_flag,k_crossover_index,k_crossunder_index,ema9, ema21, ema50, ema100, ema200,vwap_val,voc,voc_trend_flag,voc_cross_over_index,voc_cross_under_index ]
+ 
+// --------------------
+
+
+[value_pvt_5s,pvt_poise_flag_5s,pvt_trend_flag_5s,pvt_cross_over_index_5s,pvt_cross_under_index_5s, trend_1226_5s,x_1226_5s,y_1226_5s,macdline_1226_5s,signalLine_1226_5s, histLine_1226_5s,trend_2452_5s,x_2452_5s,y_2452_5s, macdline_2452_5s, signalLine_2452_5s, histLine_2452_5s,zCrossFlag_5s,k_5s,k_trend_flag_5s,stoch_poise_flag_5s,k_crossover_index_5s,k_crossunder_index_5s,ema9_5s, ema21_5s, ema50_5s, ema100_5s, ema200_5s,vwap_val_5s,voc_5s,voc_trend_flag_5s,voc_cross_over_index_5s,voc_cross_under_index_5s ] = request.security(syminfo.tickerid, "5S",f_calc_all() )
+[value_pvt_15s,pvt_poise_flag_15s,pvt_trend_flag_15s,pvt_cross_over_index_15s,pvt_cross_under_index_15s, trend_1226_15s,x_1226_15s,y_1226_15s,macdline_1226_15s,signalLine_1226_15s, histLine_1226_15s,trend_2452_15s,x_2452_15s,y_2452_15s, macdline_2452_15s, signalLine_2452_15s, histLine_2452_15s,zCrossFlag_15s,k_15s,k_trend_flag_15s,stoch_poise_flag_15s,k_crossover_index_15s,k_crossunder_index_15s,ema9_15s, ema21_15s, ema50_15s, ema100_15s, ema200_15s,vwap_val_15s,voc_15s,voc_trend_flag_15s,voc_cross_over_index_15s,voc_cross_under_index_15s ] = request.security(syminfo.tickerid, "15S",f_calc_all() )
+[value_pvt_1m,pvt_poise_flag_1m,pvt_trend_flag_1m,pvt_cross_over_index_1m,pvt_cross_under_index_1m, trend_1226_1m,x_1226_1m,y_1226_1m,macdline_1226_1m,signalLine_1226_1m, histLine_1226_1m,trend_2452_1m,x_2452_1m,y_2452_1m, macdline_2452_1m, signalLine_2452_1m, histLine_2452_1m,zCrossFlag_1m,k_1m,k_trend_flag_1m,stoch_poise_flag_1m,k_crossover_index_1m,k_crossunder_index_1m,ema9_1m, ema21_1m, ema50_1m, ema100_1m, ema200_1m,vwap_val_1m,voc_1m,voc_trend_flag_1m,voc_cross_over_index_1m,voc_cross_under_index_1m ] = request.security(syminfo.tickerid, "1",f_calc_all() )
+[value_pvt_5m,pvt_poise_flag_5m,pvt_trend_flag_5m,pvt_cross_over_index_5m,pvt_cross_under_index_5m, trend_1226_5m,x_1226_5m,y_1226_5m,macdline_1226_5m,signalLine_1226_5m, histLine_1226_5m,trend_2452_5m,x_2452_5m,y_2452_5m, macdline_2452_5m, signalLine_2452_5m, histLine_2452_5m,zCrossFlag_5m,k_5m,k_trend_flag_5m,stoch_poise_flag_5m,k_crossover_index_5m,k_crossunder_index_5m,ema9_5m, ema21_5m, ema50_5m, ema100_5m, ema200_5m,vwap_val_5m,voc_5m,voc_trend_flag_5m,voc_cross_over_index_5m,voc_cross_under_index_5m ] = request.security(syminfo.tickerid, "5",f_calc_all() )
+[value_pvt_30m,pvt_poise_flag_30m,pvt_trend_flag_30m,pvt_cross_over_index_30m,pvt_cross_under_index_30m, trend_1226_30m,x_1226_30m,y_1226_30m,macdline_1226_30m,signalLine_1226_30m, histLine_1226_30m,trend_2452_30m,x_2452_30m,y_2452_30m, macdline_2452_30m, signalLine_2452_30m, histLine_2452_30m,zCrossFlag_30m,k_30m,k_trend_flag_30m,stoch_poise_flag_30m,k_crossover_index_30m,k_crossunder_index_30m,ema9_30m, ema21_30m, ema50_30m, ema100_30m, ema200_30m,vwap_val_30m,voc_30m,voc_trend_flag_30m,voc_cross_over_index_30m,voc_cross_under_index_30m ] = request.security(syminfo.tickerid, "30",f_calc_all() )
+[value_pvt_2h,pvt_poise_flag_2h,pvt_trend_flag_2h,pvt_cross_over_index_2h,pvt_cross_under_index_2h, trend_1226_2h,x_1226_2h,y_1226_2h,macdline_1226_2h,signalLine_1226_2h, histLine_1226_2h,trend_2452_2h,x_2452_2h,y_2452_2h, macdline_2452_2h, signalLine_2452_2h, histLine_2452_2h,zCrossFlag_2h,k_2h,k_trend_flag_2h,stoch_poise_flag_2h,k_crossover_index_2h,k_crossunder_index_2h,ema9_2h, ema21_2h, ema50_2h, ema100_2h, ema200_2h,vwap_val_2h,voc_2h,voc_trend_flag_2h,voc_cross_over_index_2h,voc_cross_under_index_2h ] = request.security(syminfo.tickerid, "120",f_calc_all() )
+[value_pvt_d,pvt_poise_flag_d,pvt_trend_flag_d,pvt_cross_over_index_d,pvt_cross_under_index_d, trend_1226_d,x_1226_d,y_1226_d,macdline_1226_d,signalLine_1226_d, histLine_1226_d,trend_2452_d,x_2452_d,y_2452_d, macdline_2452_d, signalLine_2452_d, histLine_2452_d,zCrossFlag_d,k_d,k_trend_flag_d,stoch_poise_flag_d,k_crossover_index_d,k_crossunder_index_d,ema9_d, ema21_d, ema50_d, ema100_d, ema200_d,vwap_val_d,voc_d,voc_trend_flag_d,voc_cross_over_index_d,voc_cross_under_index_d ] = request.security(syminfo.tickerid, "D",f_calc_all() )
+[value_pvt_w,pvt_poise_flag_w,pvt_trend_flag_w,pvt_cross_over_index_w,pvt_cross_under_index_w, trend_1226_w,x_1226_w,y_1226_w,macdline_1226_w,signalLine_1226_w, histLine_1226_w,trend_2452_w,x_2452_w,y_2452_w, macdline_2452_w, signalLine_2452_w, histLine_2452_w,zCrossFlag_w,k_w,k_trend_flag_w,stoch_poise_flag_w,k_crossover_index_w,k_crossunder_index_w,ema9_w, ema21_w, ema50_w, ema100_w, ema200_w,vwap_val_w,voc_w,voc_trend_flag_w,voc_cross_over_index_w,voc_cross_under_index_w ] = request.security(syminfo.tickerid, "W",f_calc_all() )
+
+//SETUPS (from Strategy_SetUps_Label)-------------------------------------------------------
+
+//VWAP flags on 1m/5m TFs (close vs vwap, as computed on the SetUps 5m chart)
+f_vwap_flags() =>
+    [close > ta.vwap(close), ta.crossover(close, ta.vwap(close)), ta.crossunder(close, ta.vwap(close))]
+
+[close_above_vwap_1m, vwap_xup_1m, vwap_xdn_1m] = request.security(syminfo.tickerid, "1", f_vwap_flags())
+[close_above_vwap_5m, vwap_xup_5m, vwap_xdn_5m] = request.security(syminfo.tickerid, "5", f_vwap_flags())
+
+//Trend dashboard cells (U/D letters; 2-letter cells: first = MACD1 12/26, second = MACD2 24/52)
+f_macd_combo(t1, t2) =>
+    t1 == 1 and t2 == 1 ? "UU" : t1 == -1 and t2 == 1 ? "DU" : t1 == 1 and t2 == -1 ? "UD" : t1 == -1 and t2 == -1 ? "DD" : ""
+
+dash_dpm = f_macd_combo(trend_1226_d, trend_2452_d)
+dash_2pm = f_macd_combo(trend_1226_2h, trend_2452_2h)
+dash_3pm = f_macd_combo(trend_1226_30m, trend_2452_30m)
+dash_ws = k_trend_flag_w == 1 ? "U" : "D"
+dash_ds = k_trend_flag_d == 1 ? "U" : "D"
+dash_2s = k_trend_flag_2h == 1 ? "U" : "D"
+
+dash_dpm_pvt = value_pvt_d > 0 ? 1 : -1
+dash_ws_pvt = value_pvt_w > 0 ? 1 : -1
+dash_2pm_pvt = value_pvt_2h > 0 ? 1 : -1
+dash_ds_pvt = value_pvt_d > 0 ? 1 : -1
+dash_3pm_pvt = value_pvt_30m > 0 ? 1 : -1
+dash_2s_pvt = value_pvt_2h > 0 ? 1 : -1
+
+//Set Up codes (identical to the SetUps tables)
+string setUp = ""
+string setUp_Uptrend_1m = ""
+string setUp_Downtrend_1m = ""
+string setUp_Cross_Uptrend_1m = ""
+string setUp_Cross_Downtrend_1m = ""
+string setUp_Uptrend_5m = ""
+string setUp_Downtrend_5m = ""
+string setUp_Cross_Uptrend_5m = ""
+string setUp_Cross_Downtrend_5m = ""
+string setUp_Uptrend_30m = ""
+string setUp_Downtrend_30m = ""
+string setUp_Cross_Uptrend_30m = ""
+string setUp_Cross_Downtrend_30m = ""
+string setUp_Uptrend_2h = ""
+string setUp_Downtrend_2h = ""
+string setUp_Cross_Uptrend_2h = ""
+string setUp_Cross_Downtrend_2h = ""
+string setUp_Uptrend_d = ""
+string setUp_Downtrend_d = ""
+string setUp_Cross_Uptrend_d = ""
+string setUp_Cross_Downtrend_d = ""
+
+//1M
+setUp := ""
+if value_pvt_1m > 0
+    setUp := "p"
+if trend_2452_1m == 1
+    setUp += "m"
+if close > ema50_1m
+    setUp += "e50"
+if str.length(setUp) > 0
+    setUp := "1" + setUp
+if k_trend_flag_5m == 1 and str.length(setUp) > 0
+    setUp += "_5s"
+else if k_trend_flag_5m == 1 and str.length(setUp) == 0
+    setUp += "5s"
+setUp_Uptrend_1m := setUp
+
+if vwap_xup_1m
+    setUp_Cross_Uptrend_1m += "vX"
+if vwap_xdn_1m
+    setUp_Cross_Downtrend_1m += "vX"
+
+setUp := ""
+if value_pvt_1m < 0
+    setUp := "p"
+if trend_2452_1m == -1
+    setUp += "m"
+if not (close > ema50_1m)
+    setUp += "e50"
+if str.length(setUp) > 0
+    setUp := "1" + setUp
+if k_trend_flag_5m == -1 and str.length(setUp) > 0
+    setUp += "_5s"
+else if k_trend_flag_5m == -1 and str.length(setUp) == 0
+    setUp += "5s"
+setUp_Downtrend_1m := setUp
+
+//5M
+setUp := ""
+if value_pvt_5m > 0
+    setUp := "p"
+if k_trend_flag_5m == 1
+    setUp += "s"
+if trend_2452_5m == 1 and trend_1226_5m == 1
+    setUp += "m"
+else if trend_2452_5m == 1 and trend_1226_5m == -1
+    setUp += "m2"
+else if trend_2452_5m == -1 and trend_1226_5m == 1
+    setUp += "m1"
+if close_above_vwap_5m
+    setUp += "v"
+if str.length(setUp) > 0
+    setUp := "5" + setUp
+if k_trend_flag_30m == 1
+    setUp += "_3s"
+setUp_Uptrend_5m := setUp
+
+if value_pvt_5m > 0 and pvt_cross_over_index_5m > 0 and pvt_cross_over_index_5m <= 4
+    setUp_Cross_Uptrend_5m += "p"
+if voc_5m > 0 and voc_cross_over_index_5m > 0 and voc_cross_over_index_5m <= 4 and value_pvt_5m > 0
+    setUp_Cross_Uptrend_5m += "o"
+if str.length(setUp_Cross_Uptrend_5m) > 0
+    setUp_Cross_Uptrend_5m := "5" + setUp_Cross_Uptrend_5m + "X"
+
+setUp := ""
+if value_pvt_5m < 0
+    setUp := "p"
+if k_trend_flag_5m == -1
+    setUp += "s"
+if trend_2452_5m == -1 and trend_1226_5m == -1
+    setUp += "m"
+else if trend_2452_5m == -1 and trend_1226_5m == 1
+    setUp += "m2"
+else if trend_2452_5m == 1 and trend_1226_5m == -1
+    setUp += "m1"
+if not close_above_vwap_5m
+    setUp += "v"
+if str.length(setUp) > 0
+    setUp := "5" + setUp
+if k_trend_flag_30m == -1
+    setUp += "_3s"
+setUp_Downtrend_5m := setUp
+
+if value_pvt_5m < 0 and pvt_cross_under_index_5m > 0 and pvt_cross_under_index_5m <= 4
+    setUp_Cross_Downtrend_5m += "p"
+if voc_5m > 0 and voc_cross_over_index_5m > 0 and voc_cross_over_index_5m <= 4 and value_pvt_5m < 0
+    setUp_Cross_Downtrend_5m += "o"
+if str.length(setUp_Cross_Downtrend_5m) > 0
+    setUp_Cross_Downtrend_5m := "5" + setUp_Cross_Downtrend_5m + "X"
+
+//30M
+setUp := ""
+if value_pvt_30m > 0
+    setUp := "p"
+if k_trend_flag_30m == 1
+    setUp += "s"
+if trend_2452_30m == 1 and trend_1226_30m == 1
+    setUp += "m"
+else if trend_2452_30m == 1 and trend_1226_30m == -1
+    setUp += "m2"
+else if trend_2452_30m == -1 and trend_1226_30m == 1
+    setUp += "m1"
+if str.length(setUp) > 0
+    setUp := "3" + setUp
+if k_trend_flag_2h == 1 and str.length(setUp) > 0
+    setUp += "_2s"
+else if k_trend_flag_2h == 1 and str.length(setUp) == 0
+    setUp += "2s"
+setUp_Uptrend_30m := setUp
+
+if k_trend_flag_30m == 1 and k_crossover_index_30m > 0 and k_crossover_index_30m <= 13
+    setUp_Cross_Uptrend_30m += "s"
+if value_pvt_30m > 0 and pvt_cross_over_index_30m > 0 and pvt_cross_over_index_30m <= 13
+    setUp_Cross_Uptrend_30m += "p"
+if trend_1226_30m == 1 and x_1226_30m > 0 and x_1226_30m <= 13 and trend_2452_30m == 1 and x_2452_30m > 0 and x_2452_30m <= 13
+    setUp_Cross_Uptrend_30m += "m"
+else
+    if trend_1226_30m == 1 and x_1226_30m > 0 and x_1226_30m <= 13
+        setUp_Cross_Uptrend_30m += "m1"
+    if trend_2452_30m == 1 and x_2452_30m > 0 and x_2452_30m <= 13
+        setUp_Cross_Uptrend_30m += "m2"
+if voc_30m > 0 and voc_cross_over_index_30m > 0 and voc_cross_over_index_30m <= 4 and value_pvt_30m > 0
+    setUp_Cross_Uptrend_30m += "O"
+else if voc_30m > 0 and value_pvt_30m > 0
+    setUp_Cross_Uptrend_30m += "o"
+if str.length(setUp_Cross_Uptrend_30m) > 0
+    setUp_Cross_Uptrend_30m := "3" + setUp_Cross_Uptrend_30m + "X"
+
+setUp := ""
+if value_pvt_30m < 0
+    setUp := "p"
+if k_trend_flag_30m == -1
+    setUp += "s"
+if trend_2452_30m == -1 and trend_1226_30m == -1
+    setUp += "m"
+else if trend_2452_30m == -1 and trend_1226_30m == 1
+    setUp += "m2"
+else if trend_2452_30m == 1 and trend_1226_30m == -1
+    setUp += "m1"
+if str.length(setUp) > 0
+    setUp := "3" + setUp
+if k_trend_flag_2h == -1 and str.length(setUp) > 0
+    setUp += "_2s"
+else if k_trend_flag_2h == -1 and str.length(setUp) == 0
+    setUp += "2s"
+setUp_Downtrend_30m := setUp
+
+if k_trend_flag_30m == -1 and k_crossunder_index_30m > 0 and k_crossunder_index_30m <= 13
+    setUp_Cross_Downtrend_30m += "s"
+if value_pvt_30m < 0 and pvt_cross_under_index_30m > 0 and pvt_cross_under_index_30m <= 13
+    setUp_Cross_Downtrend_30m += "p"
+if trend_1226_30m == -1 and y_1226_30m > 0 and y_1226_30m <= 13 and trend_2452_30m == -1 and y_2452_30m > 0 and y_2452_30m <= 13
+    setUp_Cross_Downtrend_30m += "m"
+else
+    if trend_1226_30m == -1 and y_1226_30m > 0 and y_1226_30m <= 13
+        setUp_Cross_Downtrend_30m += "m1"
+    if trend_2452_30m == -1 and y_2452_30m > 0 and y_2452_30m <= 13
+        setUp_Cross_Downtrend_30m += "m2"
+if voc_30m > 0 and voc_cross_over_index_30m > 0 and voc_cross_over_index_30m <= 4 and value_pvt_30m < 0
+    setUp_Cross_Downtrend_30m += "O"
+else if voc_30m > 0 and value_pvt_30m < 0
+    setUp_Cross_Downtrend_30m += "o"
+if str.length(setUp_Cross_Downtrend_30m) > 0
+    setUp_Cross_Downtrend_30m := "3" + setUp_Cross_Downtrend_30m + "X"
+
+//2H
+setUp := ""
+if value_pvt_2h > 0
+    setUp := "p"
+if k_trend_flag_2h == 1
+    setUp += "s"
+if trend_2452_2h == 1 and trend_1226_2h == 1
+    setUp += "m"
+else if trend_2452_2h == 1 and trend_1226_2h == -1
+    setUp += "m2"
+else if trend_2452_2h == -1 and trend_1226_2h == 1
+    setUp += "m1"
+if str.length(setUp) > 0
+    setUp := "2" + setUp
+if k_trend_flag_d == 1
+    setUp += "_ds"
+setUp_Uptrend_2h := setUp
+
+if k_trend_flag_2h == 1 and k_crossover_index_2h > 0 and k_crossover_index_2h <= 4
+    setUp_Cross_Uptrend_2h += "s"
+if value_pvt_2h > 0 and pvt_cross_over_index_2h > 0 and pvt_cross_over_index_2h <= 4
+    setUp_Cross_Uptrend_2h += "p"
+if trend_1226_2h == 1 and x_1226_2h > 0 and x_1226_2h <= 4 and trend_2452_2h == 1 and x_2452_2h > 0 and x_2452_2h <= 4
+    setUp_Cross_Uptrend_2h += "m"
+else
+    if trend_1226_2h == 1 and x_1226_2h > 0 and x_1226_2h <= 4
+        setUp_Cross_Uptrend_2h += "m1"
+    if trend_2452_2h == 1 and x_2452_2h > 0 and x_2452_2h <= 4
+        setUp_Cross_Uptrend_2h += "m2"
+if voc_2h > 0 and voc_cross_over_index_2h > 0 and voc_cross_over_index_2h <= 4 and value_pvt_2h > 0
+    setUp_Cross_Uptrend_2h += "O"
+if str.length(setUp_Cross_Uptrend_2h) > 0
+    setUp_Cross_Uptrend_2h := "2" + setUp_Cross_Uptrend_2h + "X"
+
+setUp := ""
+if value_pvt_2h < 0
+    setUp := "p"
+if k_trend_flag_2h == -1
+    setUp += "s"
+if trend_2452_2h == -1 and trend_1226_2h == -1
+    setUp += "m"
+else if trend_2452_2h == -1 and trend_1226_2h == 1
+    setUp += "m2"
+else if trend_2452_2h == 1 and trend_1226_2h == -1
+    setUp += "m1"
+if str.length(setUp) > 0
+    setUp := "2" + setUp
+if k_trend_flag_d == -1
+    setUp += "_ds"
+setUp_Downtrend_2h := setUp
+
+if k_trend_flag_2h == -1 and k_crossunder_index_2h > 0 and k_crossunder_index_2h <= 4
+    setUp_Cross_Downtrend_2h += "s"
+if value_pvt_2h < 0 and pvt_cross_under_index_2h > 0 and pvt_cross_under_index_2h <= 4
+    setUp_Cross_Downtrend_2h += "p"
+if trend_1226_2h == -1 and y_1226_2h > 0 and y_1226_2h <= 4 and trend_2452_2h == -1 and y_2452_2h > 0 and y_2452_2h <= 4
+    setUp_Cross_Downtrend_2h += "m"
+else
+    if trend_1226_2h == -1 and y_1226_2h > 0 and y_1226_2h <= 4
+        setUp_Cross_Downtrend_2h += "m1"
+    if trend_2452_2h == -1 and y_2452_2h > 0 and y_2452_2h <= 4
+        setUp_Cross_Downtrend_2h += "m2"
+if voc_2h > 0 and voc_cross_over_index_2h > 0 and voc_cross_over_index_2h <= 4 and value_pvt_2h < 0
+    setUp_Cross_Downtrend_2h += "O"
+if str.length(setUp_Cross_Downtrend_2h) > 0
+    setUp_Cross_Downtrend_2h := "2" + setUp_Cross_Downtrend_2h + "X"
+
+//D
+setUp := ""
+if value_pvt_d > 0
+    setUp := "p"
+if k_trend_flag_d == 1
+    setUp += "s"
+if trend_2452_d == 1 and trend_1226_d == 1
+    setUp += "m"
+else if trend_2452_d == 1 and trend_1226_d == -1
+    setUp += "m2"
+else if trend_2452_d == -1 and trend_1226_d == 1
+    setUp += "m1"
+if str.length(setUp) > 0
+    setUp := "D" + setUp
+if k_trend_flag_w == 1 and str.length(setUp) > 0
+    setUp += "_ws"
+else if k_trend_flag_w == 1 and str.length(setUp) == 0
+    setUp += "ws"
+setUp_Uptrend_d := setUp
+
+if k_trend_flag_d == 1 and k_crossover_index_d > 0 and k_crossover_index_d <= 4
+    setUp_Cross_Uptrend_d += "s"
+if value_pvt_d > 0 and pvt_cross_over_index_d > 0 and pvt_cross_over_index_d <= 4
+    setUp_Cross_Uptrend_d += "p"
+if trend_1226_d == 1 and x_1226_d > 0 and x_1226_d <= 4 and trend_2452_d == 1 and x_2452_d > 0 and x_2452_d <= 4
+    setUp_Cross_Uptrend_d += "m"
+else
+    if trend_1226_d == 1 and x_1226_d > 0 and x_1226_d <= 4
+        setUp_Cross_Uptrend_d += "m1"
+    if trend_2452_d == 1 and x_2452_d > 0 and x_2452_d <= 4
+        setUp_Cross_Uptrend_d += "m2"
+if voc_d > 0 and voc_cross_over_index_d > 0 and voc_cross_over_index_d <= 4 and value_pvt_d > 0
+    setUp_Cross_Uptrend_d += "O"
+if str.length(setUp_Cross_Uptrend_d) > 0
+    setUp_Cross_Uptrend_d := "d" + setUp_Cross_Uptrend_d + "X"
+
+setUp := ""
+if value_pvt_d < 0
+    setUp := "p"
+if k_trend_flag_d == -1
+    setUp += "s"
+if trend_2452_d == -1 and trend_1226_d == -1
+    setUp += "m"
+else if trend_2452_d == -1 and trend_1226_d == 1
+    setUp += "m2"
+else if trend_2452_d == 1 and trend_1226_d == -1
+    setUp += "m1"
+if str.length(setUp) > 0
+    setUp := "d" + setUp
+if k_trend_flag_w == -1 and str.length(setUp) > 0
+    setUp += "_ws"
+else if k_trend_flag_w == -1 and str.length(setUp) == 0
+    setUp += "ws"
+setUp_Downtrend_d := setUp
+
+if k_trend_flag_d == -1 and k_crossunder_index_d > 0 and k_crossunder_index_d <= 4
+    setUp_Cross_Downtrend_d += "s"
+if value_pvt_d < 0 and pvt_cross_under_index_d > 0 and pvt_cross_under_index_d <= 4
+    setUp_Cross_Downtrend_d += "p"
+if trend_1226_d == -1 and y_1226_d > 0 and y_1226_d <= 4 and trend_2452_d == -1 and y_2452_d > 0 and y_2452_d <= 4
+    setUp_Cross_Downtrend_d += "m"
+else
+    if trend_1226_d == -1 and y_1226_d > 0 and y_1226_d <= 4
+        setUp_Cross_Downtrend_d += "m1"
+    if trend_2452_d == -1 and y_2452_d > 0 and y_2452_d <= 4
+        setUp_Cross_Downtrend_d += "m2"
+if voc_d > 0 and voc_cross_over_index_d > 0 and voc_cross_over_index_d <= 4 and value_pvt_d < 0
+    setUp_Cross_Downtrend_d += "O"
+if str.length(setUp_Cross_Downtrend_d) > 0
+    setUp_Cross_Downtrend_d := "D" + setUp_Cross_Downtrend_d + "X"
+
+//SETUPS-------------------------------------------------------------------------------------
+
+//LEVELS (S/R levels from Strategy_EMAs_OCHL_cwcd v1.1)---------------------------------------
+
+levels_array_curday_curwk = array.new_string(0)   // CW-CD (current week - current day)
+levels_array_nxtday_curwk = array.new_string(0)   // CW-ND (current week - next day)
+levels_array_nxtday_nxtwk = array.new_string(0)   // NW-ND (next week - next day)
+
+// Level row helpers: "value_name_distance" - value zero-padded to 6 digits
+// so the string sort is numerically correct. na levels are skipped (no NaN rows).
+f_fmtLevel(float lvl, string name) =>
+    str.tostring(math.round(lvl), "000000") + "_" + name + "_" + str.tostring(math.abs(math.round(close) - math.round(lvl)))
+
+f_pushCur(float lvl, string name) =>        // current-day pivots: CW-CD only
+    if not na(lvl)
+        levels_array_curday_curwk.push(f_fmtLevel(lvl, name))
+
+f_pushWeek(float lvl, string name) =>       // current-week pivots: CW-CD + CW-ND
+    if not na(lvl)
+        string s = f_fmtLevel(lvl, name)
+        levels_array_curday_curwk.push(s)
+        levels_array_nxtday_curwk.push(s)
+
+f_pushAll(float lvl, string name) =>        // EMAs, M/Q pivots, extra levels: all three
+    if not na(lvl)
+        string s = f_fmtLevel(lvl, name)
+        levels_array_curday_curwk.push(s)
+        levels_array_nxtday_curwk.push(s)
+        levels_array_nxtday_nxtwk.push(s)
+
+f_pushNxtDay(float lvl, string name) =>     // next-day pivots: CW-ND + NW-ND
+    if not na(lvl)
+        string s = f_fmtLevel(lvl, name)
+        levels_array_nxtday_curwk.push(s)
+        levels_array_nxtday_nxtwk.push(s)
+
+f_pushNxtWk(float lvl, string name) =>      // next-week pivots: NW-ND only
+    if not na(lvl)
+        levels_array_nxtday_nxtwk.push(f_fmtLevel(lvl, name))
+
+// Floor pivots from the PREVIOUS COMPLETED period - fixed for the whole period, non-repainting
+get_PrevPeriodPivots() =>
+    prevHigh = high[1]
+    prevLow = low[1]
+    prevClose = close[1]
+
+    P = (prevHigh + prevLow + prevClose) / 3
+    R1 = P * 2 - prevLow
+    S1 = P * 2 - prevHigh
+    R2 = P + (prevHigh - prevLow)
+    S2 = P - (prevHigh - prevLow)
+    R3 = P * 2 + (prevHigh - 2 * prevLow)
+    S3 = P * 2 - (2 * prevHigh - prevLow)
+    R4 = P * 3 + (prevHigh - 3 * prevLow)
+    S4 = P * 3 - (3 * prevHigh - prevLow)
+    R5 = P * 4 + (prevHigh - 4 * prevLow)
+    S5 = P * 4 - (4 * prevHigh - prevLow)
+
+    [P,R1,R2,R3,R4,R5,S1,S2,S3,S4,S5]
+
+// Developing-period OHLC pivots - used as the next day/week projection
+getNextPivotResistanceLevels()=>
+    curHigh = high
+    curLow = low
+    curOpen = open
+    curClose = close
+
+    P = (curHigh + curLow + curClose) / 3
+    R1 = P * 2 - curLow
+    S1 = P * 2 - curHigh
+    R2 = P + (curHigh - curLow)
+    S2 = P - (curHigh - curLow)
+    R3 = P * 2 + (curHigh - 2 * curLow)
+    S3 = P * 2 - (2 * curHigh - curLow)
+    R4 = P * 3 + (curHigh - 3 * curLow)
+    S4 = P * 3 - (3 * curHigh - curLow)
+    R5 = P * 4 + (curHigh - 4 * curLow)
+    S5 = P * 4 - (4 * curHigh - curLow)
+
+    [P,R1,R2,R3,R4,R5,S1,S2,S3,S4,S5]
+
+// Previous COMPLETED day / week / month OHLC (non-repainting)
+get_PrevHighLowClose() =>
+    [high[1], low[1], close[1]]
+
+get_PrevHighLow() =>
+    [high[1], low[1]]
+
+[prevDayHigh, prevDayLow, prevDayClose] = request.security(syminfo.tickerid, "D", get_PrevHighLowClose(), lookahead = barmerge.lookahead_on)
+[prevWkHigh, prevWkLow, prevWkClose]    = request.security(syminfo.tickerid, "W", get_PrevHighLowClose(), lookahead = barmerge.lookahead_on)
+[prevMoHigh, prevMoLow]                 = request.security(syminfo.tickerid, "M", get_PrevHighLow(), lookahead = barmerge.lookahead_on)
+
+// Session VWAP (resets each session) and Weekly VWAP (resets each week)
+float vwapSession = ta.vwap
+var float wVwapPV = 0.0
+var float wVwapVV = 0.0
+if ta.change(time("W")) != 0
+    wVwapPV := 0.0
+    wVwapVV := 0.0
+wVwapPV += hlc3 * volume
+wVwapVV += volume
+float vwapWeek = wVwapVV > 0 ? wVwapPV / wVwapVV : na
+
+// Opening Range (first orMinutes minutes of the session)
+var float orHigh = na
+var float orLow  = na
+if ta.change(time("D")) != 0
+    orHigh := na
+    orLow  := na
+float minsSinceOpen = (time - time("D")) / 60000.0
+if minsSinceOpen >= 0 and minsSinceOpen <= orMinutes
+    orHigh := na(orHigh) ? high : math.max(orHigh, high)
+    orLow  := na(orLow) ? low : math.min(orLow, low)
+
+// Round numbers (nearest below / above close)
+float rnDown = math.floor(close / rnStepPts) * rnStepPts
+float rnUp   = math.ceil(close / rnStepPts) * rnStepPts
+
+// Camarilla pivots from previous day H/L/C
+float camRng = prevDayHigh - prevDayLow
+float camR1 = prevDayClose + camRng * 1.1 / 12
+float camR2 = prevDayClose + camRng * 1.1 / 6
+float camR3 = prevDayClose + camRng * 1.1 / 4
+float camR4 = prevDayClose + camRng * 1.1 / 2
+float camS1 = prevDayClose - camRng * 1.1 / 12
+float camS2 = prevDayClose - camRng * 1.1 / 6
+float camS3 = prevDayClose - camRng * 1.1 / 4
+float camS4 = prevDayClose - camRng * 1.1 / 2
+
+// Fib retracements of previous day range
+float fib382 = prevDayLow + camRng * 0.382
+float fib50  = prevDayLow + camRng * 0.5
+float fib618 = prevDayLow + camRng * 0.618
+
+dop = math.round(request.security(syminfo.tickerid, "D", open), 0)   // daily open
+
+// EMAs (values already fetched per timeframe above; same set as the cwcd tables)
+f_pushAll(ema50_1m, "1m EMA50")
+f_pushAll(ema100_1m, "1m EMA100")
+f_pushAll(ema200_1m, "1m EMA200")
+f_pushAll(ema50_5m, "5m EMA50")
+f_pushAll(ema100_5m, "5m EMA100")
+f_pushAll(ema200_5m, "5m EMA200")
+f_pushAll(ema50_30m, "30m EMA50")
+f_pushAll(ema100_30m, "30m EMA100")
+f_pushAll(ema200_30m, "30m EMA200")
+f_pushAll(ema50_2h, "2h EMA50")
+f_pushAll(ema100_2h, "2h EMA100")
+f_pushAll(ema200_2h, "2h EMA200")
+f_pushAll(ema100_d, "D EMA100")
+f_pushAll(ema200_d, "D EMA200")
+f_pushAll(ema100_w, "W EMA100")
+f_pushAll(ema200_w, "W EMA200")
+
+// Close marker row (value = close, distance = 0)
+string closeRow = str.tostring(math.round(close), "000000") + "_Close_0"
+levels_array_curday_curwk.push(closeRow)
+levels_array_nxtday_curwk.push(closeRow)
+levels_array_nxtday_nxtwk.push(closeRow)
+
+// Current-day (previous completed day) floor pivots
+[P_d,R1_d,R2_d,R3_d,R4_d,R5_d,S1_d,S2_d,S3_d,S4_d,S5_d] = request.security(syminfo.tickerid, "D", get_PrevPeriodPivots(), lookahead = barmerge.lookahead_on)
+
+f_pushCur(P_d, "P D")
+f_pushCur(R1_d, "R1 D")
+f_pushCur(R2_d, "R2 D")
+f_pushCur(R3_d, "R3 D")
+f_pushCur(S1_d, "S1 D")
+f_pushCur(S2_d, "S2 D")
+f_pushCur(S3_d, "S3 D")
+
+// Current-week (previous completed week) floor pivots
+[P_w,R1_w,R2_w,R3_w,R4_w,R5_w,S1_w,S2_w,S3_w,S4_w,S5_w] = request.security(syminfo.tickerid, "W", get_PrevPeriodPivots(), lookahead = barmerge.lookahead_on)
+
+f_pushWeek(P_w, "W P")
+f_pushWeek(R1_w, "W R1")
+f_pushWeek(R2_w, "W R2")
+f_pushWeek(R3_w, "W R3")
+f_pushWeek(S1_w, "W S1")
+f_pushWeek(S2_w, "W S2")
+f_pushWeek(S3_w, "W S3")
+
+// Current-month (previous completed month) floor pivots
+[P_m,R1_m,R2_m,R3_m,R4_m,R5_m,S1_m,S2_m,S3_m,S4_m,S5_m] = request.security(syminfo.tickerid, "M", get_PrevPeriodPivots(), lookahead = barmerge.lookahead_on)
+
+f_pushAll(P_m, "M P")
+f_pushAll(R1_m, "M R1")
+f_pushAll(R2_m, "M R2")
+f_pushAll(R3_m, "M R3")
+f_pushAll(S1_m, "M S1")
+f_pushAll(S2_m, "M S2")
+f_pushAll(S3_m, "M S3")
+
+// Current-quarter (previous completed quarter) floor pivots
+[P_q,R1_q,R2_q,R3_q,R4_q,R5_q,S1_q,S2_q,S3_q,S4_q,S5_q] = request.security(syminfo.tickerid, "3M", get_PrevPeriodPivots(), lookahead = barmerge.lookahead_on)
+
+f_pushAll(P_q, "Q P")
+f_pushAll(R1_q, "Q R1")
+f_pushAll(R2_q, "Q R2")
+f_pushAll(R3_q, "Q R3")
+f_pushAll(S1_q, "Q S1")
+f_pushAll(S2_q, "Q S2")
+f_pushAll(S3_q, "Q S3")
+
+// Next-day / next-week projections (developing period OHLC)
+[P_d_next,R1_d_next,R2_d_next,R3_d_next,R4_d_next,R5_d_next,S1_d_next,S2_d_next,S3_d_next,S4_d_next,S5_d_next] = request.security(syminfo.tickerid, "D", getNextPivotResistanceLevels(), gaps=barmerge.gaps_off)
+
+f_pushNxtDay(P_d_next, "D P")
+f_pushNxtDay(R1_d_next, "D R1")
+f_pushNxtDay(R2_d_next, "D R2")
+f_pushNxtDay(R3_d_next, "D R3")
+f_pushNxtDay(S1_d_next, "D S1")
+f_pushNxtDay(S2_d_next, "D S2")
+f_pushNxtDay(S3_d_next, "D S3")
+
+[P_w_next,R1_w_next,R2_w_next,R3_w_next,R4_w_next,R5_w_next,S1_w_next,S2_w_next,S3_w_next,S4_w_next,S5_w_next] = request.security(syminfo.tickerid, "W", getNextPivotResistanceLevels(), gaps=barmerge.gaps_off)
+
+f_pushNxtWk(P_w_next, "W P")
+f_pushNxtWk(R1_w_next, "W R1")
+f_pushNxtWk(R2_w_next, "W R2")
+f_pushNxtWk(R3_w_next, "W R3")
+f_pushNxtWk(S1_w_next, "W S1")
+f_pushNxtWk(S2_w_next, "W S2")
+f_pushNxtWk(S3_w_next, "W S3")
+
+// R4/S4 & R5/S5 rows (same table targeting as the other D/W/M/Q pivots)
+if showR4
+    f_pushCur(R4_d, "R4 D")
+    f_pushCur(S4_d, "S4 D")
+    f_pushWeek(R4_w, "R4 W")
+    f_pushWeek(S4_w, "S4 W")
+    f_pushAll(R4_m, "R4 M")
+    f_pushAll(S4_m, "S4 M")
+    f_pushAll(R4_q, "R4 Q")
+    f_pushAll(S4_q, "S4 Q")
+if showR5
+    f_pushCur(R5_d, "R5 D")
+    f_pushCur(S5_d, "S5 D")
+    f_pushWeek(R5_w, "R5 W")
+    f_pushWeek(S5_w, "S5 W")
+    f_pushAll(R5_m, "R5 M")
+    f_pushAll(S5_m, "S5 M")
+    f_pushAll(R5_q, "R5 Q")
+    f_pushAll(S5_q, "S5 Q")
+
+// EXTRA S/R levels
+if showPDHL
+    f_pushAll(prevDayHigh, "PDH")
+    f_pushAll(prevDayLow, "PDL")
+    f_pushAll(prevDayClose, "PDC")
+    f_pushAll(dop, "D Open")
+if showCam
+    f_pushAll(camR1, "Cam R1")
+    f_pushAll(camR2, "Cam R2")
+    f_pushAll(camR3, "Cam R3")
+    f_pushAll(camR4, "Cam R4")
+    f_pushAll(camS1, "Cam S1")
+    f_pushAll(camS2, "Cam S2")
+    f_pushAll(camS3, "Cam S3")
+    f_pushAll(camS4, "Cam S4")
+if showVwap
+    f_pushAll(vwapSession, "VWAP D")
+    f_pushAll(vwapWeek, "VWAP W")
+if showPW
+    f_pushAll(prevWkHigh, "PWH")
+    f_pushAll(prevWkLow, "PWL")
+    f_pushAll(prevWkClose, "PWC")
+if showPM
+    f_pushAll(prevMoHigh, "PMH")
+    f_pushAll(prevMoLow, "PML")
+if showRN
+    f_pushAll(rnDown, "RN -")
+    f_pushAll(rnUp, "RN +")
+if showOR
+    f_pushAll(orHigh, "ORH")
+    f_pushAll(orLow, "ORL")
+if showFib
+    f_pushAll(fib382, "Fib 38.2 D")
+    f_pushAll(fib50, "Fib 50 D")
+    f_pushAll(fib618, "Fib 61.8 D")
+
+// sort each table high -> low (same order as the CW-CD / CW-ND / NW-ND tables)
+array.sort(levels_array_curday_curwk, order.descending)
+array.sort(levels_array_nxtday_curwk, order.descending)
+array.sort(levels_array_nxtday_nxtwk, order.descending)
+
+// build the JSON array for one level table: [["PDH",25123],["PDL",24990],...] (high -> low)
+// compact pair format keeps the LEVELS alert under TradingView's 4096-char message limit
+f_levelsJson(lv) =>
+    string out = "["
+    int n = array.size(lv)
+    if n > 0
+        for i = 0 to n - 1
+            parts = str.split(array.get(lv, i), "_")
+            out += "[\"" + array.get(parts, 1) + "\"," + str.tostring(str.tonumber(array.get(parts, 0))) + "]"
+            out += (i < n - 1 ? "," : "")
+    out += "]"
+    out
+
+// jsonStr := jsonStr + "\"EMA\":{"
+
+// ————————————————————————————————
+// build JSON hierarchy manually
+// ————————————————————————————————
+jsonStr = "{"
+jsonStr += f_json_pair_str("MSG", "DATA") + ","             // message type: DATA or LEVELS
+jsonStr += f_json_pair_str("SYM", syminfo.tickerid) + ","   // instrument: EXCHANGE:TICKER
+jsonStr += "\"INDICATORS\":{"
+
+
+// 5S
+jsonStr += "\"5S\":{"
+jsonStr += f_json_pair("PVT", math.round(value_pvt_5s, 2)) + ","
+jsonStr += f_json_pair("PVTPoiseFlag", pvt_poise_flag_5s) + ","
+jsonStr += f_json_pair("PVTTrendFlag", pvt_trend_flag_5s) + ","
+jsonStr += f_json_pair("PVTCrossOverIndex", pvt_cross_over_index_5s) + ","
+jsonStr += f_json_pair("PVTCrossUnderIndex", pvt_cross_under_index_5s) + ","
+jsonStr += f_json_pair("Trend_1226", trend_1226_5s) + ","
+jsonStr += f_json_pair("X_1226", x_1226_5s) + ","
+jsonStr += f_json_pair("Y_1226", y_1226_5s) + ","
+jsonStr += f_json_pair("MACD_1226", math.round(macdline_1226_5s, 2)) + ","
+jsonStr += f_json_pair("Signal_1226", math.round(signalLine_1226_5s, 2)) + ","
+jsonStr += f_json_pair("Hist_1226", math.round(histLine_1226_5s, 2)) + ","
+jsonStr += f_json_pair("Trend_2452", trend_2452_5s) + ","
+jsonStr += f_json_pair("X_2452", x_2452_5s) + ","
+jsonStr += f_json_pair("Y_2452", y_2452_5s) + ","
+jsonStr += f_json_pair("MACD_2452", math.round(macdline_2452_5s, 2)) + ","
+jsonStr += f_json_pair("Signal_2452", math.round(signalLine_2452_5s, 2)) + ","
+jsonStr += f_json_pair("Hist_2452", math.round(histLine_2452_5s, 2)) + ","
+jsonStr += f_json_pair("ZCross", zCrossFlag_5s) + ","
+jsonStr += f_json_pair("K", math.round(k_5s, 2)) + ","
+jsonStr += f_json_pair("KTrendFlag", k_trend_flag_5s) + ","
+jsonStr += f_json_pair("StochPoiseFlag", stoch_poise_flag_5s) + ","
+jsonStr += f_json_pair("KCrossoverIndex", k_crossover_index_5s) + ","
+jsonStr += f_json_pair("KCrossUnderIndex", k_crossunder_index_5s) + ","
+jsonStr += f_json_pair("EMA9", math.round(ema9_5s)) + ","
+jsonStr += f_json_pair("EMA21", math.round(ema21_5s)) + ","
+jsonStr += f_json_pair("EMA50", math.round(ema50_5s)) + ","
+jsonStr += f_json_pair("EMA100", math.round(ema100_5s)) + ","
+jsonStr += f_json_pair("EMA200", math.round(ema200_5s)) + ","
+jsonStr += f_json_pair("VWAP", math.round(vwap_val_5s, 2)) + ","
+jsonStr += f_json_pair("VOC", math.round(voc_5s, 2)) + ","
+jsonStr += f_json_pair("VOCTrendFlag", voc_trend_flag_5s) + ","
+jsonStr += f_json_pair("VOCCrossOverIndex", voc_cross_over_index_5s) + ","
+jsonStr += f_json_pair("VOCCrossUnderIndex", voc_cross_under_index_5s)
+jsonStr += "},"
+
+
+
+// 15S
+jsonStr += "\"15S\":{"
+jsonStr += f_json_pair("PVT", math.round(value_pvt_15s, 2)) + ","
+jsonStr += f_json_pair("PVTPoiseFlag", pvt_poise_flag_15s) + ","
+jsonStr += f_json_pair("PVTTrendFlag", pvt_trend_flag_15s) + ","
+jsonStr += f_json_pair("PVTCrossOverIndex", pvt_cross_over_index_15s) + ","
+jsonStr += f_json_pair("PVTCrossUnderIndex", pvt_cross_under_index_15s) + ","
+jsonStr += f_json_pair("Trend_1226", trend_1226_15s) + ","
+jsonStr += f_json_pair("X_1226", x_1226_15s) + ","
+jsonStr += f_json_pair("Y_1226", y_1226_15s) + ","
+jsonStr += f_json_pair("MACD_1226", math.round(macdline_1226_15s, 2)) + ","
+jsonStr += f_json_pair("Signal_1226", math.round(signalLine_1226_15s, 2)) + ","
+jsonStr += f_json_pair("Hist_1226", math.round(histLine_1226_15s, 2)) + ","
+jsonStr += f_json_pair("Trend_2452", trend_2452_15s) + ","
+jsonStr += f_json_pair("X_2452", x_2452_15s) + ","
+jsonStr += f_json_pair("Y_2452", y_2452_15s) + ","
+jsonStr += f_json_pair("MACD_2452", math.round(macdline_2452_15s, 2)) + ","
+jsonStr += f_json_pair("Signal_2452", math.round(signalLine_2452_15s, 2)) + ","
+jsonStr += f_json_pair("Hist_2452", math.round(histLine_2452_15s, 2)) + ","
+jsonStr += f_json_pair("ZCross", zCrossFlag_15s) + ","
+jsonStr += f_json_pair("K", math.round(k_15s, 2)) + ","
+jsonStr += f_json_pair("KTrendFlag", k_trend_flag_15s) + ","
+jsonStr += f_json_pair("StochPoiseFlag", stoch_poise_flag_15s) + ","
+jsonStr += f_json_pair("KCrossoverIndex", k_crossover_index_15s) + ","
+jsonStr += f_json_pair("KCrossUnderIndex", k_crossunder_index_15s) + ","
+jsonStr += f_json_pair("EMA9", math.round(ema9_15s)) + ","
+jsonStr += f_json_pair("EMA21", math.round(ema21_15s)) + ","
+jsonStr += f_json_pair("EMA50", math.round(ema50_15s)) + ","
+jsonStr += f_json_pair("EMA100", math.round(ema100_15s)) + ","
+jsonStr += f_json_pair("EMA200", math.round(ema200_15s)) + ","
+jsonStr += f_json_pair("VWAP", math.round(vwap_val_15s, 2)) + ","
+jsonStr += f_json_pair("VOC", math.round(voc_15s, 2)) + ","
+jsonStr += f_json_pair("VOCTrendFlag", voc_trend_flag_15s) + ","
+jsonStr += f_json_pair("VOCCrossOverIndex", voc_cross_over_index_15s) + ","
+jsonStr += f_json_pair("VOCCrossUnderIndex", voc_cross_under_index_15s)
+jsonStr += "},"
+
+// 1M
+jsonStr += "\"1M\":{"
+jsonStr += f_json_pair("PVT", math.round(value_pvt_1m, 2)) + ","
+jsonStr += f_json_pair("PVTPoiseFlag", pvt_poise_flag_1m) + ","
+jsonStr += f_json_pair("PVTTrendFlag", pvt_trend_flag_1m) + ","
+jsonStr += f_json_pair("PVTCrossOverIndex", pvt_cross_over_index_1m) + ","
+jsonStr += f_json_pair("PVTCrossUnderIndex", pvt_cross_under_index_1m) + ","
+jsonStr += f_json_pair("Trend_1226", trend_1226_1m) + ","
+jsonStr += f_json_pair("X_1226", x_1226_1m) + ","
+jsonStr += f_json_pair("Y_1226", y_1226_1m) + ","
+jsonStr += f_json_pair("MACD_1226", math.round(macdline_1226_1m, 2)) + ","
+jsonStr += f_json_pair("Signal_1226", math.round(signalLine_1226_1m, 2)) + ","
+jsonStr += f_json_pair("Hist_1226", math.round(histLine_1226_1m, 2)) + ","
+jsonStr += f_json_pair("Trend_2452", trend_2452_1m) + ","
+jsonStr += f_json_pair("X_2452", x_2452_1m) + ","
+jsonStr += f_json_pair("Y_2452", y_2452_1m) + ","
+jsonStr += f_json_pair("MACD_2452", math.round(macdline_2452_1m, 2)) + ","
+jsonStr += f_json_pair("Signal_2452", math.round(signalLine_2452_1m, 2)) + ","
+jsonStr += f_json_pair("Hist_2452", math.round(histLine_2452_1m, 2)) + ","
+jsonStr += f_json_pair("ZCross", zCrossFlag_1m) + ","
+jsonStr += f_json_pair("K", math.round(k_1m, 2)) + ","
+jsonStr += f_json_pair("KTrendFlag", k_trend_flag_1m) + ","
+jsonStr += f_json_pair("StochPoiseFlag", stoch_poise_flag_1m) + ","
+jsonStr += f_json_pair("KCrossoverIndex", k_crossover_index_1m) + ","
+jsonStr += f_json_pair("KCrossUnderIndex", k_crossunder_index_1m) + ","
+jsonStr += f_json_pair("EMA9", math.round(ema9_1m)) + ","
+jsonStr += f_json_pair("EMA21", math.round(ema21_1m)) + ","
+jsonStr += f_json_pair("EMA50", math.round(ema50_1m)) + ","
+jsonStr += f_json_pair("EMA100", math.round(ema100_1m)) + ","
+jsonStr += f_json_pair("EMA200", math.round(ema200_1m)) + ","
+jsonStr += f_json_pair("VWAP", math.round(vwap_val_1m, 2)) + ","
+jsonStr += f_json_pair("VOC", math.round(voc_1m, 2)) + ","
+jsonStr += f_json_pair("VOCTrendFlag", voc_trend_flag_1m) + ","
+jsonStr += f_json_pair("VOCCrossOverIndex", voc_cross_over_index_1m) + ","
+jsonStr += f_json_pair("VOCCrossUnderIndex", voc_cross_under_index_1m)
+jsonStr += "},"
+
+
+
+// 5M
+jsonStr += "\"5M\":{"
+jsonStr += f_json_pair("PVT", math.round(value_pvt_5m, 2)) + ","
+jsonStr += f_json_pair("PVTPoiseFlag", pvt_poise_flag_5m) + ","
+jsonStr += f_json_pair("PVTTrendFlag", pvt_trend_flag_5m) + ","
+jsonStr += f_json_pair("PVTCrossOverIndex", pvt_cross_over_index_5m) + ","
+jsonStr += f_json_pair("PVTCrossUnderIndex", pvt_cross_under_index_5m) + ","
+jsonStr += f_json_pair("Trend_1226", trend_1226_5m) + ","
+jsonStr += f_json_pair("X_1226", x_1226_5m) + ","
+jsonStr += f_json_pair("Y_1226", y_1226_5m) + ","
+jsonStr += f_json_pair("MACD_1226", math.round(macdline_1226_5m, 2)) + ","
+jsonStr += f_json_pair("Signal_1226", math.round(signalLine_1226_5m, 2)) + ","
+jsonStr += f_json_pair("Hist_1226", math.round(histLine_1226_5m, 2)) + ","
+jsonStr += f_json_pair("Trend_2452", trend_2452_5m) + ","
+jsonStr += f_json_pair("X_2452", x_2452_5m) + ","
+jsonStr += f_json_pair("Y_2452", y_2452_5m) + ","
+jsonStr += f_json_pair("MACD_2452", math.round(macdline_2452_5m, 2)) + ","
+jsonStr += f_json_pair("Signal_2452", math.round(signalLine_2452_5m, 2)) + ","
+jsonStr += f_json_pair("Hist_2452", math.round(histLine_2452_5m, 2)) + ","
+jsonStr += f_json_pair("ZCross", zCrossFlag_5m) + ","
+jsonStr += f_json_pair("K", math.round(k_5m, 2)) + ","
+jsonStr += f_json_pair("KTrendFlag", k_trend_flag_5m) + ","
+jsonStr += f_json_pair("StochPoiseFlag", stoch_poise_flag_5m) + ","
+jsonStr += f_json_pair("KCrossoverIndex", k_crossover_index_5m) + ","
+jsonStr += f_json_pair("KCrossUnderIndex", k_crossunder_index_5m) + ","
+jsonStr += f_json_pair("EMA9", math.round(ema9_5m)) + ","
+jsonStr += f_json_pair("EMA21", math.round(ema21_5m)) + ","
+jsonStr += f_json_pair("EMA50", math.round(ema50_5m)) + ","
+jsonStr += f_json_pair("EMA100", math.round(ema100_5m)) + ","
+jsonStr += f_json_pair("EMA200", math.round(ema200_5m)) + ","
+jsonStr += f_json_pair("VWAP", math.round(vwap_val_5m, 2)) + ","
+jsonStr += f_json_pair("VOC", math.round(voc_5m, 2)) + ","
+jsonStr += f_json_pair("VOCTrendFlag", voc_trend_flag_5m) + ","
+jsonStr += f_json_pair("VOCCrossOverIndex", voc_cross_over_index_5m) + ","
+jsonStr += f_json_pair("VOCCrossUnderIndex", voc_cross_under_index_5m)
+jsonStr += "},"
+
+
+
+// 30M
+jsonStr += "\"30M\":{"
+jsonStr += f_json_pair("PVT", math.round(value_pvt_30m, 2)) + ","
+jsonStr += f_json_pair("PVTPoiseFlag", pvt_poise_flag_30m) + ","
+jsonStr += f_json_pair("PVTTrendFlag", pvt_trend_flag_30m) + ","
+jsonStr += f_json_pair("PVTCrossOverIndex", pvt_cross_over_index_30m) + ","
+jsonStr += f_json_pair("PVTCrossUnderIndex", pvt_cross_under_index_30m) + ","
+jsonStr += f_json_pair("Trend_1226", trend_1226_30m) + ","
+jsonStr += f_json_pair("X_1226", x_1226_30m) + ","
+jsonStr += f_json_pair("Y_1226", y_1226_30m) + ","
+jsonStr += f_json_pair("MACD_1226", math.round(macdline_1226_30m, 2)) + ","
+jsonStr += f_json_pair("Signal_1226", math.round(signalLine_1226_30m, 2)) + ","
+jsonStr += f_json_pair("Hist_1226", math.round(histLine_1226_30m, 2)) + ","
+jsonStr += f_json_pair("Trend_2452", trend_2452_30m) + ","
+jsonStr += f_json_pair("X_2452", x_2452_30m) + ","
+jsonStr += f_json_pair("Y_2452", y_2452_30m) + ","
+jsonStr += f_json_pair("MACD_2452", math.round(macdline_2452_30m, 2)) + ","
+jsonStr += f_json_pair("Signal_2452", math.round(signalLine_2452_30m, 2)) + ","
+jsonStr += f_json_pair("Hist_2452", math.round(histLine_2452_30m, 2)) + ","
+jsonStr += f_json_pair("ZCross", zCrossFlag_30m) + ","
+jsonStr += f_json_pair("K", math.round(k_30m, 2)) + ","
+jsonStr += f_json_pair("KTrendFlag", k_trend_flag_30m) + ","
+jsonStr += f_json_pair("StochPoiseFlag", stoch_poise_flag_30m) + ","
+jsonStr += f_json_pair("KCrossoverIndex", k_crossover_index_30m) + ","
+jsonStr += f_json_pair("KCrossUnderIndex", k_crossunder_index_30m) + ","
+jsonStr += f_json_pair("EMA9", math.round(ema9_30m)) + ","
+jsonStr += f_json_pair("EMA21", math.round(ema21_30m)) + ","
+jsonStr += f_json_pair("EMA50", math.round(ema50_30m)) + ","
+jsonStr += f_json_pair("EMA100", math.round(ema100_30m)) + ","
+jsonStr += f_json_pair("EMA200", math.round(ema200_30m)) + ","
+jsonStr += f_json_pair("VWAP", math.round(vwap_val_30m, 2)) + ","
+jsonStr += f_json_pair("VOC", math.round(voc_30m, 2)) + ","
+jsonStr += f_json_pair("VOCTrendFlag", voc_trend_flag_30m) + ","
+jsonStr += f_json_pair("VOCCrossOverIndex", voc_cross_over_index_30m) + ","
+jsonStr += f_json_pair("VOCCrossUnderIndex", voc_cross_under_index_30m)
+jsonStr += "},"
+
+
+
+// 2H
+jsonStr += "\"2H\":{"
+jsonStr += f_json_pair("PVT", math.round(value_pvt_2h, 2)) + ","
+jsonStr += f_json_pair("PVTPoiseFlag", pvt_poise_flag_2h) + ","
+jsonStr += f_json_pair("PVTTrendFlag", pvt_trend_flag_2h) + ","
+jsonStr += f_json_pair("PVTCrossOverIndex", pvt_cross_over_index_2h) + ","
+jsonStr += f_json_pair("PVTCrossUnderIndex", pvt_cross_under_index_2h) + ","
+jsonStr += f_json_pair("Trend_1226", trend_1226_2h) + ","
+jsonStr += f_json_pair("X_1226", x_1226_2h) + ","
+jsonStr += f_json_pair("Y_1226", y_1226_2h) + ","
+jsonStr += f_json_pair("MACD_1226", math.round(macdline_1226_2h, 2)) + ","
+jsonStr += f_json_pair("Signal_1226", math.round(signalLine_1226_2h, 2)) + ","
+jsonStr += f_json_pair("Hist_1226", math.round(histLine_1226_2h, 2)) + ","
+jsonStr += f_json_pair("Trend_2452", trend_2452_2h) + ","
+jsonStr += f_json_pair("X_2452", x_2452_2h) + ","
+jsonStr += f_json_pair("Y_2452", y_2452_2h) + ","
+jsonStr += f_json_pair("MACD_2452", math.round(macdline_2452_2h, 2)) + ","
+jsonStr += f_json_pair("Signal_2452", math.round(signalLine_2452_2h, 2)) + ","
+jsonStr += f_json_pair("Hist_2452", math.round(histLine_2452_2h, 2)) + ","
+jsonStr += f_json_pair("ZCross", zCrossFlag_2h) + ","
+jsonStr += f_json_pair("K", math.round(k_2h, 2)) + ","
+jsonStr += f_json_pair("KTrendFlag", k_trend_flag_2h) + ","
+jsonStr += f_json_pair("StochPoiseFlag", stoch_poise_flag_2h) + ","
+jsonStr += f_json_pair("KCrossoverIndex", k_crossover_index_2h) + ","
+jsonStr += f_json_pair("KCrossUnderIndex", k_crossunder_index_2h) + ","
+jsonStr += f_json_pair("EMA9", math.round(ema9_2h)) + ","
+jsonStr += f_json_pair("EMA21", math.round(ema21_2h)) + ","
+jsonStr += f_json_pair("EMA50", math.round(ema50_2h)) + ","
+jsonStr += f_json_pair("EMA100", math.round(ema100_2h)) + ","
+jsonStr += f_json_pair("EMA200", math.round(ema200_2h)) + ","
+jsonStr += f_json_pair("VWAP", math.round(vwap_val_2h, 2)) + ","
+jsonStr += f_json_pair("VOC", math.round(voc_2h, 2)) + ","
+jsonStr += f_json_pair("VOCTrendFlag", voc_trend_flag_2h) + ","
+jsonStr += f_json_pair("VOCCrossOverIndex", voc_cross_over_index_2h) + ","
+jsonStr += f_json_pair("VOCCrossUnderIndex", voc_cross_under_index_2h)
+jsonStr += "}"
+
+
+
+
+// // D
+// jsonStr += "\"D\":{"
+// jsonStr += f_json_pair("PVT", math.round(value_pvt_d, 2)) + ","
+// jsonStr += f_json_pair("PVTPoiseFlag", pvt_poise_flag_d) + ","
+// jsonStr += f_json_pair("PVTTrendFlag", pvt_trend_flag_d) + ","
+// jsonStr += f_json_pair("PVTCrossOverIndex", pvt_cross_over_index_d) + ","
+// jsonStr += f_json_pair("PVTCrossUnderIndex", pvt_cross_under_index_d) + ","
+// jsonStr += f_json_pair("Trend_1226", trend_1226_d) + ","
+// jsonStr += f_json_pair("X_1226", x_1226_d) + ","
+// jsonStr += f_json_pair("Y_1226", y_1226_d) + ","
+// jsonStr += f_json_pair("MACD_1226", math.round(macdline_1226_d, 2)) + ","
+// jsonStr += f_json_pair("Signal_1226", math.round(signalLine_1226_d, 2)) + ","
+// jsonStr += f_json_pair("Hist_1226", math.round(histLine_1226_d, 2)) + ","
+// jsonStr += f_json_pair("Trend_2452", trend_2452_d) + ","
+// jsonStr += f_json_pair("X_2452", x_2452_d) + ","
+// jsonStr += f_json_pair("Y_2452", y_2452_d) + ","
+// jsonStr += f_json_pair("MACD_2452", math.round(macdline_2452_d, 2)) + ","
+// jsonStr += f_json_pair("Signal_2452", math.round(signalLine_2452_d, 2)) + ","
+// jsonStr += f_json_pair("Hist_2452", math.round(histLine_2452_d, 2)) + ","
+// jsonStr += f_json_pair("ZCross", zCrossFlag_d) + ","
+// jsonStr += f_json_pair("K", math.round(k_d, 2)) + ","
+// jsonStr += f_json_pair("KTrendFlag", k_trend_flag_d) + ","
+// jsonStr += f_json_pair("StochPoiseFlag", stoch_poise_flag_d) + ","
+// jsonStr += f_json_pair("KCrossoverIndex", k_crossover_index_d) + ","
+// jsonStr += f_json_pair("KCrossUnderIndex", k_crossunder_index_d) + ","
+// jsonStr += f_json_pair("EMA9", math.round(ema9_d)) + ","
+// jsonStr += f_json_pair("EMA21", math.round(ema21_d)) + ","
+// jsonStr += f_json_pair("EMA50", math.round(ema50_d)) + ","
+// jsonStr += f_json_pair("EMA100", math.round(ema100_d)) + ","
+// jsonStr += f_json_pair("EMA200", math.round(ema200_d)) + ","
+// jsonStr += f_json_pair("VWAP", math.round(vwap_val_d, 2)) + ","
+// jsonStr += f_json_pair("VOC", math.round(voc_d, 2)) + ","
+// jsonStr += f_json_pair("VOCTrendFlag", voc_trend_flag_d) + ","
+// jsonStr += f_json_pair("VOCCrossOverIndex", voc_cross_over_index_d) + ","
+// jsonStr += f_json_pair("VOCCrossUnderIndex", voc_cross_under_index_d)
+// jsonStr += "},"
+
+
+
+// // W
+// jsonStr += "\"W\":{"
+// jsonStr += f_json_pair("PVT", math.round(value_pvt_w, 2)) + ","
+// jsonStr += f_json_pair("PVTPoiseFlag", pvt_poise_flag_w) + ","
+// jsonStr += f_json_pair("PVTTrendFlag", pvt_trend_flag_w) + ","
+// jsonStr += f_json_pair("PVTCrossOverIndex", pvt_cross_over_index_w) + ","
+// jsonStr += f_json_pair("PVTCrossUnderIndex", pvt_cross_under_index_w) + ","
+// jsonStr += f_json_pair("Trend_1226", trend_1226_w) + ","
+// jsonStr += f_json_pair("X_1226", x_1226_w) + ","
+// jsonStr += f_json_pair("Y_1226", y_1226_w) + ","
+// jsonStr += f_json_pair("MACD_1226", math.round(macdline_1226_w, 2)) + ","
+// jsonStr += f_json_pair("Signal_1226", math.round(signalLine_1226_w, 2)) + ","
+// jsonStr += f_json_pair("Hist_1226", math.round(histLine_1226_w, 2)) + ","
+// jsonStr += f_json_pair("Trend_2452", trend_2452_w) + ","
+// jsonStr += f_json_pair("X_2452", x_2452_w) + ","
+// jsonStr += f_json_pair("Y_2452", y_2452_w) + ","
+// jsonStr += f_json_pair("MACD_2452", math.round(macdline_2452_w, 2)) + ","
+// jsonStr += f_json_pair("Signal_2452", math.round(signalLine_2452_w, 2)) + ","
+// jsonStr += f_json_pair("Hist_2452", math.round(histLine_2452_w, 2)) + ","
+// jsonStr += f_json_pair("ZCross", zCrossFlag_w) + ","
+// jsonStr += f_json_pair("K", math.round(k_w, 2)) + ","
+// jsonStr += f_json_pair("KTrendFlag", k_trend_flag_w) + ","
+// jsonStr += f_json_pair("StochPoiseFlag", stoch_poise_flag_w) + ","
+// jsonStr += f_json_pair("KCrossoverIndex", k_crossover_index_w) + ","
+// jsonStr += f_json_pair("KCrossUnderIndex", k_crossunder_index_w) + ","
+// jsonStr += f_json_pair("EMA9", math.round(ema9_w)) + ","
+// jsonStr += f_json_pair("EMA21", math.round(ema21_w)) + ","
+// jsonStr += f_json_pair("EMA50", math.round(ema50_w)) + ","
+// jsonStr += f_json_pair("EMA100", math.round(ema100_w)) + ","
+// jsonStr += f_json_pair("EMA200", math.round(ema200_w)) + ","
+// jsonStr += f_json_pair("VWAP", math.round(vwap_val_w, 2)) + ","
+// jsonStr += f_json_pair("VOC", math.round(voc_w, 2)) + ","
+// jsonStr += f_json_pair("VOCTrendFlag", voc_trend_flag_w) + ","
+// jsonStr += f_json_pair("VOCCrossOverIndex", voc_cross_over_index_w) + ","
+// jsonStr += f_json_pair("VOCCrossUnderIndex", voc_cross_under_index_w)
+// jsonStr += "}"
+
+
+
+// close INDICATORS, add SETUPS
+jsonStr += "},"
+
+// SETUPS (trend dashboard + set up codes from Strategy_SetUps_Label)
+jsonStr += "\"SETUPS\":{"
+
+jsonStr += "\"DASHBOARD\":{"
+jsonStr += f_json_pair_str("DPM", dash_dpm) + ","
+jsonStr += f_json_pair("DPMPVT", dash_dpm_pvt) + ","
+jsonStr += f_json_pair_str("WS", dash_ws) + ","
+jsonStr += f_json_pair("WSPVT", dash_ws_pvt) + ","
+jsonStr += f_json_pair_str("2PM", dash_2pm) + ","
+jsonStr += f_json_pair("2PMPVT", dash_2pm_pvt) + ","
+jsonStr += f_json_pair_str("DS", dash_ds) + ","
+jsonStr += f_json_pair("DSPVT", dash_ds_pvt) + ","
+jsonStr += f_json_pair_str("3PM", dash_3pm) + ","
+jsonStr += f_json_pair("3PMPVT", dash_3pm_pvt) + ","
+jsonStr += f_json_pair_str("2S", dash_2s) + ","
+jsonStr += f_json_pair("2SPVT", dash_2s_pvt)
+jsonStr += "},"
+
+jsonStr += "\"1M\":{"
+jsonStr += f_json_pair_str("Uptrend", setUp_Uptrend_1m) + ","
+jsonStr += f_json_pair_str("Downtrend", setUp_Downtrend_1m) + ","
+jsonStr += f_json_pair_str("CrossUptrend", setUp_Cross_Uptrend_1m) + ","
+jsonStr += f_json_pair_str("CrossDowntrend", setUp_Cross_Downtrend_1m)
+jsonStr += "},"
+
+jsonStr += "\"5M\":{"
+jsonStr += f_json_pair_str("Uptrend", setUp_Uptrend_5m) + ","
+jsonStr += f_json_pair_str("Downtrend", setUp_Downtrend_5m) + ","
+jsonStr += f_json_pair_str("CrossUptrend", setUp_Cross_Uptrend_5m) + ","
+jsonStr += f_json_pair_str("CrossDowntrend", setUp_Cross_Downtrend_5m)
+jsonStr += "},"
+
+jsonStr += "\"30M\":{"
+jsonStr += f_json_pair_str("Uptrend", setUp_Uptrend_30m) + ","
+jsonStr += f_json_pair_str("Downtrend", setUp_Downtrend_30m) + ","
+jsonStr += f_json_pair_str("CrossUptrend", setUp_Cross_Uptrend_30m) + ","
+jsonStr += f_json_pair_str("CrossDowntrend", setUp_Cross_Downtrend_30m)
+jsonStr += "},"
+
+jsonStr += "\"2H\":{"
+jsonStr += f_json_pair_str("Uptrend", setUp_Uptrend_2h) + ","
+jsonStr += f_json_pair_str("Downtrend", setUp_Downtrend_2h) + ","
+jsonStr += f_json_pair_str("CrossUptrend", setUp_Cross_Uptrend_2h) + ","
+jsonStr += f_json_pair_str("CrossDowntrend", setUp_Cross_Downtrend_2h)
+jsonStr += "},"
+
+jsonStr += "\"D\":{"
+jsonStr += f_json_pair_str("Uptrend", setUp_Uptrend_d) + ","
+jsonStr += f_json_pair_str("Downtrend", setUp_Downtrend_d) + ","
+jsonStr += f_json_pair_str("CrossUptrend", setUp_Cross_Uptrend_d) + ","
+jsonStr += f_json_pair_str("CrossDowntrend", setUp_Cross_Downtrend_d)
+jsonStr += "}"
+
+// close SETUPS + root — message 1 of 2 (DATA: INDICATORS + SETUPS)
+jsonStr += "}}"
+
+// ———— message 2 of 2: LEVELS —————
+// TradingView caps each alert() message at 4096 chars; INDICATORS + SETUPS + LEVELS together
+// are ~7.2K, so the level tables go out as their own alert message (also < 4096 chars).
+levelsStr = "{"
+levelsStr += f_json_pair_str("MSG", "LEVELS") + ","         // message type: DATA or LEVELS
+levelsStr += f_json_pair_str("SYM", syminfo.tickerid) + "," // instrument: EXCHANGE:TICKER
+levelsStr += "\"LEVELS\":{"
+levelsStr += "\"CW_CD\":" + f_levelsJson(levels_array_curday_curwk) + ","   // current week - current day
+levelsStr += "\"CW_ND\":" + f_levelsJson(levels_array_nxtday_curwk) + ","   // current week - next day
+levelsStr += "\"NW_ND\":" + f_levelsJson(levels_array_nxtday_nxtwk)         // next week - next day
+levelsStr += "}"
+levelsStr += "}"
+
+
+// jsonStr := jsonStr + "\"EMA\":{"
+// jsonStr := jsonStr + "\"15s\":{" + f_json_pair("EMA9", math.round(ema9_15s)) + "," + f_json_pair("EMA21", math.round(ema21_15s)) + "," + f_json_pair("EMA50", math.round(ema50_15s)) + "," + f_json_pair("EMA100", math.round(ema100_15s)) + "," + f_json_pair("EMA200", math.round(ema200_15s)) + "},"
+// jsonStr := jsonStr + "\"1m\":{"  + f_json_pair("EMA9", math.round(ema9_1m))  + "," + f_json_pair("EMA21", math.round(ema21_1m))  + "," + f_json_pair("EMA50", math.round(ema50_1m))  + "," + f_json_pair("EMA100", math.round(ema100_1m))  + "," + f_json_pair("EMA200", math.round(ema200_1m))  + "},"
+// jsonStr := jsonStr + "\"5m\":{"  + f_json_pair("EMA9", math.round(ema9_5m))  + "," + f_json_pair("EMA21", math.round(ema21_5m))  + "," + f_json_pair("EMA50", math.round(ema50_5m))  + "," + f_json_pair("EMA100", math.round(ema100_5m))  + "," + f_json_pair("EMA200", math.round(ema200_5m))  + "},"
+// jsonStr := jsonStr + "\"30m\":{" + f_json_pair("EMA9", math.round(ema9_30m)) + "," + f_json_pair("EMA21", math.round(ema21_30m)) + "," + f_json_pair("EMA50", math.round(ema50_30m)) + "," + f_json_pair("EMA100", math.round(ema100_30m)) + "," + f_json_pair("EMA200", math.round(ema200_30m)) + "},"
+// jsonStr := jsonStr + "\"2h\":{"  + f_json_pair("EMA9", math.round(ema9_2h))  + "," + f_json_pair("EMA21", math.round(ema21_2h))  + "," + f_json_pair("EMA50", math.round(ema50_2h))  + "," + f_json_pair("EMA100", math.round(ema100_2h))  + "," + f_json_pair("EMA200", math.round(ema200_2h))  + "}"
+// jsonStr := jsonStr + "\"D\":{"  + f_json_pair("EMA9", math.round(ema9_d))  + "," + f_json_pair("EMA21", math.round(ema21_d))  + "," + f_json_pair("EMA50", math.round(ema50_d))  + "," + f_json_pair("EMA100", math.round(ema100_d))  + "," + f_json_pair("EMA200", math.round(ema200_d))  + "}"
+// jsonStr := jsonStr + "},"
+
+// jsonStr := jsonStr + "\"PVT\":{" + f_json_pair("15s", math.round(value_pvt_15s,2)) + "," + f_json_pair("1m", math.round(value_pvt_1m,2)) + "," + f_json_pair("5m", math.round(value_pvt_5m,2)) + "," + f_json_pair("30m", math.round(value_pvt_30m,2)) + "," + f_json_pair("2h", math.round(value_pvt_2h,2)) + "," + f_json_pair("D", math.round(value_pvt_d,2))  + "},"
+// jsonStr := jsonStr + "\"MACD\":{" + f_json_pair("1m", trend_1m) + "," + f_json_pair("5m", trend_5m) + "," + f_json_pair("30m", trend30) + "," + f_json_pair("2h", trend_2h) + "," + f_json_pair("D", trend_d)  + "},"
+// jsonStr := jsonStr + "\"STOCH\":{" + f_json_pair("5m", k_trend_flag_5m) + "," + f_json_pair("30m", k_trend_flag_30m) + "," + f_json_pair("2h", k_trend_flag_2h) + "," + f_json_pair("D", k_trend_flag_d)  + "},"
+// jsonStr := jsonStr + "\"VWAP\":{" +  f_json_pair("5m", math.round(vwap_5m))  +"}"
+// jsonStr := jsonStr + "}"
+
+
+// var float lastAlertTime = 0
+
+// // timenow is in milliseconds
+// if (timenow - lastAlertTime >= 15 * 1000)
+//     alert(jsonStr)
+//     lastAlertTime := timenow
+
+
+
+// Fire ONLY on realtime bars — two messages per bar close (each under the 4096-char alert limit)
+if barstate.isrealtime and barstate.isconfirmed
+    alert(jsonStr, alert.freq_once_per_bar_close)
+    alert(levelsStr, alert.freq_once_per_bar_close)
+
+//https://kendra-preantepenultimate-complementarily.ngrok-free.dev/trading_view_webhook    

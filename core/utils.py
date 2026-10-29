@@ -708,8 +708,9 @@ def backup_old_logs(base_path=None):
     for item in os.listdir(logs_path):
         src_path = os.path.join(logs_path, item)
 
-        # Skip non-directories and backup folder itself
-        if not os.path.isdir(src_path) or item == "0_backup":
+        # Skip non-directories, the backup folder itself, and
+        # permanent subfolders that don't follow the mm_dd day scheme
+        if not os.path.isdir(src_path) or item in ("0_backup", "SPATAM"):
             continue
 
         # Skip current week folders

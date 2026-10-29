@@ -23,7 +23,7 @@ instrument_list.json
 kite_instruments.csv
 mstock_instrument_list.json
 mstock_instrument_list_reduced.json
-PaperTrading.txt
+data/paper_trading/
 day_cash.json
 constants.json
 logs

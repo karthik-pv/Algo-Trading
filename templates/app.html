@@ -1296,6 +1296,9 @@
         text-transform: uppercase;
         letter-spacing: 0.5px;
     }
+    /* Right-side suffix variant (text inputs, left-aligned values) */
+    .input-wrap .suffix.suffix-right { left: auto; right: 8px; }
+    .input-wrap input.suffix-right-pad { padding-right: 3.4rem; }
     /* Number inputs: right-aligned value clears the left unit suffix and
        leaves room for the native increment/decrement arrows on the right */
     .input-wrap input[type="number"] {
@@ -2275,8 +2278,8 @@
                             <span class="key-hint">TIME_LIMIT_INTRA</span>
                         </div>
                         <div class="input-wrap">
-                            <input type="number" step="0.1" min="0" id="TIME_LIMIT_INTRA" name="TIME_LIMIT_INTRA" placeholder="0" />
-                            <span class="suffix">min</span>
+                            <input type="text" id="TIME_LIMIT_INTRA" name="TIME_LIMIT_INTRA" placeholder="30s / 2m / 2m30s / 1h5m20s" class="suffix-right-pad" />
+                            <span class="suffix suffix-right">h·m·s</span>
                         </div>
                     </div>
                     <div class="field">
@@ -2285,8 +2288,8 @@
                             <span class="key-hint">TIME_LIMIT_SCALPING</span>
                         </div>
                         <div class="input-wrap">
-                            <input type="number" step="0.1" min="0" id="TIME_LIMIT_SCALPING" name="TIME_LIMIT_SCALPING" placeholder="0" />
-                            <span class="suffix">min</span>
+                            <input type="text" id="TIME_LIMIT_SCALPING" name="TIME_LIMIT_SCALPING" placeholder="30s / 2m / 2m30s / 1h5m20s" class="suffix-right-pad" />
+                            <span class="suffix suffix-right">h·m·s</span>
                         </div>
                     </div>
                     <div class="field">
@@ -2295,8 +2298,8 @@
                             <span class="key-hint">TIME_LIMIT_ULTRA_SCALPING</span>
                         </div>
                         <div class="input-wrap">
-                            <input type="number" step="0.1" min="0" id="TIME_LIMIT_ULTRA_SCALPING" name="TIME_LIMIT_ULTRA_SCALPING" placeholder="0" />
-                            <span class="suffix">min</span>
+                            <input type="text" id="TIME_LIMIT_ULTRA_SCALPING" name="TIME_LIMIT_ULTRA_SCALPING" placeholder="30s / 2m / 2m30s / 1h5m20s" class="suffix-right-pad" />
+                            <span class="suffix suffix-right">h·m·s</span>
                         </div>
                     </div>
                 </div>
@@ -7477,20 +7480,28 @@ document.addEventListener('DOMContentLoaded', function () {
     #pmmTable tbody tr.d1 td.b3 { background: #2a3827; }
     #pmmTable tbody tr.d0 td.b5 { background: #322023; }
     #pmmTable tbody tr.d1 td.b5 { background: #3a272a; }
-    /* run & trend tints (light = single factor, dark = confluence); declared
-       after b3/b5 so they win on the shared event-block cells */
-    #pmmTable tbody tr.d0 td.rnt-up { background: #17301f; }
-    #pmmTable tbody tr.d1 td.rnt-up { background: #1d3a26; }
-    #pmmTable tbody tr.d0 td.rnt-dn { background: #351d20; }
-    #pmmTable tbody tr.d1 td.rnt-dn { background: #3f2427; }
-    #pmmTable tbody tr.d0 td.trd2-up { background: #2e6b40; }
-    #pmmTable tbody tr.d1 td.trd2-up { background: #35794a; }
-    #pmmTable tbody tr.d0 td.trd1-up { background: #20402b; }
-    #pmmTable tbody tr.d1 td.trd1-up { background: #264b32; }
-    #pmmTable tbody tr.d0 td.trd2-dn { background: #7c3a3a; }
-    #pmmTable tbody tr.d1 td.trd2-dn { background: #8a4545; }
-    #pmmTable tbody tr.d0 td.trd1-dn { background: #46262a; }
-    #pmmTable tbody tr.d1 td.trd1-dn { background: #522e31; }
+    /* run & trend tints — user palette (dark = PVT & MACD2 agree, light =
+       PVT trending while MACD2 retraces). Text goes dark on the bright
+       fills; the hover rule below keeps the tint instead of painting the
+       dark hover grey under dark text (unreadable). */
+    #pmmTable tbody tr.d0 td.rnt-up, #pmmTable tbody tr.d1 td.rnt-up {
+        background: #b0efb2; color: #151515; }
+    #pmmTable tbody tr.d0 td.rnt-dn, #pmmTable tbody tr.d1 td.rnt-dn {
+        background: #f1a8a8; color: #151515; }
+    #pmmTable tbody tr.d0 td.trd2-up, #pmmTable tbody tr.d1 td.trd2-up {
+        background: #1ee325; color: #151515; }
+    #pmmTable tbody tr.d0 td.trd1-up, #pmmTable tbody tr.d1 td.trd1-up {
+        background: #b0efb2; color: #151515; }
+    #pmmTable tbody tr.d0 td.trd2-dn, #pmmTable tbody tr.d1 td.trd2-dn {
+        background: #cb4848; color: #ffffff; }
+    #pmmTable tbody tr.d0 td.trd1-dn, #pmmTable tbody tr.d1 td.trd1-dn {
+        background: #f1a8a8; color: #151515; }
+    #pmmTable tbody tr:hover td.rnt-up { background: #b0efb2 !important; }
+    #pmmTable tbody tr:hover td.rnt-dn { background: #f1a8a8 !important; }
+    #pmmTable tbody tr:hover td.trd2-up { background: #1ee325 !important; }
+    #pmmTable tbody tr:hover td.trd1-up { background: #b0efb2 !important; }
+    #pmmTable tbody tr:hover td.trd2-dn { background: #cb4848 !important; }
+    #pmmTable tbody tr:hover td.trd1-dn { background: #f1a8a8 !important; }
     #pmmTable tbody tr:hover td { background: #2f2f36 !important; }
     #pmmTable .gsep { border-left: 1px solid #555; }
     /* per-column filter widgets — positioned inside their sticky th so they
@@ -7610,10 +7621,11 @@ document.addEventListener('DOMContentLoaded', function () {
         }
         TINT_GROUPS.forEach(function (g) {
             var pv = parseFloat(r[idx[g[0]]]), mv = r[idx[g[1]]] || '';
-            var pvUp = !isNaN(pv) && pv >= 0, pvDn = !isNaN(pv) && pv < 0;
-            var mvUp = mv.charAt(0) === 'X', mvDn = mv.charAt(0) === 'Y';
-            var c = (pvUp && mvUp) ? 'trd2-up' : pvUp ? 'trd1-up' :
-                    (pvDn && mvDn) ? 'trd2-dn' : pvDn ? 'trd1-dn' : '';
+            if (isNaN(pv)) return;         // no PVT reading -> no tint
+            var pvUp = pv >= 0;
+            var agree = mv.charAt(0) === (pvUp ? 'X' : 'Y');
+            var c = pvUp ? (agree ? 'trd2-up' : 'trd1-up')
+                         : (agree ? 'trd2-dn' : 'trd1-dn');
             if (c) GROUP_SPAN[g[0]].forEach(function (n) { tint[n] = c; });
         });
         return tint;
