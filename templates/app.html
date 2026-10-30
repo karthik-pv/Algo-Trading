@@ -5984,14 +5984,12 @@ document.addEventListener('DOMContentLoaded', function() {
                 savedName = await downloadBrokerOrders();
             }
             // Visible confirmation: the save itself is silent (Safari
-            // shows no download bar), so without this a successful
-            // download is indistinguishable from a dead button.
+            // shows no download bar), so a definite alert() says the
+            // download completed - the inline status stays as a backup.
+            const msg = `Download complete: ${savedName || 'Excel file'} saved to your Downloads folder`;
+            alert(msg);
             if (typeof showInlineStatus === 'function') {
-                showInlineStatus(
-                    `Orders downloaded to your Downloads folder as ${savedName || 'Excel file'}`,
-                    'success',
-                    6000
-                );
+                showInlineStatus(msg, 'success', 6000);
             }
         } catch (error) {
             console.error("Could not download trades:", error);
