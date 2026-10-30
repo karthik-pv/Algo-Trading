@@ -5301,6 +5301,28 @@ document.addEventListener('DOMContentLoaded', function() {
         ordersDateInput.value = getTodayTradeDate();
     }
 
+    // Auto-roll a stale trade date: the picker is defaulted to today only
+    // at page load, so a page left open overnight kept loading (and
+    // downloading) yesterday's trades. If the user has NOT explicitly
+    // picked a date and the picker falls behind today, roll it forward
+    // and refresh the grid. An explicit user pick is always respected.
+    let ordersDateUserPicked = false;
+    if (ordersDateInput) {
+        ordersDateInput.addEventListener('change', () => { ordersDateUserPicked = true; });
+    }
+    function rollStaleOrdersDate() {
+        if (!ordersDateInput || ordersDateInput.disabled) return; // upload in progress
+        const today = getTodayTradeDate();
+        if (!ordersDateUserPicked && ordersDateInput.value && ordersDateInput.value < today) {
+            ordersDateInput.value = today;
+            loadOrders();
+        }
+    }
+    setInterval(rollStaleOrdersDate, 60000);
+    document.addEventListener('visibilitychange', () => {
+        if (!document.hidden) rollStaleOrdersDate();
+    });
+
     async function loadOrders() {
         if (!ordersTableBody) return;
         // Loading broker data resets any uploaded contract-note view.
