@@ -7733,7 +7733,9 @@ class Trader_Singleton:
         frontend status line so stale option data is never trusted blindly.
         """
         try:
-            opt = data.get("OPT") or {}
+            # The Pine OPT message carries CE/PE at the top level (next to
+            # MSG/SYM/ATM_*); accept a nested {"OPT": {...}} envelope too.
+            opt = data.get("OPT") if isinstance(data.get("OPT"), dict) else data
             if not isinstance(opt, dict) or ("CE" not in opt and "PE" not in opt):
                 logger.warning(f"TV OPT webhook: no CE/PE blocks, ignored: {str(data)[:200]}")
                 return []
