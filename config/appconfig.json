@@ -7,7 +7,7 @@
     "session": {
         "MODE": "LIVE",
         "BROKER": "MSTOCK",
-        "UNDERLYING": "SENSEX"
+        "UNDERLYING": "NIFTY"
     },
     "gating": {
         "TV_DATA_Validation_REQUIRED": false,
@@ -21,11 +21,11 @@
     },
     "pct": {
         "PCT_BOOK_PROFIT_INTRA": "10",
-        "PCT_STOP_LOSS_INTRA": "20",
-        "PCT_BOOK_PROFIT_SCALPING": "6",
-        "PCT_STOP_LOSS_SCALPING": "10",
-        "PCT_BOOK_PROFIT_ULTRA_SCALPING": "3",
-        "PCT_STOP_LOSS_ULTRA_SCALPING": "6"
+        "PCT_STOP_LOSS_INTRA": "10",
+        "PCT_BOOK_PROFIT_SCALPING": "4",
+        "PCT_STOP_LOSS_SCALPING": "4",
+        "PCT_BOOK_PROFIT_ULTRA_SCALPING": "2",
+        "PCT_STOP_LOSS_ULTRA_SCALPING": "2"
     },
     "pnt": {
         "PTS_PROFIT_INTRA": "10",
