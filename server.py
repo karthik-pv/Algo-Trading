@@ -459,6 +459,10 @@ APPCONFIG_GROUPS = {
         "US_ENTRY_1PM", "US_ENTRY_15S_PVT", "US_ENTRY_PRICE_ABOVE",
         "US_ENTRY_5S_PM", "US_ENTRY_VOC", "US_EXIT_5S_PM",
     ],
+    "intra": [
+        "IN_ENTRY_ENABLED", "IN_ENTRY_CHECK", "IN_SOURCE",
+        "IN_ENTRY_5M_PVT", "IN_EXIT_1M_MACD2",
+    ],
 }
 
 _KEY_TO_GROUP = {
@@ -573,6 +577,13 @@ APPCONFIG_DEFAULTS = {
         "US_ENTRY_5S_PM": "TREND_2452_UP",
         "US_ENTRY_VOC": "5S|15S",
         "US_EXIT_5S_PM": "TREND_2452_DOWN"
+    },
+    "intra": {
+        "IN_ENTRY_ENABLED": "true",
+        "IN_ENTRY_CHECK": "WARN",
+        "IN_SOURCE": "UNDERLYING",
+        "IN_ENTRY_5M_PVT": "ABOVE_ZERO",
+        "IN_EXIT_1M_MACD2": "TREND_2452_DOWN"
     }
 }
 

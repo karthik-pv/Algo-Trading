@@ -41,6 +41,8 @@ from core.utils import (
 from core.signal_rules import (
     evaluate_ultra_scalping_entry,
     evaluate_ultra_scalping_exit,
+    evaluate_intra_entry,
+    evaluate_intra_exit,
 )
 import time
 
@@ -5044,14 +5046,22 @@ class Trader_Singleton:
         if log_enabled:
             logger.debug(f"Deciding to sell or not for Stop Loss: Buy Price = {buy_price}, Current Price = {current_price} and Order Strategy Type is {order_strategy_type}")
 
-        # Ultra-Scalping indicator exit (US_EXIT_5S_PM): the 5s PM
-        # cross-down fires the sell alongside the PCT/PNT/time-limit
-        # exits. Config-driven - OFF disables it entirely.
+        # Indicator exits per strategy: Ultra-Scalping uses the 5s PM
+        # cross-down (ATM CE data); Intra uses the 1m MACD2 cross-down
+        # (configurable source). Config-driven - OFF disables each.
         if order_strategy_type == "ULTRA_SCALPING":
             us_exit, us_reason = evaluate_ultra_scalping_exit(self._optionData)
             if us_exit:
                 if log_enabled:
                     logger.info(f"US indicator exit fired for ULTRA_SCALPING position: {us_reason}")
+                return True
+        elif order_strategy_type == "INTRA":
+            in_exit, in_reason = evaluate_intra_exit(
+                self._tradingView_Data, self._optionData
+            )
+            if in_exit:
+                if log_enabled:
+                    logger.info(f"INTRA indicator exit fired for INTRA position: {in_reason}")
                 return True
 
         # The SL path must apply the thresholds the UI actually shows:
@@ -10120,29 +10130,37 @@ class Trader_Singleton:
 
                 ltp = self._five_weekly_option_contracts[order_details["token"]]["ltp"]
 
-                # Ultra-Scalping entry criteria (US_ENTRY_*), evaluated
-                # against the ATM CE option indicator data (TV MSG:OPT).
-                # CE/CALLs only; WARN toasts and allows, STOP blocks.
-                if strategy == "ULTRA_SCALPING" and not str(
+                # Indicator entry criteria per strategy (US_ENTRY_* /
+                # IN_ENTRY_*), evaluated against the configured data
+                # source. CE/CALLs only; WARN toasts and allows, STOP
+                # blocks.
+                if strategy in ("ULTRA_SCALPING", "INTRA") and not str(
                     order_details.get("tradingsymbol", "")
                 ).upper().endswith("PE"):
                     from core.signal_rules import entry_check_mode
-                    us_ok, us_failed, us_states = evaluate_ultra_scalping_entry(
-                        self._optionData, ltp
-                    )
+                    if strategy == "ULTRA_SCALPING":
+                        check_key = "US_ENTRY_CHECK"
+                        us_ok, us_failed, us_states = evaluate_ultra_scalping_entry(
+                            self._optionData, ltp
+                        )
+                    else:
+                        check_key = "IN_ENTRY_CHECK"
+                        us_ok, us_failed, us_states = evaluate_intra_entry(
+                            self._tradingView_Data, self._optionData, ltp
+                        )
                     logger.info(
-                        f"US entry check for {order_details.get('tradingsymbol', '')} "
+                        f"{strategy} entry check for {order_details.get('tradingsymbol', '')} "
                         f"({'PASS' if us_ok else 'FAILED: ' + '; '.join(us_failed)}): "
                         f"{' | '.join(us_states)}"
                     )
                     if not us_ok:
                         us_msg = (
-                            "Ultra Scalping entry criteria not met: "
+                            f"{strategy} entry criteria not met: "
                             + "; ".join(us_failed)
                         )
-                        if entry_check_mode() == "STOP":
+                        if entry_check_mode(check_key) == "STOP":
                             logger.warning(
-                                f"CE buy blocked by Ultra Scalping entry criteria: "
+                                f"CE buy blocked by {strategy} entry criteria: "
                                 f"{'; '.join(us_failed)}"
                             )
                             self.frontend_data_socket.emit('buy_order_result', {

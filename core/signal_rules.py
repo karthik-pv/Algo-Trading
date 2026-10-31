@@ -30,9 +30,9 @@ def _truthy(val):
     return str(val).strip().lower() in ("true", "1", "yes", "on")
 
 
-def entry_check_mode():
-    """US_ENTRY_CHECK: "WARN" (toast, allow) or "STOP" (block order)."""
-    mode = _cfg("US_ENTRY_CHECK", "WARN").upper()
+def entry_check_mode(key):
+    """Entry-check action for a strategy: "WARN" (toast, allow) or "STOP" (block order)."""
+    mode = _cfg(key, "WARN").upper()
     return mode if mode in ("WARN", "STOP") else "WARN"
 
 
@@ -150,5 +150,69 @@ def evaluate_ultra_scalping_exit(option_data):
     if _flag(block, "Trend_2452") == -1:
         reason = "5s PM crossed down (5S MACD 24/52 bearish)"
         logger.info(f"US EXIT trigger: {reason}")
+        return True, reason
+    return False, ""
+
+
+# ---------------------------------------------------------------------------
+# INTRA Trading setup (IN_ENTRY_* / IN_EXIT_*)
+# ---------------------------------------------------------------------------
+# Source of indicator data: the NIFTY1 underlying (MSG:"DATA", the classic
+# Tracking-nomenclature source) or the ATM CE option (MSG:"OPT").
+
+_UNDERLYING = "UNDERLYING"
+
+
+def _intra_source_block(tv_data, option_data, tf):
+    """Return the indicator block for tf from the configured data source."""
+    source = _cfg("IN_SOURCE", _UNDERLYING).upper()
+    if source == "OPTION":
+        ce = (option_data or {}).get("CE") or {}
+        return ce.get(tf) or {}
+    indicators = (tv_data or {}).get("INDICATORS") or {}
+    return indicators.get(tf) or {}
+
+
+def evaluate_intra_entry(tv_data, option_data, ltp=None):
+    """
+    Entry criteria for INTRA CE (CALL) orders.
+
+    Configured conditions:
+      - IN_ENTRY_5M_PVT: 5m PVT > 0 (ABOVE_ZERO) or OFF.
+
+    Returns (ok: bool, failed: [str], states: [str]).
+    """
+    if not _truthy(_cfg("IN_ENTRY_ENABLED")):
+        return True, [], ["entry check disabled"]
+
+    failed, states = [], []
+
+    mode = _cfg("IN_ENTRY_5M_PVT", "ABOVE_ZERO")
+    if mode != "OFF":
+        block = _intra_source_block(tv_data, option_data, "5M")
+        pvt = _num(block, "PVT")
+        passed = pvt is not None and pvt > 0
+        states.append(f"5mPVT>0 [{_cfg('IN_SOURCE', _UNDERLYING).upper()}] ({pvt}): {'pass' if passed else 'FAIL'}")
+        if not passed:
+            failed.append("5m PVT not above zero")
+
+    return (not failed), failed, states
+
+
+def evaluate_intra_exit(tv_data, option_data):
+    """
+    Indicator-driven exit for INTRA: 1m MACD2 (24/52) cross-down
+    (1M Trend_2452 flips to -1).
+
+    Returns (should_exit: bool, reason: str).
+    """
+    mode = _cfg("IN_EXIT_1M_MACD2", "TREND_2452_DOWN")
+    if mode == "OFF":
+        return False, ""
+
+    block = _intra_source_block(tv_data, option_data, "1M")
+    if _flag(block, "Trend_2452") == -1:
+        reason = "1m MACD2 crossed down (1M MACD 24/52 bearish)"
+        logger.info(f"INTRA EXIT trigger: {reason}")
         return True, reason
     return False, ""

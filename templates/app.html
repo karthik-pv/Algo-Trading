@@ -2458,6 +2458,76 @@
             </div>
         </section>
 
+        <!-- ============ INTRA SETUP ============ -->
+        <section class="card span-2">
+            <div class="card-rail">
+                <span class="card-title" title="Intra Trading entry/exit criteria. Entry: 5m PVT above zero. Exit: 1m MACD2 (24/52) cross-down. Data source: NIFTY1 underlying (MSG:DATA) or ATM CE option (MSG:OPT). Entry conditions are checked before CE orders (WARN = toast only, STOP = block).">Intra Setup</span>
+            </div>
+            <div class="card-body">
+                <div class="field-row">
+                    <div class="field">
+                        <div class="field-caption">
+                            <label class="field-label" for="IN_ENTRY_ENABLED">Entry Check Enabled</label>
+                            <span class="key-hint">IN_ENTRY_ENABLED</span>
+                        </div>
+                        <label class="switch-row" title="When ON: entry criteria are evaluated on each INTRA CE order.">
+                            <input type="checkbox" name="IN_ENTRY_ENABLED" id="IN_ENTRY_ENABLED">
+                            <span class="switch"></span>
+                            <span class="switch-text">Evaluate entry criteria</span>
+                        </label>
+                    </div>
+                    <div class="field">
+                        <div class="field-caption">
+                            <label class="field-label" for="IN_ENTRY_CHECK">Failed Check Action</label>
+                            <span class="key-hint">IN_ENTRY_CHECK</span>
+                        </div>
+                        <div class="input-wrap">
+                            <select id="IN_ENTRY_CHECK" name="IN_ENTRY_CHECK">
+                                <option value="WARN" selected>WARN - toast, allow order</option>
+                                <option value="STOP">STOP - block order</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="field">
+                        <div class="field-caption">
+                            <label class="field-label" for="IN_SOURCE">Indicator Data Source</label>
+                            <span class="key-hint">IN_SOURCE</span>
+                        </div>
+                        <div class="input-wrap">
+                            <select id="IN_SOURCE" name="IN_SOURCE">
+                                <option value="UNDERLYING" selected>NIFTY1 underlying (MSG:DATA)</option>
+                                <option value="OPTION">ATM CE option (MSG:OPT)</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="field">
+                        <div class="field-caption">
+                            <label class="field-label" for="IN_ENTRY_5M_PVT">5m PVT</label>
+                            <span class="key-hint">IN_ENTRY_5M_PVT</span>
+                        </div>
+                        <div class="input-wrap">
+                            <select id="IN_ENTRY_5M_PVT" name="IN_ENTRY_5M_PVT">
+                                <option value="ABOVE_ZERO" selected>5m PVT above zero</option>
+                                <option value="OFF">OFF</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="field">
+                        <div class="field-caption">
+                            <label class="field-label" for="IN_EXIT_1M_MACD2">Indicator Exit</label>
+                            <span class="key-hint">IN_EXIT_1M_MACD2</span>
+                        </div>
+                        <div class="input-wrap">
+                            <select id="IN_EXIT_1M_MACD2" name="IN_EXIT_1M_MACD2">
+                                <option value="TREND_2452_DOWN" selected>Exit on 1m MACD2 cross down</option>
+                                <option value="OFF">OFF</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
         <!-- ============ ORDER PROTECTION ============ -->
         <section class="card span-2">
             <div class="card-rail">
