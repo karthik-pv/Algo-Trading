@@ -418,6 +418,14 @@ class MStockSingleton:
         """Starts the WebSocket connection and handles automatic reconnection."""
         self._trader = trader_instance
 
+        # Connect-summary tracking: the first successful attempt logs a
+        # plain "connected" line; attempts after a 502/drop get a summary
+        # (retries + total wait) in the log AND a toast on the UI, so a
+        # slow feed warm-up is self-explaining instead of looking like a
+        # hung grid.
+        connect_started = time.time()
+        connect_retries = 0
+
         while True:
             try:
                 await self._refresh_ws_ip_cache()
@@ -428,6 +436,24 @@ class MStockSingleton:
                     self._socket_loop = asyncio.get_running_loop()
                     self._ws_connected = True
                     logger.info("Connection successful. Logging in...")
+
+                    if connect_retries:
+                        elapsed = max(1, int(time.time() - connect_started))
+                        summary = (
+                            f"MStock feed connected after {connect_retries} "
+                            f"retr{'ies' if connect_retries > 1 else 'y'} "
+                            f"({elapsed}s) - live prices resuming"
+                        )
+                        logger.info(summary)
+                        try:
+                            trader_instance.frontend_data_socket.emit(
+                                'status_message',
+                                {"success": True, "message": summary}
+                            )
+                        except Exception:
+                            pass
+                    connect_retries = 0
+                    connect_started = time.time()
 
                     login_message = f"LOGIN:{self._access_token}"
                     await ws.send(login_message)
@@ -474,10 +500,12 @@ class MStockSingleton:
                             await watchdog_task
             except websockets.exceptions.ConnectionClosed as e:
                 self._ws_connected = False
+                connect_retries += 1
                 logger.warning(f"Connection closed: {e}. Reconnecting in 5s...")
                 await asyncio.sleep(5)
             except Exception as e:
                 self._ws_connected = False
+                connect_retries += 1
                 logger.error(f"WebSocket error: {e}. Retrying in 5s...")
                 await asyncio.sleep(5)
 
