@@ -1,4 +1,20 @@
 //@version=5
+// ============================================================================
+// Strategy_TradingInvestAlgo_Data
+// VERSION: 1.1  (2026-10-31)
+// ----------------------------------------------------------------------------
+// CHANGELOG
+//   v1.1  2026-10-31  Added ATM option CE/PE indicator data as a third alert
+//                     message (MSG:"OPT", 5S/15S/1M/5M only). DATA and LEVELS
+//                     messages are UNCHANGED. New "ATM Options" inputs: expiry,
+//                     root, ATM strike (set to match the Algo app's ATM).
+//   v1.0  (git 5b32bb2) Baseline as run in production: MSG:"DATA" + MSG:"LEVELS".
+// ----------------------------------------------------------------------------
+// Alerts expected per bar close (realtime): 3
+//   1. MSG:"DATA"   - NIFTY1 INDICATORS + SETUPS (unchanged since v1.0)
+//   2. MSG:"LEVELS" - S/R level tables (unchanged since v1.0)
+//   3. MSG:"OPT"    - ATM CE/PE indicator blocks (new in v1.1)
+// ============================================================================
 indicator("Strategy_TradingInvestAlgo_Data", "", false)
 
 //EXTRA S/R LEVELS - inputs (from Strategy_EMAs_OCHL_cwcd v1.1)--------------------------------
