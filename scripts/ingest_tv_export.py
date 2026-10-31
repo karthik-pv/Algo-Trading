@@ -6,6 +6,16 @@ exports now carry the Pivot / Support / Resistance levels (D/W/M/Q x
 Standard/Heikin-Ashi x P,R1-R3,S1-S3) as plotted series, plus Daily/Weekly
 VWAP (Standard).
 
+2026-10-31: adds the "psr2" template (5m 160-col so far) — PSR pivots moved to
+the front and renamed short ("D P", "W P (low TF)", "D HA P"), VWAPs renamed
+("Daily VWAP"), and NEW series (seconds-EMAs 1s/5s/15s, EMA9/21 on every TF,
+full W/M EMA ladders, VWAP-HA). The 118-col canonical is kept; every
+non-empty new-template column the canonical lacks is APPENDED as an extra
+store column (canonical 5m grows 118 -> ~166), and the canonical-only rows
+get the week-constant extras (plain-W pivots) backfilled by week. Rate gates
+exclude the first WARMUP_SESSIONS sessions of the new coverage (EMA cold
+start); those stamps are healed by the new-wins merge.
+
 New-template path per file:
   1. identify the TF (column count + anchor names),
   2. map every canonical column to the new template's columns — unique names
@@ -104,7 +114,137 @@ NEW_TEMPLATES = {
     "1m": (131, {"1m EMA9"}, 0.85),   # low bar: the store's 1m carries
     #                                   known live-capture/EMA-seam artifacts
     #                                   that the merge heals (new wins)
+    # 2026-10-31 layout ("psr2", 5m only so far): 160 cols. PSR pivots moved to
+    # the FRONT and renamed short ("D P", "W P (low TF)", "D HA P"); VWAPs
+    # renamed ("Daily VWAP"); seconds-EMAs (1s/5s/15s) + EMA9/21 on every TF +
+    # full W/M EMA ladders are NEW series (kept as extra store columns).
+    # Indicator blocks: same 4 blocks / same internal shapes as the canonical.
+    "psr2:5m": (160, {"1s EMA9", "W P (low TF)"}, 0.98),
+    # 30m psr2: 155 cols, same rename scheme; W pivots = the PLAIN variants
+    # here (the 5m uses the low-TF ones); D Standard/HA pivots empty.
+    "psr2:30m": (155, {"1s EMA9", "D P"}, 0.99),
 }
+# canonical column -> candidate names in the psr2 template (content-matched).
+# Same renames for every TF; where both a plain and a "(low TF)" W variant
+# exist, content decides (the 5m chart plots the low-TF one, the 30m chart
+# the plain one).
+def _psr2_name_cands():
+    cands = {
+        "Daily VWAP Standard": ["Daily VWAP"],
+        "Weekly VWAP Standard": ["Weekly VWAP"],
+    }
+    for p in ("D", "W", "M", "Q"):
+        for lv in PSR_LEVELS:
+            cands["%s Standard %s" % (p, lv)] = (
+                ["%s %s (low TF)" % (p, lv), "%s %s" % (p, lv)] if p == "W"
+                else ["%s %s" % (p, lv)])
+            cands["%s Heikin Ashi %s" % (p, lv)] = (
+                ["%s HA %s (low TF)" % (p, lv), "%s HA %s" % (p, lv)] if p == "W"
+                else ["%s HA %s" % (p, lv)])
+    return cands
+
+
+_PSR2_NAME_CANDS = _psr2_name_cands()
+PSR2_NAME_CANDS = {"5m": _PSR2_NAME_CANDS, "30m": _PSR2_NAME_CANDS}
+# canonical cols the psr2 templates can NOT supply:
+#   5m: 1m EMA100/200 dropped (new file's columns entirely empty); D EMA100/200
+#     a DIFFERENT flavor (0.00 match, maxdiff ~70 pts); D-block MACD-hist Plot
+#     dropped.
+#   30m: 5m EMA100/200 + M EMA100/EMA200 empty in the new file; D/W/M EMAs a
+#     different flavor; D Standard/HA pivots empty (chart context — the 1m
+#     download's cross-TF fallback refills them); D-block leading Plot dropped.
+PSR2_UNSUPPLIED = {
+    "5m": {5: "1m EMA100 (dropped from psr2)", 6: "1m EMA200 (dropped from psr2)",
+           19: "D EMA100 (TV flavor mismatch)", 20: "D EMA200 (TV flavor mismatch)",
+           55: "D-block MACD hist Plot (dropped from psr2)"},
+    "30m": {5: "5m EMA100 (empty in psr2 30m)", 6: "5m EMA200 (empty in psr2 30m)",
+            15: "D EMA50 (TV flavor mismatch)", 16: "D EMA100 (TV flavor mismatch)",
+            17: "D EMA200 (TV flavor mismatch)",
+            18: "W EMA50 (TV flavor mismatch)", 19: "W EMA100 (TV flavor mismatch)",
+            20: "W EMA200 (TV flavor mismatch)",
+            21: "M EMA100 (empty in psr2 30m)", 22: "M EMA100#2 (empty in psr2 30m)",
+            23: "M EMA200 (empty in psr2 30m)",
+            47: "D-block leading Plot (dropped from psr2)"},
+}
+
+
+def psr2_unsupplied(tf, canon_hdr):
+    if tf == "30m":
+        out = dict(PSR2_UNSUPPLIED["30m"])
+        for i, name in enumerate(canon_hdr):
+            # D Standard/HA pivots are empty in the psr2 30m file; the 1m
+            # download's cross-TF fallback refills them at merge time
+            if name.startswith("D ") and ("Standard" in name or "Heikin Ashi" in name):
+                out[i] = "%s (empty in psr2 30m; 1m fallback refills)" % name
+        return out
+    return PSR2_UNSUPPLIED.get(tf, {})
+
+
+# psr2 indicator blocks, canon idx (0-based) -> new idx. Mapped by EXPLICIT
+# position (the fuzzy content matcher can not be used: the constant-0 'Plot'
+# columns and the sparse cross markers tie at rate 1.0 across blocks and steal
+# each other's mapping); every mapped column is still content-verified after.
+#
+# 5m: the four TF blocks have IDENTICAL internal shapes to the canonical.
+# D-block special case: the canonical carries a 9-col pattern (MACD hist Plot
+# BEFORE PVT) that psr2 dropped -> canon col 55 stays UNSUPPLIED.
+PSR2_BLOCKS_5M = [(22, 123), (34, 135), (42, 143), (51, 152)]
+
+
+def psr2_block_map_5m():
+    m = {}
+    for cs, ns in PSR2_BLOCKS_5M:
+        blen = {22: 12, 34: 8, 42: 9, 51: 9}[cs]
+        for o in range(blen):
+            if cs == 51 and o == 4:          # the dropped MACD-hist Plot
+                continue                     # (covered by UNSUPPLIED)
+            m[cs + o] = (ns + o) if (cs != 51 or o <= 3) else (ns + o - 1)
+    return m
+
+
+# 30m: the 30m/2H MACD+PVT run identity, BUT the template hangs the NEXT TF's
+# Stoch at the end of each block (content-verified 1.0000/3132, mutually
+# exclusive): new 134/135 == the 2H K/D, new 145/146 == the D K/D. Canon's D
+# block lost its leading Plot (col 47) and its Stoch lives at 145/146.
+def psr2_block_map_30m():
+    m = {}
+    for i in range(25, 34):                  # 30m: M1,M2,hist,PVT,sPlot,CU,CD
+        m[i] = 123 + (i - 25)
+    m[34], m[35] = 132, 133                  # 30m K/D
+    for i in range(36, 45):                  # 2H: M1,M2,hist,PVT,sPlot,CU,CD
+        m[i] = 136 + (i - 36)
+    m[45], m[46] = 134, 135                  # 2H K/D (end of the 30m block)
+    m[47] = None                             # D leading Plot: dropped
+    m[48], m[49], m[50], m[51] = 151, 152, 153, 154   # D MACD pairs
+    m[52] = 147                              # D PVT
+    m[53] = 148                              # D Plot
+    m[54], m[55] = 149, 150                  # D CU/CD
+    m[56], m[57] = 145, 146                  # D K/D (end of the 2H block)
+    return m
+
+
+PSR2_BLOCK_MAPS = {"5m": psr2_block_map_5m(), "30m": psr2_block_map_30m()}
+
+
+WARMUP_SESSIONS = 30   # overlap sessions excluded from rate gates — the long
+#   EMAs (5m EMA200: 26+ sessions) converge from each download's own cold start;
+#   disagreements decay geometrically and the new-wins merge heals those stamps
+
+# plain-W pivot columns are period-constant per WEEK -> backfillable for
+# canonical-only rows; everything else extra (seconds-EMAs, VWAP HA, ...) is not.
+WEEK_CONST_EXTRA = set(
+    ["W %s" % lv for lv in PSR_LEVELS]
+    + ["W HA %s" % lv for lv in PSR_LEVELS]
+)
+
+
+def week_of(date_str):
+    """ISO week key (Monday-based) for a YYYY-MM-DD string."""
+    from datetime import date as _d
+    y, m, d = map(int, date_str.split("-"))
+    dt = _d(y, m, d)
+    monday = dt.toordinal() - dt.weekday()
+    return monday
 # canonical columns the new template can NOT supply (flavor seams) — filled
 # with "" for new rows, reported:
 UNSUPPLIED = {
@@ -154,15 +294,25 @@ def read_csv(path):
 
 
 def identify(path):
-    """-> (tf, mode, header, rows). mode 'psr' (new template) or 'legacy'."""
+    """-> (tf, mode, header, rows). mode 'psr2' (2026-10-31 template), 'psr'
+    (2026-10-26 template) or 'legacy'."""
     with open(path, newline="", encoding="utf-8-sig") as f:
         hdr = next(csv.reader(f))
+    names = set(hdr)
     for tf, (ncols, anchors, _rate) in NEW_TEMPLATES.items():
+        if tf.startswith("psr2:"):
+            continue
         if len(hdr) != ncols:
             continue
-        names = set(hdr)
         if all(a in names for a in anchors) and "Q Standard P" in names:
             return tf, "psr", *read_csv(path)
+    for tf, (ncols, anchors, _rate) in NEW_TEMPLATES.items():
+        if not tf.startswith("psr2:"):
+            continue
+        if len(hdr) != ncols:
+            continue
+        if all(a in names for a in anchors):
+            return tf.split(":", 1)[1], "psr2", *read_csv(path)
     for tf, spec in LEGACY.items():
         if len(hdr) != spec["ncols"]:
             continue
@@ -183,6 +333,21 @@ def fnum(s):
         return None
 
 
+def warmup_cut(rows):
+    """First stamp AFTER the first WARMUP_SESSIONS sessions of the new file's
+    coverage. Rate gates exclude stamps before it — an export's HTF-EMA state
+    is cold-started at its own first bar, so the first sessions disagree with
+    the store (which carries a previous download's cold start there). The
+    new-wins merge heals those stamps with the new file's continuous series."""
+    days = sorted({k[:10] for k in rows})
+    cut_day = days[min(WARMUP_SESSIONS, len(days) - 1)]
+    return cut_day + "T00:00"
+
+
+def rate_ok(vals, thr):
+    return vals >= thr
+
+
 def match_rate(canon_vals, new_vals):
     """Exact-match rate over rows where both cells are non-empty."""
     m = tot = 0
@@ -195,13 +360,16 @@ def match_rate(canon_vals, new_vals):
     return (m / tot) if tot else -1.0, tot
 
 
-def build_mapping(tf, canon_hdr, canon, new, nhdr_names):
+def build_mapping(tf, canon_hdr, canon, new, nhdr_names, mode="psr"):
     """-> (map: canon idx -> new idx | 'house_ema4' | None, notes, seams).
-    Unique names by name; ambiguous indicator blocks by content match on the
+    Unique names by name; renamed series via the PSR2_NAME_CANDS translation
+    (content-matched); ambiguous indicator blocks by content match on the
     overlapping stamps. `seams` = canon idxs exempt from rate verification
     (documented flavor changes, filled best-effort)."""
     ncommon = sorted(set(canon) & set(new))
-    sample = ncommon[::max(1, len(ncommon) // 4000)] if ncommon else []
+    cut = warmup_cut(new)
+    sample_all = ncommon[::max(1, len(ncommon) // 4000)] if ncommon else []
+    sample = [k for k in sample_all if k >= cut]
     if len(ncommon) < 50:
         fail(f"overlap too small ({len(ncommon)} stamps) to content-map — "
              "disjoint downloads cannot be verified")
@@ -209,7 +377,11 @@ def build_mapping(tf, canon_hdr, canon, new, nhdr_names):
     for n, i in nhdr_names.items():
         by_base.setdefault(n.split("#")[0], []).append(i)
 
-    min_rate = NEW_TEMPLATES[tf][2]
+    min_rate = NEW_TEMPLATES["psr2:" + tf if mode == "psr2" else tf][2]
+    unsupplied = (psr2_unsupplied(tf, canon_hdr) if mode == "psr2"
+                  else UNSUPPLIED[tf])
+    cands_map = PSR2_NAME_CANDS.get(tf, {}) if mode == "psr2" else {}
+    block_map = PSR2_BLOCK_MAPS.get(tf, {}) if mode == "psr2" else {}
     mapping, notes, seams = {}, [], {VWAP_SEAM[tf]} if tf in VWAP_SEAM else set()
     for ci, cname in enumerate(canon_hdr):
         if ci == 0:
@@ -222,7 +394,8 @@ def build_mapping(tf, canon_hdr, canon, new, nhdr_names):
                          "dropped from the new template; proven exact vs TV)")
             continue
         if ci in seams:
-            src = nhdr_names["Daily VWAP Standard"]
+            src = nhdr_names[("Daily VWAP" if mode == "psr2"
+                              else "Daily VWAP Standard")]
             mapping[ci] = src
             notes.append(f"  col {ci:2d} {cname:20s} -> col {src} 'Daily VWAP "
                          "Standard' (FLAVOR SEAM: the old VWAP indicator's "
@@ -232,14 +405,38 @@ def build_mapping(tf, canon_hdr, canon, new, nhdr_names):
         if base in ("open", "high", "low", "close"):
             mapping[ci] = by_base[base][0]
             continue
-        if ci in UNSUPPLIED[tf]:
+        if ci in unsupplied:
             mapping[ci] = None
             notes.append(f"  col {ci:2d} {cname:20s} -> EMPTY for new rows "
-                         f"({UNSUPPLIED[tf][ci]})")
+                         f"({unsupplied[ci]})")
             continue
         cvals = [fnum(canon[t][ci]) for t in sample]
+        if mode == "psr2" and base in ("MACD Line", "Signal Line", "Plot",
+                                       "PVT", "Cross Up", "Cross Down", "K", "D"):
+            ni = block_map.get(ci)
+            if ni is None and ci in unsupplied:
+                mapping[ci] = None
+                notes.append(f"  col {ci:2d} {cname:20s} -> EMPTY for new rows "
+                             f"({unsupplied[ci]})")
+                continue
+            if ni is None:
+                fail(f"canonical col {ci} ({cname!r}) inside no psr2 block — "
+                     "the block table is stale")
+            nvals = [fnum(new[t][ni]) for t in sample]
+            rate, n = match_rate(cvals, nvals)
+            mapping[ci] = ni
+            if rate < 1.0:
+                notes.append(f"  col {ci:2d} {cname:20s} -> col {ni:3d} rate "
+                             f"{rate:.4f} n={n} (store-side artifacts — "
+                             "healed by new-wins merge)")
+            continue
+        cands = cands_map.get(base, by_base.get(base, []))
+        if isinstance(cands, str):
+            cands = [cands]
+        cand_idx = [c if isinstance(c, int) else nhdr_names[c] for c in cands
+                    if isinstance(c, int) or c in nhdr_names]
         best, best_rate, best_n = None, -1.0, 0
-        for ni in by_base.get(base, []):
+        for ni in cand_idx:
             nvals = [fnum(new[t][ni]) for t in sample]
             rate, n = match_rate(cvals, nvals)
             if rate > best_rate:
@@ -271,30 +468,65 @@ def map_row(row, mapping, canon_w):
     return out
 
 
-def merge(tf, canon_hdr, canon, new, mapping, seams, psr_fb):
+def merge(tf, canon_hdr, canon, new, mapping, seams, psr_fb, mode="psr",
+          occ_hdr=None):
     """-> (merged rows, extended header, stats). Union of stamps; on overlap
     the new cell wins where non-empty (heals store artifacts) EXCEPT the
     flavor-seam columns (VWAP: the canonical keeps its historical indicator
     flavor; only appended rows carry the TV-standard flavor); canonical rows
-    never drop; EMA4 house-carried; PSR backfilled by day (the file's own
-    value, else the cross-TF fallback table — TV computes W/M/Q pivots only
-    on charts whose context reaches, the 1m chart carries them all)."""
+    never drop; EMA4 house-carried; PSR backfilled by day where the canonical
+    predates the PSR columns (the file's own value, else the cross-TF fallback
+    table — TV computes W/M/Q pivots only on charts whose context reaches, the
+    1m chart carries them all).
+    psr2 mode: every new-template column NOT consumed by the mapping is kept
+    as an EXTRA store column (seconds-EMAs, EMA9/21 ladders, plain-W pivots,
+    VWAP HA); canonical-only rows get the week-constant extras (plain W
+    pivots) backfilled by week, the rest blank."""
     canon_w = len(canon_hdr)
-    ext_hdr = list(canon_hdr) + PSR_NAMES + TV_VWAP_NAMES
+    canon_has_psr = "D Standard P" in canon_hdr      # 118-wide canonical
+    ext_hdr = list(canon_hdr)
+    if not canon_has_psr:
+        ext_hdr += PSR_NAMES + TV_VWAP_NAMES
+    # --- psr2 extras: unconsumed new columns, file order, non-empty only ----
+    extra_src, week_const = [], set()
+    if mode == "psr2":
+        consumed = {v for v in mapping.values() if isinstance(v, int)}
+        seen = set(ext_hdr)
+        for ni, name in enumerate(occ_hdr):          # occ names, file order
+            if ni in consumed or ni == 0:
+                continue
+            if not any(new[k][ni].strip() for k in list(new)[::17]):
+                continue                          # entirely empty (dropped series)
+            if name in seen:
+                name = "%s (TV2)" % name.split("#")[0]
+            seen.add(name)
+            if name.split("#")[0] in WEEK_CONST_EXTRA:
+                week_const.add(len(extra_src))
+            extra_src.append(ni)
+            ext_hdr.append(name)
     # day -> first new row (for the PSR backfill)
     day_row = {}
     for k in sorted(new):
         d = k[:10]
         if d not in day_row:
             day_row[d] = new[k]
-    # PSR/TV-VWAP source indices in the new file
-    psr_src = [nhdr_names[n] for n in PSR_NAMES]
-    vw_src = [nhdr_names[n] for n in TV_VWAP_NAMES]
+    # week -> first new row (for the week-constant extras backfill)
+    week_row = {}
+    for k in sorted(new):
+        w = week_of(k[:10])
+        if w not in week_row:
+            week_row[w] = new[k]
+    # PSR/TV-VWAP source indices in the new file (only for a 60-wide canonical)
+    psr_src = [nhdr_names[n] for n in PSR_NAMES] if not canon_has_psr else []
+    vw_src = [nhdr_names[n] for n in TV_VWAP_NAMES] if not canon_has_psr else []
 
     def fb_val(d, j):
         row = psr_fb.get(d)
         return row[j] if row else ""
 
+    n_psr_vw = 0 if canon_has_psr else (len(PSR_NAMES) + len(TV_VWAP_NAMES))
+    psr_canon_idx = ([canon_hdr.index(n) for n in PSR_NAMES]
+                     if canon_has_psr else [])
     merged, appended, healed = [], 0, 0
     for k in sorted(set(canon) | set(new)):
         if k not in new:                           # canonical-only row
@@ -303,15 +535,31 @@ def merge(tf, canon_hdr, canon, new, mapping, seams, psr_fb):
             for j, si in enumerate(psr_src):       # PSR backfill by day
                 v = new[day_row[d]][si].strip() if d in day_row else ""
                 old[canon_w + j] = v or fb_val(d, j)
+            if week_const:                         # week-constant extras backfill
+                wr = week_row.get(week_of(d))
+                for j in week_const:
+                    if wr is not None:
+                        old[canon_w + n_psr_vw + j] = wr[extra_src[j]].strip()
             merged.append(old)
             continue
         mapped = map_row(new[k], mapping, canon_w)
         d = k[:10]
-        # the row's own PSR block, cross-TF fallback where TV left it empty
-        mapped += [(new[k][si].strip() or fb_val(d, j))
-                   for j, si in enumerate(psr_src)]
-        # the row's own TV VWAP columns
-        mapped += [new[k][si] for si in vw_src]
+        if canon_has_psr and psr_fb:
+            # psr2: D pivots may be empty in this chart's export — the 1m
+            # download's cross-TF fallback table refills them by day
+            for j, ci in enumerate(psr_canon_idx):
+                if not mapped[ci].strip():
+                    v = fb_val(d, j)
+                    if v:
+                        mapped[ci] = v
+        if not canon_has_psr:
+            # the row's own PSR block, cross-TF fallback where TV left it empty
+            mapped += [(new[k][si].strip() or fb_val(d, j))
+                       for j, si in enumerate(psr_src)]
+            # the row's own TV VWAP columns
+            mapped += [new[k][si] for si in vw_src]
+        if extra_src:
+            mapped += [new[k][si] for si in extra_src]
         if k in canon:
             healed += 1
             for ci in range(canon_w):
@@ -423,7 +671,7 @@ def main():
             tf = None
             for t, spec in NEW_TEMPLATES.items():
                 if ncols == spec[0]:
-                    tf = t
+                    tf = t.split(":")[-1]
             for t, spec in LEGACY.items():
                 if ncols == spec["ncols"]:
                     tf = t
@@ -480,36 +728,55 @@ def main():
             rows.sort(key=lambda r: r[0][:16])
         else:
             global nhdr_names
-            nhdr_names = {n: i for i, n in enumerate(occ_names(hdr))}
-            mapping, notes, seams = build_mapping(tf, canon_hdr, canon, new, nhdr_names)
+            occ_hdr = occ_names(hdr)
+            nhdr_names = {n: i for i, n in enumerate(occ_hdr)}
+            mapping, notes, seams = build_mapping(tf, canon_hdr, canon, new,
+                                                  nhdr_names, mode=mode)
             print("  mapping:")
             for line in notes:
                 print(line)
-            # verify mapped columns on the full overlap
+            # verify mapped columns on the full overlap; the first
+            # WARMUP_SESSIONS sessions of the new coverage are excluded from
+            # the gate (EMA cold start) and reported separately
             common = sorted(set(canon) & set(new))
+            cut = warmup_cut(new)
+            warm_cols = {}
             for ci, src in mapping.items():
                 if src in (None, "house_ema4") or ci == 0 or ci in seams:
                     continue
                 cname = canon_hdr[ci].split("#")[0]
                 if cname in ("open", "high", "low", "close"):
                     continue
-                m = n = 0
+                m = n = wm = wn = 0
                 maxd = 0.0
                 for k in common[::5]:
                     a, b = fnum(canon[k][ci]), fnum(new[k][src])
                     if a is None or b is None:
+                        continue
+                    if k < cut:
+                        wn += 1
+                        if abs(a - b) >= 1e-6:
+                            wm += 1
                         continue
                     n += 1
                     maxd = max(maxd, abs(a - b))
                     if abs(a - b) < 1e-6:
                         m += 1
                 rate = m / n if n else 1.0
-                if rate < NEW_TEMPLATES[tf][2]:
+                if rate < NEW_TEMPLATES["psr2:" + tf if mode == "psr2" else tf][2]:
                     fail(f"verification failed on canon col {ci} ({canon_hdr[ci]!r}): "
                          f"match rate {rate:.4f} over {n} rows, maxdiff {maxd:.6g}")
+                if wm:
+                    warm_cols[ci] = (wm, wn)
             print(f"  verify: {len(common)} overlap stamps, all mapped columns OK")
+            if warm_cols:
+                print(f"  warmup seam (first {WARMUP_SESSIONS} sessions, "
+                      f"pre {cut[:10]}): mismatching stamps on {len(warm_cols)} "
+                      f"columns — healed by the new-wins merge "
+                      f"(e.g. " + ", ".join(f"col {ci}: {wm}/{wn}" for ci, (wm, wn)
+                                            in sorted(warm_cols.items())[:5]) + ")")
             rows, ext_hdr, st = merge(tf, canon_hdr, canon, new, mapping, seams,
-                                      psr_fb)
+                                      psr_fb, mode=mode, occ_hdr=occ_hdr)
             print(f"  merge: +{st['appended']} appended, {st['overlap']} overlap "
                   f"(new-wins heal) -> {len(rows)} rows x {len(ext_hdr)} cols")
         if args.dry_run:
