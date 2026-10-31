@@ -9,6 +9,8 @@ __pycache__/
 
 # Runtime data (logs, tokens, instrument dumps, paper trades)
 data/
+tv/TV_Algo_JSON/alerts_log.jsonl
+tv/TV_Algo_JSON/state_latest.json
 
 # Machine-local config; example is tracked, variants are not
 # config/appconfig.json
