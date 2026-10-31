@@ -2348,6 +2348,117 @@
             </div>
         </section>
 
+        <!-- ============ ULTRA SCALPING SETUP ============ -->
+        <section class="card span-2">
+            <div class="card-rail">
+                <span class="card-title" title="Ultra Scalping entry/exit criteria, evaluated on the ATM option indicator data (TV MSG:OPT). Entry conditions are checked before CE orders (WARN = toast only, STOP = block); the 5s PM cross-down fires the indicator exit.">Ultra Scalping Setup</span>
+            </div>
+            <div class="card-body">
+                <div class="field-row">
+                    <div class="field">
+                        <div class="field-caption">
+                            <label class="field-label" for="US_ENTRY_ENABLED">Entry Check Enabled</label>
+                            <span class="key-hint">US_ENTRY_ENABLED</span>
+                        </div>
+                        <label class="switch-row" title="When ON: entry criteria are evaluated on each ULTRA_SCALPING CE order.">
+                            <input type="checkbox" name="US_ENTRY_ENABLED" id="US_ENTRY_ENABLED">
+                            <span class="switch"></span>
+                            <span class="switch-text">Evaluate entry criteria</span>
+                        </label>
+                    </div>
+                    <div class="field">
+                        <div class="field-caption">
+                            <label class="field-label" for="US_ENTRY_CHECK">Failed Check Action</label>
+                            <span class="key-hint">US_ENTRY_CHECK</span>
+                        </div>
+                        <div class="input-wrap">
+                            <select id="US_ENTRY_CHECK" name="US_ENTRY_CHECK">
+                                <option value="WARN" selected>WARN - toast, allow order</option>
+                                <option value="STOP">STOP - block order</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="field">
+                        <div class="field-caption">
+                            <label class="field-label" for="US_ENTRY_1PM">1m PM Uptrend</label>
+                            <span class="key-hint">US_ENTRY_1PM</span>
+                        </div>
+                        <div class="input-wrap">
+                            <select id="US_ENTRY_1PM" name="US_ENTRY_1PM">
+                                <option value="TREND_2452_UP" selected>1M MACD 24/52 up</option>
+                                <option value="PVT_AND_MACD">1M PVT &gt; 0 AND MACD up</option>
+                                <option value="SETUPS_Uptrend">1M SETUPS Uptrend active</option>
+                                <option value="OFF">OFF</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="field">
+                        <div class="field-caption">
+                            <label class="field-label" for="US_ENTRY_15S_PVT">15s PVT</label>
+                            <span class="key-hint">US_ENTRY_15S_PVT</span>
+                        </div>
+                        <div class="input-wrap">
+                            <select id="US_ENTRY_15S_PVT" name="US_ENTRY_15S_PVT">
+                                <option value="POISE_UP" selected>15s PVT rising</option>
+                                <option value="ABOVE_ZERO">15s PVT above zero</option>
+                                <option value="OFF">OFF</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+                <div class="field-row">
+                    <div class="field">
+                        <div class="field-caption">
+                            <label class="field-label" for="US_ENTRY_PRICE_ABOVE">Price Above EMA</label>
+                            <span class="key-hint">US_ENTRY_PRICE_ABOVE</span>
+                        </div>
+                        <div class="input-wrap">
+                            <input type="text" id="US_ENTRY_PRICE_ABOVE" name="US_ENTRY_PRICE_ABOVE" placeholder="15S:EMA9 or OFF" title="TF:EMA the LTP must be above - e.g. 15S:EMA9. TFs: 5S/15S/1M/5M. EMAs: EMA9/EMA21. Use OFF to disable." />
+                        </div>
+                    </div>
+                    <div class="field">
+                        <div class="field-caption">
+                            <label class="field-label" for="US_ENTRY_5S_PM">5s PM Uptrend</label>
+                            <span class="key-hint">US_ENTRY_5S_PM</span>
+                        </div>
+                        <div class="input-wrap">
+                            <select id="US_ENTRY_5S_PM" name="US_ENTRY_5S_PM">
+                                <option value="TREND_2452_UP" selected>5S MACD 24/52 up</option>
+                                <option value="PVT_AND_MACD">5S PVT &gt; 0 AND MACD up</option>
+                                <option value="OFF">OFF</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="field">
+                        <div class="field-caption">
+                            <label class="field-label" for="US_ENTRY_VOC">VOC Above Zero</label>
+                            <span class="key-hint">US_ENTRY_VOC</span>
+                        </div>
+                        <div class="input-wrap">
+                            <select id="US_ENTRY_VOC" name="US_ENTRY_VOC">
+                                <option value="5S|15S" selected>5s OR 15s VOC &gt; 0</option>
+                                <option value="5S">5s VOC &gt; 0</option>
+                                <option value="15S">15s VOC &gt; 0</option>
+                                <option value="OFF">OFF</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="field">
+                        <div class="field-caption">
+                            <label class="field-label" for="US_EXIT_5S_PM">Indicator Exit</label>
+                            <span class="key-hint">US_EXIT_5S_PM</span>
+                        </div>
+                        <div class="input-wrap">
+                            <select id="US_EXIT_5S_PM" name="US_EXIT_5S_PM">
+                                <option value="TREND_2452_DOWN" selected>Exit on 5s PM cross down</option>
+                                <option value="OFF">OFF</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
         <!-- ============ ORDER PROTECTION ============ -->
         <section class="card span-2">
             <div class="card-rail">

@@ -454,6 +454,11 @@ APPCONFIG_GROUPS = {
         "SEBI_CHARGES_PER_CRORE", "GST_PCT", "STAMP_DUTY_BUY_PCT",
         "STAMP_DUTY_MIN",
     ],
+    "ultra_scalping": [
+        "US_ENTRY_ENABLED", "US_ENTRY_CHECK",
+        "US_ENTRY_1PM", "US_ENTRY_15S_PVT", "US_ENTRY_PRICE_ABOVE",
+        "US_ENTRY_5S_PM", "US_ENTRY_VOC", "US_EXIT_5S_PM",
+    ],
 }
 
 _KEY_TO_GROUP = {
@@ -558,6 +563,16 @@ APPCONFIG_DEFAULTS = {
         "GST_PCT": "18",
         "STAMP_DUTY_BUY_PCT": "0.003",
         "STAMP_DUTY_MIN": "1"
+    },
+    "ultra_scalping": {
+        "US_ENTRY_ENABLED": "true",
+        "US_ENTRY_CHECK": "WARN",
+        "US_ENTRY_1PM": "TREND_2452_UP",
+        "US_ENTRY_15S_PVT": "POISE_UP",
+        "US_ENTRY_PRICE_ABOVE": "15S:EMA9",
+        "US_ENTRY_5S_PM": "TREND_2452_UP",
+        "US_ENTRY_VOC": "5S|15S",
+        "US_EXIT_5S_PM": "TREND_2452_DOWN"
     }
 }
 
