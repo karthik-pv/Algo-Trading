@@ -1,3 +1,6 @@
+> **[SUPERSEDED 2026-10-31 — ARCHIVE]** Current truth for app/infra state and machine architecture lives in
+> `handoffs/FORECASTING.md, APP_SUPPORT.md`. This file is frozen provenance — read for history, do not update.
+
 # HANDOFF — 2026-10-19 — Mac migration day (the trading machine moved)
 
 **Read this first, then `handoffs/SPATT.md`, then `handoffs/PAInsight_forecasting_engine.md`.**

@@ -1,3 +1,6 @@
+> **[SUPERSEDED 2026-10-31 — ARCHIVE]** Current truth for the engine's research: indicator conventions, store, webhook schema lives in
+> `handoffs/FORECASTING.md (§3) + forecasting/Glossary.md`. This file is frozen provenance — read for history, do not update.
+
 # HANDOFF — PAInsight Forecasting Engine (for OptionScalper)
 
 Context transfer from the PAInsight research session (2026-09-25). This document contains

@@ -1,3 +1,6 @@
+> **[SUPERSEDED 2026-10-31 — ARCHIVE]** Current truth for the 2026-10-24 data state, DM1 convention change, store rebuild lives in
+> `handoffs/FORECASTING.md (§3 Data & Tooling)`. This file is frozen provenance — read for history, do not update.
+
 # HANDOFF — 2026-10-24 — Data refresh to Oct 23, DM1 convention change, store rebuilt
 
 Session: all analysis CSVs refreshed to **Fri 2026-10-23**, the 30m engine source replaced

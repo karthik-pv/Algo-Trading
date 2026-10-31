@@ -1,3 +1,6 @@
+> **[SUPERSEDED 2026-10-31 — ARCHIVE]** Current truth for the SPATT module, trend-insight engine and setup-family derivations lives in
+> `handoffs/FORECASTING.md + forecasting/Glossary.md`. This file is frozen provenance — read for history, do not update.
+
 # SPATT HANDOFF — Setup / Price-Action / Trade-Case module + trend insight engine
 
 Handoff for continuing the work on another machine (Mac). Written 2026-10-17.

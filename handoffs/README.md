@@ -1,22 +1,29 @@
-# HANDOFFS — read in this order
+# HANDOFFS — one living doc per domain
 
-1. **`2026-10-25_2pmm.md`** — **THE LATEST — START HERE**: the **2PMM module** built —
-   the event engine (`forecasting/pmmEngine.py`, run it yourself, zero tokens), the
-   1,151-record matrix (`data/insight/csv/2pmm_matrix.csv`), and the **2PMM Grid** tab
-   (`/2pmm`). Also: the sparse-HTF-block + :10/:40 print-timing discoveries.
-2. `2026-10-24_data_refresh.md` — all CSVs refreshed to
-   Oct 23, the full-history 30m replacement (D-PVT/2H-PVT/DM1/DM2/E50s now in-file),
-   **DM1 convention change (kept, not discarded)**, the VWAP-column fix, store.json
-   rebuilt (99/112; fails = data growth only).
-3. `2026-10-20_pm_ladder.md` — the PM-ladder model (D/2/3/5/15s rung zones + trade
-   cases), the 1-year tiered validation (`forecasting/pm_ladder.py`), and the PM Ladder
-   Table indicator.
-4. `2026-10-19_mac_migration.md` — the Mac as the trading machine, today's fixes,
-   the setup families, the queued work, the gotchas.
-5. `SPATT.md` — the SPATT module + the trend-insight engine + the setup families'
-   full derivations (the conventions live here too, updated 2026-10-19).
-6. `PAInsight_forecasting_engine.md` — the forecasting engine's research + the build
-   notes (the indicator conventions, the store, the webhook schema).
+Each domain has exactly **ONE living handoff**, updated in place. Dated, frozen history
+lives in `archive/` (read-only; each file carries a supersession banner).
 
-Rule: a new session ends with a new dated handoff in this folder, and the newest one
-sits at the top of this list.
+| Domain | Living doc | Read it when… |
+|---|---|---|
+| **Forecasting** (1PME50 / 3PM / 2PM / DPM / levels, Scalping & Intra Swing styles) | [`FORECASTING.md`](FORECASTING.md) | any forecasting, insight-mining, or trading-setup session |
+| **App Support** (server, brokers, feeds, ngrok, machine config) | [`APP_SUPPORT.md`](APP_SUPPORT.md) | the app breaks, feeds/tunnels, machine/broker setup |
+| **Commentary** (tracking & commentary module) | [`COMMENTARY.md`](COMMENTARY.md) | tracking sessions, commentary vocabulary/style |
+| **Trade Backtest** (validated studies & playbooks) | [`TRADE_BACKTEST.md`](TRADE_BACKTEST.md) | backtesting setups, validation runs |
+
+Vocabulary for all modules: [`forecasting/Glossary.md`](../forecasting/Glossary.md).
+
+## Rules (the contract that makes this work)
+
+1. **Living docs are never dated, never rotated** — updated in place; each has an
+   append-only **Changelog** section (never rewrite past entries).
+2. **A session touches exactly ONE living doc** (its domain). Cross-domain sessions put
+   the entry in the primary domain's doc + a one-line cross-reference in the other.
+3. **Archive is write-off only**: `git mv` the dated file into `archive/`, prepend a
+   supersession banner pointing at the living doc + section. Never edited after.
+4. **New domain → new living doc + a README table row.** The table is the router.
+5. If a living doc outgrows ~800–1000 lines, split aspect files under a domain folder —
+   not before.
+
+Superseded/one-off handoffs: [`archive/`](archive/) — `2026-10-19_mac_migration.md` ·
+`2026-10-20_pm_ladder.md` · `2026-10-24_data_refresh.md` · `2026-10-25_2pmm.md` ·
+`2026-10-26_2pmm.md` · `PAInsight_forecasting_engine.md` · `SPATT.md`.

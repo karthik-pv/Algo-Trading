@@ -1,9 +1,14 @@
+> **[SUPERSEDED 2026-10-31]** This file remains the canonical VOCABULARY only. The
+> operational handoff (current rules, mined insights, data state) is now
+> `handoffs/FORECASTING.md` — start there; the insight sections below are mirrored
+> there with `[STATS]` tags.
+
 # Glossary — shared nomenclature
 
 Scope: the vocabulary for the **Forecasting**, **Tracking** and **Commentary** modules.
 Derived from the **Forecast** sessions ("Forecasting trading setups for scalping",
-"Forecasting good 1PM Swing conditions") + `handoffs/PAInsight_forecasting_engine.md` +
-`handoffs/SPATT.md` (the handoffs live in `handoffs/` — start at `handoffs/README.md`).
+"Forecasting good 1PM Swing conditions") + `handoffs/archive/PAInsight_forecasting_engine.md` +
+`handoffs/archive/SPATT.md`.
 This is the canonical vocabulary for all Tracking / Commentary entries. If a term is used
 differently anywhere, this file wins.
 
