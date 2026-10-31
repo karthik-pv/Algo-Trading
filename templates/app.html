@@ -2351,7 +2351,7 @@
         <!-- ============ ULTRA SCALPING SETUP ============ -->
         <section class="card span-2">
             <div class="card-rail">
-                <span class="card-title" title="Ultra Scalping entry/exit criteria, evaluated on the ATM option indicator data (TV MSG:OPT). Entry conditions are checked before CE orders (WARN = toast only, STOP = block); the 5s PM cross-down fires the indicator exit.">Ultra Scalping Setup</span>
+                <span class="card-title" title="Ultra Scalping entry/exit criteria, evaluated on the traded option contract's OWN indicator data (CE block for CE orders, PE block for PE orders; TV MSG:OPT). Entry conditions are checked before orders (WARN = toast only, STOP = block); the 5s PM cross-down fires the indicator exit.">Ultra Scalping Setup</span>
             </div>
             <div class="card-body">
                 <div class="field-row">
@@ -2461,7 +2461,7 @@
         <!-- ============ INTRA SETUP ============ -->
         <section class="card span-2">
             <div class="card-rail">
-                <span class="card-title" title="Intra Trading entry/exit criteria. Entry: 5m PVT above zero. Exit: 1m MACD2 (24/52) cross-down. Data source: NIFTY1 underlying (MSG:DATA) or ATM CE option (MSG:OPT). Entry conditions are checked before CE orders (WARN = toast only, STOP = block).">Intra Setup</span>
+                <span class="card-title" title="Intra Trading entry/exit criteria, evaluated on the traded option contract's OWN indicator data (CE block for CE orders, PE block for PE orders; TV MSG:OPT). Entry: 5m PVT above zero. Exit: 1m MACD2 (24/52) cross-down. Entry conditions are checked before orders (WARN = toast only, STOP = block).">Intra Setup</span>
             </div>
             <div class="card-body">
                 <div class="field-row">
@@ -2485,18 +2485,6 @@
                             <select id="IN_ENTRY_CHECK" name="IN_ENTRY_CHECK">
                                 <option value="WARN" selected>WARN - toast, allow order</option>
                                 <option value="STOP">STOP - block order</option>
-                            </select>
-                        </div>
-                    </div>
-                    <div class="field">
-                        <div class="field-caption">
-                            <label class="field-label" for="IN_SOURCE">Indicator Data Source</label>
-                            <span class="key-hint">IN_SOURCE</span>
-                        </div>
-                        <div class="input-wrap">
-                            <select id="IN_SOURCE" name="IN_SOURCE">
-                                <option value="UNDERLYING" selected>NIFTY1 underlying (MSG:DATA)</option>
-                                <option value="OPTION">ATM CE option (MSG:OPT)</option>
                             </select>
                         </div>
                     </div>

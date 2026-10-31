@@ -5046,18 +5046,21 @@ class Trader_Singleton:
         if log_enabled:
             logger.debug(f"Deciding to sell or not for Stop Loss: Buy Price = {buy_price}, Current Price = {current_price} and Order Strategy Type is {order_strategy_type}")
 
-        # Indicator exits per strategy: Ultra-Scalping uses the 5s PM
-        # cross-down (ATM CE data); Intra uses the 1m MACD2 cross-down
-        # (configurable source). Config-driven - OFF disables each.
+        # Indicator exits per strategy, evaluated on the traded option
+        # contract's OWN data (contract_type = CE/PE): Ultra-Scalping
+        # uses the 5s PM cross-down; Intra uses the 1m MACD2 cross-down.
+        # Config-driven - OFF disables each.
         if order_strategy_type == "ULTRA_SCALPING":
-            us_exit, us_reason = evaluate_ultra_scalping_exit(self._optionData)
+            us_exit, us_reason = evaluate_ultra_scalping_exit(
+                self._optionData, side=contract_type or "CE"
+            )
             if us_exit:
                 if log_enabled:
                     logger.info(f"US indicator exit fired for ULTRA_SCALPING position: {us_reason}")
                 return True
         elif order_strategy_type == "INTRA":
             in_exit, in_reason = evaluate_intra_exit(
-                self._tradingView_Data, self._optionData
+                self._optionData, side=contract_type or "CE"
             )
             if in_exit:
                 if log_enabled:
@@ -10131,22 +10134,24 @@ class Trader_Singleton:
                 ltp = self._five_weekly_option_contracts[order_details["token"]]["ltp"]
 
                 # Indicator entry criteria per strategy (US_ENTRY_* /
-                # IN_ENTRY_*), evaluated against the configured data
-                # source. CE/CALLs only; WARN toasts and allows, STOP
-                # blocks.
-                if strategy in ("ULTRA_SCALPING", "INTRA") and not str(
-                    order_details.get("tradingsymbol", "")
-                ).upper().endswith("PE"):
+                # IN_ENTRY_*), evaluated on the traded option contract's
+                # OWN indicator data (CE block for CE orders, PE block
+                # for PE orders - the NIFTY1 feed is never used).
+                # WARN toasts and allows, STOP blocks.
+                if strategy in ("ULTRA_SCALPING", "INTRA"):
                     from core.signal_rules import entry_check_mode
+                    us_side = "PE" if str(
+                        order_details.get("tradingsymbol", "")
+                    ).upper().endswith("PE") else "CE"
                     if strategy == "ULTRA_SCALPING":
                         check_key = "US_ENTRY_CHECK"
                         us_ok, us_failed, us_states = evaluate_ultra_scalping_entry(
-                            self._optionData, ltp
+                            self._optionData, ltp, side=us_side
                         )
                     else:
                         check_key = "IN_ENTRY_CHECK"
                         us_ok, us_failed, us_states = evaluate_intra_entry(
-                            self._tradingView_Data, self._optionData, ltp
+                            self._optionData, ltp, side=us_side
                         )
                     logger.info(
                         f"{strategy} entry check for {order_details.get('tradingsymbol', '')} "
