@@ -1223,6 +1223,10 @@ def trading_view():
     # force=True parses the body regardless of Content-Type, silent=True
     # returns None instead of raising 415 when the body is genuinely broken.
     data = request.get_json(force=True, silent=True)
+    if isinstance(data, dict):
+        # log the message type so DATA / LEVELS / ALERTS reception is verifiable
+        # per bar from the logs alone (count should pair 2x per 5m bar)
+        logger.info(f"TV webhook MSG={data.get('MSG')}")
     if data is None and raw:
         # TEST-FEED REPAIR: the alert's SYM field can arrive as a study-object
         # dump with unescaped inner quotes (seen on the BTCUSD test chart),
