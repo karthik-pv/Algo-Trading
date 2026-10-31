@@ -16,6 +16,15 @@ bool showFib   = input.bool(true, "Show Fib 38.2 / 50 / 61.8 (prev day range)", 
 bool showR4    = input.bool(true, "Show R4 / S4 (D/W/M/Q)", group="Extra S/R Levels")
 bool showR5    = input.bool(false, "Show R5 / S5 (D/W/M/Q)", group="Extra S/R Levels")
 
+//ATM OPTIONS - inputs (CE/PE indicator data for the Algo app)-------------------------------
+// Strike MUST be entered to match the ATM shown in the Algo app - Pine cannot fetch a
+// series-derived symbol, so the app validates the match and warns on mismatch.
+bool showOpt   = input.bool(true, "Send ATM option data (MSG:OPT)", group="ATM Options")
+string optExchange = input.string("NSE", "Option exchange", group="ATM Options")
+string optRoot     = input.string("NIFTY", "Option root", group="ATM Options")
+string optExpiry   = input.string("261006", "Option expiry (yyMMdd)", group="ATM Options")
+int    optAtmStrike = input.int(22700, "ATM strike (match Algo app)", minval=1, group="ATM Options")
+
 //PVT------------------------------------------------------------------------------------------
 
 kEma = "EMA"
@@ -227,6 +236,42 @@ f_calc_all() =>
 [value_pvt_2h,pvt_poise_flag_2h,pvt_trend_flag_2h,pvt_cross_over_index_2h,pvt_cross_under_index_2h, trend_1226_2h,x_1226_2h,y_1226_2h,macdline_1226_2h,signalLine_1226_2h, histLine_1226_2h,trend_2452_2h,x_2452_2h,y_2452_2h, macdline_2452_2h, signalLine_2452_2h, histLine_2452_2h,zCrossFlag_2h,k_2h,k_trend_flag_2h,stoch_poise_flag_2h,k_crossover_index_2h,k_crossunder_index_2h,ema9_2h, ema21_2h, ema50_2h, ema100_2h, ema200_2h,vwap_val_2h,voc_2h,voc_trend_flag_2h,voc_cross_over_index_2h,voc_cross_under_index_2h ] = request.security(syminfo.tickerid, "120",f_calc_all() )
 [value_pvt_d,pvt_poise_flag_d,pvt_trend_flag_d,pvt_cross_over_index_d,pvt_cross_under_index_d, trend_1226_d,x_1226_d,y_1226_d,macdline_1226_d,signalLine_1226_d, histLine_1226_d,trend_2452_d,x_2452_d,y_2452_d, macdline_2452_d, signalLine_2452_d, histLine_2452_d,zCrossFlag_d,k_d,k_trend_flag_d,stoch_poise_flag_d,k_crossover_index_d,k_crossunder_index_d,ema9_d, ema21_d, ema50_d, ema100_d, ema200_d,vwap_val_d,voc_d,voc_trend_flag_d,voc_cross_over_index_d,voc_cross_under_index_d ] = request.security(syminfo.tickerid, "D",f_calc_all() )
 [value_pvt_w,pvt_poise_flag_w,pvt_trend_flag_w,pvt_cross_over_index_w,pvt_cross_under_index_w, trend_1226_w,x_1226_w,y_1226_w,macdline_1226_w,signalLine_1226_w, histLine_1226_w,trend_2452_w,x_2452_w,y_2452_w, macdline_2452_w, signalLine_2452_w, histLine_2452_w,zCrossFlag_w,k_w,k_trend_flag_w,stoch_poise_flag_w,k_crossover_index_w,k_crossunder_index_w,ema9_w, ema21_w, ema50_w, ema100_w, ema200_w,vwap_val_w,voc_w,voc_trend_flag_w,voc_cross_over_index_w,voc_cross_under_index_w ] = request.security(syminfo.tickerid, "W",f_calc_all() )
+
+//ATM OPTIONS - compact per-TF stats for the CE/PE contracts (criteria fields only)----------
+// PVT poise/trend, MACD trend flags (12/26 + 24/52), EMA9/21 and VOC - the subset the
+// Algo app's Ultra-Scalping entry/exit criteria evaluate.
+
+opt_calc() =>
+    //PVT (same params as f_calc_all)
+    raw_pvt = calc_pvt(pvt_maType, close, pvt_short, pvt_long)
+    value_pvt = pvt_shouldNormalize ? raw_pvt / maxAbs(raw_pvt, pvt_normalizeLookback) * 1.0 : raw_pvt
+    pvt_poise = value_pvt > value_pvt[1] ? 1 : -1
+    pvt_trend = value_pvt > 0 ? 1 : -1
+    //MACD trend flags
+    [macdline_1226, signalLine_1226, histLine_1226] = ta.macd(close, 12, 26, 9)
+    [macdline_2452, signalLine_2452, histLine_2452] = ta.macd(close, 24, 52, 9)
+    trend_1226 = macdline_1226 > signalLine_1226 ? 1 : -1
+    trend_2452 = macdline_2452 > signalLine_2452 ? 1 : -1
+    //EMAs
+    ema9  = ta.ema(close, 9)
+    ema21 = ta.ema(close, 21)
+    //VOC
+    shortV = ta.ema(volume, 9)
+    longV  = ta.ema(volume, 21)
+    voc = 100 * (shortV - longV) / longV
+    [value_pvt, pvt_poise, pvt_trend, trend_1226, trend_2452, ema9, ema21, voc]
+
+opt_ce_sym = optExchange + ":" + optRoot + optExpiry + "C" + str.tostring(optAtmStrike)
+opt_pe_sym = optExchange + ":" + optRoot + optExpiry + "P" + str.tostring(optAtmStrike)
+
+[o_pvt_ce_5s, o_pvt_poise_ce_5s, o_pvt_trend_ce_5s, o_tr1226_ce_5s, o_tr2452_ce_5s, o_ema9_ce_5s, o_ema21_ce_5s, o_voc_ce_5s]     = request.security(opt_ce_sym, "5S",  opt_calc(), lookahead = barmerge.lookahead_on)
+[o_pvt_ce_15s, o_pvt_poise_ce_15s, o_pvt_trend_ce_15s, o_tr1226_ce_15s, o_tr2452_ce_15s, o_ema9_ce_15s, o_ema21_ce_15s, o_voc_ce_15s] = request.security(opt_ce_sym, "15S", opt_calc(), lookahead = barmerge.lookahead_on)
+[o_pvt_ce_1m, o_pvt_poise_ce_1m, o_pvt_trend_ce_1m, o_tr1226_ce_1m, o_tr2452_ce_1m, o_ema9_ce_1m, o_ema21_ce_1m, o_voc_ce_1m]       = request.security(opt_ce_sym, "1",   opt_calc(), lookahead = barmerge.lookahead_on)
+[o_pvt_ce_5m, o_pvt_poise_ce_5m, o_pvt_trend_ce_5m, o_tr1226_ce_5m, o_tr2452_ce_5m, o_ema9_ce_5m, o_ema21_ce_5m, o_voc_ce_5m]       = request.security(opt_ce_sym, "5",   opt_calc(), lookahead = barmerge.lookahead_on)
+[o_pvt_pe_5s, o_pvt_poise_pe_5s, o_pvt_trend_pe_5s, o_tr1226_pe_5s, o_tr2452_pe_5s, o_ema9_pe_5s, o_ema21_pe_5s, o_voc_pe_5s]       = request.security(opt_pe_sym, "5S",  opt_calc(), lookahead = barmerge.lookahead_on)
+[o_pvt_pe_15s, o_pvt_poise_pe_15s, o_pvt_trend_pe_15s, o_tr1226_pe_15s, o_tr2452_pe_15s, o_ema9_pe_15s, o_ema21_pe_15s, o_voc_pe_15s] = request.security(opt_pe_sym, "15S", opt_calc(), lookahead = barmerge.lookahead_on)
+[o_pvt_pe_1m, o_pvt_poise_pe_1m, o_pvt_trend_pe_1m, o_tr1226_pe_1m, o_tr2452_pe_1m, o_ema9_pe_1m, o_ema21_pe_1m, o_voc_pe_1m]       = request.security(opt_pe_sym, "1",   opt_calc(), lookahead = barmerge.lookahead_on)
+[o_pvt_pe_5m, o_pvt_poise_pe_5m, o_pvt_trend_pe_5m, o_tr1226_pe_5m, o_tr2452_pe_5m, o_ema9_pe_5m, o_ema21_pe_5m, o_voc_pe_5m]       = request.security(opt_pe_sym, "5",   opt_calc(), lookahead = barmerge.lookahead_on)
 
 //SETUPS (from Strategy_SetUps_Label)-------------------------------------------------------
 
@@ -1299,9 +1344,53 @@ levelsStr += "}"
 
 
 
+// ———— message 3 of 3: OPT (ATM option CE/PE indicator data) —————
+// Kept as its own alert message: DATA is already near the 4096-char alert cap and the
+// NIFTY1 DATA/LEVELS payloads must stay unchanged. Fields mirror INDICATORS names.
+
+f_opt_tf_json(value_pvt, pvt_poise, pvt_trend, tr1226, tr2452, ema9, ema21, voc) =>
+    s = "{"
+    s += f_json_pair("PVT", math.round(value_pvt, 2)) + ","
+    s += f_json_pair("PVTPoiseFlag", pvt_poise) + ","
+    s += f_json_pair("PVTTrendFlag", pvt_trend) + ","
+    s += f_json_pair("Trend_1226", tr1226) + ","
+    s += f_json_pair("Trend_2452", tr2452) + ","
+    s += f_json_pair("EMA9", math.round(ema9)) + ","
+    s += f_json_pair("EMA21", math.round(ema21)) + ","
+    s += f_json_pair("VOC", math.round(voc, 2))
+    s += "}"
+
+f_opt_side_json(t5s, t15s, t1m, t5m) =>
+    s = "{"
+    s += "\"5S\":"  + t5s + ","
+    s += "\"15S\":" + t15s + ","
+    s += "\"1M\":"  + t1m + ","
+    s += "\"5M\":"  + t5m
+    s += "}"
+
+optStr = "{"
+optStr += f_json_pair_str("MSG", "OPT") + ","                          // message type: OPT
+optStr += f_json_pair_str("SYM", syminfo.tickerid) + ","               // chart instrument (NIFTY1)
+optStr += f_json_pair_str("ATM_CE_SYM", opt_ce_sym) + ","              // contract the data belongs to
+optStr += f_json_pair_str("ATM_PE_SYM", opt_pe_sym) + ","
+optStr += f_json_pair("ATM_STRIKE", optAtmStrike) + ","
+optStr += "\"CE\":" + f_opt_side_json(
+     f_opt_tf_json(o_pvt_ce_5s, o_pvt_poise_ce_5s, o_pvt_trend_ce_5s, o_tr1226_ce_5s, o_tr2452_ce_5s, o_ema9_ce_5s, o_ema21_ce_5s, o_voc_ce_5s),
+     f_opt_tf_json(o_pvt_ce_15s, o_pvt_poise_ce_15s, o_pvt_trend_ce_15s, o_tr1226_ce_15s, o_tr2452_ce_15s, o_ema9_ce_15s, o_ema21_ce_15s, o_voc_ce_15s),
+     f_opt_tf_json(o_pvt_ce_1m, o_pvt_poise_ce_1m, o_pvt_trend_ce_1m, o_tr1226_ce_1m, o_tr2452_ce_1m, o_ema9_ce_1m, o_ema21_ce_1m, o_voc_ce_1m),
+     f_opt_tf_json(o_pvt_ce_5m, o_pvt_poise_ce_5m, o_pvt_trend_ce_5m, o_tr1226_ce_5m, o_tr2452_ce_5m, o_ema9_ce_5m, o_ema21_ce_5m, o_voc_ce_5m)) + ","
+optStr += "\"PE\":" + f_opt_side_json(
+     f_opt_tf_json(o_pvt_pe_5s, o_pvt_poise_pe_5s, o_pvt_trend_pe_5s, o_tr1226_pe_5s, o_tr2452_pe_5s, o_ema9_pe_5s, o_ema21_pe_5s, o_voc_pe_5s),
+     f_opt_tf_json(o_pvt_pe_15s, o_pvt_poise_pe_15s, o_pvt_trend_pe_15s, o_tr1226_pe_15s, o_tr2452_pe_15s, o_ema9_pe_15s, o_ema21_pe_15s, o_voc_pe_15s),
+     f_opt_tf_json(o_pvt_pe_1m, o_pvt_poise_pe_1m, o_pvt_trend_pe_1m, o_tr1226_pe_1m, o_tr2452_pe_1m, o_ema9_pe_1m, o_ema21_pe_1m, o_voc_pe_1m),
+     f_opt_tf_json(o_pvt_pe_5m, o_pvt_poise_pe_5m, o_pvt_trend_pe_5m, o_tr1226_pe_5m, o_tr2452_pe_5m, o_ema9_pe_5m, o_ema21_pe_5m, o_voc_pe_5m))
+optStr += "}"
+
 // Fire ONLY on realtime bars — two messages per bar close (each under the 4096-char alert limit)
 if barstate.isrealtime and barstate.isconfirmed
     alert(jsonStr, alert.freq_once_per_bar_close)
     alert(levelsStr, alert.freq_once_per_bar_close)
+    if showOpt
+        alert(optStr, alert.freq_once_per_bar_close)
 
 //https://kendra-preantepenultimate-complementarily.ngrok-free.dev/trading_view_webhook    
