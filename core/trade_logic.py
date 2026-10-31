@@ -192,6 +192,11 @@ class Trader_Singleton:
     
     _tradingView_Data = {}
 
+    # Latest MSG:OPT payload (ATM CE/PE indicator data from the Pine script)
+    # plus the result of matching it against the app's current ATM.
+    _optionData = {}
+    _optionData_match = None   # None = no OPT received yet, else dict with match info
+
     # ---------------------------------------------------------
     # TradingView entry validation state (TV_DATA_Validation_REQUIRED)
     # Defaults are fail-safe: until a valid TradingView webhook is
@@ -5346,6 +5351,14 @@ class Trader_Singleton:
             f"Expiry Date: {expiry}"
         )
 
+        # Remember the ATM the app is currently showing - the TV MSG:OPT
+        # receiver validates the Pine-side ATM inputs against this.
+        self._current_atm = {
+            "underlying": underlying,
+            "expiry": expiry.isoformat(),
+            "strike": int(atm_strike),
+        }
+
         # ---------------------------------------------------------
         # Determine which WOC factor to use
         # ---------------------------------------------------------
@@ -7689,6 +7702,79 @@ class Trader_Singleton:
             return [{"status": "success", "alerts": len(lines)}]
         except Exception as e:
             logger.error(f"SPATAM alert processing failed: {e}")
+            return []
+
+    def process_option_data(self, data):
+        """
+        Receiver for MSG:"OPT" webhooks - the Pine script's third alert
+        carrying ATM CE/PE indicator data (5S/15S/1M/5M only).
+
+        Stores the payload and validates the Pine-side ATM inputs against
+        the ATM the app is currently showing (self._current_atm, set by
+        get_5_woc). Mismatch does NOT discard the data (Pine strikes are
+        hand-entered and may lag an ATM drift) but is surfaced via the
+        frontend status line so stale option data is never trusted blindly.
+        """
+        try:
+            opt = data.get("OPT") or {}
+            if not isinstance(opt, dict) or ("CE" not in opt and "PE" not in opt):
+                logger.warning(f"TV OPT webhook: no CE/PE blocks, ignored: {str(data)[:200]}")
+                return []
+
+            self._optionData = opt
+
+            # --- ATM match validation ----------------------------------
+            ce_sym = data.get("ATM_CE_SYM") or ""
+            pe_sym = data.get("ATM_PE_SYM") or ""
+            opt_strike = data.get("ATM_STRIKE")
+            current = getattr(self, "_current_atm", None)
+
+            match_info = {
+                "tv_strike": opt_strike,
+                "tv_ce_sym": ce_sym,
+                "tv_pe_sym": pe_sym,
+                "app_strike": (current or {}).get("strike"),
+                "app_expiry": (current or {}).get("expiry"),
+                "match": None,
+            }
+
+            if current and opt_strike is not None:
+                match_info["match"] = int(opt_strike) == int(current["strike"])
+            # expiry: TV sends yyMMdd in the symbol - compare when we have both
+            if current and ce_sym:
+                m = re.search(r"(\d{6})[CP]\d+$", ce_sym)
+                if m:
+                    yyMMdd = m.group(1)
+                    tv_expiry = f"20{yyMMdd[:2]}-{yyMMdd[2:4]}-{yyMMdd[4:]}"
+                    match_info["tv_expiry"] = tv_expiry
+                    if match_info["match"]:
+                        match_info["match"] = tv_expiry == current.get("expiry")
+
+            self._optionData_match = match_info
+
+            if match_info["match"] is False:
+                logger.warning(
+                    f"TV OPT ATM MISMATCH: TV strike {opt_strike} "
+                    f"(expiry {match_info.get('tv_expiry', '?')}) != app ATM "
+                    f"{current.get('strike')} (expiry {current.get('expiry')}) - "
+                    f"update the ATM Options inputs in the TV alert script"
+                )
+                self.frontend_data_socket.emit('status_message', {
+                    "success": False,
+                    "message": (
+                        f"TV ATM mismatch: TV {opt_strike} != app ATM "
+                        f"{current.get('strike')} - option data may be stale"
+                    )
+                })
+            else:
+                logger.info(
+                    f"TV OPT stored: strike {opt_strike} "
+                    f"(match={match_info['match']}, app ATM "
+                    f"{(current or {}).get('strike', '?')})"
+                )
+            return [{"status": "success"}]
+        except Exception as e:
+            logger.error(f"TV OPT processing failed: {e}")
             return []
 
     def process_TradingView_Data(self , data):

@@ -1252,6 +1252,12 @@ def trading_view():
         # message carries no INDICATORS.
         trader.process_spatam_alerts(data)
         return jsonify({"status": "success", "msg": "alerts processed"})
+    if data.get("MSG") == "OPT":
+        # ATM option CE/PE indicator data (third Pine alert message):
+        # stored for the Ultra-Scalping entry/exit criteria - an OPT
+        # message carries no INDICATORS/SETUPS for the underlying.
+        trader.process_option_data(data)
+        return jsonify({"status": "success", "msg": "opt data stored"})
     res = trading_view_handle_func(data, trader)
     return jsonify(res)
 
