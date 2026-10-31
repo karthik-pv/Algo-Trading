@@ -1182,6 +1182,31 @@
     }
     .card.span-2 { grid-column: 1 / -1; }
 
+    /* --- ALGO SETUP DIVIDER (caption between rules) --- */
+    .algo-divider {
+        grid-column: 1 / -1;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin: 2px 0;
+    }
+    .algo-divider::before,
+    .algo-divider::after {
+        content: "";
+        flex: 1;
+        height: 1px;
+        background: #555;
+    }
+    .algo-divider .algo-divider-caption {
+        font-size: 0.72rem;
+        font-weight: 700;
+        letter-spacing: 1.2px;
+        text-transform: uppercase;
+        color: #bbb;
+        white-space: nowrap;
+    }
+
+
     /* --- VERTICAL CAPTION RAIL --- */
     .card-rail {
         flex: 0 0 auto;
@@ -2348,10 +2373,13 @@
             </div>
         </section>
 
+        <!-- ============ ALGO SETUP ============ -->
+        <div class="algo-divider"><span class="algo-divider-caption">Algo Set Up</span></div>
+
         <!-- ============ ULTRA SCALPING SETUP ============ -->
         <section class="card span-2">
             <div class="card-rail">
-                <span class="card-title" title="Ultra Scalping entry/exit criteria, evaluated on the traded option contract's OWN indicator data (CE block for CE orders, PE block for PE orders; TV MSG:OPT). Entry conditions are checked before orders (WARN = toast only, STOP = block); the 5s PM cross-down fires the indicator exit.">Ultra Scalping Setup</span>
+                <span class="card-title" title="Ultra Scalping entry/exit criteria, evaluated on the traded option contract's OWN indicator data (CE block for CE orders, PE block for PE orders; TV MSG:OPT). Entry conditions are checked before orders (WARN = toast only, STOP = block); the 5s PM cross-down fires the indicator exit.">UScalping</span>
             </div>
             <div class="card-body">
                 <div class="field-row">
@@ -2461,7 +2489,7 @@
         <!-- ============ INTRA SETUP ============ -->
         <section class="card span-2">
             <div class="card-rail">
-                <span class="card-title" title="Intra Trading entry/exit criteria, evaluated on the traded option contract's OWN indicator data (CE block for CE orders, PE block for PE orders; TV MSG:OPT). Entry: 5m PVT above zero. Exit: 1m MACD2 (24/52) cross-down. Entry conditions are checked before orders (WARN = toast only, STOP = block).">Intra Setup</span>
+                <span class="card-title" title="Intra Trading entry/exit criteria, evaluated on the traded option contract's OWN indicator data (CE block for CE orders, PE block for PE orders; TV MSG:OPT). Entry: 5m PVT above zero. Exit: 1m MACD2 (24/52) cross-down. Entry conditions are checked before orders (WARN = toast only, STOP = block).">Intra</span>
             </div>
             <div class="card-body">
                 <div class="field-row">
@@ -2515,6 +2543,9 @@
                 </div>
             </div>
         </section>
+
+        <!-- ============ END ALGO SETUP ============ -->
+        <div class="algo-divider"><span class="algo-divider-caption">Algo Set Up</span></div>
 
         <!-- ============ ORDER PROTECTION ============ -->
         <section class="card span-2">
