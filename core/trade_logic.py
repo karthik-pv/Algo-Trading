@@ -34,7 +34,14 @@ from core.shared_state import latest_tradingview_data
 from core.audit_log import trade_audit
 
 
-from core.utils import fetch_from_json , find_matching_object , is_market_open , write_to_json , compute_limit_margin , get_exchange_for_underlying , get_underlying_for_symbol , resolve_data_path , DATA_DIR
+from core.utils import (
+    fetch_from_json,
+    find_matching_object , is_market_open , write_to_json , compute_limit_margin , get_exchange_for_underlying , get_underlying_for_symbol , resolve_data_path , DATA_DIR
+)
+from core.signal_rules import (
+    evaluate_ultra_scalping_entry,
+    evaluate_ultra_scalping_exit,
+)
 import time
 
 # NOTE: Trading thresholds (PCT/PTS book-profit, stop loss, strategy
@@ -5036,6 +5043,16 @@ class Trader_Singleton:
         # that is the question
         if log_enabled:
             logger.debug(f"Deciding to sell or not for Stop Loss: Buy Price = {buy_price}, Current Price = {current_price} and Order Strategy Type is {order_strategy_type}")
+
+        # Ultra-Scalping indicator exit (US_EXIT_5S_PM): the 5s PM
+        # cross-down fires the sell alongside the PCT/PNT/time-limit
+        # exits. Config-driven - OFF disables it entirely.
+        if order_strategy_type == "ULTRA_SCALPING":
+            us_exit, us_reason = evaluate_ultra_scalping_exit(self._optionData)
+            if us_exit:
+                if log_enabled:
+                    logger.info(f"US indicator exit fired for ULTRA_SCALPING position: {us_reason}")
+                return True
 
         # The SL path must apply the thresholds the UI actually shows:
         # PNT mode -> PTS_*_<strategy> points; PCT mode (and EMA, whose
@@ -10100,6 +10117,44 @@ class Trader_Singleton:
                         return
 
                 ltp = self._five_weekly_option_contracts[order_details["token"]]["ltp"]
+
+                # Ultra-Scalping entry criteria (US_ENTRY_*), evaluated
+                # against the ATM CE option indicator data (TV MSG:OPT).
+                # CE/CALLs only; WARN toasts and allows, STOP blocks.
+                if strategy == "ULTRA_SCALPING" and not str(
+                    order_details.get("tradingsymbol", "")
+                ).upper().endswith("PE"):
+                    from core.signal_rules import entry_check_mode
+                    us_ok, us_failed, us_states = evaluate_ultra_scalping_entry(
+                        self._optionData, ltp
+                    )
+                    logger.info(
+                        f"US entry check for {order_details.get('tradingsymbol', '')} "
+                        f"({'PASS' if us_ok else 'FAILED: ' + '; '.join(us_failed)}): "
+                        f"{' | '.join(us_states)}"
+                    )
+                    if not us_ok:
+                        us_msg = (
+                            "Ultra Scalping entry criteria not met: "
+                            + "; ".join(us_failed)
+                        )
+                        if entry_check_mode() == "STOP":
+                            logger.warning(
+                                f"CE buy blocked by Ultra Scalping entry criteria: "
+                                f"{'; '.join(us_failed)}"
+                            )
+                            self.frontend_data_socket.emit('buy_order_result', {
+                                "success": False,
+                                "tradingsymbol": order_details.get("tradingsymbol", ""),
+                                "lots": order_details["lots"],
+                                "error": us_msg
+                            })
+                            return
+                        # WARN: toast before the order-placement flow continues
+                        self.frontend_data_socket.emit('status_message', {
+                            "success": False,
+                            "message": us_msg
+                        })
 
                 # AUDIT: the button-click moment + LTP at click.
                 trade_audit.record_buy_click(
