@@ -1758,27 +1758,38 @@ def momentor_data():
         source = "live"
         snapshot = getattr(trader, "_tradingView_Data", None)
         levels = getattr(trader, "_tv_levels", {}) or {}
-        if isinstance(levels, dict):
-            for r in (levels.get("CW_CD") or []):
-                if isinstance(r, (list, tuple)) and len(r) >= 2 and str(r[0]) == "Close":
-                    try:
-                        price = float(r[1])
-                    except (TypeError, ValueError):
-                        price = None
-                    break
-        if not snapshot or not levels:
-            # market off / fresh restart - paint from the last persisted
-            # TradingView webhook payloads instead of staying blank
-            persisted = _tv_load_persisted()
-            snapshot = snapshot or persisted.get("SNAPSHOT")
-            levels = levels or persisted.get("LEVELS") or {}
-            source = "persisted"
-        payload = {
-            "momentors": mw.build_momentors(snapshot, price),
-            "ladder": mw.build_ladder(snapshot, levels, price),
-            "source": source,
-            "ts": datetime.now().strftime("%d %b %H:%M:%S"),
-        }
+        payload = None
+        if not snapshot and not levels:
+            # no live snapshot and nothing persisted yet (e.g. first run,
+            # market off) - tell the widget instead of painting blank rows
+            payload = {"momentors": [], "ladder": [], "nodata": True,
+                       "ts": _tv_snap_cache["data"].get("ts") or ""}
+        else:
+            if not snapshot or not levels:
+                # market off / fresh restart - paint from the last persisted
+                # TradingView webhook payloads instead of staying blank
+                persisted = _tv_load_persisted()
+                snapshot = snapshot or persisted.get("SNAPSHOT")
+                levels = levels or persisted.get("LEVELS") or {}
+                source = "persisted"
+                data_ts = _tv_load_persisted().get("ts") or ""
+            else:
+                data_ts = ""
+            price = None
+            if isinstance(levels, dict):
+                for r in (levels.get("CW_CD") or []):
+                    if isinstance(r, (list, tuple)) and len(r) >= 2 and str(r[0]) == "Close":
+                        try:
+                            price = float(r[1])
+                        except (TypeError, ValueError):
+                            price = None
+                        break
+            payload = {
+                "momentors": mw.build_momentors(snapshot, price),
+                "ladder": mw.build_ladder(snapshot, levels, price),
+                "source": source,
+                "ts": data_ts,
+            }
         _MOM_CACHE["payload"] = payload
         _MOM_CACHE["ts"] = now
         return jsonify(payload)
