@@ -1,9 +1,15 @@
 //@version=5
 // ============================================================================
 // Strategy_TradingInvestAlgo_Data
-// VERSION: 1.2  (2026-11-01)
+// VERSION: 1.3  (2026-11-01)
 // ----------------------------------------------------------------------------
 // CHANGELOG
+//   v1.3  2026-11-01  Chart-context leaks fixed for non-NSE charts: Nifty
+//                     close (Close row + Round Numbers), session VWAP, weekly
+//                     VWAP and the Opening Range are now computed FROM
+//                     DATA_SYM via request.security - on a NSE:NIFTY1! chart
+//                     the output is UNCHANGED; on a 24/7 chart (BTCUSD) no
+//                     BTC values leak into the LEVELS/DATA payloads.
 //   v1.2  2026-11-01  Data symbol PINNED to NSE:NIFTY1! (new DATA_SYM const;
 //                     all request.security calls + the SYM field of the
 //                     DATA/LEVELS/OPT messages). The indicator now computes
@@ -749,30 +755,33 @@ get_PrevHighLow() =>
 [prevMoHigh, prevMoLow]                 = request.security(DATA_SYM, "M", get_PrevHighLow(), lookahead = barmerge.lookahead_on)
 
 // Session VWAP (resets each session) and Weekly VWAP (resets each week)
-float vwapSession = ta.vwap
-var float wVwapPV = 0.0
-var float wVwapVV = 0.0
-if ta.change(time("W")) != 0
-    wVwapPV := 0.0
-    wVwapVV := 0.0
-wVwapPV += hlc3 * volume
-wVwapVV += volume
-float vwapWeek = wVwapVV > 0 ? wVwapPV / wVwapVV : na
+// v1.3: computed FROM DATA_SYM so non-NSE charts never leak their own
+// VWAP/session values. The OR/VWAP state machine runs inside the security
+// context of the pinned symbol (NSE session, NSE volume).
+f_orAndVwaps() =>
+    var float orH = na
+    var float orL = na
+    if ta.change(time("D")) != 0
+        orH := na
+        orL := na
+    float minsSinceOpen = (time - time("D")) / 60000.0
+    if minsSinceOpen >= 0 and minsSinceOpen <= orMinutes
+        orH := na(orH) ? high : math.max(orH, high)
+        orL := na(orL) ? low : math.min(orL, low)
+    var float wPV = 0.0
+    var float wVV = 0.0
+    if ta.change(time("W")) != 0
+        wPV := 0.0
+        wVV := 0.0
+    wPV += hlc3 * volume
+    wVV += volume
+    [orH, orL, ta.vwap, wVV > 0 ? wPV / wVV : na]
+[orHigh, orLow, vwapSession, vwapWeek] = request.security(DATA_SYM, "1", f_orAndVwaps())
 
-// Opening Range (first orMinutes minutes of the session)
-var float orHigh = na
-var float orLow  = na
-if ta.change(time("D")) != 0
-    orHigh := na
-    orLow  := na
-float minsSinceOpen = (time - time("D")) / 60000.0
-if minsSinceOpen >= 0 and minsSinceOpen <= orMinutes
-    orHigh := na(orHigh) ? high : math.max(orHigh, high)
-    orLow  := na(orLow) ? low : math.min(orLow, low)
-
-// Round numbers (nearest below / above close)
-float rnDown = math.floor(close / rnStepPts) * rnStepPts
-float rnUp   = math.ceil(close / rnStepPts) * rnStepPts
+// Round numbers (nearest below / above close) - on the NIFTY close, not the chart's
+float niftyClose = request.security(DATA_SYM, "1", close)
+float rnDown = math.floor(niftyClose / rnStepPts) * rnStepPts
+float rnUp   = math.ceil(niftyClose / rnStepPts) * rnStepPts
 
 // Camarilla pivots from previous day H/L/C
 float camRng = prevDayHigh - prevDayLow
@@ -810,8 +819,8 @@ f_pushAll(ema200_d, "D EMA200")
 f_pushAll(ema100_w, "W EMA100")
 f_pushAll(ema200_w, "W EMA200")
 
-// Close marker row (value = close, distance = 0)
-string closeRow = str.tostring(math.round(close), "000000") + "_Close_0"
+// Close marker row (value = close, distance = 0) - the NIFTY close, not the chart's
+string closeRow = str.tostring(math.round(niftyClose), "000000") + "_Close_0"
 levels_array_curday_curwk.push(closeRow)
 levels_array_nxtday_curwk.push(closeRow)
 levels_array_nxtday_nxtwk.push(closeRow)

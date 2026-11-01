@@ -24,6 +24,7 @@ running in TradingView.
 | Strategy_TradingInvestAlgo_Data | v1.0 | 2026-10-30 | Baseline (DATA + LEVELS messages) |
 | Strategy_TradingInvestAlgo_Data | v1.1 | 2026-10-31 | Added MSG:"OPT" ATM CE/PE indicator data (5S/15S/1M/5M) |
 | Strategy_TradingInvestAlgo_Data | v1.2 | 2026-11-01 | Data symbol pinned to NSE:NIFTY1! (DATA_SYM const) — Nifty payloads from ANY chart; payload format UNCHANGED |
+| Strategy_TradingInvestAlgo_Data | v1.3 | 2026-11-01 | Chart-context leaks fixed (Nifty close/round-nums/session-VWAP/weekly-VWAP/ORH/ORL via DATA_SYM security) — NSE-chart output UNCHANGED |
 
 ## How to verify what TradingView is running
 
