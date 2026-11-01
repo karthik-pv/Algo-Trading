@@ -178,6 +178,9 @@ def _open_app_window_to(url):
         chrome = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
         if os.path.exists(chrome):
             subprocess.Popen([chrome, f"--app={url}"])
+            # park the window at the top-right of the main display,
+            # keeping whatever size it currently has (2026-11-01)
+            threading.Timer(1.5, _position_chrome_top_right).start()
             return
     else:
         for candidate in (
@@ -191,6 +194,27 @@ def _open_app_window_to(url):
                 return
     import webbrowser
     webbrowser.open(url)
+
+
+def _position_chrome_top_right():
+    """Move the Chrome app window to the top-right of the main display
+    (size unchanged). Best-effort: logs and gives up on any failure."""
+    try:
+        script = '''
+        tell application "Finder" to set d to bounds of window of desktop
+        tell application "Google Chrome"
+            if (count of windows) > 0 then
+                set w to width of front window
+                set h to height of front window
+                set topBar to 25
+                set bounds of front window to {(item 3 of d) - w, topBar, item 3 of d, topBar + h}
+            end if
+        end tell
+        '''
+        subprocess.run(["osascript", "-e", script], capture_output=True,
+                       text=True, timeout=5)
+    except Exception as e:
+        logger.warning(f"chrome top-right positioning failed: {e}")
 
 
 def _pids_listening_on(port):
