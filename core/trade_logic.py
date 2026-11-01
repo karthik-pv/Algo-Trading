@@ -7814,20 +7814,39 @@ class Trader_Singleton:
             recommendation = ""
             tradeRecomDescription = ""
             #logger.info(f"TradingView Data received: {data}")
+
+            # MSG-typed envelopes FIRST (v1.7 fix, 2026-11-01): LEVELS / HTF /
+            # OPT / ALERTS messages carry no INDICATORS. They must be handled
+            # (or dropped) BEFORE the assignment below, otherwise each OPT
+            # message overwrites _tradingView_Data with an INDICATORS-less
+            # payload and the Momentors widget blanks out between DATA
+            # messages. Envelopes also skip buy-validation - it was never
+            # meant to see them.
+            # MSG:"LEVELS" carries the pre-built levels ladder (CW-CD etc.)
+            # for the PA widget - store and skip trade logic.
+            if isinstance(data, dict) and data.get("MSG") == "LEVELS":
+                self._tv_levels = data.get("LEVELS") or {}
+                # Pine v1.7: the compact W/D/Q PM states ride inside the
+                # LEVELS message - pick them up for the widget chips
+                if data.get("HTF"):
+                    self._tv_htf = data.get("HTF") or {}
+                return []
+
+            # MSG:"HTF": compact Weekly/Daily/Quarterly PM states for the
+            # Momentors/Levels-Ladder widget - store and skip trade logic
+            # (additive, mirrors the LEVELS envelope; touches nothing in
+            # the order path).
+            if isinstance(data, dict) and data.get("MSG") == "HTF":
+                self._tv_htf = data.get("HTF") or {}
+                return []
+
             self._tradingView_Data = data
             logger.debug(f"TradingView Data is assigned to internal variable {self._tradingView_Data}")
-            #logger.debug(f"1m EMA 50:{data['EMA']['1m']['EMA50']}") 
+            #logger.debug(f"1m EMA 50:{data['EMA']['1m']['EMA50']}")
 
             # TradingView entry validation (TV_DATA_Validation_REQUIRED)
             self._tv_validation_required = self._is_tv_validation_required()
             self._update_tv_buy_validation(data)
-
-            # MSG-typed envelopes (new Pine script): a LEVELS message carries the
-            # pre-built levels ladder (CW-CD etc.) for the PA widget - store and
-            # skip trade logic (no INDICATORS in a LEVELS message).
-            if isinstance(data, dict) and data.get("MSG") == "LEVELS":
-                self._tv_levels = data.get("LEVELS") or {}
-                return []
 
             indicators = data["INDICATORS"]
             trade_setups = []
