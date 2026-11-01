@@ -196,23 +196,33 @@ def _open_app_window_to(url):
     webbrowser.open(url)
 
 
-def _position_chrome_top_right():
+def _position_chrome_top_right(attempt=1):
     """Move the Chrome app window to the top-right of the main display
-    (size unchanged). Best-effort: logs and gives up on any failure."""
+    (size unchanged). Best-effort: logs and gives up on any failure.
+    Retries a few times - the window may not exist yet right after launch.
+    NOTE: Chrome app windows reject 'width of front window' (-1700); the
+    size must be derived from the 'bounds' list instead."""
     try:
         script = '''
         tell application "Finder" to set d to bounds of window of desktop
         tell application "Google Chrome"
             if (count of windows) > 0 then
-                set w to width of front window
-                set h to height of front window
+                set b to bounds of front window
+                set w to (item 3 of b) - (item 1 of b)
+                set h to (item 4 of b) - (item 2 of b)
                 set topBar to 25
                 set bounds of front window to {(item 3 of d) - w, topBar, item 3 of d, topBar + h}
+                return "ok"
+            else
+                return "empty"
             end if
         end tell
         '''
-        subprocess.run(["osascript", "-e", script], capture_output=True,
-                       text=True, timeout=5)
+        out = subprocess.run(["osascript", "-e", script], capture_output=True,
+                             text=True, timeout=5).stdout.strip()
+        if out == "empty" and attempt < 5:
+            threading.Timer(2.0, _position_chrome_top_right,
+                            kwargs={"attempt": attempt + 1}).start()
     except Exception as e:
         logger.warning(f"chrome top-right positioning failed: {e}")
 
