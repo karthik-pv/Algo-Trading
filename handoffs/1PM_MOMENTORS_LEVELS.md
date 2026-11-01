@@ -85,11 +85,11 @@ individually — up-components occupy the left cell, retracing/downtrending
 
 | Row | Components (in join order) |
 |---|---|
-| 1 | `1P` (1m PVT) · `1M1` (1m MACD 12/26) · `1E50` (price ≥ 1m EMA50) · `5S` (5m Stoch K-trend) |
+| 1 | `1P` (1m PVT) · `1M1` (1m MACD 12/26) · `1M2` (1m MACD 24/52) · `1E50` (price ≥ 1m EMA50) · `5S` (5m Stoch K-trend) |
 | 5 | `5P` · `5S` (5m Stoch) · `5M1` · `5V` (5m VOC) · `5M2` (5m MACD 24/52) · `3S` (30m Stoch) |
 | 3 | `3P` · `3S` (30m Stoch) · `3M1` · `3M2` · `2S` (2h Stoch) |
-| 2 | `2P` · `2S` (2h Stoch) · `2M1` (2h MACD 12/26) · `DS` (Daily Stoch) |
-| D | `DP` (Daily PVT) · `DS` (Daily Stoch) · `DM1` (Daily MACD 12/26) · `WS` (Weekly Stoch) |
+| 2 | `2P` · `2S` (2h Stoch) · `2M1` (2h MACD 12/26) · `2M2` (2h MACD 24/52) · `DS` (Daily Stoch) |
+| D | `DP` (Daily PVT) · `DS` (Daily Stoch) · `DM1` (Daily MACD 12/26) · `DM2` (Daily MACD 24/52) · `WS` (Weekly Stoch) |
 
 ## 5. LEVELS LADDER table — rules
 

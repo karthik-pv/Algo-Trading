@@ -351,14 +351,16 @@ def build_topstrip(snapshot, price, levels):
 def _group_tokens(components):
     """Join component codes by state group: same-TF components concatenate
     ('5P'+'5M1' -> '5PM1'), different-TF components join with '_'
-    ('5M2'+'3S' -> '5M2_3S'). Matches the user's sheet tokens."""
+    ('5M2'+'3S' -> '5M2_3S'). M1+M2 together collapse to 'M' (user rule
+    2026-11-01: '2M1'+'2M2' -> 'M', so '2P'+'2M1'+'2M2' -> '2PM').
+    Matches the user's sheet tokens."""
     groups = []
     for code in components:
         if groups and groups[-1][0] == code[0]:
             groups[-1] = (groups[-1][0], groups[-1][1] + code[1:])
         else:
             groups.append((code[0], code))
-    return "_".join(g[1] for g in groups)
+    return "_".join(g[1] for g in groups).replace("M1M2", "M")
 
 
 def build_states(snapshot, price):
@@ -388,6 +390,7 @@ def build_states(snapshot, price):
     rows_def = [
         ("1", [("1P", _sign(b1.get("PVTTrendFlag"))),
                ("1M1", _sign(b1.get("Trend_1226"))),
+               ("1M2", _sign(b1.get("Trend_2452"))),
                ("1E50", state1e50()),
                ("5S", _sign(b5.get("KTrendFlag")))]),
         ("5", [("5P", _sign(b5.get("PVTTrendFlag"))),
@@ -404,10 +407,12 @@ def build_states(snapshot, price):
         ("2", [("2P", _sign(b2.get("PVTTrendFlag"))),
                ("2S", _sign(b2.get("KTrendFlag"))),
                ("2M1", _sign(b2.get("Trend_1226"))),
+               ("2M2", _sign(b2.get("Trend_2452"))),
                ("DS", _sign(htf_d.get("KTrendFlag")))]),
         ("D", [("DP", _sign(htf_d.get("PVTTrendFlag"))),
                ("DS", _sign(htf_d.get("KTrendFlag"))),
                ("DM1", _sign(htf_d.get("Trend_1226"))),
+               ("DM2", _sign(htf_d.get("Trend_2452"))),
                ("WS", _sign(htf_w.get("KTrendFlag")))]),
     ]
     rows = []
@@ -422,15 +427,20 @@ def build_states(snapshot, price):
 
 # ----------------------------------------------------------- levels ladder
 
-# higher-TF PM state -> the lower-TF EMA rungs it endorses as support
-# (uptrend) / resistance (downtrend). User rule: 3PM up -> 1m EMA100/200
-# support; 2PM up -> 5m EMA50/100/200 support; mirrors for downtrend.
+# EMA rungs -> the PM state (PVT + Trend_2452, per _pm_up) that endorses
+# them. Higher-TF PM uptrend colors its lower-TF EMA rungs as support
+# (dark-green chip); downtrend makes them resistances (dark-red).
+# Mapping (user spec 2026-11-01): 3PM2 -> 1m EMAs, 2PM -> 5m EMAs,
+# DPM -> 30m EMAs, WPM -> 2h EMAs, MPM -> D EMAs, QPM2 -> W EMAs.
 CHIP_MAP = [
-    (("1m EMA100", "1m EMA200"), "3PM2", ("30M",)),
+    (("1m EMA50", "1m EMA100", "1m EMA200"), "3PM2", ("30M",)),
     (("5m EMA50", "5m EMA100", "5m EMA200"), "2PM", ("2H",)),
-    (("2h EMA200",), "WPM", ("W",)),
+    # user spec 2026-11-01: DPM endorses the 30m EMAs, WPM the 2h EMAs,
+    # MPM the D EMAs (same PM logic as 2PM/3PM2: PVT + Trend_2452)
+    (("30m EMA50", "30m EMA100", "30m EMA200"), "DPM", ("D",)),
+    (("2h EMA50", "2h EMA100", "2h EMA200"), "WPM", ("W",)),
     (("D EMA100", "D EMA200"), "MPM", ("D",)),
-    (("W EMA100",), "QPM2", ("Q",)),
+    (("W EMA100", "W EMA200"), "QPM2", ("Q",)),
 ]
 # Pine v1.4 supplies the compact W/D/Q INDICATORS blocks (PVTTrendFlag +
 # Trend_2452) - the higher-TF PM state colors its lower-TF EMA rungs.
