@@ -1811,7 +1811,7 @@ def pmm_data():
 
 # ---------------------------------------------------------------------------
 # 1PM Momentors & Levels Ladder widget (READ-ONLY, new 2026-11-01).
-# Serves the momentor table + the +/-150pt levels ladder from the live
+# Serves the momentor table + the full levels ladder (no headroom filter)
 # TradingView webhook snapshot (trader._tradingView_Data / _tv_levels).
 # No writes, no config, no order-path interaction; 1s TTL cache so
 # multi-tab polling cannot stampede the builders. On any failure it

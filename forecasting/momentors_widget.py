@@ -434,14 +434,15 @@ CHIP_MAP = [
 ]
 # Pine v1.4 supplies the compact W/D/Q INDICATORS blocks (PVTTrendFlag +
 # Trend_2452) - the higher-TF PM state colors its lower-TF EMA rungs.
-
-MAX_HEADROOM_PTS = 150
+# (2026-11-01: the +/-150pt headroom filter was removed - the ladder now
+# shows ALL levels; the scroll container + Close-centering handle the rest.)
 
 
 def build_ladder(snapshot, levels, price=None):
-    """Levels Ladder rows within +/-150 pts of the close, sorted desc,
-    the Close row highlighted. Chip = the endorsing higher-TF PM state,
-    green when it uptrends (rung = support), red when it downtrends."""
+    """ALL Levels Ladder rows, sorted price-desc, the Close row highlighted
+    and centered by the widget's scroll logic. Chip = the endorsing
+    higher-TF PM state, green when it uptrends (rung = support), red when
+    it downtrends."""
     ind = ((snapshot or {}).get("INDICATORS")) or {}
     rows = (levels or {}).get("CW_CD") or []
     close = None
@@ -474,8 +475,6 @@ def build_ladder(snapshot, levels, price=None):
                             "close": True, "chip": None, "chip_color": None})
                 continue
             dist = abs(row["price"] - price)
-            if dist > MAX_HEADROOM_PTS:
-                continue
             chip = chip_for(row["name"])
             chip_color = None
             if chip is not None:
