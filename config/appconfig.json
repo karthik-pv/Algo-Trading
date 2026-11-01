@@ -96,8 +96,8 @@
         "US_EXIT_5S_PM": "TREND_2452_DOWN"
     },
     "intra": {
-        "IN_ENTRY_ENABLED": "true",
-        "IN_ENTRY_CHECK": "WARN",
+        "IN_ENTRY_ENABLED": true,
+        "IN_ENTRY_CHECK": "STOP",
         "IN_ENTRY_5M_PVT": "ABOVE_ZERO",
         "IN_EXIT_1M_MACD2": "TREND_2452_DOWN"
     }
