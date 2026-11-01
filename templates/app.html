@@ -1756,6 +1756,30 @@
         </table>
     </div>
 
+    <!-- === 1PM MOMENTORS & LEVELS LADDER (read-only, 2026-11-01) === -->
+    <div class="widget-container" id="ml-widget-container">
+        <div id="ml-grid" style="display:flex; gap:16px; align-items:flex-start; flex-wrap:wrap;">
+            <div id="ml-momentors" style="flex:0 0 auto;">
+                <div style="font-weight:bold; margin-bottom:4px;">1PM Momentors</div>
+                <table class="option-table" id="ml-mom-table">
+                    <thead><tr><th>Momentor</th><th class="center">Count</th></tr></thead>
+                    <tbody id="ml-mom-body">
+                        <tr><td colspan="2" class="no-options">Waiting for TradingView data&hellip;</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <div id="ml-ladder" style="flex:0 0 auto;">
+                <div style="font-weight:bold; margin-bottom:4px;">Levels Ladder <span style="font-weight:normal;font-size:11px;">(&plusmn;150 pts)</span></div>
+                <table class="option-table" id="ml-ladder-table">
+                    <thead><tr><th class="center">Price</th><th>Level</th><th class="center">Pts</th><th>State</th></tr></thead>
+                    <tbody id="ml-ladder-body">
+                        <tr><td colspan="4" class="no-options">Waiting for levels&hellip;</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
     <!-- === PA WIDGET (SetUps / Momentors / Levels Ladder) —
          SetUps and Momentors stack on the left; the Levels Ladder
          (raw EMA/VWAP rungs per timeframe from the TradingView webhook
@@ -3697,6 +3721,68 @@ document.addEventListener('DOMContentLoaded', function() {
     setInterval(() => {
         if (socket.connected) loadPaMomentors();
     }, 60000);
+
+    // === 1PM Momentors & Levels Ladder (read-only widget, 2026-11-01) ===
+    // Self-contained poller: any failure degrades to stale/empty display,
+    // it never touches the order / position workflow.
+    (function () {
+        const ML_COLORS = {
+            'dark-green': '#548235', 'dark-red': '#C00000',
+            'light-green': '#C6EFCE', 'light-red': '#FFC7CE',
+            'amber': '#B8860B', 'grey': '#888888'
+        };
+        const mlTextColor = c => (c === 'light-green' || c === 'light-red') ? '#333' : '#fff';
+        function mlEsc(s) {
+            return String(s).replace(/[&<>"]/g,
+                m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]));
+        }
+        async function loadMomentors() {
+            let data;
+            try {
+                const res = await fetch('/momentor/data', {cache: 'no-store'});
+                data = await res.json();
+            } catch (e) { return; }   // keep last render on transient failure
+            try { renderMomentors(data); } catch (e) { /* never propagate */ }
+        }
+        function renderMomentors(data) {
+            const momBody = document.getElementById('ml-mom-body');
+            const ladderBody = document.getElementById('ml-ladder-body');
+            if (!momBody || !ladderBody) return;
+            if (data && data.error) {
+                momBody.innerHTML = `<tr><td colspan="2" class="no-options">error: ${mlEsc(data.error)}</td></tr>`;
+                return;
+            }
+            // Table 1: Momentors (name + count, dark = fresh cross, light = aged out)
+            momBody.innerHTML = (data.momentors || []).map(r => {
+                const color = ML_COLORS[r.color] || ML_COLORS.grey;
+                const count = (r.count === null || r.count === undefined) ? '' : r.count;
+                const label = r.value !== undefined ? r.value : r.label;
+                return `<tr>
+                    <td title="${mlEsc(r.name)}" style="color:${color};">${mlEsc(label || r.name)}</td>
+                    <td class="center" style="background:${color}; color:${mlTextColor(r.color)}; font-weight:bold;">${count}</td>
+                </tr>`;
+            }).join('');
+            // Table 2: Levels Ladder (close row highlighted, chips colored by PM state)
+            ladderBody.innerHTML = (data.ladder || []).map(r => {
+                if (r.close) {
+                    return `<tr style="background:#3a3a3a;">
+                        <td class="center">${r.price}</td>
+                        <td><b>${mlEsc(r.name)}</b> &lt;&lt;&lt;</td>
+                        <td class="center">0</td><td></td></tr>`;
+                }
+                const chipBg = r.chip_color ? ML_COLORS[r.chip_color] : '';
+                const chipTx = r.chip_color ? mlTextColor(r.chip_color) : '';
+                return `<tr>
+                    <td class="center">${r.price}</td>
+                    <td>${mlEsc(r.name)}</td>
+                    <td class="center">${r.pts}</td>
+                    <td>${r.chip ? `<span style="background:${chipBg};color:${chipTx};padding:1px 6px;border-radius:3px;font-size:11px;">${mlEsc(r.chip)}</span>` : ''}</td>
+                </tr>`;
+            }).join('');
+        }
+        loadMomentors();
+        setInterval(loadMomentors, 2000);
+    })();
 
 
         

@@ -1695,6 +1695,49 @@ def pmm_data():
         return jsonify({"error": str(e)}), 500
 
 
+# ---------------------------------------------------------------------------
+# 1PM Momentors & Levels Ladder widget (READ-ONLY, new 2026-11-01).
+# Serves the momentor table + the +/-150pt levels ladder from the live
+# TradingView webhook snapshot (trader._tradingView_Data / _tv_levels).
+# No writes, no config, no order-path interaction; 1s TTL cache so
+# multi-tab polling cannot stampede the builders. On any failure it
+# returns HTTP 200 with an "error" field - the widget shows stale data.
+# ---------------------------------------------------------------------------
+_MOM_CACHE = {"payload": None, "ts": 0.0}
+
+
+@app.route("/momentor/data")
+def momentor_data():
+    import time as _time
+    from forecasting import momentors_widget as mw
+    try:
+        now = _time.time()
+        if _MOM_CACHE["payload"] is not None and now - _MOM_CACHE["ts"] < 1.0:
+            return jsonify(_MOM_CACHE["payload"])
+        snapshot = getattr(trader, "_tradingView_Data", None)
+        levels = getattr(trader, "_tv_levels", {}) or {}
+        price = None
+        if isinstance(levels, dict):
+            for r in (levels.get("CW_CD") or []):
+                if isinstance(r, (list, tuple)) and len(r) >= 2 and str(r[0]) == "Close":
+                    try:
+                        price = float(r[1])
+                    except (TypeError, ValueError):
+                        price = None
+                    break
+        payload = {
+            "momentors": mw.build_momentors(snapshot, price),
+            "ladder": mw.build_ladder(snapshot, levels, price),
+            "ts": datetime.now().strftime("%d %b %H:%M:%S"),
+        }
+        _MOM_CACHE["payload"] = payload
+        _MOM_CACHE["ts"] = now
+        return jsonify(payload)
+    except Exception as e:
+        logger.error(f"momentor_data failed: {e}")
+        return jsonify({"error": str(e), "momentors": [], "ladder": []})
+
+
 @app.route("/spatt/export")
 def spatt_export():
     """Download the playbook as a styled .xlsx (bold+filled header, sized
