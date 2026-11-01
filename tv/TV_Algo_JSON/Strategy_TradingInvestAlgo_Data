@@ -1,9 +1,16 @@
 //@version=5
 // ============================================================================
 // Strategy_TradingInvestAlgo_Data
-// VERSION: 1.1  (2026-10-31)
+// VERSION: 1.2  (2026-11-01)
 // ----------------------------------------------------------------------------
 // CHANGELOG
+//   v1.2  2026-11-01  Data symbol PINNED to NSE:NIFTY1! (new DATA_SYM const;
+//                     all request.security calls + the SYM field of the
+//                     DATA/LEVELS/OPT messages). The indicator now computes
+//                     and alerts Nifty data from ANY chart (e.g. a 24/7
+//                     BTCUSD chart can deliver Nifty alerts while NSE is
+//                     closed). Payload FORMAT UNCHANGED - same messages,
+//                     same keys, same values as a NIFTY1! chart.
 //   v1.1  2026-10-31  Added ATM option CE/PE indicator data as a third alert
 //                     message (MSG:"OPT", 5S/15S/1M/5M only). DATA and LEVELS
 //                     messages are UNCHANGED. New "ATM Options" inputs: expiry,
@@ -16,6 +23,14 @@
 //   3. MSG:"OPT"    - ATM CE/PE indicator blocks (new in v1.1)
 // ============================================================================
 indicator("Strategy_TradingInvestAlgo_Data", "", false)
+
+//DATA SYMBOL - pinned (v1.2)----------------------------------------------
+// Every payload value is computed from this symbol regardless of the chart
+// the indicator sits on (request.security + the SYM fields all use it).
+// Lets a 24/7 chart (e.g. BTCUSD) deliver Nifty alerts while NSE is closed.
+// NOTE: keep exactly ONE live alert at a time - a BTCUSD-chart alert and a
+// NIFTY1!-chart alert both active would double-fire every message.
+string DATA_SYM = "NSE:NIFTY1!"
 
 //EXTRA S/R LEVELS - inputs (from Strategy_EMAs_OCHL_cwcd v1.1)--------------------------------
 
@@ -102,7 +117,7 @@ pvt_stats()=>
     [value_pvt,pvt_poise_flag,pvt_trend_flag,pvt_cross_over_index,pvt_cross_under_index]
 
 pvt(_res)=>
-    [value_pvt1,pvt_poise_flag1,pvt_trend_flag1,pvt_cross_over_index1,pvt_cross_under_index1] = request.security(syminfo.tickerid, _res,pvt_stats() , lookahead = barmerge.lookahead_on)
+    [value_pvt1,pvt_poise_flag1,pvt_trend_flag1,pvt_cross_over_index1,pvt_cross_under_index1] = request.security(DATA_SYM, _res,pvt_stats() , lookahead = barmerge.lookahead_on)
     
 get_pvt_bgcolor(value_pvt)=>
     (value_pvt < 0.1 and value_pvt > -0.1) ? color.yellow: value_pvt > 0.1 ? color.green : color.red
@@ -114,7 +129,7 @@ get_Close_EMA200_Stats()=>
     (close - ta.ema(close,200)) *100 / close
 
 get_Close_EMA200_Stats_res(_res)=>
-    request.security(syminfo.tickerid, _res,get_Close_EMA200_Stats() , lookahead = barmerge.lookahead_on)
+    request.security(DATA_SYM, _res,get_Close_EMA200_Stats() , lookahead = barmerge.lookahead_on)
     
 //EMA200---------------------------------------------------------------------------------------
 
@@ -244,14 +259,14 @@ f_calc_all() =>
 // --------------------
 
 
-[value_pvt_5s,pvt_poise_flag_5s,pvt_trend_flag_5s,pvt_cross_over_index_5s,pvt_cross_under_index_5s, trend_1226_5s,x_1226_5s,y_1226_5s,macdline_1226_5s,signalLine_1226_5s, histLine_1226_5s,trend_2452_5s,x_2452_5s,y_2452_5s, macdline_2452_5s, signalLine_2452_5s, histLine_2452_5s,zCrossFlag_5s,k_5s,k_trend_flag_5s,stoch_poise_flag_5s,k_crossover_index_5s,k_crossunder_index_5s,ema9_5s, ema21_5s, ema50_5s, ema100_5s, ema200_5s,vwap_val_5s,voc_5s,voc_trend_flag_5s,voc_cross_over_index_5s,voc_cross_under_index_5s ] = request.security(syminfo.tickerid, "5S",f_calc_all() )
-[value_pvt_15s,pvt_poise_flag_15s,pvt_trend_flag_15s,pvt_cross_over_index_15s,pvt_cross_under_index_15s, trend_1226_15s,x_1226_15s,y_1226_15s,macdline_1226_15s,signalLine_1226_15s, histLine_1226_15s,trend_2452_15s,x_2452_15s,y_2452_15s, macdline_2452_15s, signalLine_2452_15s, histLine_2452_15s,zCrossFlag_15s,k_15s,k_trend_flag_15s,stoch_poise_flag_15s,k_crossover_index_15s,k_crossunder_index_15s,ema9_15s, ema21_15s, ema50_15s, ema100_15s, ema200_15s,vwap_val_15s,voc_15s,voc_trend_flag_15s,voc_cross_over_index_15s,voc_cross_under_index_15s ] = request.security(syminfo.tickerid, "15S",f_calc_all() )
-[value_pvt_1m,pvt_poise_flag_1m,pvt_trend_flag_1m,pvt_cross_over_index_1m,pvt_cross_under_index_1m, trend_1226_1m,x_1226_1m,y_1226_1m,macdline_1226_1m,signalLine_1226_1m, histLine_1226_1m,trend_2452_1m,x_2452_1m,y_2452_1m, macdline_2452_1m, signalLine_2452_1m, histLine_2452_1m,zCrossFlag_1m,k_1m,k_trend_flag_1m,stoch_poise_flag_1m,k_crossover_index_1m,k_crossunder_index_1m,ema9_1m, ema21_1m, ema50_1m, ema100_1m, ema200_1m,vwap_val_1m,voc_1m,voc_trend_flag_1m,voc_cross_over_index_1m,voc_cross_under_index_1m ] = request.security(syminfo.tickerid, "1",f_calc_all() )
-[value_pvt_5m,pvt_poise_flag_5m,pvt_trend_flag_5m,pvt_cross_over_index_5m,pvt_cross_under_index_5m, trend_1226_5m,x_1226_5m,y_1226_5m,macdline_1226_5m,signalLine_1226_5m, histLine_1226_5m,trend_2452_5m,x_2452_5m,y_2452_5m, macdline_2452_5m, signalLine_2452_5m, histLine_2452_5m,zCrossFlag_5m,k_5m,k_trend_flag_5m,stoch_poise_flag_5m,k_crossover_index_5m,k_crossunder_index_5m,ema9_5m, ema21_5m, ema50_5m, ema100_5m, ema200_5m,vwap_val_5m,voc_5m,voc_trend_flag_5m,voc_cross_over_index_5m,voc_cross_under_index_5m ] = request.security(syminfo.tickerid, "5",f_calc_all() )
-[value_pvt_30m,pvt_poise_flag_30m,pvt_trend_flag_30m,pvt_cross_over_index_30m,pvt_cross_under_index_30m, trend_1226_30m,x_1226_30m,y_1226_30m,macdline_1226_30m,signalLine_1226_30m, histLine_1226_30m,trend_2452_30m,x_2452_30m,y_2452_30m, macdline_2452_30m, signalLine_2452_30m, histLine_2452_30m,zCrossFlag_30m,k_30m,k_trend_flag_30m,stoch_poise_flag_30m,k_crossover_index_30m,k_crossunder_index_30m,ema9_30m, ema21_30m, ema50_30m, ema100_30m, ema200_30m,vwap_val_30m,voc_30m,voc_trend_flag_30m,voc_cross_over_index_30m,voc_cross_under_index_30m ] = request.security(syminfo.tickerid, "30",f_calc_all() )
-[value_pvt_2h,pvt_poise_flag_2h,pvt_trend_flag_2h,pvt_cross_over_index_2h,pvt_cross_under_index_2h, trend_1226_2h,x_1226_2h,y_1226_2h,macdline_1226_2h,signalLine_1226_2h, histLine_1226_2h,trend_2452_2h,x_2452_2h,y_2452_2h, macdline_2452_2h, signalLine_2452_2h, histLine_2452_2h,zCrossFlag_2h,k_2h,k_trend_flag_2h,stoch_poise_flag_2h,k_crossover_index_2h,k_crossunder_index_2h,ema9_2h, ema21_2h, ema50_2h, ema100_2h, ema200_2h,vwap_val_2h,voc_2h,voc_trend_flag_2h,voc_cross_over_index_2h,voc_cross_under_index_2h ] = request.security(syminfo.tickerid, "120",f_calc_all() )
-[value_pvt_d,pvt_poise_flag_d,pvt_trend_flag_d,pvt_cross_over_index_d,pvt_cross_under_index_d, trend_1226_d,x_1226_d,y_1226_d,macdline_1226_d,signalLine_1226_d, histLine_1226_d,trend_2452_d,x_2452_d,y_2452_d, macdline_2452_d, signalLine_2452_d, histLine_2452_d,zCrossFlag_d,k_d,k_trend_flag_d,stoch_poise_flag_d,k_crossover_index_d,k_crossunder_index_d,ema9_d, ema21_d, ema50_d, ema100_d, ema200_d,vwap_val_d,voc_d,voc_trend_flag_d,voc_cross_over_index_d,voc_cross_under_index_d ] = request.security(syminfo.tickerid, "D",f_calc_all() )
-[value_pvt_w,pvt_poise_flag_w,pvt_trend_flag_w,pvt_cross_over_index_w,pvt_cross_under_index_w, trend_1226_w,x_1226_w,y_1226_w,macdline_1226_w,signalLine_1226_w, histLine_1226_w,trend_2452_w,x_2452_w,y_2452_w, macdline_2452_w, signalLine_2452_w, histLine_2452_w,zCrossFlag_w,k_w,k_trend_flag_w,stoch_poise_flag_w,k_crossover_index_w,k_crossunder_index_w,ema9_w, ema21_w, ema50_w, ema100_w, ema200_w,vwap_val_w,voc_w,voc_trend_flag_w,voc_cross_over_index_w,voc_cross_under_index_w ] = request.security(syminfo.tickerid, "W",f_calc_all() )
+[value_pvt_5s,pvt_poise_flag_5s,pvt_trend_flag_5s,pvt_cross_over_index_5s,pvt_cross_under_index_5s, trend_1226_5s,x_1226_5s,y_1226_5s,macdline_1226_5s,signalLine_1226_5s, histLine_1226_5s,trend_2452_5s,x_2452_5s,y_2452_5s, macdline_2452_5s, signalLine_2452_5s, histLine_2452_5s,zCrossFlag_5s,k_5s,k_trend_flag_5s,stoch_poise_flag_5s,k_crossover_index_5s,k_crossunder_index_5s,ema9_5s, ema21_5s, ema50_5s, ema100_5s, ema200_5s,vwap_val_5s,voc_5s,voc_trend_flag_5s,voc_cross_over_index_5s,voc_cross_under_index_5s ] = request.security(DATA_SYM, "5S",f_calc_all() )
+[value_pvt_15s,pvt_poise_flag_15s,pvt_trend_flag_15s,pvt_cross_over_index_15s,pvt_cross_under_index_15s, trend_1226_15s,x_1226_15s,y_1226_15s,macdline_1226_15s,signalLine_1226_15s, histLine_1226_15s,trend_2452_15s,x_2452_15s,y_2452_15s, macdline_2452_15s, signalLine_2452_15s, histLine_2452_15s,zCrossFlag_15s,k_15s,k_trend_flag_15s,stoch_poise_flag_15s,k_crossover_index_15s,k_crossunder_index_15s,ema9_15s, ema21_15s, ema50_15s, ema100_15s, ema200_15s,vwap_val_15s,voc_15s,voc_trend_flag_15s,voc_cross_over_index_15s,voc_cross_under_index_15s ] = request.security(DATA_SYM, "15S",f_calc_all() )
+[value_pvt_1m,pvt_poise_flag_1m,pvt_trend_flag_1m,pvt_cross_over_index_1m,pvt_cross_under_index_1m, trend_1226_1m,x_1226_1m,y_1226_1m,macdline_1226_1m,signalLine_1226_1m, histLine_1226_1m,trend_2452_1m,x_2452_1m,y_2452_1m, macdline_2452_1m, signalLine_2452_1m, histLine_2452_1m,zCrossFlag_1m,k_1m,k_trend_flag_1m,stoch_poise_flag_1m,k_crossover_index_1m,k_crossunder_index_1m,ema9_1m, ema21_1m, ema50_1m, ema100_1m, ema200_1m,vwap_val_1m,voc_1m,voc_trend_flag_1m,voc_cross_over_index_1m,voc_cross_under_index_1m ] = request.security(DATA_SYM, "1",f_calc_all() )
+[value_pvt_5m,pvt_poise_flag_5m,pvt_trend_flag_5m,pvt_cross_over_index_5m,pvt_cross_under_index_5m, trend_1226_5m,x_1226_5m,y_1226_5m,macdline_1226_5m,signalLine_1226_5m, histLine_1226_5m,trend_2452_5m,x_2452_5m,y_2452_5m, macdline_2452_5m, signalLine_2452_5m, histLine_2452_5m,zCrossFlag_5m,k_5m,k_trend_flag_5m,stoch_poise_flag_5m,k_crossover_index_5m,k_crossunder_index_5m,ema9_5m, ema21_5m, ema50_5m, ema100_5m, ema200_5m,vwap_val_5m,voc_5m,voc_trend_flag_5m,voc_cross_over_index_5m,voc_cross_under_index_5m ] = request.security(DATA_SYM, "5",f_calc_all() )
+[value_pvt_30m,pvt_poise_flag_30m,pvt_trend_flag_30m,pvt_cross_over_index_30m,pvt_cross_under_index_30m, trend_1226_30m,x_1226_30m,y_1226_30m,macdline_1226_30m,signalLine_1226_30m, histLine_1226_30m,trend_2452_30m,x_2452_30m,y_2452_30m, macdline_2452_30m, signalLine_2452_30m, histLine_2452_30m,zCrossFlag_30m,k_30m,k_trend_flag_30m,stoch_poise_flag_30m,k_crossover_index_30m,k_crossunder_index_30m,ema9_30m, ema21_30m, ema50_30m, ema100_30m, ema200_30m,vwap_val_30m,voc_30m,voc_trend_flag_30m,voc_cross_over_index_30m,voc_cross_under_index_30m ] = request.security(DATA_SYM, "30",f_calc_all() )
+[value_pvt_2h,pvt_poise_flag_2h,pvt_trend_flag_2h,pvt_cross_over_index_2h,pvt_cross_under_index_2h, trend_1226_2h,x_1226_2h,y_1226_2h,macdline_1226_2h,signalLine_1226_2h, histLine_1226_2h,trend_2452_2h,x_2452_2h,y_2452_2h, macdline_2452_2h, signalLine_2452_2h, histLine_2452_2h,zCrossFlag_2h,k_2h,k_trend_flag_2h,stoch_poise_flag_2h,k_crossover_index_2h,k_crossunder_index_2h,ema9_2h, ema21_2h, ema50_2h, ema100_2h, ema200_2h,vwap_val_2h,voc_2h,voc_trend_flag_2h,voc_cross_over_index_2h,voc_cross_under_index_2h ] = request.security(DATA_SYM, "120",f_calc_all() )
+[value_pvt_d,pvt_poise_flag_d,pvt_trend_flag_d,pvt_cross_over_index_d,pvt_cross_under_index_d, trend_1226_d,x_1226_d,y_1226_d,macdline_1226_d,signalLine_1226_d, histLine_1226_d,trend_2452_d,x_2452_d,y_2452_d, macdline_2452_d, signalLine_2452_d, histLine_2452_d,zCrossFlag_d,k_d,k_trend_flag_d,stoch_poise_flag_d,k_crossover_index_d,k_crossunder_index_d,ema9_d, ema21_d, ema50_d, ema100_d, ema200_d,vwap_val_d,voc_d,voc_trend_flag_d,voc_cross_over_index_d,voc_cross_under_index_d ] = request.security(DATA_SYM, "D",f_calc_all() )
+[value_pvt_w,pvt_poise_flag_w,pvt_trend_flag_w,pvt_cross_over_index_w,pvt_cross_under_index_w, trend_1226_w,x_1226_w,y_1226_w,macdline_1226_w,signalLine_1226_w, histLine_1226_w,trend_2452_w,x_2452_w,y_2452_w, macdline_2452_w, signalLine_2452_w, histLine_2452_w,zCrossFlag_w,k_w,k_trend_flag_w,stoch_poise_flag_w,k_crossover_index_w,k_crossunder_index_w,ema9_w, ema21_w, ema50_w, ema100_w, ema200_w,vwap_val_w,voc_w,voc_trend_flag_w,voc_cross_over_index_w,voc_cross_under_index_w ] = request.security(DATA_SYM, "W",f_calc_all() )
 
 //ATM OPTIONS - compact per-TF stats for the CE/PE contracts (criteria fields only)----------
 // PVT poise/trend, MACD trend flags (12/26 + 24/52), EMA9/21 and VOC - the subset the
@@ -295,8 +310,8 @@ opt_pe_sym = optExchange + ":" + optRoot + optExpiry + "P" + str.tostring(optAtm
 f_vwap_flags() =>
     [close > ta.vwap(close), ta.crossover(close, ta.vwap(close)), ta.crossunder(close, ta.vwap(close))]
 
-[close_above_vwap_1m, vwap_xup_1m, vwap_xdn_1m] = request.security(syminfo.tickerid, "1", f_vwap_flags())
-[close_above_vwap_5m, vwap_xup_5m, vwap_xdn_5m] = request.security(syminfo.tickerid, "5", f_vwap_flags())
+[close_above_vwap_1m, vwap_xup_1m, vwap_xdn_1m] = request.security(DATA_SYM, "1", f_vwap_flags())
+[close_above_vwap_5m, vwap_xup_5m, vwap_xdn_5m] = request.security(DATA_SYM, "5", f_vwap_flags())
 
 //Trend dashboard cells (U/D letters; 2-letter cells: first = MACD1 12/26, second = MACD2 24/52)
 f_macd_combo(t1, t2) =>
@@ -729,9 +744,9 @@ get_PrevHighLowClose() =>
 get_PrevHighLow() =>
     [high[1], low[1]]
 
-[prevDayHigh, prevDayLow, prevDayClose] = request.security(syminfo.tickerid, "D", get_PrevHighLowClose(), lookahead = barmerge.lookahead_on)
-[prevWkHigh, prevWkLow, prevWkClose]    = request.security(syminfo.tickerid, "W", get_PrevHighLowClose(), lookahead = barmerge.lookahead_on)
-[prevMoHigh, prevMoLow]                 = request.security(syminfo.tickerid, "M", get_PrevHighLow(), lookahead = barmerge.lookahead_on)
+[prevDayHigh, prevDayLow, prevDayClose] = request.security(DATA_SYM, "D", get_PrevHighLowClose(), lookahead = barmerge.lookahead_on)
+[prevWkHigh, prevWkLow, prevWkClose]    = request.security(DATA_SYM, "W", get_PrevHighLowClose(), lookahead = barmerge.lookahead_on)
+[prevMoHigh, prevMoLow]                 = request.security(DATA_SYM, "M", get_PrevHighLow(), lookahead = barmerge.lookahead_on)
 
 // Session VWAP (resets each session) and Weekly VWAP (resets each week)
 float vwapSession = ta.vwap
@@ -775,7 +790,7 @@ float fib382 = prevDayLow + camRng * 0.382
 float fib50  = prevDayLow + camRng * 0.5
 float fib618 = prevDayLow + camRng * 0.618
 
-dop = math.round(request.security(syminfo.tickerid, "D", open), 0)   // daily open
+dop = math.round(request.security(DATA_SYM, "D", open), 0)   // daily open
 
 // EMAs (values already fetched per timeframe above; same set as the cwcd tables)
 f_pushAll(ema50_1m, "1m EMA50")
@@ -802,7 +817,7 @@ levels_array_nxtday_curwk.push(closeRow)
 levels_array_nxtday_nxtwk.push(closeRow)
 
 // Current-day (previous completed day) floor pivots
-[P_d,R1_d,R2_d,R3_d,R4_d,R5_d,S1_d,S2_d,S3_d,S4_d,S5_d] = request.security(syminfo.tickerid, "D", get_PrevPeriodPivots(), lookahead = barmerge.lookahead_on)
+[P_d,R1_d,R2_d,R3_d,R4_d,R5_d,S1_d,S2_d,S3_d,S4_d,S5_d] = request.security(DATA_SYM, "D", get_PrevPeriodPivots(), lookahead = barmerge.lookahead_on)
 
 f_pushCur(P_d, "P D")
 f_pushCur(R1_d, "R1 D")
@@ -813,7 +828,7 @@ f_pushCur(S2_d, "S2 D")
 f_pushCur(S3_d, "S3 D")
 
 // Current-week (previous completed week) floor pivots
-[P_w,R1_w,R2_w,R3_w,R4_w,R5_w,S1_w,S2_w,S3_w,S4_w,S5_w] = request.security(syminfo.tickerid, "W", get_PrevPeriodPivots(), lookahead = barmerge.lookahead_on)
+[P_w,R1_w,R2_w,R3_w,R4_w,R5_w,S1_w,S2_w,S3_w,S4_w,S5_w] = request.security(DATA_SYM, "W", get_PrevPeriodPivots(), lookahead = barmerge.lookahead_on)
 
 f_pushWeek(P_w, "W P")
 f_pushWeek(R1_w, "W R1")
@@ -824,7 +839,7 @@ f_pushWeek(S2_w, "W S2")
 f_pushWeek(S3_w, "W S3")
 
 // Current-month (previous completed month) floor pivots
-[P_m,R1_m,R2_m,R3_m,R4_m,R5_m,S1_m,S2_m,S3_m,S4_m,S5_m] = request.security(syminfo.tickerid, "M", get_PrevPeriodPivots(), lookahead = barmerge.lookahead_on)
+[P_m,R1_m,R2_m,R3_m,R4_m,R5_m,S1_m,S2_m,S3_m,S4_m,S5_m] = request.security(DATA_SYM, "M", get_PrevPeriodPivots(), lookahead = barmerge.lookahead_on)
 
 f_pushAll(P_m, "M P")
 f_pushAll(R1_m, "M R1")
@@ -835,7 +850,7 @@ f_pushAll(S2_m, "M S2")
 f_pushAll(S3_m, "M S3")
 
 // Current-quarter (previous completed quarter) floor pivots
-[P_q,R1_q,R2_q,R3_q,R4_q,R5_q,S1_q,S2_q,S3_q,S4_q,S5_q] = request.security(syminfo.tickerid, "3M", get_PrevPeriodPivots(), lookahead = barmerge.lookahead_on)
+[P_q,R1_q,R2_q,R3_q,R4_q,R5_q,S1_q,S2_q,S3_q,S4_q,S5_q] = request.security(DATA_SYM, "3M", get_PrevPeriodPivots(), lookahead = barmerge.lookahead_on)
 
 f_pushAll(P_q, "Q P")
 f_pushAll(R1_q, "Q R1")
@@ -846,7 +861,7 @@ f_pushAll(S2_q, "Q S2")
 f_pushAll(S3_q, "Q S3")
 
 // Next-day / next-week projections (developing period OHLC)
-[P_d_next,R1_d_next,R2_d_next,R3_d_next,R4_d_next,R5_d_next,S1_d_next,S2_d_next,S3_d_next,S4_d_next,S5_d_next] = request.security(syminfo.tickerid, "D", getNextPivotResistanceLevels(), gaps=barmerge.gaps_off)
+[P_d_next,R1_d_next,R2_d_next,R3_d_next,R4_d_next,R5_d_next,S1_d_next,S2_d_next,S3_d_next,S4_d_next,S5_d_next] = request.security(DATA_SYM, "D", getNextPivotResistanceLevels(), gaps=barmerge.gaps_off)
 
 f_pushNxtDay(P_d_next, "D P")
 f_pushNxtDay(R1_d_next, "D R1")
@@ -856,7 +871,7 @@ f_pushNxtDay(S1_d_next, "D S1")
 f_pushNxtDay(S2_d_next, "D S2")
 f_pushNxtDay(S3_d_next, "D S3")
 
-[P_w_next,R1_w_next,R2_w_next,R3_w_next,R4_w_next,R5_w_next,S1_w_next,S2_w_next,S3_w_next,S4_w_next,S5_w_next] = request.security(syminfo.tickerid, "W", getNextPivotResistanceLevels(), gaps=barmerge.gaps_off)
+[P_w_next,R1_w_next,R2_w_next,R3_w_next,R4_w_next,R5_w_next,S1_w_next,S2_w_next,S3_w_next,S4_w_next,S5_w_next] = request.security(DATA_SYM, "W", getNextPivotResistanceLevels(), gaps=barmerge.gaps_off)
 
 f_pushNxtWk(P_w_next, "W P")
 f_pushNxtWk(R1_w_next, "W R1")
@@ -947,7 +962,7 @@ f_levelsJson(lv) =>
 // ————————————————————————————————
 jsonStr = "{"
 jsonStr += f_json_pair_str("MSG", "DATA") + ","             // message type: DATA or LEVELS
-jsonStr += f_json_pair_str("SYM", syminfo.tickerid) + ","   // instrument: EXCHANGE:TICKER
+jsonStr += f_json_pair_str("SYM", DATA_SYM) + ","   // instrument: EXCHANGE:TICKER
 jsonStr += "\"INDICATORS\":{"
 
 
@@ -1326,7 +1341,7 @@ jsonStr += "}}"
 // are ~7.2K, so the level tables go out as their own alert message (also < 4096 chars).
 levelsStr = "{"
 levelsStr += f_json_pair_str("MSG", "LEVELS") + ","         // message type: DATA or LEVELS
-levelsStr += f_json_pair_str("SYM", syminfo.tickerid) + "," // instrument: EXCHANGE:TICKER
+levelsStr += f_json_pair_str("SYM", DATA_SYM) + "," // instrument: EXCHANGE:TICKER
 levelsStr += "\"LEVELS\":{"
 levelsStr += "\"CW_CD\":" + f_levelsJson(levels_array_curday_curwk) + ","   // current week - current day
 levelsStr += "\"CW_ND\":" + f_levelsJson(levels_array_nxtday_curwk) + ","   // current week - next day
@@ -1386,7 +1401,7 @@ f_opt_side_json(t5s, t15s, t1m, t5m) =>
 
 optStr = "{"
 optStr += f_json_pair_str("MSG", "OPT") + ","                          // message type: OPT
-optStr += f_json_pair_str("SYM", syminfo.tickerid) + ","               // chart instrument (NIFTY1)
+optStr += f_json_pair_str("SYM", DATA_SYM) + ","               // chart instrument (NIFTY1)
 optStr += f_json_pair_str("ATM_CE_SYM", opt_ce_sym) + ","              // contract the data belongs to
 optStr += f_json_pair_str("ATM_PE_SYM", opt_pe_sym) + ","
 optStr += f_json_pair("ATM_STRIKE", optAtmStrike) + ","
