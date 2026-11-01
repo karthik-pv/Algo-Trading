@@ -1,9 +1,38 @@
 //@version=5
 // ============================================================================
 // Strategy_TradingInvestAlgo_Data
-// VERSION: 1.5  (2026-11-01)
+// VERSION: 1.9  (2026-11-01)
 // ----------------------------------------------------------------------------
 // CHANGELOG
+//   v1.9  2026-11-01  NEW Momentors rows 1CVX / 5CVX (price crossing session
+//                     VWAP): two tiny request.security calls (1M and 5M,
+//                     f_vwap_cross - f_calc_all untouched) send
+//                     VWAPCrossOverIndex / VWAPCrossUnderIndex, emitted only
+//                     in the 1M and 5M INDICATORS blocks (~220 chars added -
+//                     DATA still under the 4096-char cap). LEVELS / OPT /
+//                     HTF content UNCHANGED.
+//   v1.8  2026-11-01  HTF state enrichment for the composite state table:
+//                     the LEVELS message's HTF block now also carries
+//                     Trend_1226 / K / KTrendFlag for D and W - reused from
+//                     the EXISTING full D/W security calls (no new
+//                     request.security, no extra load). DATA message
+//                     content UNCHANGED.
+//   v1.7  2026-11-01  FIX alert disable on 15s charts: TV stops any alert
+//                     firing >15x per 3 min. Added "Emit" input (ALL/DATA/
+//                     LEVELS/OPT) so the script runs on the chart once per
+//                     message type, one TV alert each, ONE message per bar
+//                     close (12/3min, safe). The compact W/D/Q PM states
+//                     now ride INSIDE the LEVELS message (it has spare
+//                     room) instead of a separate 4th alert - so every
+//                     instance fires exactly one message. "ALL" (default)
+//                     keeps the prior single-alert behaviour - 5m+ charts
+//                     ONLY. DATA / LEVELS field content otherwise UNCHANGED.
+//   v1.6  2026-11-01  RESTORED the 5S/15S blocks (needed by Ultra Scalping -
+//                     v1.5's drop was wrong). The compact W/D/Q PM blocks
+//                     moved OUT of the DATA message into a NEW 4th alert
+//                     message MSG:"HTF" (SYM + HTF:{W,D,Q}), so DATA is back
+//                     under the 4096-char cap with everything in it. DATA /
+//                     LEVELS / OPT message content otherwise UNCHANGED.
 //   v1.5  2026-11-01  FIX: DATA message silently exceeded TradingView's
 //                     4096-char alert cap after v1.4 and stopped arriving.
 //                     The 5S and 15S INDICATORS blocks are dropped (their
@@ -33,10 +62,12 @@
 //                     root, ATM strike (set to match the Algo app's ATM).
 //   v1.0  (git 5b32bb2) Baseline as run in production: MSG:"DATA" + MSG:"LEVELS".
 // ----------------------------------------------------------------------------
-// Alerts expected per bar close (realtime): 3
-//   1. MSG:"DATA"   - NIFTY1 INDICATORS + SETUPS (unchanged since v1.0)
-//   2. MSG:"LEVELS" - S/R level tables (unchanged since v1.0)
-//   3. MSG:"OPT"    - ATM CE/PE indicator blocks (new in v1.1)
+// Alerts expected per bar close (realtime): 1 per chart instance (v1.7)
+//   1. MSG:"DATA"   - NIFTY1 INDICATORS (5S/15S/1M/5M/30M/2H) + SETUPS
+//   2. MSG:"LEVELS" - S/R level tables + HTF (W/D/Q PM states, v1.7)
+//   3. MSG:"OPT"    - ATM CE/PE indicator blocks
+// Run the script on the chart once per message type ("Emit" input) with one
+// TV alert each - see CHANGELOG v1.7. "ALL" fires all three (5m+ charts only).
 // ============================================================================
 indicator("Strategy_TradingInvestAlgo_Data", "", false)
 
@@ -67,6 +98,10 @@ bool showR5    = input.bool(false, "Show R5 / S5 (D/W/M/Q)", group="Extra S/R Le
 // Strike MUST be entered to match the ATM shown in the Algo app - Pine cannot fetch a
 // series-derived symbol, so the app validates the match and warns on mismatch.
 bool showOpt   = input.bool(true, "Send ATM option data (MSG:OPT)", group="ATM Options")
+// v1.7: emit selector - run the script on the chart once per message type
+// with its own TV alert (15s-chart safe); "ALL" = old single-alert mode,
+// 5m+ charts only (TV stops alerts firing >15x per 3 minutes).
+string emitSel = input.string("ALL", "Emit (one TV alert per instance)", options=["ALL", "DATA", "LEVELS", "OPT"], group="Alert Emission")
 string optExchange = input.string("NSE", "Option exchange", group="ATM Options")
 string optRoot     = input.string("NIFTY", "Option root", group="ATM Options")
 string optExpiry   = input.string("261006", "Option expiry (yyMMdd)", group="ATM Options")
@@ -284,12 +319,25 @@ f_pm_state() =>
 [pvt_q, trend2452_q] = request.security(DATA_SYM, "3M", f_pm_state())
 [pvt_d_c, trend2452_d_c] = request.security(DATA_SYM, "D", f_pm_state())
 
+// v1.9: price-crossing-VWAP cross ages for the Momentors rows 1CVX (1m,
+// fresh window 1-20) and 5CVX (5m, fresh window 1-4). Separate tiny
+// security calls - f_calc_all's tuple stays untouched. Session VWAP,
+// same recipe as vwap_val in f_calc_all.
+f_vwap_cross() =>
+    v = ta.vwap(hlc3)
+    [ta.barssince(ta.crossover(close, v)) + 1, ta.barssince(ta.crossunder(close, v)) + 1]
+[vwapxo_1m, vwapxu_1m] = request.security(DATA_SYM, "1M", f_vwap_cross())
+[vwapxo_5m, vwapxu_5m] = request.security(DATA_SYM, "5M", f_vwap_cross())
+// v1.8: rows 2PSM_DS / DPSM_WS of the state table need Daily Stoch, Weekly
+// Stoch, Daily MACD1 and Daily PVT - all ALREADY fetched by the full D/W
+// f_calc_all security calls above (value_pvt_d, trend_1226_d, k_d,
+// k_trend_flag_d, k_w, k_trend_flag_w). No extra security calls needed.
+
 // --------------------
 
 
-// v1.5: 5S/15S blocks dropped from the DATA message (4096-char alert cap).
-// [value_pvt_5s,...] = request.security(DATA_SYM, "5S",f_calc_all() )
-// [value_pvt_15s,... ] = request.security(DATA_SYM, "15S",f_calc_all() )
+[value_pvt_5s,pvt_poise_flag_5s,pvt_trend_flag_5s,pvt_cross_over_index_5s,pvt_cross_under_index_5s, trend_1226_5s,x_1226_5s,y_1226_5s,macdline_1226_5s,signalLine_1226_5s, histLine_1226_5s,trend_2452_5s,x_2452_5s,y_2452_5s, macdline_2452_5s, signalLine_2452_5s, histLine_2452_5s,zCrossFlag_5s,k_5s,k_trend_flag_5s,stoch_poise_flag_5s,k_crossover_index_5s,k_crossunder_index_5s,ema9_5s, ema21_5s, ema50_5s, ema100_5s, ema200_5s,vwap_val_5s,voc_5s,voc_trend_flag_5s,voc_cross_over_index_5s,voc_cross_under_index_5s ] = request.security(DATA_SYM, "5S",f_calc_all() )
+[value_pvt_15s,pvt_poise_flag_15s,pvt_trend_flag_15s,pvt_cross_over_index_15s,pvt_cross_under_index_15s, trend_1226_15s,x_1226_15s,y_1226_15s,macdline_1226_15s,signalLine_1226_15s, histLine_1226_15s,trend_2452_15s,x_2452_15s,y_2452_15s, macdline_2452_15s, signalLine_2452_15s, histLine_2452_15s,zCrossFlag_15s,k_15s,k_trend_flag_15s,stoch_poise_flag_15s,k_crossover_index_15s,k_crossunder_index_15s,ema9_15s, ema21_15s, ema50_15s, ema100_15s, ema200_15s,vwap_val_15s,voc_15s,voc_trend_flag_15s,voc_cross_over_index_15s,voc_cross_under_index_15s ] = request.security(DATA_SYM, "15S",f_calc_all() )
 [value_pvt_1m,pvt_poise_flag_1m,pvt_trend_flag_1m,pvt_cross_over_index_1m,pvt_cross_under_index_1m, trend_1226_1m,x_1226_1m,y_1226_1m,macdline_1226_1m,signalLine_1226_1m, histLine_1226_1m,trend_2452_1m,x_2452_1m,y_2452_1m, macdline_2452_1m, signalLine_2452_1m, histLine_2452_1m,zCrossFlag_1m,k_1m,k_trend_flag_1m,stoch_poise_flag_1m,k_crossover_index_1m,k_crossunder_index_1m,ema9_1m, ema21_1m, ema50_1m, ema100_1m, ema200_1m,vwap_val_1m,voc_1m,voc_trend_flag_1m,voc_cross_over_index_1m,voc_cross_under_index_1m ] = request.security(DATA_SYM, "1",f_calc_all() )
 [value_pvt_5m,pvt_poise_flag_5m,pvt_trend_flag_5m,pvt_cross_over_index_5m,pvt_cross_under_index_5m, trend_1226_5m,x_1226_5m,y_1226_5m,macdline_1226_5m,signalLine_1226_5m, histLine_1226_5m,trend_2452_5m,x_2452_5m,y_2452_5m, macdline_2452_5m, signalLine_2452_5m, histLine_2452_5m,zCrossFlag_5m,k_5m,k_trend_flag_5m,stoch_poise_flag_5m,k_crossover_index_5m,k_crossunder_index_5m,ema9_5m, ema21_5m, ema50_5m, ema100_5m, ema200_5m,vwap_val_5m,voc_5m,voc_trend_flag_5m,voc_cross_over_index_5m,voc_cross_under_index_5m ] = request.security(DATA_SYM, "5",f_calc_all() )
 [value_pvt_30m,pvt_poise_flag_30m,pvt_trend_flag_30m,pvt_cross_over_index_30m,pvt_cross_under_index_30m, trend_1226_30m,x_1226_30m,y_1226_30m,macdline_1226_30m,signalLine_1226_30m, histLine_1226_30m,trend_2452_30m,x_2452_30m,y_2452_30m, macdline_2452_30m, signalLine_2452_30m, histLine_2452_30m,zCrossFlag_30m,k_30m,k_trend_flag_30m,stoch_poise_flag_30m,k_crossover_index_30m,k_crossunder_index_30m,ema9_30m, ema21_30m, ema50_30m, ema100_30m, ema200_30m,vwap_val_30m,voc_30m,voc_trend_flag_30m,voc_cross_over_index_30m,voc_cross_under_index_30m ] = request.security(DATA_SYM, "30",f_calc_all() )
@@ -999,80 +1047,80 @@ jsonStr += "\"INDICATORS\":{"
 
 
 // 5S
-// v1.5 dropped (alert cap): jsonStr += "\"5S\":{"
-// v1.5 dropped (alert cap): jsonStr += f_json_pair("PVT", math.round(value_pvt_5s, 2)) + ","
-// v1.5 dropped (alert cap): jsonStr += f_json_pair("PVTPoiseFlag", pvt_poise_flag_5s) + ","
-// v1.5 dropped (alert cap): jsonStr += f_json_pair("PVTTrendFlag", pvt_trend_flag_5s) + ","
-// v1.5 dropped (alert cap): jsonStr += f_json_pair("PVTCrossOverIndex", pvt_cross_over_index_5s) + ","
-// v1.5 dropped (alert cap): jsonStr += f_json_pair("PVTCrossUnderIndex", pvt_cross_under_index_5s) + ","
-// v1.5 dropped (alert cap): jsonStr += f_json_pair("Trend_1226", trend_1226_5s) + ","
-// v1.5 dropped (alert cap): jsonStr += f_json_pair("X_1226", x_1226_5s) + ","
-// v1.5 dropped (alert cap): jsonStr += f_json_pair("Y_1226", y_1226_5s) + ","
-// v1.5 dropped (alert cap): jsonStr += f_json_pair("MACD_1226", math.round(macdline_1226_5s, 2)) + ","
-// v1.5 dropped (alert cap): jsonStr += f_json_pair("Signal_1226", math.round(signalLine_1226_5s, 2)) + ","
-// v1.5 dropped (alert cap): jsonStr += f_json_pair("Hist_1226", math.round(histLine_1226_5s, 2)) + ","
-// v1.5 dropped (alert cap): jsonStr += f_json_pair("Trend_2452", trend_2452_5s) + ","
-// v1.5 dropped (alert cap): jsonStr += f_json_pair("X_2452", x_2452_5s) + ","
-// v1.5 dropped (alert cap): jsonStr += f_json_pair("Y_2452", y_2452_5s) + ","
-// v1.5 dropped (alert cap): jsonStr += f_json_pair("MACD_2452", math.round(macdline_2452_5s, 2)) + ","
-// v1.5 dropped (alert cap): jsonStr += f_json_pair("Signal_2452", math.round(signalLine_2452_5s, 2)) + ","
-// v1.5 dropped (alert cap): jsonStr += f_json_pair("Hist_2452", math.round(histLine_2452_5s, 2)) + ","
-// v1.5 dropped (alert cap): jsonStr += f_json_pair("ZCross", zCrossFlag_5s) + ","
-// v1.5 dropped (alert cap): jsonStr += f_json_pair("K", math.round(k_5s, 2)) + ","
-// v1.5 dropped (alert cap): jsonStr += f_json_pair("KTrendFlag", k_trend_flag_5s) + ","
-// v1.5 dropped (alert cap): jsonStr += f_json_pair("StochPoiseFlag", stoch_poise_flag_5s) + ","
-// v1.5 dropped (alert cap): jsonStr += f_json_pair("KCrossoverIndex", k_crossover_index_5s) + ","
-// v1.5 dropped (alert cap): jsonStr += f_json_pair("KCrossUnderIndex", k_crossunder_index_5s) + ","
-// v1.5 dropped (alert cap): jsonStr += f_json_pair("EMA9", math.round(ema9_5s)) + ","
-// v1.5 dropped (alert cap): jsonStr += f_json_pair("EMA21", math.round(ema21_5s)) + ","
-// v1.5 dropped (alert cap): jsonStr += f_json_pair("EMA50", math.round(ema50_5s)) + ","
-// v1.5 dropped (alert cap): jsonStr += f_json_pair("EMA100", math.round(ema100_5s)) + ","
-// v1.5 dropped (alert cap): jsonStr += f_json_pair("EMA200", math.round(ema200_5s)) + ","
-// v1.5 dropped (alert cap): jsonStr += f_json_pair("VWAP", math.round(vwap_val_5s, 2)) + ","
-// v1.5 dropped (alert cap): jsonStr += f_json_pair("VOC", math.round(voc_5s, 2)) + ","
-// v1.5 dropped (alert cap): jsonStr += f_json_pair("VOCTrendFlag", voc_trend_flag_5s) + ","
-// v1.5 dropped (alert cap): jsonStr += f_json_pair("VOCCrossOverIndex", voc_cross_over_index_5s) + ","
-// v1.5 dropped (alert cap): jsonStr += f_json_pair("VOCCrossUnderIndex", voc_cross_under_index_5s)
-// v1.5 dropped (alert cap): jsonStr += "},"
+jsonStr += "\"5S\":{"
+jsonStr += f_json_pair("PVT", math.round(value_pvt_5s, 2)) + ","
+jsonStr += f_json_pair("PVTPoiseFlag", pvt_poise_flag_5s) + ","
+jsonStr += f_json_pair("PVTTrendFlag", pvt_trend_flag_5s) + ","
+jsonStr += f_json_pair("PVTCrossOverIndex", pvt_cross_over_index_5s) + ","
+jsonStr += f_json_pair("PVTCrossUnderIndex", pvt_cross_under_index_5s) + ","
+jsonStr += f_json_pair("Trend_1226", trend_1226_5s) + ","
+jsonStr += f_json_pair("X_1226", x_1226_5s) + ","
+jsonStr += f_json_pair("Y_1226", y_1226_5s) + ","
+jsonStr += f_json_pair("MACD_1226", math.round(macdline_1226_5s, 2)) + ","
+jsonStr += f_json_pair("Signal_1226", math.round(signalLine_1226_5s, 2)) + ","
+jsonStr += f_json_pair("Hist_1226", math.round(histLine_1226_5s, 2)) + ","
+jsonStr += f_json_pair("Trend_2452", trend_2452_5s) + ","
+jsonStr += f_json_pair("X_2452", x_2452_5s) + ","
+jsonStr += f_json_pair("Y_2452", y_2452_5s) + ","
+jsonStr += f_json_pair("MACD_2452", math.round(macdline_2452_5s, 2)) + ","
+jsonStr += f_json_pair("Signal_2452", math.round(signalLine_2452_5s, 2)) + ","
+jsonStr += f_json_pair("Hist_2452", math.round(histLine_2452_5s, 2)) + ","
+jsonStr += f_json_pair("ZCross", zCrossFlag_5s) + ","
+jsonStr += f_json_pair("K", math.round(k_5s, 2)) + ","
+jsonStr += f_json_pair("KTrendFlag", k_trend_flag_5s) + ","
+jsonStr += f_json_pair("StochPoiseFlag", stoch_poise_flag_5s) + ","
+jsonStr += f_json_pair("KCrossoverIndex", k_crossover_index_5s) + ","
+jsonStr += f_json_pair("KCrossUnderIndex", k_crossunder_index_5s) + ","
+jsonStr += f_json_pair("EMA9", math.round(ema9_5s)) + ","
+jsonStr += f_json_pair("EMA21", math.round(ema21_5s)) + ","
+jsonStr += f_json_pair("EMA50", math.round(ema50_5s)) + ","
+jsonStr += f_json_pair("EMA100", math.round(ema100_5s)) + ","
+jsonStr += f_json_pair("EMA200", math.round(ema200_5s)) + ","
+jsonStr += f_json_pair("VWAP", math.round(vwap_val_5s, 2)) + ","
+jsonStr += f_json_pair("VOC", math.round(voc_5s, 2)) + ","
+jsonStr += f_json_pair("VOCTrendFlag", voc_trend_flag_5s) + ","
+jsonStr += f_json_pair("VOCCrossOverIndex", voc_cross_over_index_5s) + ","
+jsonStr += f_json_pair("VOCCrossUnderIndex", voc_cross_under_index_5s)
+jsonStr += "},"
 
 
 
 // 15S
-// v1.5 dropped (alert cap): jsonStr += "\"15S\":{"
-// v1.5 dropped (alert cap): jsonStr += f_json_pair("PVT", math.round(value_pvt_15s, 2)) + ","
-// v1.5 dropped (alert cap): jsonStr += f_json_pair("PVTPoiseFlag", pvt_poise_flag_15s) + ","
-// v1.5 dropped (alert cap): jsonStr += f_json_pair("PVTTrendFlag", pvt_trend_flag_15s) + ","
-// v1.5 dropped (alert cap): jsonStr += f_json_pair("PVTCrossOverIndex", pvt_cross_over_index_15s) + ","
-// v1.5 dropped (alert cap): jsonStr += f_json_pair("PVTCrossUnderIndex", pvt_cross_under_index_15s) + ","
-// v1.5 dropped (alert cap): jsonStr += f_json_pair("Trend_1226", trend_1226_15s) + ","
-// v1.5 dropped (alert cap): jsonStr += f_json_pair("X_1226", x_1226_15s) + ","
-// v1.5 dropped (alert cap): jsonStr += f_json_pair("Y_1226", y_1226_15s) + ","
-// v1.5 dropped (alert cap): jsonStr += f_json_pair("MACD_1226", math.round(macdline_1226_15s, 2)) + ","
-// v1.5 dropped (alert cap): jsonStr += f_json_pair("Signal_1226", math.round(signalLine_1226_15s, 2)) + ","
-// v1.5 dropped (alert cap): jsonStr += f_json_pair("Hist_1226", math.round(histLine_1226_15s, 2)) + ","
-// v1.5 dropped (alert cap): jsonStr += f_json_pair("Trend_2452", trend_2452_15s) + ","
-// v1.5 dropped (alert cap): jsonStr += f_json_pair("X_2452", x_2452_15s) + ","
-// v1.5 dropped (alert cap): jsonStr += f_json_pair("Y_2452", y_2452_15s) + ","
-// v1.5 dropped (alert cap): jsonStr += f_json_pair("MACD_2452", math.round(macdline_2452_15s, 2)) + ","
-// v1.5 dropped (alert cap): jsonStr += f_json_pair("Signal_2452", math.round(signalLine_2452_15s, 2)) + ","
-// v1.5 dropped (alert cap): jsonStr += f_json_pair("Hist_2452", math.round(histLine_2452_15s, 2)) + ","
-// v1.5 dropped (alert cap): jsonStr += f_json_pair("ZCross", zCrossFlag_15s) + ","
-// v1.5 dropped (alert cap): jsonStr += f_json_pair("K", math.round(k_15s, 2)) + ","
-// v1.5 dropped (alert cap): jsonStr += f_json_pair("KTrendFlag", k_trend_flag_15s) + ","
-// v1.5 dropped (alert cap): jsonStr += f_json_pair("StochPoiseFlag", stoch_poise_flag_15s) + ","
-// v1.5 dropped (alert cap): jsonStr += f_json_pair("KCrossoverIndex", k_crossover_index_15s) + ","
-// v1.5 dropped (alert cap): jsonStr += f_json_pair("KCrossUnderIndex", k_crossunder_index_15s) + ","
-// v1.5 dropped (alert cap): jsonStr += f_json_pair("EMA9", math.round(ema9_15s)) + ","
-// v1.5 dropped (alert cap): jsonStr += f_json_pair("EMA21", math.round(ema21_15s)) + ","
-// v1.5 dropped (alert cap): jsonStr += f_json_pair("EMA50", math.round(ema50_15s)) + ","
-// v1.5 dropped (alert cap): jsonStr += f_json_pair("EMA100", math.round(ema100_15s)) + ","
-// v1.5 dropped (alert cap): jsonStr += f_json_pair("EMA200", math.round(ema200_15s)) + ","
-// v1.5 dropped (alert cap): jsonStr += f_json_pair("VWAP", math.round(vwap_val_15s, 2)) + ","
-// v1.5 dropped (alert cap): jsonStr += f_json_pair("VOC", math.round(voc_15s, 2)) + ","
-// v1.5 dropped (alert cap): jsonStr += f_json_pair("VOCTrendFlag", voc_trend_flag_15s) + ","
-// v1.5 dropped (alert cap): jsonStr += f_json_pair("VOCCrossOverIndex", voc_cross_over_index_15s) + ","
-// v1.5 dropped (alert cap): jsonStr += f_json_pair("VOCCrossUnderIndex", voc_cross_under_index_15s)
-// v1.5 dropped (alert cap): jsonStr += "},"
+jsonStr += "\"15S\":{"
+jsonStr += f_json_pair("PVT", math.round(value_pvt_15s, 2)) + ","
+jsonStr += f_json_pair("PVTPoiseFlag", pvt_poise_flag_15s) + ","
+jsonStr += f_json_pair("PVTTrendFlag", pvt_trend_flag_15s) + ","
+jsonStr += f_json_pair("PVTCrossOverIndex", pvt_cross_over_index_15s) + ","
+jsonStr += f_json_pair("PVTCrossUnderIndex", pvt_cross_under_index_15s) + ","
+jsonStr += f_json_pair("Trend_1226", trend_1226_15s) + ","
+jsonStr += f_json_pair("X_1226", x_1226_15s) + ","
+jsonStr += f_json_pair("Y_1226", y_1226_15s) + ","
+jsonStr += f_json_pair("MACD_1226", math.round(macdline_1226_15s, 2)) + ","
+jsonStr += f_json_pair("Signal_1226", math.round(signalLine_1226_15s, 2)) + ","
+jsonStr += f_json_pair("Hist_1226", math.round(histLine_1226_15s, 2)) + ","
+jsonStr += f_json_pair("Trend_2452", trend_2452_15s) + ","
+jsonStr += f_json_pair("X_2452", x_2452_15s) + ","
+jsonStr += f_json_pair("Y_2452", y_2452_15s) + ","
+jsonStr += f_json_pair("MACD_2452", math.round(macdline_2452_15s, 2)) + ","
+jsonStr += f_json_pair("Signal_2452", math.round(signalLine_2452_15s, 2)) + ","
+jsonStr += f_json_pair("Hist_2452", math.round(histLine_2452_15s, 2)) + ","
+jsonStr += f_json_pair("ZCross", zCrossFlag_15s) + ","
+jsonStr += f_json_pair("K", math.round(k_15s, 2)) + ","
+jsonStr += f_json_pair("KTrendFlag", k_trend_flag_15s) + ","
+jsonStr += f_json_pair("StochPoiseFlag", stoch_poise_flag_15s) + ","
+jsonStr += f_json_pair("KCrossoverIndex", k_crossover_index_15s) + ","
+jsonStr += f_json_pair("KCrossUnderIndex", k_crossunder_index_15s) + ","
+jsonStr += f_json_pair("EMA9", math.round(ema9_15s)) + ","
+jsonStr += f_json_pair("EMA21", math.round(ema21_15s)) + ","
+jsonStr += f_json_pair("EMA50", math.round(ema50_15s)) + ","
+jsonStr += f_json_pair("EMA100", math.round(ema100_15s)) + ","
+jsonStr += f_json_pair("EMA200", math.round(ema200_15s)) + ","
+jsonStr += f_json_pair("VWAP", math.round(vwap_val_15s, 2)) + ","
+jsonStr += f_json_pair("VOC", math.round(voc_15s, 2)) + ","
+jsonStr += f_json_pair("VOCTrendFlag", voc_trend_flag_15s) + ","
+jsonStr += f_json_pair("VOCCrossOverIndex", voc_cross_over_index_15s) + ","
+jsonStr += f_json_pair("VOCCrossUnderIndex", voc_cross_under_index_15s)
+jsonStr += "},"
 
 // 1M
 jsonStr += "\"1M\":{"
@@ -1109,6 +1157,8 @@ jsonStr += f_json_pair("VOC", math.round(voc_1m, 2)) + ","
 jsonStr += f_json_pair("VOCTrendFlag", voc_trend_flag_1m) + ","
 jsonStr += f_json_pair("VOCCrossOverIndex", voc_cross_over_index_1m) + ","
 jsonStr += f_json_pair("VOCCrossUnderIndex", voc_cross_under_index_1m)
+jsonStr += f_json_pair("VWAPCrossOverIndex", vwapxo_1m) + ","       // v1.9: 1CVX row
+jsonStr += f_json_pair("VWAPCrossUnderIndex", vwapxu_1m)            // v1.9: 1CVX row
 jsonStr += "},"
 
 
@@ -1148,6 +1198,8 @@ jsonStr += f_json_pair("VOC", math.round(voc_5m, 2)) + ","
 jsonStr += f_json_pair("VOCTrendFlag", voc_trend_flag_5m) + ","
 jsonStr += f_json_pair("VOCCrossOverIndex", voc_cross_over_index_5m) + ","
 jsonStr += f_json_pair("VOCCrossUnderIndex", voc_cross_under_index_5m)
+jsonStr += f_json_pair("VWAPCrossOverIndex", vwapxo_5m) + ","       // v1.9: 5CVX row
+jsonStr += f_json_pair("VWAPCrossUnderIndex", vwapxu_5m)            // v1.9: 5CVX row
 jsonStr += "},"
 
 
@@ -1307,20 +1359,8 @@ jsonStr += "}"
 // jsonStr += f_json_pair("VOCCrossUnderIndex", voc_cross_under_index_w)
 // jsonStr += "}"
 
-
-// v1.4: compact W/D/Q PM blocks (PVT sign + MACD2 24/52 state only)
-jsonStr += "\"W\":{"
-jsonStr += f_json_pair("PVTTrendFlag", pvt_w) + ","
-jsonStr += f_json_pair("Trend_2452", trend2452_w)
-jsonStr += "},"
-jsonStr += "\"D\":{"
-jsonStr += f_json_pair("PVTTrendFlag", pvt_d_c) + ","
-jsonStr += f_json_pair("Trend_2452", trend2452_d_c)
-jsonStr += "},"
-jsonStr += "\"Q\":{"
-jsonStr += f_json_pair("PVTTrendFlag", pvt_q) + ","
-jsonStr += f_json_pair("Trend_2452", trend2452_q)
-jsonStr += "}"
+// v1.6: the compact W/D/Q PM blocks moved OUT of the DATA message (4096-char
+// alert cap - v1.4/v1.5 taught that lesson) into their own HTF message below.
 
 // close INDICATORS, add SETUPS
 jsonStr += "},"
@@ -1392,6 +1432,29 @@ levelsStr += "\"CW_CD\":" + f_levelsJson(levels_array_curday_curwk) + ","   // c
 levelsStr += "\"CW_ND\":" + f_levelsJson(levels_array_nxtday_curwk) + ","   // current week - next day
 levelsStr += "\"NW_ND\":" + f_levelsJson(levels_array_nxtday_nxtwk)         // next week - next day
 levelsStr += "}"
+// v1.7: the compact W/D/Q PM states ride INSIDE the LEVELS message (it has
+// ~2K of spare room) so each per-alert instance fires exactly ONE message
+// per bar close - required to stay under TV's 15-firings-per-3-min limit
+// when the alert runs on a 15s chart.
+levelsStr += ",\"HTF\":{"
+levelsStr += "\"W\":{"
+levelsStr += f_json_pair("PVTTrendFlag", pvt_w) + ","
+levelsStr += f_json_pair("Trend_2452", trend2452_w) + ","
+levelsStr += f_json_pair("K", k_w) + ","
+levelsStr += f_json_pair("KTrendFlag", k_trend_flag_w)
+levelsStr += "},"
+levelsStr += "\"D\":{"
+levelsStr += f_json_pair("PVTTrendFlag", value_pvt_d > 0 ? 1 : -1) + ","
+levelsStr += f_json_pair("Trend_1226", trend_1226_d) + ","
+levelsStr += f_json_pair("Trend_2452", trend_2452_d) + ","
+levelsStr += f_json_pair("K", k_d) + ","
+levelsStr += f_json_pair("KTrendFlag", k_trend_flag_d)
+levelsStr += "},"
+levelsStr += "\"Q\":{"
+levelsStr += f_json_pair("PVTTrendFlag", pvt_q) + ","
+levelsStr += f_json_pair("Trend_2452", trend2452_q)
+levelsStr += "}"
+levelsStr += "}"
 levelsStr += "}"
 
 
@@ -1462,11 +1525,22 @@ optStr += "\"PE\":" + f_opt_side_json(
      f_opt_tf_json(o_pvt_pe_5m, o_pvt_poise_pe_5m, o_pvt_trend_pe_5m, o_tr1226_pe_5m, o_tr2452_pe_5m, o_ema9_pe_5m, o_ema21_pe_5m, o_voc_pe_5m))
 optStr += "}"
 
-// Fire ONLY on realtime bars — two messages per bar close (each under the 4096-char alert limit)
+// ———— v1.7 EMIT selector ————————————————————————————————————————
+// TV stops any alert firing >15 times per 3 minutes. One script instance
+// with ALL alert() calls on a 15s chart = 48/3min -> disabled. So the
+// script runs on the chart 3x with different "Emit" settings, ONE TV alert
+// each, firing exactly ONE message per bar close (12/3min each, safe).
+// "ALL" preserves the old single-alert behaviour - ONLY for 5m+ charts.
+
+// Fire ONLY on realtime bars — v1.7: exactly ONE alert() per instance per bar
+// close, selected by the "Emit" input (each is under the 4096-char limit)
 if barstate.isrealtime and barstate.isconfirmed
-    alert(jsonStr, alert.freq_once_per_bar_close)
-    alert(levelsStr, alert.freq_once_per_bar_close)
-    if showOpt
-        alert(optStr, alert.freq_once_per_bar_close)
+    if emitSel == "ALL" or emitSel == "DATA"
+        alert(jsonStr, alert.freq_once_per_bar_close)
+    if emitSel == "ALL" or emitSel == "LEVELS"
+        alert(levelsStr, alert.freq_once_per_bar_close)     // carries LEVELS + HTF
+    if emitSel == "ALL" or emitSel == "OPT"
+        if showOpt
+            alert(optStr, alert.freq_once_per_bar_close)
 
 //https://kendra-preantepenultimate-complementarily.ngrok-free.dev/trading_view_webhook    

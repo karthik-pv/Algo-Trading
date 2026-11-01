@@ -27,6 +27,10 @@ running in TradingView.
 | Strategy_TradingInvestAlgo_Data | v1.3 | 2026-11-01 | Chart-context leaks fixed (Nifty close/round-nums/session-VWAP/weekly-VWAP/ORH/ORL via DATA_SYM security) — NSE-chart output UNCHANGED |
 | Strategy_TradingInvestAlgo_Data | v1.4 | 2026-11-01 | Compact W/D/Q PM blocks (PVTTrendFlag + Trend_2452) for the ladder chips |
 | Strategy_TradingInvestAlgo_Data | v1.5 | 2026-11-01 | FIX: DATA message exceeded the 4096-char alert cap after v1.4 → dropped the 5S/15S blocks (only commented-out code consumed them); DATA resumes |
+| Strategy_TradingInvestAlgo_Data | v1.6 | 2026-11-01 | RESTORED 5S/15S blocks (Ultra Scalping needs them); compact W/D/Q PM states moved to the LEVELS message |
+| Strategy_TradingInvestAlgo_Data | v1.7 | 2026-11-01 | FIX: alert auto-disable on 15s charts (TV 15-firings/3-min limit) → "Emit" input (ALL/DATA/LEVELS/OPT), one message per alert per bar close |
+| Strategy_TradingInvestAlgo_Data | v1.8 | 2026-11-01 | LEVELS message HTF block enriched (D/W Trend_1226, K, KTrendFlag) for the SET UP table — reused existing D/W security, no extra calls |
+| Strategy_TradingInvestAlgo_Data | v1.9 | 2026-11-01 | NEW 1CVX/5CVX Momentors rows: price×session-VWAP cross ages (1M/5M, tiny f_vwap_cross security pair); DATA ~3,999/4,096 chars |
 
 ## How to verify what TradingView is running
 
