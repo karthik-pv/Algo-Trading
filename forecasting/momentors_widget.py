@@ -163,30 +163,15 @@ def build_momentors(snapshot, price=None):
     ]
     for _slot, tfkey, xlabel, slabel, tkey, okey, ukey, allow_dn in specs:
         cell = _cross_cell(tf(tfkey), tkey, okey, ukey, allow_dn)
-        if cell["label"] == "-":
-            label, count, color = "-", None, "grey"
-        elif cell["label"] == "X":
-            label, count, color = xlabel, cell.get("count"), cell["color"]
-        else:
-            label, count, color = slabel, None, cell["color"]
-        rows.append({"name": xlabel, "label": label, "count": count,
-                     "color": color, "dir": cell.get("dir")})
+        if cell["label"] != "X":
+            continue  # v1.1 UX: show fresh crosses only - aged-out states hidden
+        rows.append({"name": xlabel, "label": xlabel, "count": cell.get("count"),
+                     "color": cell["color"], "dir": cell.get("dir")})
 
     # Daily rows: the Pine payload's D INDICATORS block is commented out, so
-    # D states are STATE-ONLY from SETUPS.DASHBOARD (no cross age available).
-    # DPM = 2-letter combo (M1 12/26, M2 24/52: U/D); DPMPVT = PVT sign.
-    dash = (((snapshot or {}).get("SETUPS") or {}).get("DASHBOARD")) or {}
-    dpm = str(dash.get("DPM") or "")
-    dp_pvt = _sign(dash.get("DPMPVT"))
-    dp_color = {1: _LIGHT["up"], -1: _LIGHT["down"]}.get(dp_pvt, "grey")
-    rows.append({"name": "DPX", "label": "Dp" if dp_pvt else "-", "count": None,
-                 "color": dp_color, "dir": {1: "up", -1: "down"}.get(dp_pvt)})
-    for nm, idx in (("DM1X", 0), ("DM2X", 1)):
-        letter = dpm[idx] if len(dpm) > idx else ""
-        col = {"U": _LIGHT["up"], "D": _LIGHT["down"]}.get(letter, "grey")
-        rows.append({"name": nm, "label": nm[:-1] if letter else "-",
-                     "count": None, "color": col,
-                     "dir": {"U": "up", "D": "down"}.get(letter)})
+    # D cross ages are unavailable (D states would always render as aged-out
+    # states - hidden per the crosses-only rule). Do stays pinned at the
+    # bottom of the table (user request, 2026-11-01).
     rows.append({"name": "Dox", "label": "Do", "count": None, "color": "grey",
                  "dir": None})  # D VOC not in the payload yet
     return rows

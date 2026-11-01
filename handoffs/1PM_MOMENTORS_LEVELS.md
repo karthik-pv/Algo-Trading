@@ -141,6 +141,14 @@ is byte-identical to a NIFTY1!-chart alert.
 
 ## 8. Known limitations / next steps
 
+**Widget UX update (2026-11-01, same day):** the Momentors table shows **fresh
+crosses only** (age 1–4, dark colors) — aged-out state rows are hidden;
+`Do` stays pinned at the bottom; captions above the two tables were removed
+and rows compacted ~30%. Pine **v1.3** additionally fixed chart-context leaks
+(Nifty close, Round Numbers, session/weekly VWAP, ORH/ORL now all computed
+from `DATA_SYM` via `request.security`) — on a NIFTY1! chart the payload is
+unchanged; on a 24/7 test chart no BTC values leak into LEVELS/DATA.
+
 1. `WPM`/`MPM`/`QPM2` chips and D-row cross ages need the D/W INDICATORS
    blocks enabled in the Pine payload (version-bump ceremony) or another
    W/M/Q state source.

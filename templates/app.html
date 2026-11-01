@@ -1757,10 +1757,18 @@
     </div>
 
     <!-- === 1PM MOMENTORS & LEVELS LADDER (read-only, 2026-11-01) === -->
+    <style>
+        /* compact rows (~30% shorter than the default option-table row) */
+        #ml-widget-container .option-table th,
+        #ml-widget-container .option-table td {
+            padding: 3px 8px;
+            font-size: 12px;
+            line-height: 1.2;
+        }
+    </style>
     <div class="widget-container" id="ml-widget-container">
         <div id="ml-grid" style="display:flex; gap:16px; align-items:flex-start; flex-wrap:wrap;">
             <div id="ml-momentors" style="flex:0 0 auto;">
-                <div style="font-weight:bold; margin-bottom:4px;">1PM Momentors</div>
                 <table class="option-table" id="ml-mom-table">
                     <thead><tr><th>Momentor</th><th class="center">Count</th></tr></thead>
                     <tbody id="ml-mom-body">
@@ -1769,7 +1777,6 @@
                 </table>
             </div>
             <div id="ml-ladder" style="flex:0 0 auto;">
-                <div style="font-weight:bold; margin-bottom:4px;">Levels Ladder <span style="font-weight:normal;font-size:11px;">(&plusmn;150 pts)</span></div>
                 <table class="option-table" id="ml-ladder-table">
                     <thead><tr><th class="center">Price</th><th>Level</th><th class="center">Pts</th><th>State</th></tr></thead>
                     <tbody id="ml-ladder-body">
@@ -3756,10 +3763,6 @@ document.addEventListener('DOMContentLoaded', function() {
                 momBody.innerHTML = '<tr><td colspan="2" class="no-options">No TV data yet - waiting for the first webhook</td></tr>';
                 ladderBody.innerHTML = '<tr><td colspan="4" class="no-options">No TV data yet</td></tr>';
                 return;
-            }
-            if (data.source === 'persisted') {
-                document.querySelector('#ml-momentors div').innerHTML =
-                    '1PM Momentors <span style="font-weight:normal;font-size:11px;color:#B8860B;">(last TV data: ' + mlEsc(data.ts || 'unknown') + ')</span>';
             }
             // Table 1: Momentors (name + count, dark = fresh cross, light = aged out)
             momBody.innerHTML = (data.momentors || []).map(r => {
