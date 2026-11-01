@@ -1,0 +1,115 @@
+# HANDOFF — 1PM Momentors & Levels Ladder widget
+
+Created: 2026-11-01 (session "1PM Momentors & Levels Ladder")
+Status: **LIVE v1** — read-only dashboard widget, no order-path interaction.
+
+---
+
+## 1. What it is
+
+A two-table widget in the **Trade module, below Pending Orders**:
+
+1. **1PM Momentors** (left) — the momentor state net, so the user can see how
+   aggressive the 1PM Swing is right now and judge whether to add an
+   **Intra** position on top of ultra-scalping.
+2. **Levels Ladder** (right) — the S/R levels within **±150 pts** of the
+   Nifty Futures close, with headroom in points and the endorsing
+   higher-TF PM state ("chip") per rung.
+
+Decision question it answers: enough headroom above → hold the swing;
+stacked overhead levels → prefer Intra/ultra-scalp positioning.
+
+## 2. Momentors table — rules
+
+Two columns: **Momentor** and **Count** (cross age 1–4).
+
+- **Fresh cross, age 1–4** → shown as the uppercase X-form with the count,
+  **dark** green `#548235` (up) / dark red `#C00000` (down).
+- **Aged out (age > 4)** → the row **degrades to its lowercase/state form**,
+  **light** green `#C6EFCE` / light red `#FFC7CE`, no count.
+  (e.g. `3ox` age 5+ → shows `3o`; `3M1x` beyond 4 → `3M1` uptrending.)
+- **1o / 5o below zero** → grey (VOC has no downtrend setup — Glossary §Set Ups).
+- **Row 1 — `5SXTOZ`**: 5m Stochastic cross + the zone it is crossing /
+  trending FROM: `OSZ` (K<25, favorable, dark green), `MZ` (25–75, good,
+  amber), `OBZ` (K>75, unfavorable, dark red). Arrow ↑/↓ = last cross
+  direction (KCrossover vs KCrossUnder index). **Nothing to do with volume.**
+- **Row 2 — `1PME50`**: dark green when the 1PM state (1m PVT + 1m MACD2
+  24/52) is UP **and** price ≥ 1m EMA50; dark red otherwise (the LOCKED
+  trend-start trigger, FORECASTING §2.1).
+
+Row order (sheet casing, exact): `5SXTOZ` · `1PME50` · `5px` · `1ox`/`1o` ·
+`5ox`/`5o` · `3PX`/`3p` · `3M1X`/`3M1` · `3M2X`/`3M2` · `3OX`/`3o` ·
+`2PX`/`2p` · `2M1X`/`2M1` · `2M2X`/`2M2` · `2OX`/`2o` · `Dp` · `DM1` ·
+`DM2` · `Do`.
+
+**Data source — the live webhook only.** Each `INDICATORS` TF block of
+`tv/TV_Algo_JSON/Strategy_TradingInvestAlgo_Data` already carries
+`PVTCrossOverIndex/UnderIndex`, `X_1226/Y_1226`, `X_2452/Y_2452`,
+`KCrossoverIndex/KCrossUnderIndex`, `VOCCrossOverIndex/UnderIndex`
+(all `barssince(cross)+1`) → ages come straight off the snapshot; no CSV
+reads, no history keeping, restart-safe.
+
+**Daily rows are STATE-ONLY** (`Dp`/`DM1`/`DM2`, light colors, no counts):
+the Pine payload's `D`/`W` INDICATORS blocks are commented out
+(strategy script lines ~1188–1261); D states come from
+`SETUPS.DASHBOARD` (`DPMPVT` sign; `DPM` = 2-letter combo, first letter
+M1 12/26, second letter M2 24/52). `Do` is grey — D VOC not in the payload.
+**Future option:** enabling the D/W blocks in the Pine script (with the full
+version-bump ceremony) would light up D cross ages and the WPM/MPM/QPM2
+chips below.
+
+## 3. Levels Ladder — rules
+
+- Source: `LEVELS.CW_CD` of the webhook LEVELS message (`[Name, Price]`
+  pairs, HA-based per Glossary §"LEVELS from the TradingView webhook
+  payload"). Parsed and re-served by `forecasting/momentors_widget.py`.
+- Filter: rows within **±150 pts** of the Close (the `["Close", v]` anchor
+  row supplies the reference price).
+- Sort: price descending → **Close row highlighted mid-table with `<<<`**;
+  resistances above it, supports below. In an upswing the support the price
+  rose from stays at the bottom of the ladder, in a downswing the resistance
+  it fell from at the top — the ±150 filter + sort produce this naturally
+  as price moves.
+- `Pts` = |level − close| (headroom).
+- **Chips** (State column) — user rule: a higher-TF PM uptrend endorses its
+  lower-TF EMA rungs as **supports** (dark green chip); a downtrend makes
+  them **resistances** (dark red chip). PM = PVT sign + MACD2 24/52 aligned.
+
+  | Chip | Endorsing state | Rungs |
+  |---|---|---|
+  | `3PM2` | 30M PVT+ & Trend_2452+ | 1m EMA100, 1m EMA200 |
+  | `2PM` | 2H PVT+ & Trend_2452+ | 5m EMA50, 5m EMA100, 5m EMA200 |
+  | `WPM` → 2h EMA200 · `MPM` → D EMA100/200 · `QPM2` → W EMA100 | **pending** — W/M/Q states are not in the webhook payload yet | |
+
+## 4. Implementation map
+
+| Piece | Where |
+|---|---|
+| Pure builders (momentors + ladder) | `forecasting/momentors_widget.py` |
+| Endpoint (read-only, 1s TTL cache, fail-safe → HTTP 200 + `error`) | `server.py` `GET /momentor/data` |
+| Widget UI + 2s poller (self-contained IIFE, `try/catch` around render) | `templates/app.html` (`#ml-widget-container`, below `#pending-widget-container`) |
+
+## 5. Safety guarantees (market-day constraint, 2026-11-01)
+
+- **Read-only**: the endpoint only reads `trader._tradingView_Data` and
+  `trader._tv_levels` (already in memory from the webhook). It writes
+  nothing — no files, no DB, no state.
+- **No order-path edits**: `core/trade_logic.py`, the order/position
+  workflow, and appconfig defaults are untouched. No new config keys.
+- **No Pine changes** → no new alerts, no extra webhook traffic.
+- **Fail-safe**: endpoint catches everything → `{"error": ...}` with 200;
+  the widget JS isolates its render in try/catch — a widget failure can
+  never break the pending-orders grid or order ticket.
+- **Stampede-safe**: 1s server cache; worst case with many tabs = one
+  builder pass per second over an in-memory dict.
+
+## 6. Known limitations / next steps
+
+1. `WPM`/`MPM`/`QPM2` chips and D-row cross ages need the D/W INDICATORS
+   blocks enabled in the Pine payload (version-bump ceremony) or another
+   W/M/Q state source.
+2. The `Close` anchor is the chart close at webhook time; between LEVELS
+   messages (one per confirmed bar) headroom is against that, not the
+   broker tick.
+3. Intra-vs-swing verdict gauge (SWING / STOCH-CHOP / DEAD + headroom
+   summary) deliberately deferred — two tables only in v1.
