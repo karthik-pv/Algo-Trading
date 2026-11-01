@@ -1,7 +1,9 @@
 # HANDOFF — 1PM Momentors & Levels Ladder widget
 
 Created: 2026-11-01 (session "1PM Momentors & Levels Ladder")
-Status: **LIVE v1** — read-only dashboard widget, no order-path interaction.
+Status: **LIVE** — read-only dashboard widget, no order-path interaction.
+Last updated: 2026-11-01 (Pine v1.9, three-alert 15s architecture, all four
+tables live and verified).
 
 ---
 
@@ -11,170 +13,164 @@ The widget area has FOUR tables, always referred to by these names:
 
 | # | Registered name | Position | Contents |
 |---|---|---|---|
-| 1 | **BIAS table** | top-most, spans the two below | `PA / 5PM / CV / 3S` + set-apart `3PM`; caption row (grey header) + trend row (colour-filled, arrows per component) |
-| 2 | **MOMENTORS table** | second, left | momentor rows (`sup/res`, `5s`, `1e50`, `1cvx`, `5cvx`, fresh crosses) + the TF state table (`1/5/3/2/D`) directly beneath it |
-| 3 | **LEVELS LADDER table** | second, right | S/R levels ±150 pts, Close row on yellow, PM-state chips in 4th column |
-| 4 | **SET UP table** | third, left (below MOMENTORS) | the SetUps chip panel |
+| 1 | **BIAS table** | top-most, spans the two below | `PA / 5PM / CV / 3S` + set-apart `3PM`; grey caption row + colour-filled trend row (arrows per component) |
+| 2 | **MOMENTORS table** | second, left | momentor rows + the TF state rows (`1/5/3/2/D`) directly beneath |
+| 3 | **LEVELS LADDER table** | second, right | S/R levels ±150 pts, yellow Close row, PM-state chips in 4th column |
+| 4 | **SET UP table** | third, left (below MOMENTORS) | dynamic green/red component columns per TF |
 
 ---
 
 ## 1. What it is
 
-A two-table widget in the **Trade module, below Pending Orders**:
+A four-table widget in the **Trade module, below Pending Orders** (read-only)
+so the user can judge 1PM Swing aggressiveness and whether to add an
+**Intra** position on top of ultra-scalping. Data source: the live TradingView
+webhook snapshot only (`trader._tradingView_Data`, `_tv_levels`, `_tv_htf`) —
+no CSV reads, restart-safe via the persisted snapshot (§6).
 
-1. **1PM Momentors** (left) — the momentor state net, so the user can see how
-   aggressive the 1PM Swing is right now and judge whether to add an
-   **Intra** position on top of ultra-scalping.
-2. **Levels Ladder** (right) — the S/R levels within **±150 pts** of the
-   Nifty Futures close, with headroom in points and the endorsing
-   higher-TF PM state ("chip") per rung.
+## 2. MOMENTORS table — rules
 
-Decision question it answers: enough headroom above → hold the swing;
-stacked overhead levels → prefer Intra/ultra-scalp positioning.
+Two columns: **Momentor** (first column always white text, lowercase) and
+**Count** (always a colour-filled cell, fixed text colour).
 
-## 2. Momentors table — rules
+- **Fresh cross, age 1–4** (standard window) → dark green `#548235` (up) /
+  dark red `#C00000` (down) with the count.
+- **Aged out (> window)** → the row is hidden entirely (fresh-crosses-only).
+- Fixed-row cells (always present):
+  - `sup` / `res` (top row): the level the price is working off — rising =
+    highest level below Close (support taken), falling = highest level above
+    Close (resistance). Shorthand names: `1m EMA100`→`1E100`, `5m EMA50`→`5E50`,
+    `30m EMA100`→`3E100`, `2h EMA200`→`2E200`, `D EMA100`→`DE100`.
+  - `5s` — the **5-minute Stochastic** (NOT 5 seconds; caption is legacy).
+    Always visible, never ages out. Colour = zone × swing:
+    upswing: OSZ→dark-green, MZ→light-green, OBZ→red;
+    downswing: OSZ→red, MZ→light-red, OBZ→dark-red. (Dark = swinging with
+    room left; plain red = exhausted extreme.) Arrow ↑/↓ = swing direction.
+  - `1e50` — `UP` dark-green when 1m PVT up **and** price ≥ 1m EMA50,
+    `DN` dark-red otherwise.
+- **CVX rows** (Pine v1.9): `1cvx` (1m price×session-VWAP cross, fresh
+  window **1–20**) and `5cvx` (5m, fresh window **1–4**). Direction purely
+  from cross recency (no trend flag): green cross up / red cross down.
+- Standard cross rows: `5px` `1ox` `5ox` `3px` `3m1x` `3m2x` `3ox` `2px`
+  `2m1x` `2m2x` `2ox` — all lowercase, fresh 1–4, then hidden.
+  **No 15S rows** — 15S data flows for Ultra Scalping but is never a row.
+- Fixed-height scroll box (11 visible rows + 3 blank filler rows for height
+  alignment); scrollbar appears automatically with more records.
 
-Two columns: **Momentor** and **Count** (cross age 1–4).
+## 3. BIAS table — rules (top-most, spans both tables)
 
-- **Fresh cross, age 1–4** → shown as the uppercase X-form with the count,
-  **dark** green `#548235` (up) / dark red `#C00000` (down).
-- **Aged out (age > 4)** → the row **degrades to its lowercase/state form**,
-  **light** green `#C6EFCE` / light red `#FFC7CE`, no count.
-  (e.g. `3ox` age 5+ → shows `3o`; `3M1x` beyond 4 → `3M1` uptrending.)
-- **1o / 5o below zero** → grey (VOC has no downtrend setup — Glossary §Set Ups).
-- **Row 1 — `5SXTOZ`**: 5m Stochastic cross + the zone it is crossing /
-  trending FROM: `OSZ` (K<25, favorable, dark green), `MZ` (25–75, good,
-  amber), `OBZ` (K>75, unfavorable, dark red). Arrow ↑/↓ = last cross
-  direction (KCrossover vs KCrossUnder index). **Nothing to do with volume.**
-- **Row 2 — `1PME50`**: dark green when the 1PM state (1m PVT + 1m MACD2
-  24/52) is UP **and** price ≥ 1m EMA50; dark red otherwise (the LOCKED
-  trend-start trigger, FORECASTING §2.1).
+Caption row: grey header `#4a4a4a` with `PA / 5PM / CV / 3S` and, after a
+small gap, `3PM`. Below it the trend row: colour-filled cells, one arrow per
+underlying component (▲ up / ▼ down / – unknown), black 1px cell borders.
+Strip width hugs its content so a future table can sit to the ladder's right.
 
-Row order (sheet casing, exact): `5SXTOZ` · `1PME50` · `5px` · `1ox`/`1o` ·
-`5ox`/`5o` · `3PX`/`3p` · `3M1X`/`3M1` · `3M2X`/`3M2` · `3OX`/`3o` ·
-`2PX`/`2p` · `2M1X`/`2M1` · `2M2X`/`2M2` · `2OX`/`2o` · `Dp` · `DM1` ·
-`DM2` · `Do`.
+- **PA** — green when price takes support & rises **with the 1PM trend
+  started** (the `1e50` rule); red when facing resistance & falling. Arrow ▲/▼.
+- **5PM** — background = 5m **PVT vs zero** (green >0 / red <0); arrows =
+  M1 (MACD 12/26) then M2 (MACD 24/52) on 5m.
+- **CV** — Close vs session VWAP: above green, below red. Arrow ▲/▼.
+- **3S** — 30m Stoch. Arrow = K-trend + zone text (`▼ OSZ`). Colour =
+  **2PM direction × zone**: 2PM up → OSZ/MZ dark-green, OBZ red;
+  2PM down (mirror) → OSZ/MZ dark-red, OBZ green; 2PM mixed → grey.
+- **3PM** — background = 30m **PVT vs zero** (green >0 / red <0); arrows =
+  M1 then M2 on 30m (e.g. `▼▲` = M1 retracing down, M2 still up).
 
-**Data source — the live webhook only.** Each `INDICATORS` TF block of
-`tv/TV_Algo_JSON/Strategy_TradingInvestAlgo_Data` already carries
-`PVTCrossOverIndex/UnderIndex`, `X_1226/Y_1226`, `X_2452/Y_2452`,
-`KCrossoverIndex/KCrossUnderIndex`, `VOCCrossOverIndex/UnderIndex`
-(all `barssince(cross)+1`) → ages come straight off the snapshot; no CSV
-reads, no history keeping, restart-safe.
+## 4. SET UP table — rules (third, left)
 
-**Daily rows are STATE-ONLY** (`Dp`/`DM1`/`DM2`, light colors, no counts):
-the Pine payload's `D`/`W` INDICATORS blocks are commented out
-(strategy script lines ~1188–1261); D states come from
-`SETUPS.DASHBOARD` (`DPMPVT` sign; `DPM` = 2-letter combo, first letter
-M1 12/26, second letter M2 24/52). `Do` is grey — D VOC not in the payload.
-**Update (2026-11-01, Pine v1.4):** the payload now carries compact
-`W`/`D`/`Q` INDICATORS blocks (`PVTTrendFlag` + `Trend_2452` only, ~150
-chars each), so the previously-pending chips are live: `WPM` → 2h EMA200,
-`MPM` → D EMA100/200, `QPM2` → W EMA100. D-row momentor cross ages and the
-full (non-compact) W/D blocks remain future work.
+Rows are timeframes `1 / 5 / 3 / 2 / D`. Columns are FIXED: **left always
+green, right always red**. Every component of the row is evaluated
+individually — up-components occupy the left cell, retracing/downtrending
+(or unknown) ones the right cell. Same-TF components concatenate
+(`5P`+`5M1`→`5PM1`), cross-TF join with `_` (`5M2`+`3S`→`5M2_3S`).
 
-## 3. Levels Ladder — rules
+| Row | Components (in join order) |
+|---|---|
+| 1 | `1P` (1m PVT) · `1M1` (1m MACD 12/26) · `1E50` (price ≥ 1m EMA50) · `5S` (5m Stoch K-trend) |
+| 5 | `5P` · `5S` (5m Stoch) · `5M1` · `5V` (5m VOC) · `5M2` (5m MACD 24/52) · `3S` (30m Stoch) |
+| 3 | `3P` · `3S` (30m Stoch) · `3M1` · `3M2` · `2S` (2h Stoch) |
+| 2 | `2P` · `2S` (2h Stoch) · `2M1` (2h MACD 12/26) · `DS` (Daily Stoch) |
+| D | `DP` (Daily PVT) · `DS` (Daily Stoch) · `DM1` (Daily MACD 12/26) · `WS` (Weekly Stoch) |
+
+## 5. LEVELS LADDER table — rules
 
 - Source: `LEVELS.CW_CD` of the webhook LEVELS message (`[Name, Price]`
   pairs, HA-based per Glossary §"LEVELS from the TradingView webhook
   payload"). Parsed and re-served by `forecasting/momentors_widget.py`.
-- Filter: rows within **±150 pts** of the Close (the `["Close", v]` anchor
-  row supplies the reference price).
-- Sort: price descending → **Close row highlighted mid-table with `<<<`**;
-  resistances above it, supports below. In an upswing the support the price
-  rose from stays at the bottom of the ladder, in a downswing the resistance
-  it fell from at the top — the ±150 filter + sort produce this naturally
-  as price moves.
+- Filter: rows within **±150 pts** of the Close; sorted price-descending;
+  **Close row on a bright yellow background** (`#ffd54d`, bold dark text,
+  `<<<` marker) — always prominent mid-table.
 - `Pts` = |level − close| (headroom).
-- **Chips** (State column) — user rule: a higher-TF PM uptrend endorses its
-  lower-TF EMA rungs as **supports** (dark green chip); a downtrend makes
-  them **resistances** (dark red chip). PM = PVT sign + MACD2 24/52 aligned.
+- **Chips** (4th column, styled like the MOMENTORS 2nd column: colour-filled
+  cell, fixed text colour) — a higher-TF PM uptrend endorses its lower-TF
+  EMA rungs as supports (green chip); downtrend makes them resistances (red):
 
   | Chip | Endorsing state | Rungs |
   |---|---|---|
   | `3PM2` | 30M PVT+ & Trend_2452+ | 1m EMA100, 1m EMA200 |
   | `2PM` | 2H PVT+ & Trend_2452+ | 5m EMA50, 5m EMA100, 5m EMA200 |
-  | `WPM` → 2h EMA200 · `MPM` → D EMA100/200 · `QPM2` → W EMA100 | **pending** — W/M/Q states are not in the webhook payload yet | |
+  | `WPM` | W PVT+ & Trend_2452+ (HTF block) | 2h EMA200 |
+  | `MPM` | D PVT+ & Trend_2452+ (HTF block) | D EMA100, D EMA200 |
+  | `QPM2` | W PVT+ (HTF block) | W EMA100 |
 
-## 4. Implementation map
+- Scroll container ~411px (≈18 rows visible), border wraps the scrollbar.
+
+## 6. TradingView architecture (Pine v1.9) — CRITICAL
+
+**The 15-firings-per-3-minutes rule**: TradingView auto-disables any alert
+that fires more than 15 times in 3 minutes. ALL `alert()` calls in one
+script instance count as ONE alert. Therefore:
+
+- The script runs on the chart **once per message type** ("Emit" input:
+  `ALL` / `DATA` / `LEVELS` / `OPT`), each instance with **its own TV
+  alert**, firing exactly ONE message per bar close (12/3min on a 15s
+  chart — safely under the limit).
+- `ALL` (default) fires all messages from one alert — **5m+ charts only**.
+- Live setup (BTCUSD weekend test): three 15s-chart instances —
+  `DATA` / `LEVELS` / `OPT` — one alert each, same webhook URL.
+- **Message budget**: TV silently drops any `alert()` message over
+  **4096 chars**. DATA is ~3,999/4,096 after v1.9 — **do not add payload
+  fields without re-checking the length** (see `incoming/latest_DATA.json`).
+- Messages per bar close: `DATA` (INDICATORS 5S–2H + SETUPS),
+  `LEVELS` (+ `HTF` block: W/D/Q PM states, v1.8 D/W Trend_1226/K/KTrendFlag),
+  `OPT` (ATM CE/PE).
+- v1.2 pins ALL data to `NSE:NIFTY1!` (`DATA_SYM`) — genuine Nifty data from
+  any chart (BTCUSD used for weekend testing). Caveat: `ORH`/`ORL` and
+  session stamps key off the chart's session — not NSE-meaningful on a 24/7
+  chart.
+- Version ceremony: bump VERSION + CHANGELOG, dated snapshot in
+  `tv/TV_Algo_JSON/versions/`, git tag `tv-data-vX.Y`, README table row.
+
+## 7. App-side implementation
 
 | Piece | Where |
 |---|---|
-| Pure builders (momentors + ladder) | `forecasting/momentors_widget.py` |
+| Pure builders (`build_topstrip`, `build_momentors`, `build_states`, `build_ladder`, `CHIP_MAP`) | `forecasting/momentors_widget.py` |
 | Endpoint (read-only, 1s TTL cache, fail-safe → HTTP 200 + `error`) | `server.py` `GET /momentor/data` |
-| Widget UI + 2s poller (self-contained IIFE, `try/catch` around render) | `templates/app.html` (`#ml-widget-container`, below `#pending-widget-container`) |
+| Widget UI + 2s poller (IIFE, try/catch) | `templates/app.html` (`#ml-widget-container`, below Pending Orders) |
+| Webhook envelopes (LEVELS/HTF stored, never clobber the snapshot or run trade logic) | `core/trade_logic.py` `process_TradingView_Data` — **the envelope checks MUST run before `_tradingView_Data = data`** (a v1.7 regression made the widget blank between DATA messages) |
+| Raw webhook dump (debug aid) | `server.py` `_tv_dump_incoming` → `tv/TV_Algo_JSON/incoming/` (gitignored, retention-capped ~300 files) |
 
-## 5. Safety guarantees (market-day constraint, 2026-11-01)
+## 8. Persistence (restart-safe)
 
-- **Read-only**: the endpoint only reads `trader._tradingView_Data` and
-  `trader._tv_levels` (already in memory from the webhook). It writes
-  nothing — no files, no DB, no state.
-- **No order-path edits**: `core/trade_logic.py`, the order/position
-  workflow, and appconfig defaults are untouched. No new config keys.
-- **No Pine changes** → no new alerts, no extra webhook traffic.
-- **Fail-safe**: endpoint catches everything → `{"error": ...}` with 200;
-  the widget JS isolates its render in try/catch — a widget failure can
-  never break the pending-orders grid or order ticket.
-- **Stampede-safe**: 1s server cache; worst case with many tabs = one
-  builder pass per second over an in-memory dict.
+DATA / LEVELS / HTF payloads are merged into `data/tv_last_snapshot.json`
+(gitignored; atomic write, one write per 5s). `/momentor/data` falls back to
+it when the in-memory snapshot or levels are empty (`"source": "persisted"`).
 
-## 6. Persistence (added 2026-11-01, after first market-off test)
+## 9. Safety guarantees
 
-The widget initially stayed blank after an app restart while the market was
-off — `trader._tradingView_Data` / `_tv_levels` are memory-only. Fix:
+- **Read-only widget**: no writes, no config keys, no order-path interaction.
+- The only trade_logic touch is the envelope early-returns (additive; they
+  return `[]` before any trade logic runs).
+- Fail-safe endpoint + isolated render — a widget failure cannot break the
+  order ticket or pending-orders grid.
 
-- Every DATA / LEVELS webhook payload is now merged into
-  `data/tv_last_snapshot.json` (gitignored runtime file; atomic write,
-  throttled to one write per 5s, ALERTS/OPT messages skipped).
-- `/momentor/data` falls back to that file when the in-memory snapshot or
-  levels are empty and marks the payload `"source": "persisted"`; the widget
-  header then shows "last TV data: <ts>" in amber so stale data is never
-  mistaken for live.
-- Trade logic untouched — the persist hook is additive inside the webhook
-  route, wrapped in try/except, and cannot affect order flow.
+## 10. Known limitations / next steps
 
-## 7. Testing the widget while NSE is closed (v1.2 data pin, 2026-11-01)
-
-The indicator `Strategy_TradingInvestAlgo_Data` **v1.2** pins its data symbol
-to `NSE:NIFTY1!` (one `DATA_SYM` const; all `request.security` calls + the
-`SYM` fields use it). Placed on a 24/7 chart (e.g. **BTCUSD**) it computes
-and alerts **genuine Nifty data** while NSE is closed — the full path
-(alert → webhook → persist → widget) can be tested any day. Payload format
-is byte-identical to a NIFTY1!-chart alert.
-
-**IMPORTANT (v1.5, 2026-11-01):** TradingView silently DROPS an alert message
-over 4096 chars. v1.4 pushed the DATA message over the cap and it stopped
-arriving (LEVELS/OPT kept coming). v1.5 dropped the 5S/15S INDICATORS blocks
-to get back under the cap. **Do not add payload fields without checking the
-message length budget** (DATA ≈ INDICATORS+SETUPS must stay < 4096).
-
-**Rules:**
-
-- **Exactly ONE live alert at a time.** A BTCUSD-chart alert and a
-  NIFTY1!-chart alert both active would double-fire every bar close —
-  double Spatam TTS + duplicate webhook processing into the trade path.
-- A BTCUSD-chart alert fires **24/7** (every 5m bar close, all weekend) —
-  disable it after testing / before the NSE open and keep the NSE-chart
-  alert as the market-hours source.
-- Caveat: `ORH`/`ORL` and session stamps key off the **chart's** session —
-  on a BTCUSD chart those two values are not NSE-meaningful. All other
-  payload values are pure Nifty. The NSE-chart alert remains authoritative.
-
-## 8. Known limitations / next steps
-
-**Widget UX update (2026-11-01, same day):** the Momentors table shows **fresh
-crosses only** (age 1–4, dark colors) — aged-out state rows are hidden;
-`Do` stays pinned at the bottom; captions above the two tables were removed
-and rows compacted ~30%. Pine **v1.3** additionally fixed chart-context leaks
-(Nifty close, Round Numbers, session/weekly VWAP, ORH/ORL now all computed
-from `DATA_SYM` via `request.security`) — on a NIFTY1! chart the payload is
-unchanged; on a 24/7 test chart no BTC values leak into LEVELS/DATA.
-
-1. `WPM`/`MPM`/`QPM2` chips and D-row cross ages need the D/W INDICATORS
-   blocks enabled in the Pine payload (version-bump ceremony) or another
-   W/M/Q state source.
-2. The `Close` anchor is the chart close at webhook time; between LEVELS
-   messages (one per confirmed bar) headroom is against that, not the
-   broker tick.
-3. Intra-vs-swing verdict gauge (SWING / STOCH-CHOP / DEAD + headroom
-   summary) deliberately deferred — two tables only in v1.
+1. DATA message at ~3,999/4,096 chars — next field addition needs trimming
+   (candidates: `PVTPoiseFlag`/`StochPoiseFlag`, low-value decimals).
+2. 15s-fresh entries driven by a fast-path message would be a deliberate
+   order-path change — deferred (display-only architecture today).
+3. Only ONE live alert per message type; recreating an alert requires
+   re-selecting the matching Emit instance.
+4. BTCUSD test alerts fire 24/7 — disable before NSE open; the NSE-chart
+   alert set (same 3-instance pattern) is the market-hours source.
