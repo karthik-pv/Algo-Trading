@@ -1,9 +1,13 @@
 //@version=5
 // ============================================================================
 // Strategy_TradingInvestAlgo_Data
-// VERSION: 1.3  (2026-11-01)
+// VERSION: 1.4  (2026-11-01)
 // ----------------------------------------------------------------------------
 // CHANGELOG
+//   v1.4  2026-11-01  New compact W/D/Q INDICATORS blocks ("W","D","Q":
+//                     PVT, PVTTrendFlag, Trend_2452 only - the PM states for
+//                     the Momentors/Levels-Ladder chips). 1M/5M/30M/2H blocks
+//                     and all three messages otherwise UNCHANGED.
 //   v1.3  2026-11-01  Chart-context leaks fixed for non-NSE charts: Nifty
 //                     close (Close row + Round Numbers), session VWAP, weekly
 //                     VWAP and the Opening Range are now computed FROM
@@ -262,6 +266,18 @@ f_calc_all() =>
 
     [value_pvt,pvt_poise_flag,pvt_trend_flag,pvt_cross_over_index,pvt_cross_under_index, trend_1226,x_1226,y_1226,macdline_1226,signalLine_1226, histLine_1226,trend_2452,x_2452,y_2452, macdline_2452, signalLine_2452, histLine_2452,zCrossFlag,k,k_trend_flag,stoch_poise_flag,k_crossover_index,k_crossunder_index,ema9, ema21, ema50, ema100, ema200,vwap_val,voc,voc_trend_flag,voc_cross_over_index,voc_cross_under_index ]
  
+// --------------------
+
+// v1.4: compact Weekly / Daily / Quarterly PM blocks - PVT + MACD2 (24/52)
+// state only, for the Levels-Ladder chips (WPM / MPM / QPM2). Small on
+// purpose (~150 chars each) to stay clear of the 4096-char alert cap.
+f_pm_state() =>
+    [calc_pvt(pvt_maType, close, pvt_short, pvt_long) > 0 ? 1 : -1, ta.ema(close, 24) - ta.ema(close, 52) > ta.ema(ta.ema(close, 24) - ta.ema(close, 52), 9) ? 1 : -1]
+
+[pvt_w, trend2452_w] = request.security(DATA_SYM, "W", f_pm_state())
+[pvt_q, trend2452_q] = request.security(DATA_SYM, "3M", f_pm_state())
+[pvt_d_c, trend2452_d_c] = request.security(DATA_SYM, "D", f_pm_state())
+
 // --------------------
 
 
@@ -1285,6 +1301,19 @@ jsonStr += "}"
 // jsonStr += "}"
 
 
+// v1.4: compact W/D/Q PM blocks (PVT sign + MACD2 24/52 state only)
+jsonStr += "\"W\":{"
+jsonStr += f_json_pair("PVTTrendFlag", pvt_w) + ","
+jsonStr += f_json_pair("Trend_2452", trend2452_w)
+jsonStr += "},"
+jsonStr += "\"D\":{"
+jsonStr += f_json_pair("PVTTrendFlag", pvt_d_c) + ","
+jsonStr += f_json_pair("Trend_2452", trend2452_d_c)
+jsonStr += "},"
+jsonStr += "\"Q\":{"
+jsonStr += f_json_pair("PVTTrendFlag", pvt_q) + ","
+jsonStr += f_json_pair("Trend_2452", trend2452_q)
+jsonStr += "}"
 
 // close INDICATORS, add SETUPS
 jsonStr += "},"

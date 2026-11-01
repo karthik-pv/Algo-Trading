@@ -54,9 +54,11 @@ the Pine payload's `D`/`W` INDICATORS blocks are commented out
 (strategy script lines ~1188–1261); D states come from
 `SETUPS.DASHBOARD` (`DPMPVT` sign; `DPM` = 2-letter combo, first letter
 M1 12/26, second letter M2 24/52). `Do` is grey — D VOC not in the payload.
-**Future option:** enabling the D/W blocks in the Pine script (with the full
-version-bump ceremony) would light up D cross ages and the WPM/MPM/QPM2
-chips below.
+**Update (2026-11-01, Pine v1.4):** the payload now carries compact
+`W`/`D`/`Q` INDICATORS blocks (`PVTTrendFlag` + `Trend_2452` only, ~150
+chars each), so the previously-pending chips are live: `WPM` → 2h EMA200,
+`MPM` → D EMA100/200, `QPM2` → W EMA100. D-row momentor cross ages and the
+full (non-compact) W/D blocks remain future work.
 
 ## 3. Levels Ladder — rules
 

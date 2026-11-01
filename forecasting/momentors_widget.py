@@ -183,9 +183,12 @@ def build_momentors(snapshot, price=None):
 CHIP_MAP = [
     (("1m EMA100", "1m EMA200"), "3PM2", ("30M",)),
     (("5m EMA50", "5m EMA100", "5m EMA200"), "2PM", ("2H",)),
+    (("2h EMA200",), "WPM", ("W",)),
+    (("D EMA100", "D EMA200"), "MPM", ("D",)),
+    (("W EMA100",), "QPM2", ("Q",)),
 ]
-# WPM -> 2h EMA200, MPM -> D EMA100/200, QPM2 -> W EMA100: pending payload
-# extension (D/W INDICATORS blocks are commented out in the Pine JSON).
+# Pine v1.4 supplies the compact W/D/Q INDICATORS blocks (PVTTrendFlag +
+# Trend_2452) - the higher-TF PM state colors its lower-TF EMA rungs.
 
 MAX_HEADROOM_PTS = 150
 
