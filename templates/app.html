@@ -3784,10 +3784,9 @@ document.addEventListener('DOMContentLoaded', function() {
             'amber': '#B8860B', 'grey': '#888888'
         };
         const mlTextColor = c => (c === 'light-green' || c === 'light-red') ? '#333' : '#fff';
-        // Ladder scroll-glide state: last animation frame, last centered
-        // target, and when the user last scrolled the ladder by hand
+        // Ladder scroll-glide state: in-flight animation frame handle and
+        // when the user last scrolled the ladder by hand
         let mlScrollAnim = null;
-        let mlLastTarget = null;
         let mlUserScrollAt = 0;
         function mlEsc(s) {
             return String(s).replace(/[&<>"]/g,
@@ -3901,17 +3900,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 const target = Math.max(0, closeIdx - 7) * rowH;
                 const now = Date.now();
                 if (now - mlUserScrollAt < 4000) return;   // user is browsing
-                if (Math.abs(scrollBody.scrollTop - target) < 2) {
-                    mlLastTarget = target;                 // already in place
-                    return;
-                }
-                if (mlScrollAnim) cancelAnimationFrame(mlScrollAnim);
-                if (mlLastTarget !== null && Math.abs(mlLastTarget - target) < 2) {
-                    // same target as the run before - continue the glide
-                    // already in flight instead of restarting it
-                    return;
-                }
-                mlLastTarget = target;
+                if (Math.abs(scrollBody.scrollTop - target) < 2) return; // in place
+                if (mlScrollAnim) return;                  // glide in flight
                 const from = scrollBody.scrollTop;
                 const t0 = performance.now();
                 const DUR = 600;
@@ -3919,7 +3909,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 const step = now2 => {
                     const k = Math.min(1, (now2 - t0) / DUR);
                     scrollBody.scrollTop = from + (target - from) * ease(k);
-                    if (k < 1) mlScrollAnim = requestAnimationFrame(step);
+                    mlScrollAnim = k < 1 ? requestAnimationFrame(step) : null;
                 };
                 mlScrollAnim = requestAnimationFrame(step);
             }
@@ -3929,8 +3919,13 @@ document.addEventListener('DOMContentLoaded', function() {
         const scrollBodyEl = document.getElementById('ml-ladder-scroll');
         if (scrollBodyEl) {
             for (const ev of ['wheel', 'touchstart', 'pointerdown']) {
-                scrollBodyEl.addEventListener(ev,
-                    () => { mlUserScrollAt = Date.now(); }, {passive: true});
+                scrollBodyEl.addEventListener(ev, () => {
+                    mlUserScrollAt = Date.now();
+                    if (mlScrollAnim) {           // stop the glide mid-flight
+                        cancelAnimationFrame(mlScrollAnim);
+                        mlScrollAnim = null;
+                    }
+                }, {passive: true});
             }
         }
         loadMomentors();
