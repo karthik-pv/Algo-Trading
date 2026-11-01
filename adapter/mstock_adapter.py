@@ -35,6 +35,8 @@ from core.utils import (
     resolve_data_path,
     is_market_open,
     is_option_instrument,
+    compute_limit_margin,
+    round_to_tick,
     INSTRUMENTS_SECTION_PREFIX,
 )
 from core.mstock_connector import MStockSingleton
@@ -1559,6 +1561,8 @@ class MStockAdapter(BrokerInterface):
             trading_symbol_for_transaction = data["name"] or data.get("tradingsymbol", trading_symbol)
             #instrument_token = ["instrument_token"]
             lotsize = data["lotsize"]
+            # Options tick 0.05; blank/missing falls back to 0.05.
+            tick = float(data.get("tick_size") or 0) or 0.05
 
             # Exit with the same product the position is held in - a
             # CARRYFORWARD sell against a MARGIN long is rejected by the
@@ -1575,16 +1579,26 @@ class MStockAdapter(BrokerInterface):
             if not sell_product:
                 sell_product = "CARRYFORWARD"
 
-            json_data = { 
+            json_data = {
                 'variety': 'NORMAL',
                 'tradingsymbol': trading_symbol_for_transaction,
                 'symboltoken': instrument_token,
                 'exchange': exchange,
                 'transactiontype': 'SELL',
-                'ordertype': 'MARKET',
+                # Marketable SELL LIMIT: priced one protection margin
+                # BELOW the live LTP (mirrors the Kite sell path), so
+                # the order crosses the bid and fills like a market
+                # order while the limit floor protects against a
+                # fleeting bad print. Rounded DOWN to tick, floored at
+                # one tick for ultra-cheap options.
+                'ordertype': 'LIMIT',
                 'quantity': str(int(quantity) * int(lotsize)),
                 'producttype': sell_product,
-                'price': "0.00",
+                'price': str(max(
+                    round_to_tick(
+                        float(ltp or 0) - compute_limit_margin(ltp),
+                        tick, up=False
+                    ), tick)),
                 'triggerprice': '0.00',
                 'squareoff': '0.00',
                 'stoploss': '0.00',
