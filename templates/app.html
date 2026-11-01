@@ -1777,12 +1777,14 @@
                 </table>
             </div>
             <div id="ml-ladder" style="flex:0 0 auto;">
-                <table class="option-table" id="ml-ladder-table">
-                    <thead><tr><th class="center">Price</th><th>Level</th><th class="center">Pts</th><th>State</th></tr></thead>
-                    <tbody id="ml-ladder-body">
-                        <tr><td colspan="4" class="no-options">Waiting for levels&hellip;</td></tr>
-                    </tbody>
-                </table>
+                <div id="ml-ladder-scroll" style="height:345px; overflow-y:auto;">
+                    <table class="option-table" id="ml-ladder-table">
+                        <thead><tr><th class="center">Price</th><th>Level</th><th class="center">Pts</th><th>State</th></tr></thead>
+                        <tbody id="ml-ladder-body">
+                            <tr><td colspan="4" class="no-options">Waiting for levels&hellip;</td></tr>
+                        </tbody>
+                    </table>
+                </div>
             </div>
         </div>
     </div>
@@ -3764,14 +3766,18 @@ document.addEventListener('DOMContentLoaded', function() {
                 ladderBody.innerHTML = '<tr><td colspan="4" class="no-options">No TV data yet</td></tr>';
                 return;
             }
-            // Table 1: Momentors (name + count, dark = fresh cross, light = aged out)
+            // Table 1: Momentors - caption column white; colors on the
+            // count cell (crosses) or the value cell (5S zone, 1E50 state)
             momBody.innerHTML = (data.momentors || []).map(r => {
                 const color = ML_COLORS[r.color] || ML_COLORS.grey;
-                const count = (r.count === null || r.count === undefined) ? '' : r.count;
-                const label = r.value !== undefined ? r.value : r.label;
+                const isValueRow = r.value !== undefined;
+                const col2 = isValueRow ? r.value : ((r.count === null || r.count === undefined) ? '' : r.count);
+                const col2Style = isValueRow
+                    ? `color:${color}; font-weight:bold;`
+                    : `background:${color}; color:${mlTextColor(r.color)}; font-weight:bold;`;
                 return `<tr>
-                    <td title="${mlEsc(r.name)}" style="color:${color};">${mlEsc(label || r.name)}</td>
-                    <td class="center" style="background:${color}; color:${mlTextColor(r.color)}; font-weight:bold;">${count}</td>
+                    <td>${mlEsc(r.name)}</td>
+                    <td class="center" style="${col2Style}">${col2}</td>
                 </tr>`;
             }).join('');
             // Table 2: Levels Ladder (close row highlighted, chips colored by PM state)
@@ -3791,6 +3797,13 @@ document.addEventListener('DOMContentLoaded', function() {
                     <td>${r.chip ? `<span style="background:${chipBg};color:${chipTx};padding:1px 6px;border-radius:3px;font-size:11px;">${mlEsc(r.chip)}</span>` : ''}</td>
                 </tr>`;
             }).join('');
+            // keep the Close row centered (~7 rows above/below) as levels change
+            const closeIdx = (data.ladder || []).findIndex(r => r.close);
+            const scrollBody = document.getElementById('ml-ladder-scroll');
+            if (closeIdx >= 0 && scrollBody && ladderBody.rows.length) {
+                const rowH = ladderBody.rows[0].offsetHeight || 22;
+                scrollBody.scrollTop = Math.max(0, closeIdx - 7) * rowH;
+            }
         }
         loadMomentors();
         setInterval(loadMomentors, 2000);

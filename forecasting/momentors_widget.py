@@ -90,9 +90,9 @@ def _1pme50_cell(ind, price):
     if price is not None and e50 is not None:
         above = price >= e50
     if pm_up and above:
-        return {"value": "1PME50 UP", "color": "dark-green"}
+        return {"value": "UP", "color": "dark-green"}
     if pm_up is False or above is False:
-        return {"value": "1PME50 DN", "color": "dark-red"}
+        return {"value": "DN", "color": "dark-red"}
     return {"value": "-", "color": "grey"}
 
 
@@ -118,7 +118,7 @@ def _5sxtoz_cell(ind):
     else:
         color = "amber"
     arrow = "\u2191" if x_up else "\u2193"
-    return {"value": "5SXTOZ %s%s" % (zone, arrow), "color": color,
+    return {"value": "%s %s" % (zone, arrow), "color": color,
             "zone": zone, "cross": "up" if x_up else "down"}
 
 
@@ -133,8 +133,8 @@ def build_momentors(snapshot, price=None):
         return b if isinstance(b, dict) else {}
 
     rows = [
-        dict(_5sxtoz_cell(ind), name="5SXTOZ"),
-        dict(_1pme50_cell(ind, price), name="1PME50", count=None),
+        dict(_5sxtoz_cell(ind), name="5S"),
+        dict(_1pme50_cell(ind, price), name="1E50"),
     ]
     specs = [
         # slot, block-key, cross label, state label, trend/over/under keys, allow_down
@@ -169,11 +169,9 @@ def build_momentors(snapshot, price=None):
                      "color": cell["color"], "dir": cell.get("dir")})
 
     # Daily rows: the Pine payload's D INDICATORS block is commented out, so
-    # D cross ages are unavailable (D states would always render as aged-out
-    # states - hidden per the crosses-only rule). Do stays pinned at the
-    # bottom of the table (user request, 2026-11-01).
-    rows.append({"name": "Dox", "label": "Do", "count": None, "color": "grey",
-                 "dir": None})  # D VOC not in the payload yet
+    # D cross ages are unavailable — under the crosses-only rule nothing from
+    # the D layer renders (removed 2026-11-01: the pinned Do row confused the
+    # display; it returns once the Pine D/W blocks are enabled).
     return rows
 
 
