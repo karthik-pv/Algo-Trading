@@ -3784,6 +3784,11 @@ document.addEventListener('DOMContentLoaded', function() {
             'amber': '#B8860B', 'grey': '#888888'
         };
         const mlTextColor = c => (c === 'light-green' || c === 'light-red') ? '#333' : '#fff';
+        // Ladder scroll-glide state: last animation frame, last centered
+        // target, and when the user last scrolled the ladder by hand
+        let mlScrollAnim = null;
+        let mlLastTarget = null;
+        let mlUserScrollAt = 0;
         function mlEsc(s) {
             return String(s).replace(/[&<>"]/g,
                 m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]));
@@ -3886,12 +3891,46 @@ document.addEventListener('DOMContentLoaded', function() {
                     <td class="center" style="${r.chip ? `background:${chipBg}; color:${chipTx}; font-weight:bold;` : ''}">${r.chip ? mlEsc(r.chip) : ''}</td>
                 </tr>`;
             }).join('');
-            // keep the Close row centered (~7 rows above/below) as levels change
+            // keep the Close row centered (~7 rows above/below) as levels
+            // change - GLIDING, not abrupt: ease scrollTop over ~600ms and
+            // back off for a few seconds after the user scrolls manually
             const closeIdx = (data.ladder || []).findIndex(r => r.close);
             const scrollBody = document.getElementById('ml-ladder-scroll');
             if (closeIdx >= 0 && scrollBody && ladderBody.rows.length) {
                 const rowH = ladderBody.rows[0].offsetHeight || 22;
-                scrollBody.scrollTop = Math.max(0, closeIdx - 7) * rowH;
+                const target = Math.max(0, closeIdx - 7) * rowH;
+                const now = Date.now();
+                if (now - mlUserScrollAt < 4000) return;   // user is browsing
+                if (Math.abs(scrollBody.scrollTop - target) < 2) {
+                    mlLastTarget = target;                 // already in place
+                    return;
+                }
+                if (mlScrollAnim) cancelAnimationFrame(mlScrollAnim);
+                if (mlLastTarget !== null && Math.abs(mlLastTarget - target) < 2) {
+                    // same target as the run before - continue the glide
+                    // already in flight instead of restarting it
+                    return;
+                }
+                mlLastTarget = target;
+                const from = scrollBody.scrollTop;
+                const t0 = performance.now();
+                const DUR = 600;
+                const ease = t => t < 0.5 ? 2*t*t : 1 - Math.pow(-2*t + 2, 2) / 2;
+                const step = now2 => {
+                    const k = Math.min(1, (now2 - t0) / DUR);
+                    scrollBody.scrollTop = from + (target - from) * ease(k);
+                    if (k < 1) mlScrollAnim = requestAnimationFrame(step);
+                };
+                mlScrollAnim = requestAnimationFrame(step);
+            }
+        }
+        // any manual scroll (wheel, touch, scrollbar drag) pauses the
+        // auto-centering for 4s so it never fights the user
+        const scrollBodyEl = document.getElementById('ml-ladder-scroll');
+        if (scrollBodyEl) {
+            for (const ev of ['wheel', 'touchstart', 'pointerdown']) {
+                scrollBodyEl.addEventListener(ev,
+                    () => { mlUserScrollAt = Date.now(); }, {passive: true});
             }
         }
         loadMomentors();
