@@ -3122,11 +3122,37 @@ class Trader_Singleton:
     def _schedule_manual_sell_reprice(self, tradingsymbol, token, lots,
                                       exchange, position_key, order_id,
                                       attempt=1):
-        """Schedule the next open-order check for a manual SELL LIMIT."""
+        """Schedule the next open-order check for a manual SELL LIMIT.
+
+        Config-controlled (read fresh per call, App Config live):
+        MANUAL_SELL_REPRICE_MAX_ATTEMPTS - 0 disables the watchdog;
+        MANUAL_SELL_REPRICE_DELAY_SECS - seconds between checks.
+        A MARKET manual sell fills immediately - nothing to watch.
+        """
         if not order_id:
             return
+        try:
+            max_attempts = int(float(
+                fetch_from_json("appconfig.json", "MANUAL_SELL_REPRICE_MAX_ATTEMPTS")
+                or self.MANUAL_SELL_REPRICE_MAX_ATTEMPTS
+            ))
+        except (TypeError, ValueError):
+            max_attempts = self.MANUAL_SELL_REPRICE_MAX_ATTEMPTS
+        if max_attempts <= 0:
+            return
+        if (str(fetch_from_json("appconfig.json", "MANUAL_SELL_ORDER_TYPE") or "LIMIT")
+                .strip().upper() == "MARKET"):
+            return
+        try:
+            delay = float(
+                fetch_from_json("appconfig.json", "MANUAL_SELL_REPRICE_DELAY_SECS")
+                or self.MANUAL_SELL_REPRICE_DELAY_SECS
+            )
+        except (TypeError, ValueError):
+            delay = self.MANUAL_SELL_REPRICE_DELAY_SECS
+        delay = max(1.0, delay)
         timer = threading.Timer(
-            self.MANUAL_SELL_REPRICE_DELAY_SECS,
+            delay,
             self._reprice_manual_sell_if_open,
             args=(tradingsymbol, token, lots, exchange, position_key,
                   str(order_id), attempt),
@@ -3169,7 +3195,14 @@ class Trader_Singleton:
                 )
                 return
 
-            if attempt >= self.MANUAL_SELL_REPRICE_MAX_ATTEMPTS:
+            try:
+                configured_max_attempts = int(float(
+                    fetch_from_json("appconfig.json", "MANUAL_SELL_REPRICE_MAX_ATTEMPTS")
+                    or self.MANUAL_SELL_REPRICE_MAX_ATTEMPTS
+                ))
+            except (TypeError, ValueError):
+                configured_max_attempts = self.MANUAL_SELL_REPRICE_MAX_ATTEMPTS
+            if attempt >= max(1, configured_max_attempts):
                 logger.warning(
                     f"Manual sell {order_id} for {tradingsymbol} still "
                     f"unfilled after {attempt} re-prices; leaving it "

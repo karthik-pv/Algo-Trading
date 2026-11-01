@@ -855,12 +855,24 @@ class KiteAdapter(BrokerInterface):
             instrument_details = self.get_instrument_details(trading_symbol)
             lotsize = instrument_details["lot_size"]
             tick = instrument_details.get("tick_size") or 0.05
+            # MANUAL_SELL_ORDER_TYPE (App Config, read fresh per call):
+            # LIMIT (default) = marketable SELL LIMIT below LTP;
+            # MARKET = plain market order. Iceberg legs always stay
+            # LIMIT (Kite does not allow market icebergs).
+            use_market_sell = (
+                str(fetch_from_json("appconfig.json", "MANUAL_SELL_ORDER_TYPE") or "LIMIT")
+                .strip().upper() == "MARKET"
+            )
             if exchange == "MCX":
-                order_type = self.kite.ORDER_TYPE_LIMIT
-                # Rounded down to the tick and floored at one tick so
-                # low-priced options can never produce an invalid
-                # (zero/negative) sell limit price.
-                price = round_to_tick(float(ltp) - compute_limit_margin(ltp), tick, up=False)
+                if use_market_sell:
+                    order_type = self.kite.ORDER_TYPE_MARKET
+                    price = 0
+                else:
+                    order_type = self.kite.ORDER_TYPE_LIMIT
+                    # Rounded down to the tick and floored at one tick so
+                    # low-priced options can never produce an invalid
+                    # (zero/negative) sell limit price.
+                    price = round_to_tick(float(ltp) - compute_limit_margin(ltp), tick, up=False)
                 # Kite MCX quantity is in LOTS (same as the BUY path);
                 # pass the lot count through unchanged.
                 order_id = self.kite.place_order(
@@ -874,11 +886,15 @@ class KiteAdapter(BrokerInterface):
                     price = price
                 )                
             else:
-                # Changed from Market to Limit to avoid KiteConnection library upgrade and to mimic the market protection 
-                order_type = self.kite.ORDER_TYPE_LIMIT
+                # LIMIT by default (mimics the market protection);
+                # MANUAL_SELL_ORDER_TYPE = MARKET restores a market.
+                if use_market_sell:
+                    order_type = self.kite.ORDER_TYPE_MARKET
+                    price = 0
+                else:
+                    order_type = self.kite.ORDER_TYPE_LIMIT
+                    price = round_to_tick(float(ltp) - compute_limit_margin(ltp), tick, up=False)
                 quantity = int(quantity) * int(lotsize)
-                #price = 0
-                price = round_to_tick(float(ltp) - compute_limit_margin(ltp), tick, up=False) 
 
                 #This checks if the quantity is greater the Order Freeze Limit..
                 #If so then it check if it can be converted into 2 legs or more

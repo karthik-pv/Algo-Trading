@@ -2689,6 +2689,34 @@
                             <span class="suffix">pts</span>
                         </div>
                     </div>
+                    <div class="field">
+                        <div class="field-caption">
+                            <label class="field-label" for="MANUAL_SELL_ORDER_TYPE">Manual Sell Order</label>
+                            <span class="key-hint">MANUAL_SELL_ORDER_TYPE</span>
+                        </div>
+                        <div class="input-wrap">
+                            <input type="text" id="MANUAL_SELL_ORDER_TYPE" name="MANUAL_SELL_ORDER_TYPE" placeholder="LIMIT" title="LIMIT = marketable SELL LIMIT priced below LTP (default, both brokers). MARKET = plain market order." />
+                        </div>
+                    </div>
+                    <div class="field">
+                        <div class="field-caption">
+                            <label class="field-label" for="MANUAL_SELL_REPRICE_DELAY_SECS">Re-price Every</label>
+                            <span class="key-hint">MANUAL_SELL_REPRICE_DELAY_SECS</span>
+                        </div>
+                        <div class="input-wrap">
+                            <input type="number" step="1" min="1" id="MANUAL_SELL_REPRICE_DELAY_SECS" name="MANUAL_SELL_REPRICE_DELAY_SECS" placeholder="5" />
+                            <span class="suffix">sec</span>
+                        </div>
+                    </div>
+                    <div class="field">
+                        <div class="field-caption">
+                            <label class="field-label" for="MANUAL_SELL_REPRICE_MAX_ATTEMPTS">Re-price Max</label>
+                            <span class="key-hint">MANUAL_SELL_REPRICE_MAX_ATTEMPTS</span>
+                        </div>
+                        <div class="input-wrap">
+                            <input type="number" step="1" min="0" id="MANUAL_SELL_REPRICE_MAX_ATTEMPTS" name="MANUAL_SELL_REPRICE_MAX_ATTEMPTS" placeholder="5" title="Max re-price attempts for an unfilled manual sell; 0 disables the watchdog." />
+                        </div>
+                    </div>
                 </div>
             </div>
         </section>

@@ -1585,7 +1585,14 @@ class MStockAdapter(BrokerInterface):
             # while the limit floor protects against a fleeting bad
             # print. Rounded DOWN to tick, floored at one tick for
             # ultra-cheap options; 2-decimal string for the payload.
-            sell_limit_price = f"{max(round_to_tick(float(ltp or 0) - compute_limit_margin(ltp), tick, up=False), tick):.2f}"
+            # MANUAL_SELL_ORDER_TYPE = MARKET in App Config restores
+            # the old plain market order; read fresh per call.
+            if str(fetch_from_json("appconfig.json", "MANUAL_SELL_ORDER_TYPE") or "LIMIT").strip().upper() == "MARKET":
+                sell_ordertype = 'MARKET'
+                sell_limit_price = '0.00'
+            else:
+                sell_ordertype = 'LIMIT'
+                sell_limit_price = f"{max(round_to_tick(float(ltp or 0) - compute_limit_margin(ltp), tick, up=False), tick):.2f}"
 
             json_data = {
                 'variety': 'NORMAL',
@@ -1593,7 +1600,7 @@ class MStockAdapter(BrokerInterface):
                 'symboltoken': instrument_token,
                 'exchange': exchange,
                 'transactiontype': 'SELL',
-                'ordertype': 'LIMIT',
+                'ordertype': sell_ordertype,
                 'quantity': str(int(quantity) * int(lotsize)),
                 'producttype': sell_product,
                 'price': sell_limit_price,
