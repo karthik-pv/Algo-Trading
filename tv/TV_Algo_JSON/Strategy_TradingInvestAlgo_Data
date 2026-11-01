@@ -1,9 +1,15 @@
 //@version=5
 // ============================================================================
 // Strategy_TradingInvestAlgo_Data
-// VERSION: 1.4  (2026-11-01)
+// VERSION: 1.5  (2026-11-01)
 // ----------------------------------------------------------------------------
 // CHANGELOG
+//   v1.5  2026-11-01  FIX: DATA message silently exceeded TradingView's
+//                     4096-char alert cap after v1.4 and stopped arriving.
+//                     The 5S and 15S INDICATORS blocks are dropped (their
+//                     only consumers were commented-out code; 2H/30M/1M/5M
+//                     untouched). 1M/5M/30M/2H/D/W/Q + SETUPS + LEVELS + OPT
+//                     UNCHANGED.
 //   v1.4  2026-11-01  New compact W/D/Q INDICATORS blocks ("W","D","Q":
 //                     PVT, PVTTrendFlag, Trend_2452 only - the PM states for
 //                     the Momentors/Levels-Ladder chips). 1M/5M/30M/2H blocks
@@ -281,8 +287,9 @@ f_pm_state() =>
 // --------------------
 
 
-[value_pvt_5s,pvt_poise_flag_5s,pvt_trend_flag_5s,pvt_cross_over_index_5s,pvt_cross_under_index_5s, trend_1226_5s,x_1226_5s,y_1226_5s,macdline_1226_5s,signalLine_1226_5s, histLine_1226_5s,trend_2452_5s,x_2452_5s,y_2452_5s, macdline_2452_5s, signalLine_2452_5s, histLine_2452_5s,zCrossFlag_5s,k_5s,k_trend_flag_5s,stoch_poise_flag_5s,k_crossover_index_5s,k_crossunder_index_5s,ema9_5s, ema21_5s, ema50_5s, ema100_5s, ema200_5s,vwap_val_5s,voc_5s,voc_trend_flag_5s,voc_cross_over_index_5s,voc_cross_under_index_5s ] = request.security(DATA_SYM, "5S",f_calc_all() )
-[value_pvt_15s,pvt_poise_flag_15s,pvt_trend_flag_15s,pvt_cross_over_index_15s,pvt_cross_under_index_15s, trend_1226_15s,x_1226_15s,y_1226_15s,macdline_1226_15s,signalLine_1226_15s, histLine_1226_15s,trend_2452_15s,x_2452_15s,y_2452_15s, macdline_2452_15s, signalLine_2452_15s, histLine_2452_15s,zCrossFlag_15s,k_15s,k_trend_flag_15s,stoch_poise_flag_15s,k_crossover_index_15s,k_crossunder_index_15s,ema9_15s, ema21_15s, ema50_15s, ema100_15s, ema200_15s,vwap_val_15s,voc_15s,voc_trend_flag_15s,voc_cross_over_index_15s,voc_cross_under_index_15s ] = request.security(DATA_SYM, "15S",f_calc_all() )
+// v1.5: 5S/15S blocks dropped from the DATA message (4096-char alert cap).
+// [value_pvt_5s,...] = request.security(DATA_SYM, "5S",f_calc_all() )
+// [value_pvt_15s,... ] = request.security(DATA_SYM, "15S",f_calc_all() )
 [value_pvt_1m,pvt_poise_flag_1m,pvt_trend_flag_1m,pvt_cross_over_index_1m,pvt_cross_under_index_1m, trend_1226_1m,x_1226_1m,y_1226_1m,macdline_1226_1m,signalLine_1226_1m, histLine_1226_1m,trend_2452_1m,x_2452_1m,y_2452_1m, macdline_2452_1m, signalLine_2452_1m, histLine_2452_1m,zCrossFlag_1m,k_1m,k_trend_flag_1m,stoch_poise_flag_1m,k_crossover_index_1m,k_crossunder_index_1m,ema9_1m, ema21_1m, ema50_1m, ema100_1m, ema200_1m,vwap_val_1m,voc_1m,voc_trend_flag_1m,voc_cross_over_index_1m,voc_cross_under_index_1m ] = request.security(DATA_SYM, "1",f_calc_all() )
 [value_pvt_5m,pvt_poise_flag_5m,pvt_trend_flag_5m,pvt_cross_over_index_5m,pvt_cross_under_index_5m, trend_1226_5m,x_1226_5m,y_1226_5m,macdline_1226_5m,signalLine_1226_5m, histLine_1226_5m,trend_2452_5m,x_2452_5m,y_2452_5m, macdline_2452_5m, signalLine_2452_5m, histLine_2452_5m,zCrossFlag_5m,k_5m,k_trend_flag_5m,stoch_poise_flag_5m,k_crossover_index_5m,k_crossunder_index_5m,ema9_5m, ema21_5m, ema50_5m, ema100_5m, ema200_5m,vwap_val_5m,voc_5m,voc_trend_flag_5m,voc_cross_over_index_5m,voc_cross_under_index_5m ] = request.security(DATA_SYM, "5",f_calc_all() )
 [value_pvt_30m,pvt_poise_flag_30m,pvt_trend_flag_30m,pvt_cross_over_index_30m,pvt_cross_under_index_30m, trend_1226_30m,x_1226_30m,y_1226_30m,macdline_1226_30m,signalLine_1226_30m, histLine_1226_30m,trend_2452_30m,x_2452_30m,y_2452_30m, macdline_2452_30m, signalLine_2452_30m, histLine_2452_30m,zCrossFlag_30m,k_30m,k_trend_flag_30m,stoch_poise_flag_30m,k_crossover_index_30m,k_crossunder_index_30m,ema9_30m, ema21_30m, ema50_30m, ema100_30m, ema200_30m,vwap_val_30m,voc_30m,voc_trend_flag_30m,voc_cross_over_index_30m,voc_cross_under_index_30m ] = request.security(DATA_SYM, "30",f_calc_all() )
@@ -992,80 +999,80 @@ jsonStr += "\"INDICATORS\":{"
 
 
 // 5S
-jsonStr += "\"5S\":{"
-jsonStr += f_json_pair("PVT", math.round(value_pvt_5s, 2)) + ","
-jsonStr += f_json_pair("PVTPoiseFlag", pvt_poise_flag_5s) + ","
-jsonStr += f_json_pair("PVTTrendFlag", pvt_trend_flag_5s) + ","
-jsonStr += f_json_pair("PVTCrossOverIndex", pvt_cross_over_index_5s) + ","
-jsonStr += f_json_pair("PVTCrossUnderIndex", pvt_cross_under_index_5s) + ","
-jsonStr += f_json_pair("Trend_1226", trend_1226_5s) + ","
-jsonStr += f_json_pair("X_1226", x_1226_5s) + ","
-jsonStr += f_json_pair("Y_1226", y_1226_5s) + ","
-jsonStr += f_json_pair("MACD_1226", math.round(macdline_1226_5s, 2)) + ","
-jsonStr += f_json_pair("Signal_1226", math.round(signalLine_1226_5s, 2)) + ","
-jsonStr += f_json_pair("Hist_1226", math.round(histLine_1226_5s, 2)) + ","
-jsonStr += f_json_pair("Trend_2452", trend_2452_5s) + ","
-jsonStr += f_json_pair("X_2452", x_2452_5s) + ","
-jsonStr += f_json_pair("Y_2452", y_2452_5s) + ","
-jsonStr += f_json_pair("MACD_2452", math.round(macdline_2452_5s, 2)) + ","
-jsonStr += f_json_pair("Signal_2452", math.round(signalLine_2452_5s, 2)) + ","
-jsonStr += f_json_pair("Hist_2452", math.round(histLine_2452_5s, 2)) + ","
-jsonStr += f_json_pair("ZCross", zCrossFlag_5s) + ","
-jsonStr += f_json_pair("K", math.round(k_5s, 2)) + ","
-jsonStr += f_json_pair("KTrendFlag", k_trend_flag_5s) + ","
-jsonStr += f_json_pair("StochPoiseFlag", stoch_poise_flag_5s) + ","
-jsonStr += f_json_pair("KCrossoverIndex", k_crossover_index_5s) + ","
-jsonStr += f_json_pair("KCrossUnderIndex", k_crossunder_index_5s) + ","
-jsonStr += f_json_pair("EMA9", math.round(ema9_5s)) + ","
-jsonStr += f_json_pair("EMA21", math.round(ema21_5s)) + ","
-jsonStr += f_json_pair("EMA50", math.round(ema50_5s)) + ","
-jsonStr += f_json_pair("EMA100", math.round(ema100_5s)) + ","
-jsonStr += f_json_pair("EMA200", math.round(ema200_5s)) + ","
-jsonStr += f_json_pair("VWAP", math.round(vwap_val_5s, 2)) + ","
-jsonStr += f_json_pair("VOC", math.round(voc_5s, 2)) + ","
-jsonStr += f_json_pair("VOCTrendFlag", voc_trend_flag_5s) + ","
-jsonStr += f_json_pair("VOCCrossOverIndex", voc_cross_over_index_5s) + ","
-jsonStr += f_json_pair("VOCCrossUnderIndex", voc_cross_under_index_5s)
-jsonStr += "},"
+// v1.5 dropped (alert cap): jsonStr += "\"5S\":{"
+// v1.5 dropped (alert cap): jsonStr += f_json_pair("PVT", math.round(value_pvt_5s, 2)) + ","
+// v1.5 dropped (alert cap): jsonStr += f_json_pair("PVTPoiseFlag", pvt_poise_flag_5s) + ","
+// v1.5 dropped (alert cap): jsonStr += f_json_pair("PVTTrendFlag", pvt_trend_flag_5s) + ","
+// v1.5 dropped (alert cap): jsonStr += f_json_pair("PVTCrossOverIndex", pvt_cross_over_index_5s) + ","
+// v1.5 dropped (alert cap): jsonStr += f_json_pair("PVTCrossUnderIndex", pvt_cross_under_index_5s) + ","
+// v1.5 dropped (alert cap): jsonStr += f_json_pair("Trend_1226", trend_1226_5s) + ","
+// v1.5 dropped (alert cap): jsonStr += f_json_pair("X_1226", x_1226_5s) + ","
+// v1.5 dropped (alert cap): jsonStr += f_json_pair("Y_1226", y_1226_5s) + ","
+// v1.5 dropped (alert cap): jsonStr += f_json_pair("MACD_1226", math.round(macdline_1226_5s, 2)) + ","
+// v1.5 dropped (alert cap): jsonStr += f_json_pair("Signal_1226", math.round(signalLine_1226_5s, 2)) + ","
+// v1.5 dropped (alert cap): jsonStr += f_json_pair("Hist_1226", math.round(histLine_1226_5s, 2)) + ","
+// v1.5 dropped (alert cap): jsonStr += f_json_pair("Trend_2452", trend_2452_5s) + ","
+// v1.5 dropped (alert cap): jsonStr += f_json_pair("X_2452", x_2452_5s) + ","
+// v1.5 dropped (alert cap): jsonStr += f_json_pair("Y_2452", y_2452_5s) + ","
+// v1.5 dropped (alert cap): jsonStr += f_json_pair("MACD_2452", math.round(macdline_2452_5s, 2)) + ","
+// v1.5 dropped (alert cap): jsonStr += f_json_pair("Signal_2452", math.round(signalLine_2452_5s, 2)) + ","
+// v1.5 dropped (alert cap): jsonStr += f_json_pair("Hist_2452", math.round(histLine_2452_5s, 2)) + ","
+// v1.5 dropped (alert cap): jsonStr += f_json_pair("ZCross", zCrossFlag_5s) + ","
+// v1.5 dropped (alert cap): jsonStr += f_json_pair("K", math.round(k_5s, 2)) + ","
+// v1.5 dropped (alert cap): jsonStr += f_json_pair("KTrendFlag", k_trend_flag_5s) + ","
+// v1.5 dropped (alert cap): jsonStr += f_json_pair("StochPoiseFlag", stoch_poise_flag_5s) + ","
+// v1.5 dropped (alert cap): jsonStr += f_json_pair("KCrossoverIndex", k_crossover_index_5s) + ","
+// v1.5 dropped (alert cap): jsonStr += f_json_pair("KCrossUnderIndex", k_crossunder_index_5s) + ","
+// v1.5 dropped (alert cap): jsonStr += f_json_pair("EMA9", math.round(ema9_5s)) + ","
+// v1.5 dropped (alert cap): jsonStr += f_json_pair("EMA21", math.round(ema21_5s)) + ","
+// v1.5 dropped (alert cap): jsonStr += f_json_pair("EMA50", math.round(ema50_5s)) + ","
+// v1.5 dropped (alert cap): jsonStr += f_json_pair("EMA100", math.round(ema100_5s)) + ","
+// v1.5 dropped (alert cap): jsonStr += f_json_pair("EMA200", math.round(ema200_5s)) + ","
+// v1.5 dropped (alert cap): jsonStr += f_json_pair("VWAP", math.round(vwap_val_5s, 2)) + ","
+// v1.5 dropped (alert cap): jsonStr += f_json_pair("VOC", math.round(voc_5s, 2)) + ","
+// v1.5 dropped (alert cap): jsonStr += f_json_pair("VOCTrendFlag", voc_trend_flag_5s) + ","
+// v1.5 dropped (alert cap): jsonStr += f_json_pair("VOCCrossOverIndex", voc_cross_over_index_5s) + ","
+// v1.5 dropped (alert cap): jsonStr += f_json_pair("VOCCrossUnderIndex", voc_cross_under_index_5s)
+// v1.5 dropped (alert cap): jsonStr += "},"
 
 
 
 // 15S
-jsonStr += "\"15S\":{"
-jsonStr += f_json_pair("PVT", math.round(value_pvt_15s, 2)) + ","
-jsonStr += f_json_pair("PVTPoiseFlag", pvt_poise_flag_15s) + ","
-jsonStr += f_json_pair("PVTTrendFlag", pvt_trend_flag_15s) + ","
-jsonStr += f_json_pair("PVTCrossOverIndex", pvt_cross_over_index_15s) + ","
-jsonStr += f_json_pair("PVTCrossUnderIndex", pvt_cross_under_index_15s) + ","
-jsonStr += f_json_pair("Trend_1226", trend_1226_15s) + ","
-jsonStr += f_json_pair("X_1226", x_1226_15s) + ","
-jsonStr += f_json_pair("Y_1226", y_1226_15s) + ","
-jsonStr += f_json_pair("MACD_1226", math.round(macdline_1226_15s, 2)) + ","
-jsonStr += f_json_pair("Signal_1226", math.round(signalLine_1226_15s, 2)) + ","
-jsonStr += f_json_pair("Hist_1226", math.round(histLine_1226_15s, 2)) + ","
-jsonStr += f_json_pair("Trend_2452", trend_2452_15s) + ","
-jsonStr += f_json_pair("X_2452", x_2452_15s) + ","
-jsonStr += f_json_pair("Y_2452", y_2452_15s) + ","
-jsonStr += f_json_pair("MACD_2452", math.round(macdline_2452_15s, 2)) + ","
-jsonStr += f_json_pair("Signal_2452", math.round(signalLine_2452_15s, 2)) + ","
-jsonStr += f_json_pair("Hist_2452", math.round(histLine_2452_15s, 2)) + ","
-jsonStr += f_json_pair("ZCross", zCrossFlag_15s) + ","
-jsonStr += f_json_pair("K", math.round(k_15s, 2)) + ","
-jsonStr += f_json_pair("KTrendFlag", k_trend_flag_15s) + ","
-jsonStr += f_json_pair("StochPoiseFlag", stoch_poise_flag_15s) + ","
-jsonStr += f_json_pair("KCrossoverIndex", k_crossover_index_15s) + ","
-jsonStr += f_json_pair("KCrossUnderIndex", k_crossunder_index_15s) + ","
-jsonStr += f_json_pair("EMA9", math.round(ema9_15s)) + ","
-jsonStr += f_json_pair("EMA21", math.round(ema21_15s)) + ","
-jsonStr += f_json_pair("EMA50", math.round(ema50_15s)) + ","
-jsonStr += f_json_pair("EMA100", math.round(ema100_15s)) + ","
-jsonStr += f_json_pair("EMA200", math.round(ema200_15s)) + ","
-jsonStr += f_json_pair("VWAP", math.round(vwap_val_15s, 2)) + ","
-jsonStr += f_json_pair("VOC", math.round(voc_15s, 2)) + ","
-jsonStr += f_json_pair("VOCTrendFlag", voc_trend_flag_15s) + ","
-jsonStr += f_json_pair("VOCCrossOverIndex", voc_cross_over_index_15s) + ","
-jsonStr += f_json_pair("VOCCrossUnderIndex", voc_cross_under_index_15s)
-jsonStr += "},"
+// v1.5 dropped (alert cap): jsonStr += "\"15S\":{"
+// v1.5 dropped (alert cap): jsonStr += f_json_pair("PVT", math.round(value_pvt_15s, 2)) + ","
+// v1.5 dropped (alert cap): jsonStr += f_json_pair("PVTPoiseFlag", pvt_poise_flag_15s) + ","
+// v1.5 dropped (alert cap): jsonStr += f_json_pair("PVTTrendFlag", pvt_trend_flag_15s) + ","
+// v1.5 dropped (alert cap): jsonStr += f_json_pair("PVTCrossOverIndex", pvt_cross_over_index_15s) + ","
+// v1.5 dropped (alert cap): jsonStr += f_json_pair("PVTCrossUnderIndex", pvt_cross_under_index_15s) + ","
+// v1.5 dropped (alert cap): jsonStr += f_json_pair("Trend_1226", trend_1226_15s) + ","
+// v1.5 dropped (alert cap): jsonStr += f_json_pair("X_1226", x_1226_15s) + ","
+// v1.5 dropped (alert cap): jsonStr += f_json_pair("Y_1226", y_1226_15s) + ","
+// v1.5 dropped (alert cap): jsonStr += f_json_pair("MACD_1226", math.round(macdline_1226_15s, 2)) + ","
+// v1.5 dropped (alert cap): jsonStr += f_json_pair("Signal_1226", math.round(signalLine_1226_15s, 2)) + ","
+// v1.5 dropped (alert cap): jsonStr += f_json_pair("Hist_1226", math.round(histLine_1226_15s, 2)) + ","
+// v1.5 dropped (alert cap): jsonStr += f_json_pair("Trend_2452", trend_2452_15s) + ","
+// v1.5 dropped (alert cap): jsonStr += f_json_pair("X_2452", x_2452_15s) + ","
+// v1.5 dropped (alert cap): jsonStr += f_json_pair("Y_2452", y_2452_15s) + ","
+// v1.5 dropped (alert cap): jsonStr += f_json_pair("MACD_2452", math.round(macdline_2452_15s, 2)) + ","
+// v1.5 dropped (alert cap): jsonStr += f_json_pair("Signal_2452", math.round(signalLine_2452_15s, 2)) + ","
+// v1.5 dropped (alert cap): jsonStr += f_json_pair("Hist_2452", math.round(histLine_2452_15s, 2)) + ","
+// v1.5 dropped (alert cap): jsonStr += f_json_pair("ZCross", zCrossFlag_15s) + ","
+// v1.5 dropped (alert cap): jsonStr += f_json_pair("K", math.round(k_15s, 2)) + ","
+// v1.5 dropped (alert cap): jsonStr += f_json_pair("KTrendFlag", k_trend_flag_15s) + ","
+// v1.5 dropped (alert cap): jsonStr += f_json_pair("StochPoiseFlag", stoch_poise_flag_15s) + ","
+// v1.5 dropped (alert cap): jsonStr += f_json_pair("KCrossoverIndex", k_crossover_index_15s) + ","
+// v1.5 dropped (alert cap): jsonStr += f_json_pair("KCrossUnderIndex", k_crossunder_index_15s) + ","
+// v1.5 dropped (alert cap): jsonStr += f_json_pair("EMA9", math.round(ema9_15s)) + ","
+// v1.5 dropped (alert cap): jsonStr += f_json_pair("EMA21", math.round(ema21_15s)) + ","
+// v1.5 dropped (alert cap): jsonStr += f_json_pair("EMA50", math.round(ema50_15s)) + ","
+// v1.5 dropped (alert cap): jsonStr += f_json_pair("EMA100", math.round(ema100_15s)) + ","
+// v1.5 dropped (alert cap): jsonStr += f_json_pair("EMA200", math.round(ema200_15s)) + ","
+// v1.5 dropped (alert cap): jsonStr += f_json_pair("VWAP", math.round(vwap_val_15s, 2)) + ","
+// v1.5 dropped (alert cap): jsonStr += f_json_pair("VOC", math.round(voc_15s, 2)) + ","
+// v1.5 dropped (alert cap): jsonStr += f_json_pair("VOCTrendFlag", voc_trend_flag_15s) + ","
+// v1.5 dropped (alert cap): jsonStr += f_json_pair("VOCCrossOverIndex", voc_cross_over_index_15s) + ","
+// v1.5 dropped (alert cap): jsonStr += f_json_pair("VOCCrossUnderIndex", voc_cross_under_index_15s)
+// v1.5 dropped (alert cap): jsonStr += "},"
 
 // 1M
 jsonStr += "\"1M\":{"

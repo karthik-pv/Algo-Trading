@@ -129,6 +129,12 @@ and alerts **genuine Nifty data** while NSE is closed — the full path
 (alert → webhook → persist → widget) can be tested any day. Payload format
 is byte-identical to a NIFTY1!-chart alert.
 
+**IMPORTANT (v1.5, 2026-11-01):** TradingView silently DROPS an alert message
+over 4096 chars. v1.4 pushed the DATA message over the cap and it stopped
+arriving (LEVELS/OPT kept coming). v1.5 dropped the 5S/15S INDICATORS blocks
+to get back under the cap. **Do not add payload fields without checking the
+message length budget** (DATA ≈ INDICATORS+SETUPS must stay < 4096).
+
 **Rules:**
 
 - **Exactly ONE live alert at a time.** A BTCUSD-chart alert and a
