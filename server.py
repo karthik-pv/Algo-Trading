@@ -1756,6 +1756,8 @@ def momentor_data():
             return jsonify(_MOM_CACHE["payload"])
         price = None
         source = "live"
+        snapshot = getattr(trader, "_tradingView_Data", None)
+        levels = getattr(trader, "_tv_levels", {}) or {}
         if isinstance(levels, dict):
             for r in (levels.get("CW_CD") or []):
                 if isinstance(r, (list, tuple)) and len(r) >= 2 and str(r[0]) == "Close":
