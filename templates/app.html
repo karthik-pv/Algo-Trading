@@ -2695,7 +2695,10 @@
                             <span class="key-hint">MANUAL_SELL_ORDER_TYPE</span>
                         </div>
                         <div class="input-wrap">
-                            <input type="text" id="MANUAL_SELL_ORDER_TYPE" name="MANUAL_SELL_ORDER_TYPE" placeholder="LIMIT" title="LIMIT = marketable SELL LIMIT priced below LTP (default, both brokers). MARKET = plain market order." />
+                            <select id="MANUAL_SELL_ORDER_TYPE" name="MANUAL_SELL_ORDER_TYPE" title="LIMIT = marketable SELL LIMIT priced below LTP (default, both brokers). MARKET = plain market order.">
+                                <option value="LIMIT" selected>LIMIT</option>
+                                <option value="MARKET">MARKET</option>
+                            </select>
                         </div>
                     </div>
                     <div class="field">
