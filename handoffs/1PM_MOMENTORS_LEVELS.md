@@ -103,7 +103,22 @@ chips below.
 - **Stampede-safe**: 1s server cache; worst case with many tabs = one
   builder pass per second over an in-memory dict.
 
-## 6. Known limitations / next steps
+## 6. Persistence (added 2026-11-01, after first market-off test)
+
+The widget initially stayed blank after an app restart while the market was
+off — `trader._tradingView_Data` / `_tv_levels` are memory-only. Fix:
+
+- Every DATA / LEVELS webhook payload is now merged into
+  `data/tv_last_snapshot.json` (gitignored runtime file; atomic write,
+  throttled to one write per 5s, ALERTS/OPT messages skipped).
+- `/momentor/data` falls back to that file when the in-memory snapshot or
+  levels are empty and marks the payload `"source": "persisted"`; the widget
+  header then shows "last TV data: <ts>" in amber so stale data is never
+  mistaken for live.
+- Trade logic untouched — the persist hook is additive inside the webhook
+  route, wrapped in try/except, and cannot affect order flow.
+
+## 7. Known limitations / next steps
 
 1. `WPM`/`MPM`/`QPM2` chips and D-row cross ages need the D/W INDICATORS
    blocks enabled in the Pine payload (version-bump ceremony) or another

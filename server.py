@@ -1238,6 +1238,45 @@ def instruments_json():
         else {"error": "Could not fetch relevant instruments"}
     )
 
+# Latest-TV-webhook persistence (2026-11-01): the Momentors / Levels Ladder
+# widget reads trader._tradingView_Data / _tv_levels, which are memory-only -
+# after an app restart with the market off they are empty and the widget
+# would not paint. The newest DATA / LEVELS payloads are therefore merged
+# into data/tv_last_snapshot.json (gitignored runtime file) and the widget
+# endpoint falls back to it. Trade logic untouched; atomic throttled write.
+_TV_SNAPSHOT_PATH = os.path.join(DATA_DIR, "tv_last_snapshot.json")
+_tv_snap_cache = {"data": {}, "ts": 0.0}
+
+
+def _tv_persist_snapshot(data):
+    try:
+        now = time.time()
+        if data.get("MSG") == "LEVELS":
+            _tv_snap_cache["data"]["LEVELS"] = data.get("LEVELS") or {}
+        elif data.get("INDICATORS") or data.get("SETUPS"):
+            _tv_snap_cache["data"]["SNAPSHOT"] = data
+        else:
+            return  # ALERTS / OPT / unknown - not needed by the widget
+        _tv_snap_cache["data"]["ts"] = datetime.now().strftime("%d %b %H:%M:%S")
+        if now - _tv_snap_cache["ts"] < 5:   # disk write at most every 5s
+            return
+        tmp = _TV_SNAPSHOT_PATH + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(_tv_snap_cache["data"], f)
+        os.replace(tmp, _TV_SNAPSHOT_PATH)
+        _tv_snap_cache["ts"] = now
+    except Exception as e:
+        logger.error(f"tv snapshot persist failed: {e}")
+
+
+def _tv_load_persisted():
+    try:
+        with open(_TV_SNAPSHOT_PATH, encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
 @app.route("/trading_view_webhook" , methods = ["POST"])
 def trading_view():
     import re
@@ -1252,6 +1291,7 @@ def trading_view():
         # log the message type so DATA / LEVELS / ALERTS reception is verifiable
         # per bar from the logs alone (count should pair 2x per 5m bar)
         logger.info(f"TV webhook MSG={data.get('MSG')}")
+        _tv_persist_snapshot(data)
     if data is None and raw:
         # TEST-FEED REPAIR: the alert's SYM field can arrive as a study-object
         # dump with unescaped inner quotes (seen on the BTCUSD test chart),
@@ -1714,9 +1754,8 @@ def momentor_data():
         now = _time.time()
         if _MOM_CACHE["payload"] is not None and now - _MOM_CACHE["ts"] < 1.0:
             return jsonify(_MOM_CACHE["payload"])
-        snapshot = getattr(trader, "_tradingView_Data", None)
-        levels = getattr(trader, "_tv_levels", {}) or {}
         price = None
+        source = "live"
         if isinstance(levels, dict):
             for r in (levels.get("CW_CD") or []):
                 if isinstance(r, (list, tuple)) and len(r) >= 2 and str(r[0]) == "Close":
@@ -1725,9 +1764,17 @@ def momentor_data():
                     except (TypeError, ValueError):
                         price = None
                     break
+        if not snapshot or not levels:
+            # market off / fresh restart - paint from the last persisted
+            # TradingView webhook payloads instead of staying blank
+            persisted = _tv_load_persisted()
+            snapshot = snapshot or persisted.get("SNAPSHOT")
+            levels = levels or persisted.get("LEVELS") or {}
+            source = "persisted"
         payload = {
             "momentors": mw.build_momentors(snapshot, price),
             "ladder": mw.build_ladder(snapshot, levels, price),
+            "source": source,
             "ts": datetime.now().strftime("%d %b %H:%M:%S"),
         }
         _MOM_CACHE["payload"] = payload

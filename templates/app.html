@@ -3752,6 +3752,10 @@ document.addEventListener('DOMContentLoaded', function() {
                 momBody.innerHTML = `<tr><td colspan="2" class="no-options">error: ${mlEsc(data.error)}</td></tr>`;
                 return;
             }
+            if (data.source === 'persisted') {
+                const cap = document.getElementById('ml-momentors').firstElementChild;
+                cap.innerHTML = '1PM Momentors <span style="font-weight:normal;font-size:11px;color:#B8860B;">(last TV data: ' + mlEsc(data.ts || '') + ')</span>';
+            }
             // Table 1: Momentors (name + count, dark = fresh cross, light = aged out)
             momBody.innerHTML = (data.momentors || []).map(r => {
                 const color = ML_COLORS[r.color] || ML_COLORS.grey;
