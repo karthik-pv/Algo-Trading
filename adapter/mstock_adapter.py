@@ -1579,26 +1579,24 @@ class MStockAdapter(BrokerInterface):
             if not sell_product:
                 sell_product = "CARRYFORWARD"
 
+            # Marketable SELL LIMIT: priced one protection margin
+            # BELOW the live LTP (mirrors the Kite sell path), so the
+            # order crosses the bid and fills like a market order
+            # while the limit floor protects against a fleeting bad
+            # print. Rounded DOWN to tick, floored at one tick for
+            # ultra-cheap options; 2-decimal string for the payload.
+            sell_limit_price = f"{max(round_to_tick(float(ltp or 0) - compute_limit_margin(ltp), tick, up=False), tick):.2f}"
+
             json_data = {
                 'variety': 'NORMAL',
                 'tradingsymbol': trading_symbol_for_transaction,
                 'symboltoken': instrument_token,
                 'exchange': exchange,
                 'transactiontype': 'SELL',
-                # Marketable SELL LIMIT: priced one protection margin
-                # BELOW the live LTP (mirrors the Kite sell path), so
-                # the order crosses the bid and fills like a market
-                # order while the limit floor protects against a
-                # fleeting bad print. Rounded DOWN to tick, floored at
-                # one tick for ultra-cheap options.
                 'ordertype': 'LIMIT',
                 'quantity': str(int(quantity) * int(lotsize)),
                 'producttype': sell_product,
-                'price': str(max(
-                    round_to_tick(
-                        float(ltp or 0) - compute_limit_margin(ltp),
-                        tick, up=False
-                    ), tick)),
+                'price': sell_limit_price,
                 'triggerprice': '0.00',
                 'squareoff': '0.00',
                 'stoploss': '0.00',
@@ -1656,8 +1654,16 @@ class MStockAdapter(BrokerInterface):
             self._trader.refresh_open_pos_buy_price()
             self._schedule_post_sell_fund_refresh()
 
-            return True
-            
+            # Return the broker order id (truthy) so the caller can
+            # watch the order and re-price it if it rests unfilled.
+            # Callers only test truthiness - the old `return True` is
+            # preserved as a fallback when the response carries no id.
+            sell_data = res_json.get("data") or {}
+            return (
+                str(sell_data.get("orderid") or "")
+                if isinstance(sell_data, dict) else ""
+            ) or True
+
         except Exception as e:
             logger.error(f"Error selling units {e}")
             raise

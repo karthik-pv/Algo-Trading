@@ -36,7 +36,7 @@ from core.audit_log import trade_audit
 
 from core.utils import (
     fetch_from_json,
-    find_matching_object , is_market_open , write_to_json , compute_limit_margin , get_exchange_for_underlying , get_underlying_for_symbol , resolve_data_path , DATA_DIR
+    find_matching_object , is_market_open , write_to_json , compute_limit_margin , round_to_tick , get_exchange_for_underlying , get_underlying_for_symbol , resolve_data_path , DATA_DIR
 )
 from core.signal_rules import (
     evaluate_ultra_scalping_entry,
@@ -286,6 +286,15 @@ class Trader_Singleton:
     _sell_order_lock = threading.Lock()
     _sell_in_flight = {}
     _SELL_IN_FLIGHT_TIMEOUT_SECS = 10
+
+    # Manual-sell re-pricing watchdog: a marketable SELL LIMIT can rest
+    # unfilled if the market collapses faster than the order lands.
+    # The watchdog re-prices it at the fresh LTP - margin every
+    # MANUAL_SELL_REPRICE_DELAY_SECS until it fills (max attempts, then
+    # it is left resting and the user is told). Applies to both
+    # brokers (Kite has priced manual sells as LIMIT since always).
+    MANUAL_SELL_REPRICE_DELAY_SECS = 5
+    MANUAL_SELL_REPRICE_MAX_ATTEMPTS = 5
 
     # Browser-close shutdown: connected frontend socket ids. When the
     # LAST one disconnects (browser/app window closed), the app shuts
@@ -3102,6 +3111,148 @@ class Trader_Singleton:
             except (TypeError, ValueError):
                 return None
         return 0
+
+    # -------------------------------------------------------------
+    # Manual-sell re-pricing watchdog. A marketable SELL LIMIT (both
+    # brokers) can rest unfilled when the market collapses faster
+    # than the order lands. The watchdog re-prices the order at the
+    # fresh LTP - margin every few seconds until it fills; after the
+    # max attempts it leaves the order resting and tells the user.
+    # -------------------------------------------------------------
+    def _schedule_manual_sell_reprice(self, tradingsymbol, token, lots,
+                                      exchange, position_key, order_id,
+                                      attempt=1):
+        """Schedule the next open-order check for a manual SELL LIMIT."""
+        if not order_id:
+            return
+        timer = threading.Timer(
+            self.MANUAL_SELL_REPRICE_DELAY_SECS,
+            self._reprice_manual_sell_if_open,
+            args=(tradingsymbol, token, lots, exchange, position_key,
+                  str(order_id), attempt),
+        )
+        timer.daemon = True
+        timer.start()
+
+    def _reprice_manual_sell_if_open(self, tradingsymbol, token, lots,
+                                     exchange, position_key, order_id,
+                                     attempt):
+        try:
+            pending = self._broker.fetch_all_pending_orders()
+            if pending is None:
+                # Cannot verify the book - do NOT blindly modify; leave
+                # the order as-is and tell the user to check.
+                logger.warning(
+                    f"Manual-sell re-price: could not fetch pending "
+                    f"orders for {tradingsymbol} ({order_id}); leaving "
+                    f"the order untouched - check the broker terminal."
+                )
+                self.frontend_data_socket.emit('status_message', {
+                    "success": False,
+                    "message": (f"SELL {tradingsymbol}: could not verify "
+                                f"order {order_id} - check the broker "
+                                f"terminal if it is still open."),
+                })
+                return
+
+            match = next(
+                (o for o in pending
+                 if str(o.get("order_id")) == str(order_id)),
+                None,
+            )
+            if match is None:
+                # Gone from the pending book -> filled (or cancelled
+                # elsewhere). Nothing left to watch.
+                logger.info(
+                    f"Manual sell {order_id} for {tradingsymbol} no "
+                    f"longer open - re-price watchdog done."
+                )
+                return
+
+            if attempt >= self.MANUAL_SELL_REPRICE_MAX_ATTEMPTS:
+                logger.warning(
+                    f"Manual sell {order_id} for {tradingsymbol} still "
+                    f"unfilled after {attempt} re-prices; leaving it "
+                    f"resting - check the Pending Orders grid."
+                )
+                self.frontend_data_socket.emit('status_message', {
+                    "success": False,
+                    "message": (f"SELL {tradingsymbol} ({order_id}) is "
+                                f"still unfilled after {attempt} "
+                                f"re-prices - it is resting in the "
+                                f"Pending Orders grid; sell manually "
+                                f"if needed."),
+                })
+                return
+
+            # Fresh LTP: the live position leg first (it may have a
+            # newer price), else the contract-chain LTP.
+            ltp = None
+            leg = self._position_data.get(str(position_key or "")) or {}
+            ltp = leg.get("latest_price")
+            if not ltp:
+                ltp = (self._five_weekly_option_contracts.get(token) or {}).get("ltp")
+            try:
+                ltp = float(ltp)
+            except (TypeError, ValueError):
+                ltp = 0.0
+            if ltp <= 0:
+                # No trustworthy price - retry on the next tick window
+                # rather than modifying to a stale value.
+                logger.warning(
+                    f"Manual-sell re-price: no fresh LTP for "
+                    f"{tradingsymbol}; retrying (attempt {attempt})."
+                )
+                self._schedule_manual_sell_reprice(
+                    tradingsymbol, token, lots, exchange,
+                    position_key, order_id, attempt + 1
+                )
+                return
+
+            tick = 0.05
+            new_price = max(
+                round_to_tick(ltp - compute_limit_margin(ltp), tick, up=False),
+                tick,
+            )
+
+            modified = self._broker.modify_exit_limit(
+                order_id, tradingsymbol, token, lots, exchange, new_price
+            )
+            if modified:
+                logger.info(
+                    f"Manual sell {order_id} for {tradingsymbol} "
+                    f"re-priced to {new_price} (LTP {ltp}) - "
+                    f"attempt {attempt}."
+                )
+                self.frontend_data_socket.emit('status_message', {
+                    "success": True,
+                    "message": (f"SELL {tradingsymbol} re-priced to "
+                                f"{new_price} (attempt {attempt}) - "
+                                f"waiting for fill."),
+                })
+                self._schedule_manual_sell_reprice(
+                    tradingsymbol, token, lots, exchange,
+                    position_key, order_id, attempt + 1
+                )
+            else:
+                logger.error(
+                    f"Manual-sell re-price FAILED for {tradingsymbol} "
+                    f"({order_id}) - the order may be resting at an "
+                    f"unreachable price; sell manually if needed."
+                )
+                self.frontend_data_socket.emit('status_message', {
+                    "success": False,
+                    "message": (f"SELL {tradingsymbol}: re-pricing "
+                                f"order {order_id} FAILED - it may be "
+                                f"resting unfilled; check the broker "
+                                f"terminal."),
+                })
+        except Exception as e:
+            # The watchdog must never take the server down.
+            logger.exception(
+                f"Manual-sell re-price watchdog error for "
+                f"{tradingsymbol} ({order_id}): {e}"
+            )
 
     def position_data_update(self, token_or_symbol, attribute_name, updated_value, is_token=True):
         """Update an attribute on position leg(s).
@@ -9922,6 +10073,19 @@ class Trader_Singleton:
                     result = self._broker.sell_units(order_details["tradingsymbol"] , order_details["token"] , order_details["lots"] , self._exchange , ltp, position_key=position_key)
 
                     logger.info(f"Sell order successful for {order_details['tradingsymbol']} ({order_details['lots']} lots)")
+
+                    # The manual sell is a marketable SELL LIMIT on both
+                    # brokers - if it rests unfilled (fast collapse),
+                    # the watchdog re-prices it at the fresh LTP until
+                    # it fills instead of leaving it stranded.
+                    self._schedule_manual_sell_reprice(
+                        order_details["tradingsymbol"],
+                        order_details["token"],
+                        order_details["lots"],
+                        self._exchange,
+                        position_key,
+                        result,
+                    )
 
                     # AUDIT: sell success response receipt.
                     trade_audit.record_sell_executed(
