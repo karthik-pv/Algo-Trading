@@ -118,7 +118,28 @@ off — `trader._tradingView_Data` / `_tv_levels` are memory-only. Fix:
 - Trade logic untouched — the persist hook is additive inside the webhook
   route, wrapped in try/except, and cannot affect order flow.
 
-## 7. Known limitations / next steps
+## 7. Testing the widget while NSE is closed (v1.2 data pin, 2026-11-01)
+
+The indicator `Strategy_TradingInvestAlgo_Data` **v1.2** pins its data symbol
+to `NSE:NIFTY1!` (one `DATA_SYM` const; all `request.security` calls + the
+`SYM` fields use it). Placed on a 24/7 chart (e.g. **BTCUSD**) it computes
+and alerts **genuine Nifty data** while NSE is closed — the full path
+(alert → webhook → persist → widget) can be tested any day. Payload format
+is byte-identical to a NIFTY1!-chart alert.
+
+**Rules:**
+
+- **Exactly ONE live alert at a time.** A BTCUSD-chart alert and a
+  NIFTY1!-chart alert both active would double-fire every bar close —
+  double Spatam TTS + duplicate webhook processing into the trade path.
+- A BTCUSD-chart alert fires **24/7** (every 5m bar close, all weekend) —
+  disable it after testing / before the NSE open and keep the NSE-chart
+  alert as the market-hours source.
+- Caveat: `ORH`/`ORL` and session stamps key off the **chart's** session —
+  on a BTCUSD chart those two values are not NSE-meaningful. All other
+  payload values are pure Nifty. The NSE-chart alert remains authoritative.
+
+## 8. Known limitations / next steps
 
 1. `WPM`/`MPM`/`QPM2` chips and D-row cross ages need the D/W INDICATORS
    blocks enabled in the Pine payload (version-bump ceremony) or another
