@@ -5,6 +5,19 @@ Status: **LIVE v1** — read-only dashboard widget, no order-path interaction.
 
 ---
 
+## 0. Registered table names (user convention, 2026-11-01)
+
+The widget area has FOUR tables, always referred to by these names:
+
+| # | Registered name | Position | Contents |
+|---|---|---|---|
+| 1 | **BIAS table** | top-most, spans the two below | `PA / 5PM / CV / 3S` + set-apart `3PM`; caption row (grey header) + trend row (colour-filled, arrows per component) |
+| 2 | **MOMENTORS table** | second, left | momentor rows (`sup/res`, `5s`, `1e50`, `1cvx`, `5cvx`, fresh crosses) + the TF state table (`1/5/3/2/D`) directly beneath it |
+| 3 | **LEVELS LADDER table** | second, right | S/R levels ±150 pts, Close row on yellow, PM-state chips in 4th column |
+| 4 | **SET UP table** | third, left (below MOMENTORS) | the SetUps chip panel |
+
+---
+
 ## 1. What it is
 
 A two-table widget in the **Trade module, below Pending Orders**:

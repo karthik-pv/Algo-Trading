@@ -47,11 +47,23 @@ _LIGHT = {"up": "light-green", "down": "light-red", "flat": "grey"}
 _DARK = {"up": "dark-green", "down": "dark-red", "flat": "grey"}
 
 
-def _cross_cell(block, trend_key, over_key, under_key, allow_down=True):
+def _cross_cell(block, trend_key, over_key, under_key, allow_down=True, max_age=4):
     """One momentor slot: dark X-form while the cross in the current
-    direction is fresh (1-4), light state form once aged out."""
+    direction is fresh (1-max_age), light state form once aged out.
+    trend_key=None derives direction purely from which cross index is
+    more recent (used for the VWAP-cross CVX rows, which have no flag)."""
     if not isinstance(block, dict):
         return {"label": "-", "count": None, "color": "grey"}
+    if trend_key is None:
+        over, under = _i(block.get(over_key)), _i(block.get(under_key))
+        if over is None and under is None:
+            return {"label": "-", "count": None, "color": "grey"}
+        trend = 1 if (under is None or (over is not None and over <= under)) else -1
+        age = over if trend == 1 else under
+        direction = "up" if trend == 1 else "down"
+        if 1 <= age <= max_age:
+            return {"label": "X", "count": age, "color": _DARK[direction], "dir": direction}
+        return {"label": "o", "count": None, "color": _LIGHT[direction], "dir": direction}
     trend = _sign(block.get(trend_key))
     over = _i(block.get(over_key))
     under = _i(block.get(under_key)) if allow_down else None
@@ -63,7 +75,7 @@ def _cross_cell(block, trend_key, over_key, under_key, allow_down=True):
     direction = "up" if trend == 1 else ("down" if trend == -1 else "flat")
     if trend is None:
         return {"label": "-", "count": None, "color": "grey"}
-    if age is not None and 1 <= age <= 4:
+    if age is not None and 1 <= age <= max_age:
         return {"label": "X", "count": age, "color": _DARK[direction], "dir": direction}
     # aged out / persistent state
     if not allow_down and trend < 0:
@@ -98,7 +110,10 @@ def _1pme50_cell(ind, price):
 
 def _5sxtoz_cell(ind):
     """5m Stoch cross + the zone it is crossing/trending FROM.
-    OSZ (K<25) favorable, MZ good, OBZ (K>75) unfavorable. No volume."""
+    Colour = zone x swing direction (user rule 2026-11-01):
+      upswing   - OSZ dark-green (room to go up), MZ light-green, OBZ red
+      downswing - OBZ dark-red (room to go down), MZ light-red,  OSZ red
+    (OSZ = K<25 oversold, OBZ = K>75 overbought, MZ = mid zone). No volume."""
     b = ind.get("5M") or {}
     if not isinstance(b, dict):
         return {"value": "-", "color": "grey"}
@@ -111,30 +126,88 @@ def _5sxtoz_cell(ind):
     if zone is None:
         return {"value": "-", "color": "grey"}
     x_up = over is not None and (under is None or over <= under)
-    if zone == "OBZ":
-        color = "dark-red"
-    elif zone == "OSZ":
-        color = "dark-green"
+    # colour = zone x swing direction (see docstring)
+    if x_up:
+        color = ("dark-green" if zone == "OSZ" else
+                 "light-green" if zone == "MZ" else "red")
     else:
-        color = "amber"
+        color = ("dark-red" if zone == "OBZ" else
+                 "light-red" if zone == "MZ" else "red")
     arrow = "\u2191" if x_up else "\u2193"
-    return {"value": "%s %s" % (zone, arrow), "color": color,
+    # bg=True: the renderer paints the colour as the CELL BACKGROUND with a
+    # fixed text colour (user: "give background, keep text colour same")
+    return {"value": "%s %s" % (zone, arrow), "color": color, "bg": True,
             "zone": zone, "cross": "up" if x_up else "down"}
+
+
+# ------------------------------------------------------------- level row
+
+def _short_level(name):
+    """Ladder row name -> compact token: '1m EMA100' -> '1E100',
+    '5m EMA50' -> '5E50', '2h EMA200' -> '2E200', 'D EMA100' -> 'DE100';
+    non-EMA levels keep their name (Cam R3, RN + ...)."""
+    try:
+        tf_tok, rest = name.split(" ", 1)
+    except ValueError:
+        return name
+    tf_char = {"1m": "1", "5m": "5", "30m": "3", "2h": "2"}.get(tf_tok, tf_tok)
+    if rest.startswith("EMA"):
+        return "%sE%s" % (tf_char, rest[3:])
+    return name
+
+
+def _support_resistance_row(levels, price, rising):
+    """Top momentor row: the level the price just used. Rising = took
+    support (level below close) and riding up; falling = faced resistance
+    (level above close) and rejected down. Multiple candidates -> the
+    highest-priced one (user rule)."""
+    if price is None:
+        return {"name": "lvl", "value": "-", "color": "grey"}
+    rows = []
+    for r in ((levels or {}).get("CW_CD") or []):
+        if isinstance(r, (list, tuple)) and len(r) >= 2 and str(r[0]) != "Close":
+            try:
+                rows.append((str(r[0]), float(r[1])))
+            except (TypeError, ValueError):
+                continue
+    if rising:
+        cands = [(n, p) for n, p in rows if p < price]
+        if cands:
+            n, p = max(cands, key=lambda x: x[1])
+            return {"name": "sup", "value": "%s \u2191" % _short_level(n),
+                    "color": "dark-green", "lvl": p}
+        return {"name": "sup", "value": "-", "color": "grey"}
+    if rising is False:
+        cands = [(n, p) for n, p in rows if p > price]
+        if cands:
+            n, p = max(cands, key=lambda x: x[1])
+            return {"name": "res", "value": "%s \u2193" % _short_level(n),
+                    "color": "dark-red", "lvl": p}
+        return {"name": "res", "value": "-", "color": "grey"}
+    return {"name": "lvl", "value": "-", "color": "grey"}
 
 
 # ------------------------------------------------------------- momentors
 
-def build_momentors(snapshot, price=None):
-    """Rows for the Momentors table, in the user's sheet order."""
+def build_momentors(snapshot, price=None, levels=None):
+    """Rows for the Momentors table, in the user's sheet order.
+    First column is ALL LOWERCASE (user rule). Row order:
+    sup/res level row, 5s (5m Stoch zone), 1e50, then fresh crosses."""
     ind = ((snapshot or {}).get("INDICATORS")) or {}
 
     def tf(key):
         b = ind.get(key)
         return b if isinstance(b, dict) else {}
 
+    e50 = _1pme50_cell(ind, price)
+    rising = True if e50.get("value") == "UP" else \
+        (False if e50.get("value") == "DN" else None)
+
     rows = [
-        dict(_5sxtoz_cell(ind), name="5S"),
-        dict(_1pme50_cell(ind, price), name="1E50"),
+        dict(_support_resistance_row(levels, price, rising), name="sup"
+             if rising else ("res" if rising is False else "lvl")),
+        dict(_5sxtoz_cell(ind), name="5s"),
+        dict(e50, name="1e50"),
     ]
     specs = [
         # slot, block-key, cross label, state label, trend/over/under keys, allow_down
@@ -142,27 +215,35 @@ def build_momentors(snapshot, price=None):
          "PVTTrendFlag", "PVTCrossOverIndex", "PVTCrossUnderIndex", True),
         ("1O", "1M", "1ox", "1o",
          "VOCTrendFlag", "VOCCrossOverIndex", "VOCCrossUnderIndex", False),
+        # v1.9: price crossing session VWAP - direction from recency only,
+        # fresh window 1-20 bars on 1m
+        ("1VX", "1M", "1cvx", "1cvx",
+         None, "VWAPCrossOverIndex", "VWAPCrossUnderIndex", True, 20),
         ("5O", "5M", "5ox", "5o",
          "VOCTrendFlag", "VOCCrossOverIndex", "VOCCrossUnderIndex", False),
-        ("3P", "30M", "3PX", "3p",
+        # v1.9: 5m VWAP cross, fresh window 1-4 bars (explicit user spec)
+        ("5VX", "5M", "5cvx", "5cvx",
+         None, "VWAPCrossOverIndex", "VWAPCrossUnderIndex", True, 4),
+        ("3P", "30M", "3px", "3p",
          "PVTTrendFlag", "PVTCrossOverIndex", "PVTCrossUnderIndex", True),
-        ("3M1", "30M", "3M1X", "3M1",
+        ("3M1", "30M", "3m1x", "3m1",
          "Trend_1226", "X_1226", "Y_1226", True),
-        ("3M2", "30M", "3M2X", "3M2",
+        ("3M2", "30M", "3m2x", "3m2",
          "Trend_2452", "X_2452", "Y_2452", True),
-        ("3O", "30M", "3OX", "3o",
+        ("3O", "30M", "3ox", "3o",
          "VOCTrendFlag", "VOCCrossOverIndex", "VOCCrossUnderIndex", True),
-        ("2P", "2H", "2PX", "2p",
+        ("2P", "2H", "2px", "2p",
          "PVTTrendFlag", "PVTCrossOverIndex", "PVTCrossUnderIndex", True),
-        ("2M1", "2H", "2M1X", "2M1",
+        ("2M1", "2H", "2m1x", "2m1",
          "Trend_1226", "X_1226", "Y_1226", True),
-        ("2M2", "2H", "2M2X", "2M2",
+        ("2M2", "2H", "2m2x", "2m2",
          "Trend_2452", "X_2452", "Y_2452", True),
-        ("2O", "2H", "2OX", "2o",
+        ("2O", "2H", "2ox", "2o",
          "VOCTrendFlag", "VOCCrossOverIndex", "VOCCrossUnderIndex", True),
     ]
-    for _slot, tfkey, xlabel, slabel, tkey, okey, ukey, allow_dn in specs:
-        cell = _cross_cell(tf(tfkey), tkey, okey, ukey, allow_dn)
+    for _slot, tfkey, xlabel, slabel, tkey, okey, ukey, allow_dn, *win in specs:
+        cell = _cross_cell(tf(tfkey), tkey, okey, ukey, allow_dn,
+                           max_age=win[0] if win else 4)
         if cell["label"] != "X":
             continue  # v1.1 UX: show fresh crosses only - aged-out states hidden
         rows.append({"name": xlabel, "label": xlabel, "count": cell.get("count"),
@@ -172,6 +253,170 @@ def build_momentors(snapshot, price=None):
     # D cross ages are unavailable — under the crosses-only rule nothing from
     # the D layer renders (removed 2026-11-01: the pinned Do row confused the
     # display; it returns once the Pine D/W blocks are enabled).
+    return rows
+
+
+# ----------------------------------------------------------- top strip + states
+
+def _align_color(flags):
+    """Green when every component is up, red when every one is down,
+    grey (blank) when mixed or unknown."""
+    vals = [v for v in flags if v is not None]
+    if not vals or len(vals) < len(flags):
+        return "grey"
+    if all(v == 1 for v in vals):
+        return "dark-green"
+    if all(v == -1 for v in vals):
+        return "dark-red"
+    return "grey"
+
+
+def _pm4_color(p, m):
+    """PM cell colour (user scheme 2026-11-01, all timeframes):
+    P+M2 both up = dark green; both down = dark red;
+    M2 retreating down while P up = light red; P down while M2 up =
+    light green (recovering); unknown = grey."""
+    if p is None or m is None:
+        return "grey"
+    if p == 1 and m == 1:
+        return "dark-green"
+    if p == -1 and m == -1:
+        return "dark-red"
+    if p == 1 and m == -1:
+        return "light-red"
+    return "light-green"
+
+
+def build_topstrip(snapshot, price, levels):
+    """Cells for the top strip that spans the Momentors + Levels tables
+    (user spec 2026-11-01): PA / 5PM / CV / 3S and, set apart on the
+    right, 3PM (the 30m bias - only counts once held > 4 bars).
+    Each cell also carries a 'trend' string: one arrow per underlying
+    component (up = arrow up, down = arrow down); 3S appends its Stoch
+    zone (OSZ/MZ/OBZ)."""
+    ind = ((snapshot or {}).get("INDICATORS")) or {}
+
+    def _arr(flag):
+        return "\u25b2" if flag == 1 else ("\u25bc" if flag == -1 else "\u2013")
+
+    e50 = _1pme50_cell(ind, price)
+    pa = "dark-green" if e50.get("value") == "UP" else \
+        ("dark-red" if e50.get("value") == "DN" else "grey")
+    pa_trend = "\u25b2" if e50.get("value") == "UP" else \
+        ("\u25bc" if e50.get("value") == "DN" else "\u2013")
+    b5 = ind.get("5M") or {}
+    p5, m5 = _sign(b5.get("PVTTrendFlag")), _sign(b5.get("Trend_2452"))
+    m1_5 = _sign(b5.get("Trend_1226"))
+    # 5PM: same logic as 3PM - background = 5m PVT vs zero, arrows M1/M2
+    f5 = "dark-green" if p5 == 1 else ("dark-red" if p5 == -1 else "grey")
+    vwap = _f((ind.get("1M") or {}).get("VWAP"))
+    cv = None
+    if price is not None and vwap is not None:
+        cv = "dark-green" if price >= vwap else "dark-red"
+    b30 = ind.get("30M") or {}
+    p30, m30 = _sign(b30.get("PVTTrendFlag")), _sign(b30.get("Trend_2452"))
+    m1_30 = _sign(b30.get("Trend_1226"))
+    kt30 = _sign(b30.get("KTrendFlag"))
+    k30 = _f(b30.get("K"))
+    zone30 = ("OSZ" if k30 < 25 else ("OBZ" if k30 > 75 else "MZ")) if k30 is not None else ""
+    # 3S colour (user rule 2026-11-01): 2PM direction x 30m Stoch zone -
+    # 2PM up:  OSZ green, MZ green, OBZ red
+    # 2PM down (mirror): OSZ red, MZ red, OBZ green
+    b2 = ind.get("2H") or {}
+    p2, m2 = _sign(b2.get("PVTTrendFlag")), _sign(b2.get("Trend_2452"))
+    pm2_up, pm2_dn = (p2 == 1 and m2 == 1), (p2 == -1 and m2 == -1)
+    s3 = "grey"
+    if zone30:
+        if pm2_up:
+            s3 = "red" if zone30 == "OBZ" else "dark-green"
+        elif pm2_dn:
+            s3 = "green" if zone30 == "OBZ" else "dark-red"
+        # 2PM mixed -> grey
+    # 3PM: background = 30m PVT vs zero (user rule 2026-11-01); arrows =
+    # M1 (MACD 12/26) then M2 (MACD 24/52) on 30m
+    pm3 = "dark-green" if p30 == 1 else ("dark-red" if p30 == -1 else "grey")
+    return [
+        {"name": "PA", "color": pa, "trend": pa_trend},
+        {"name": "5PM", "color": f5, "trend": _arr(m1_5) + _arr(m5)},
+        {"name": "CV", "color": cv or "grey",
+         "trend": "\u25b2" if cv == "dark-green" else
+                  ("\u25bc" if cv == "dark-red" else "\u2013")},
+        {"name": "3S", "color": s3,
+         "trend": (_arr(kt30) + " " + zone30).strip()},
+        {"name": "3PM", "color": pm3, "far": True,
+         "trend": _arr(m1_30) + _arr(m30)},
+    ]
+
+
+def _group_tokens(components):
+    """Join component codes by state group: same-TF components concatenate
+    ('5P'+'5M1' -> '5PM1'), different-TF components join with '_'
+    ('5M2'+'3S' -> '5M2_3S'). Matches the user's sheet tokens."""
+    groups = []
+    for code in components:
+        if groups and groups[-1][0] == code[0]:
+            groups[-1] = (groups[-1][0], groups[-1][1] + code[1:])
+        else:
+            groups.append((code[0], code))
+    return "_".join(g[1] for g in groups)
+
+
+def build_states(snapshot, price):
+    """SET UP table below Momentors (user spec 2026-11-01, revised same
+    day): rows are timeframes (1/5/3/2/D). Each row's components are
+    evaluated individually - up-components occupy the LEFT (always green)
+    cell, retracing/downtrending ones the RIGHT (always red) cell, joined
+    same-TF and with '_' across TFs (e.g. left '5PM1', right '5M2_3S').
+    P = PVT vs 0, S = Stoch K-trend, M1 = MACD 12/26, M2 = MACD 24/52,
+    V = VOC, E50 = price vs 1m EMA50, DS/WS = Daily/Weekly Stoch."""
+    ind = ((snapshot or {}).get("INDICATORS")) or {}
+    htf_d = ind.get("D") or {}
+    htf_w = ind.get("W") or {}
+
+    def s(key):
+        return ind.get(key) or {}
+
+    b1, b5, b3, b2 = s("1M"), s("5M"), s("30M"), s("2H")
+
+    def state1e50():
+        e50, above = _f(b1.get("EMA50")), None
+        if price is not None and e50 is not None:
+            above = price >= e50
+        return "up" if above else ("down" if above is False else "unknown")
+
+    # (code, state) per row, in display order
+    rows_def = [
+        ("1", [("1P", _sign(b1.get("PVTTrendFlag"))),
+               ("1M1", _sign(b1.get("Trend_1226"))),
+               ("1E50", state1e50()),
+               ("5S", _sign(b5.get("KTrendFlag")))]),
+        ("5", [("5P", _sign(b5.get("PVTTrendFlag"))),
+               ("5S", _sign(b5.get("KTrendFlag"))),
+               ("5M1", _sign(b5.get("Trend_1226"))),
+               ("5V", _sign(b5.get("VOCTrendFlag"))),
+               ("5M2", _sign(b5.get("Trend_2452"))),
+               ("3S", _sign(b3.get("KTrendFlag")))]),
+        ("3", [("3P", _sign(b3.get("PVTTrendFlag"))),
+               ("3S", _sign(b3.get("KTrendFlag"))),
+               ("3M1", _sign(b3.get("Trend_1226"))),
+               ("3M2", _sign(b3.get("Trend_2452"))),
+               ("2S", _sign(b2.get("KTrendFlag")))]),
+        ("2", [("2P", _sign(b2.get("PVTTrendFlag"))),
+               ("2S", _sign(b2.get("KTrendFlag"))),
+               ("2M1", _sign(b2.get("Trend_1226"))),
+               ("DS", _sign(htf_d.get("KTrendFlag")))]),
+        ("D", [("DP", _sign(htf_d.get("PVTTrendFlag"))),
+               ("DS", _sign(htf_d.get("KTrendFlag"))),
+               ("DM1", _sign(htf_d.get("Trend_1226"))),
+               ("WS", _sign(htf_w.get("KTrendFlag")))]),
+    ]
+    rows = []
+    for tf_label, comps in rows_def:
+        up = [code for code, st in comps if st == 1 or st == "up"]
+        down = [code for code, st in comps if not (st == 1 or st == "up")]
+        rows.append({"tf": tf_label,
+                     "left": _group_tokens(up) if up else "",
+                     "right": _group_tokens(down) if down else ""})
     return rows
 
 

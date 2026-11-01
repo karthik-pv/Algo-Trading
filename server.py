@@ -1281,12 +1281,51 @@ def instruments_json():
 _TV_SNAPSHOT_PATH = os.path.join(DATA_DIR, "tv_last_snapshot.json")
 _tv_snap_cache = {"data": {}, "ts": 0.0}
 
+# Raw incoming TV webhook dump (2026-11-01, debug aid): every message TradingView
+# sends is written as its own JSON file under tv/TVAlgo_JSON/incoming/ so the
+# payloads can be inspected directly. Runtime data - gitignored.
+_TV_INCOMING_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                "tv", "TV_Algo_JSON", "incoming")
+_tv_incoming_seq = 0
+
+
+def _tv_dump_incoming(data):
+    global _tv_incoming_seq
+    try:
+        _tv_incoming_seq += 1
+        os.makedirs(_TV_INCOMING_DIR, exist_ok=True)
+        # retention: ~3 files per 15s bar is ~30MB over a live session, so
+        # cap the folder - when it passes 600 files, drop the oldest 300
+        # (latest_*.json are always rewritten, they never matter here)
+        try:
+            _all = [f for f in os.listdir(_TV_INCOMING_DIR)
+                    if f.endswith(".json") and not f.startswith("latest_")]
+            if len(_all) > 600:
+                for f in sorted(_all)[:300]:
+                    os.remove(os.path.join(_TV_INCOMING_DIR, f))
+        except OSError:
+            pass
+        msg = data.get("MSG") or "UNKNOWN"
+        ts = datetime.now().strftime("%d%m_%H%M%S")
+        path = os.path.join(_TV_INCOMING_DIR, f"{msg}_{ts}_{_tv_incoming_seq:04d}.json")
+        with open(path, "w") as f:
+            json.dump(data, f, indent=1)
+        # rolling "latest of each type" copy for quick eyeballing
+        with open(os.path.join(_TV_INCOMING_DIR, f"latest_{msg}.json"), "w") as f:
+            json.dump(data, f, indent=1)
+    except Exception as e:
+        logger.error(f"tv incoming dump failed: {e}")
+
 
 def _tv_persist_snapshot(data):
     try:
         now = time.time()
         if data.get("MSG") == "LEVELS":
             _tv_snap_cache["data"]["LEVELS"] = data.get("LEVELS") or {}
+            if data.get("HTF"):   # Pine v1.7: HTF rides inside LEVELS
+                _tv_snap_cache["data"]["HTF"] = data.get("HTF") or {}
+        elif data.get("MSG") == "HTF":
+            _tv_snap_cache["data"]["HTF"] = data.get("HTF") or {}   # Pine v1.6
         elif data.get("INDICATORS") or data.get("SETUPS"):
             _tv_snap_cache["data"]["SNAPSHOT"] = data
         else:
@@ -1325,6 +1364,7 @@ def trading_view():
         # log the message type so DATA / LEVELS / ALERTS reception is verifiable
         # per bar from the logs alone (count should pair 2x per 5m bar)
         logger.info(f"TV webhook MSG={data.get('MSG')}")
+        _tv_dump_incoming(data)
         _tv_persist_snapshot(data)
     if data is None and raw:
         # TEST-FEED REPAIR: the alert's SYM field can arrive as a study-object
@@ -1792,6 +1832,7 @@ def momentor_data():
         source = "live"
         snapshot = getattr(trader, "_tradingView_Data", None)
         levels = getattr(trader, "_tv_levels", {}) or {}
+        htf = getattr(trader, "_tv_htf", {}) or {}
         payload = None
         if not snapshot and not levels:
             # no live snapshot and nothing persisted yet (e.g. first run,
@@ -1805,10 +1846,19 @@ def momentor_data():
                 persisted = _tv_load_persisted()
                 snapshot = snapshot or persisted.get("SNAPSHOT")
                 levels = levels or persisted.get("LEVELS") or {}
+                htf = htf or persisted.get("HTF") or {}
                 source = "persisted"
                 data_ts = _tv_load_persisted().get("ts") or ""
             else:
                 data_ts = ""
+            # merge the compact W/D/Q PM states (HTF message, Pine v1.6) into
+            # a COPY of the snapshot's INDICATORS - never mutate the trader's
+            # live objects
+            if htf and isinstance(snapshot, dict):
+                ind = dict(snapshot.get("INDICATORS") or {})
+                ind.update(htf)
+                snapshot = dict(snapshot)
+                snapshot["INDICATORS"] = ind
             price = None
             if isinstance(levels, dict):
                 for r in (levels.get("CW_CD") or []):
@@ -1819,7 +1869,9 @@ def momentor_data():
                             price = None
                         break
             payload = {
-                "momentors": mw.build_momentors(snapshot, price),
+                "top": mw.build_topstrip(snapshot, price, levels),
+                "momentors": mw.build_momentors(snapshot, price, levels),
+                "states": mw.build_states(snapshot, price),
                 "ladder": mw.build_ladder(snapshot, levels, price),
                 "source": source,
                 "ts": data_ts,

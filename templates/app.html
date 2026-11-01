@@ -1489,6 +1489,31 @@
     #spattScroll::-webkit-scrollbar-thumb:active { background: #9ec5fe; }
     #spattScroll::-webkit-scrollbar-corner { background: #191919; }
 
+    /* --- ML widget: thick grayish-white border so the four tables
+         (top strip / momentors+states / levels ladder) are clearly
+         demarcated from each other and from neighbouring panels --- */
+    /* ladder: border on the SCROLL CONTAINER so it encloses the scrollbar */
+    #ml-ladder-scroll {
+        border: 3px solid #b9b9b9;
+        border-radius: 4px;
+    }
+    /* momentors: border on the SCROLL CONTAINER (encloses scrollbar), same
+       as the ladder; state table keeps its own border */
+    #ml-mom-scroll {
+        border: 3px solid #b9b9b9;
+        border-radius: 4px;
+    }
+    #ml-top-table, #ml-state-table {
+        border: 3px solid #b9b9b9;
+        border-radius: 4px;
+    }
+    #pa-momentors-section, #pa-ladder-section, #pa-setups-section {
+        border: 3px solid #b9b9b9;
+        border-radius: 4px;
+    }
+    #ml-top-body td { border: 1px solid #000 !important; }
+    #ml-top-body tr:first-child td { border-bottom: 1px solid #666 !important; }
+
     /* --- PA WIDGET (SetUps / Momentors / Levels Ladder) below Pending Orders --- */
     #pa-widget-container { width: 100%; max-width: none; border-color: #3a5a8c; }
     #pa-widget-grid {
@@ -1767,17 +1792,33 @@
         }
     </style>
     <div class="widget-container" id="ml-widget-container">
+      <!-- inline-block wrapper: its width is set by the widest child (the
+           grid), so the top strip can be width:100% of EXACTLY the
+           momentors+levels span and never wider -->
+      <div style="display:inline-block;">
+        <div id="ml-top-strip" style="margin-bottom:8px;">
+            <table class="option-table" id="ml-top-table"><tbody id="ml-top-body">
+                <tr><td colspan="6" class="no-options">Waiting for TradingView data&hellip;</td></tr>
+            </tbody></table>
+        </div>
         <div id="ml-grid" style="display:flex; gap:16px; align-items:flex-start; flex-wrap:wrap;">
             <div id="ml-momentors" style="flex:0 0 auto;">
-                <table class="option-table" id="ml-mom-table">
-                    <thead><tr><th>Momentor</th><th class="center">Count</th></tr></thead>
-                    <tbody id="ml-mom-body">
-                        <tr><td colspan="2" class="no-options">Waiting for TradingView data&hellip;</td></tr>
+                <div id="ml-mom-scroll" style="height:300px; overflow-y:auto;">
+                    <table class="option-table" id="ml-mom-table">
+                        <thead><tr><th>Momentor</th><th class="center">Count</th></tr></thead>
+                        <tbody id="ml-mom-body">
+                            <tr><td colspan="2" class="no-options">Waiting for TradingView data&hellip;</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+                <table class="option-table" id="ml-state-table" style="margin-top:8px;">
+                    <tbody id="ml-state-body">
+                        <tr><td colspan="3" class="no-options">Waiting for TradingView data&hellip;</td></tr>
                     </tbody>
                 </table>
             </div>
             <div id="ml-ladder" style="flex:0 0 auto;">
-                <div id="ml-ladder-scroll" style="height:345px; overflow-y:auto;">
+                <div id="ml-ladder-scroll" style="height:411px; overflow-y:auto;">
                     <table class="option-table" id="ml-ladder-table">
                         <thead><tr><th class="center">Price</th><th>Level</th><th class="center">Pts</th><th>State</th></tr></thead>
                         <tbody id="ml-ladder-body">
@@ -1787,6 +1828,7 @@
                 </div>
             </div>
         </div>
+      </div>
     </div>
 
     <!-- === PA WIDGET (SetUps / Momentors / Levels Ladder) —
@@ -3738,6 +3780,7 @@ document.addEventListener('DOMContentLoaded', function() {
         const ML_COLORS = {
             'dark-green': '#548235', 'dark-red': '#C00000',
             'light-green': '#C6EFCE', 'light-red': '#FFC7CE',
+            'red': '#CC0000', 'green': '#2E7D32',
             'amber': '#B8860B', 'grey': '#888888'
         };
         const mlTextColor = c => (c === 'light-green' || c === 'light-red') ? '#333' : '#fff';
@@ -3755,6 +3798,8 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         function renderMomentors(data) {
             const momBody = document.getElementById('ml-mom-body');
+            const stateBody = document.getElementById('ml-state-body');
+            const topBody = document.getElementById('ml-top-body');
             const ladderBody = document.getElementById('ml-ladder-body');
             if (!momBody || !ladderBody) return;
             if (data && data.error) {
@@ -3766,27 +3811,71 @@ document.addEventListener('DOMContentLoaded', function() {
                 ladderBody.innerHTML = '<tr><td colspan="4" class="no-options">No TV data yet</td></tr>';
                 return;
             }
-            // Table 1: Momentors - caption column white; colors on the
-            // count cell (crosses) or the value cell (5S zone, 1E50 state)
-            momBody.innerHTML = (data.momentors || []).map(r => {
+            // Top strip spanning both tables: row 1 = names (state colour),
+            // row 2 = trend arrows per component; 3PM set apart on the right
+            const top = data.top || [];
+            if (topBody) {
+                const strip = top.map(c => {
+                    const bg = ML_COLORS[c.color] || ML_COLORS.grey;
+                    return {name: c.name, trend: c.trend || '', bg: bg,
+                            far: !!c.far};
+                });
+                const spacer = '<td style="width:24px;"></td>';
+                const last = strip.length ? strip[strip.length - 1] : null;
+                // caption row = header: grey background, no state colour -
+                // colour lives only on the trend row below
+                const head = strip.filter(c => !c.far).map(c =>
+                    `<td class="center" style="background:#4a4a4a; color:#ccc; font-weight:bold; padding:3px 6px; font-size:12px;">${mlEsc(c.name)}</td>`).join('');
+                const trend = strip.filter(c => !c.far).map(c =>
+                    `<td class="center" style="background:${c.bg}; color:${mlTextColor(c.color)}; font-weight:bold; font-size:12px;">${mlEsc(c.trend)}</td>`).join('');
+                const headFar = last ? `<td class="center" style="background:#4a4a4a; color:#ccc; font-weight:bold; padding:3px 6px; font-size:12px;">${mlEsc(last.name)}</td>` : '';
+                const trendFar = last ? `<td class="center" style="background:${last.bg}; color:${mlTextColor(last.color)}; font-weight:bold; font-size:12px;">${mlEsc(last.trend)}</td>` : '';
+                topBody.innerHTML = `<tr>${head}${spacer}${headFar}</tr><tr>${trend}${spacer}${trendFar}</tr>`;
+            }
+            // SET UP table: LEFT column always GREEN, RIGHT always RED;
+            // tokens occupy a column by state (up -> green, retrace/down -> red)
+            if (stateBody) {
+                stateBody.innerHTML = (data.states || []).map(r => {
+                    const lt = (r.left || []).join(', ');
+                    const rt = (r.right || []).join(', ');
+                    return `<tr>
+                        <td class="center" style="background:#3a3a3a; color:#fff; font-weight:bold;">${mlEsc(r.tf)}</td>
+                        <td class="center" style="background:${ML_COLORS['green']}; color:#fff; font-weight:bold; min-width:63px;">${mlEsc(lt)}</td>
+                        <td class="center" style="background:${ML_COLORS['red']}; color:#fff; font-weight:bold; min-width:63px;">${mlEsc(rt)}</td>
+                    </tr>`;
+                }).join('');
+            }
+            // Table 1: Momentors - caption column white; SECOND COLUMN is
+            // always a colour-filled cell with one fixed text colour rule
+            // (user: "text colour same for all records, give background").
+            // Fixed-height scroll box: pad with blank rows (3 more than the
+            // current record count) to align heights; a scrollbar appears
+            // automatically when more records arrive.
+            const MOM_CAP = 11;
+            const momRows = (data.momentors || []);
+            let momHtml = momRows.map(r => {
                 const color = ML_COLORS[r.color] || ML_COLORS.grey;
                 const isValueRow = r.value !== undefined;
                 const col2 = isValueRow ? r.value : ((r.count === null || r.count === undefined) ? '' : r.count);
-                const col2Style = isValueRow
-                    ? `color:${color}; font-weight:bold;`
-                    : `background:${color}; color:${mlTextColor(r.color)}; font-weight:bold;`;
+                const col2Style = `background:${color}; color:${mlTextColor(r.color)}; font-weight:bold;`;
                 return `<tr>
-                    <td>${mlEsc(r.name)}</td>
+                    <td style="color:#fff;">${mlEsc(r.name)}</td>
                     <td class="center" style="${col2Style}">${col2}</td>
                 </tr>`;
             }).join('');
-            // Table 2: Levels Ladder (close row highlighted, chips colored by PM state)
+            for (let i = momRows.length; i < MOM_CAP; i++) {
+                momHtml += '<tr><td>&nbsp;</td><td></td></tr>';
+            }
+            momBody.innerHTML = momHtml;
+            // Table 2: Levels Ladder (close row highlighted, 4th column
+            // styled like the Momentors 2nd column: colour-filled cell,
+            // fixed text colour - no badge span)
             ladderBody.innerHTML = (data.ladder || []).map(r => {
                 if (r.close) {
-                    return `<tr style="background:#3a3a3a;">
-                        <td class="center">${r.price}</td>
-                        <td><b>${mlEsc(r.name)}</b> &lt;&lt;&lt;</td>
-                        <td class="center">0</td><td></td></tr>`;
+                    return `<tr style="background:#ffd54d;">
+                        <td class="center" style="color:#222; font-weight:bold;">${r.price}</td>
+                        <td style="color:#222;"><b>${mlEsc(r.name)}</b> &lt;&lt;&lt;</td>
+                        <td class="center" style="color:#222; font-weight:bold;">0</td><td></td></tr>`;
                 }
                 const chipBg = r.chip_color ? ML_COLORS[r.chip_color] : '';
                 const chipTx = r.chip_color ? mlTextColor(r.chip_color) : '';
@@ -3794,7 +3883,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     <td class="center">${r.price}</td>
                     <td>${mlEsc(r.name)}</td>
                     <td class="center">${r.pts}</td>
-                    <td>${r.chip ? `<span style="background:${chipBg};color:${chipTx};padding:1px 6px;border-radius:3px;font-size:11px;">${mlEsc(r.chip)}</span>` : ''}</td>
+                    <td class="center" style="${r.chip ? `background:${chipBg}; color:${chipTx}; font-weight:bold;` : ''}">${r.chip ? mlEsc(r.chip) : ''}</td>
                 </tr>`;
             }).join('');
             // keep the Close row centered (~7 rows above/below) as levels change
