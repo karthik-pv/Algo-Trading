@@ -3836,8 +3836,8 @@ document.addEventListener('DOMContentLoaded', function() {
             // tokens occupy a column by state (up -> green, retrace/down -> red)
             if (stateBody) {
                 stateBody.innerHTML = (data.states || []).map(r => {
-                    const lt = (r.left || []).join(', ');
-                    const rt = (r.right || []).join(', ');
+                    const lt = r.left || '';   // build_states returns joined
+                    const rt = r.right || '';  // strings, not arrays
                     return `<tr>
                         <td class="center" style="background:#3a3a3a; color:#fff; font-weight:bold;">${mlEsc(r.tf)}</td>
                         <td class="center" style="background:${ML_COLORS['green']}; color:#fff; font-weight:bold; min-width:63px;">${mlEsc(lt)}</td>
