@@ -219,6 +219,11 @@ class Trader_Singleton:
 
     _latest_prices = {}
     _prev_close_prices = {}
+    # Last TICK arrival per token (feed freshness, set only by real
+    # websocket ticks in set_latest_price - REST re-seeds never stamp
+    # it) and the throttle stamp for the LTP freshness guard.
+    _last_tick_ts = {}
+    _last_stale_ltp_refresh_ts = 0.0
     # Per-token throttle timestamps for persisting last-known prices on
     # live ticks (one entry per token per minute).
     _price_persist_ts = {}
@@ -4692,6 +4697,17 @@ class Trader_Singleton:
                     exc_info=True,
                 )
 
+            # LTP freshness guard: re-seed stale leg prices from a
+            # batched REST quote when the feed goes silent (dormant
+            # under a healthy feed; broker-agnostic).
+            try:
+                self._check_stale_position_ltp(broker)
+            except Exception as guard_error:
+                logger.error(
+                    f"LTP freshness guard failed: {guard_error}",
+                    exc_info=True,
+                )
+
             for token , data in list(self._position_data.items()):
                 # One bad row (or one failing decision) must not kill
                 # the watcher thread - a silent death here disables the
@@ -7249,7 +7265,94 @@ class Trader_Singleton:
             if self._tick_day_counts:
                 self._persist_tick_counts(self._tick_hour_key or "?")
 
-    def set_latest_price(self, instrument_token, tradingsymbol, price, close=None):
+    def _check_stale_position_ltp(self, broker: BrokerInterface):
+        """
+        LTP freshness guard: when the websocket feed goes silent for an
+        open leg (MStock routinely stalls 10s-60min while Kite barely
+        ever does - 2026-11-02 feed stats), re-seed the leg's
+        latest_price from a BATCHED REST quote so the Position Grid,
+        P/L fields and the stop-loss watcher keep working on real
+        prices instead of a frozen last tick.
+
+        Broker-agnostic: it only reacts when a tick is stale, so under
+        a healthy feed (Kite) it is dormant - zero REST calls. Under
+        MStock it fires at most once per POSITION_LTP_STALE_SECS.
+        0 disables. LIVE mode only (the paper grid is fed from the
+        paper trade log, playback/sim have their own tick engines).
+        """
+        if self._mode != "LIVE":
+            return
+        if not is_market_open():
+            return
+        try:
+            stale_secs = float(
+                fetch_from_json("appconfig.json", "POSITION_LTP_STALE_SECS") or 5
+            )
+        except (TypeError, ValueError):
+            stale_secs = 5.0
+        if stale_secs <= 0:
+            return
+        now = time.time()
+        # At most one REST refresh per guard window.
+        if now - self._last_stale_ltp_refresh_ts < stale_secs:
+            return
+
+        stale = {}
+        for key, leg in list(self._position_data.items()):
+            if not isinstance(leg, dict):
+                continue
+            if not leg.get("net_quantity") and not leg.get("lots"):
+                continue
+            sym = leg.get("tradingsymbol")
+            if not sym:
+                continue
+            tok = str(key.split(":", 1)[0])
+            last = self._last_tick_ts.get(tok) or 0
+            if last and now - last < stale_secs:
+                continue
+            stale[tok] = sym
+        if not stale:
+            return
+
+        self._last_stale_ltp_refresh_ts = now
+        try:
+            quotes = broker.get_quotes_batch(list(stale.values())) or {}
+        except Exception as e:
+            logger.error(f"LTP freshness guard: batch quote failed: {e}")
+            return
+        if not quotes:
+            logger.warning(
+                f"LTP freshness guard: no REST quotes for "
+                f"{len(stale)} stale symbol(s) - grid keeps last ticks"
+            )
+            return
+
+        seeded = 0
+        for tok, sym in stale.items():
+            q = quotes.get(sym)
+            if not q or q[0] is None:
+                continue
+            try:
+                ltp = float(q[0])
+            except (TypeError, ValueError):
+                continue
+            if ltp <= 0:
+                continue
+            close = q[2] if len(q) > 2 else None
+            # source="rest_seed": fans out to legs/P-L/grid WITHOUT
+            # stamping _last_tick_ts, so feed-staleness detection
+            # (watchdog, UI dimming) stays honest about the WS state.
+            self.set_latest_price(
+                tok, sym, ltp, close=close, source="rest_seed"
+            )
+            seeded += 1
+        if seeded:
+            logger.info(
+                f"LTP freshness guard: feed silent >{stale_secs:.0f}s - "
+                f"re-seeded {seeded}/{len(stale)} position LTP(s) from REST"
+            )
+
+    def set_latest_price(self, instrument_token, tradingsymbol, price, close=None, source="tick"):
         try:
             token = str(instrument_token)
 
@@ -7263,6 +7366,12 @@ class Trader_Singleton:
 
             # Store latest price for strategy use
             self._latest_prices[token] = price
+
+            # Feed-freshness stamp: REAL websocket ticks only (the
+            # REST re-seed passes source="rest_seed" and must not
+            # fake tick freshness for the guard / watchdog).
+            if source == "tick":
+                self._last_tick_ts[token] = time.time()
 
             # Previous day close is constant for the whole session;
             # store the first valid value seen for the token.
@@ -7305,6 +7414,10 @@ class Trader_Singleton:
                             position_info.get('exit_pending_price'),
                         'exit_pending_pct':
                             position_info.get('exit_pending_pct'),
+                        # REST re-seed marker: the price is real but the
+                        # websocket is silent - the grid keeps the
+                        # stale-cell treatment instead of clearing it.
+                        'stale_seed': source != "tick",
                     }
 
                     self.frontend_data_socket.emit(

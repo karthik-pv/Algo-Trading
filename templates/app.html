@@ -2791,6 +2791,16 @@
                             <input type="text" id="POSITION_PNL_LOG_FREQ" name="POSITION_PNL_LOG_FREQ" placeholder="TICK / 60" />
                         </div>
                     </div>
+                    <div class="field">
+                        <div class="field-caption">
+                            <label class="field-label" for="POSITION_LTP_STALE_SECS">LTP Stale Guard</label>
+                            <span class="key-hint">POSITION_LTP_STALE_SECS</span>
+                        </div>
+                        <div class="input-wrap">
+                            <input type="number" step="1" min="0" id="POSITION_LTP_STALE_SECS" name="POSITION_LTP_STALE_SECS" placeholder="5" title="When a position leg gets no websocket tick for this many seconds, its LTP is re-seeded from a batched REST quote (grid, P/L and stop-loss keep working during feed stalls). 0 disables." />
+                            <span class="suffix">sec</span>
+                        </div>
+                    </div>
                     <div class="field only-ema">
                         <div class="field-caption">
                             <label class="field-label" for="INTRA_EMA">Intra EMA</label>
@@ -4387,11 +4397,18 @@ document.addEventListener('DOMContentLoaded', function() {
         const domId = positionDomId(key);
         const ltp = Number(tick.ltp);
         if (!Number.isFinite(ltp)) return;
-        // Freshness stamp for the stale-LTP guard + clear any stale
-        // marking from this row's market-price cell.
-        positionTickAt[key] = Date.now();
-        const freshCell = document.getElementById(`market-price-${domId}`);
-        if (freshCell) freshCell.classList.remove('ltp-stale-cell');
+        // Freshness stamp for the stale-LTP guard + stale-cell sync.
+        // A REST re-seed (stale_seed marker from the backend guard)
+        // updates the price but is NOT a live tick - keep the tick
+        // stamp untouched and re-apply the amber stale cell.
+        if (tick.stale_seed) {
+            const seedCell = document.getElementById(`market-price-${domId}`);
+            if (seedCell) seedCell.classList.add('ltp-stale-cell');
+        } else {
+            positionTickAt[key] = Date.now();
+            const freshCell = document.getElementById(`market-price-${domId}`);
+            if (freshCell) freshCell.classList.remove('ltp-stale-cell');
+        }
          // Update Sell Widget Data & UI
          if (openPositions[key]) { // Update internal data first
             openPositions[key].latest_price = ltp;

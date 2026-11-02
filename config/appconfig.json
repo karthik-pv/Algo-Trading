@@ -22,9 +22,9 @@
     "pct": {
         "PCT_BOOK_PROFIT_INTRA": "10",
         "PCT_STOP_LOSS_INTRA": "10",
-        "PCT_BOOK_PROFIT_SCALPING": "4",
-        "PCT_STOP_LOSS_SCALPING": "4",
-        "PCT_BOOK_PROFIT_ULTRA_SCALPING": "2",
+        "PCT_BOOK_PROFIT_SCALPING": "6",
+        "PCT_STOP_LOSS_SCALPING": "6",
+        "PCT_BOOK_PROFIT_ULTRA_SCALPING": "4",
         "PCT_STOP_LOSS_ULTRA_SCALPING": "2"
     },
     "pnt": {
@@ -75,7 +75,8 @@
     "cash": {
         "CASH_BALANCE_PAPER_TRADING": "100000",
         "FALLBACK_CASH_BALANCE": "100000",
-        "POSITION_PNL_LOG_FREQ": "60"
+        "POSITION_PNL_LOG_FREQ": "60",
+        "POSITION_LTP_STALE_SECS": "5"
     },
     "charges": {
         "BROKERAGE_PER_ORDER": "5",
@@ -94,17 +95,17 @@
     "ultra_scalping": {
         "US_ENTRY_ENABLED": true,
         "US_ENTRY_CHECK": "WARN",
-        "US_ENTRY_1PM": "PVT_AND_MACD",
-        "US_ENTRY_15S_PVT": "ABOVE_ZERO",
+        "US_ENTRY_1PM": "OFF",
+        "US_ENTRY_15S_PVT": "OFF",
         "US_ENTRY_PRICE_ABOVE": "15S:EMA21",
-        "US_ENTRY_5S_PM": "PVT_AND_MACD",
-        "US_ENTRY_VOC": "5S|15S",
-        "US_EXIT_5S_PM": "TREND_2452_DOWN"
+        "US_ENTRY_5S_PM": "OFF",
+        "US_ENTRY_VOC": "OFF",
+        "US_EXIT_5S_PM": "OFF"
     },
     "intra": {
         "IN_ENTRY_ENABLED": true,
-        "IN_ENTRY_CHECK": "STOP",
-        "IN_ENTRY_5M_PVT": "ABOVE_ZERO",
-        "IN_EXIT_1M_MACD2": "TREND_2452_DOWN"
+        "IN_ENTRY_CHECK": "WARN",
+        "IN_ENTRY_5M_PVT": "OFF",
+        "IN_EXIT_1M_MACD2": "OFF"
     }
 }
