@@ -577,6 +577,12 @@ class FeedCaptureService:
         # Kite token would otherwise log every 30s for hours).
         self._resolve_fail_logged_at = None
         self._kite_ticker = None
+        # Kite position-capture connection verdict: set on first
+        # on_connect, awaited once by _kite_worker so an expired-token
+        # session fails LOUDLY once instead of silently (2026-11-02:
+        # 20+ on_close warnings, zero ticks, empty CSV - stale token).
+        self._kite_connected_event = threading.Event()
+        self._kite_connect_failures = 0
         # Per-broker WS stats for the CAPTURE sockets (the app's own
         # feed socket is tracked by the adapters' samplers) - read by
         # _ws_health_for() while a capture is running.
@@ -1160,6 +1166,8 @@ class FeedCaptureService:
 
         def on_connect(ws, response):
             logger.info(f"Feed Lab: Kite websocket connected ({len(tokens)} instruments)")
+            self._kite_connect_failures = 0
+            self._kite_connected_event.set()
             self._capture_ws[broker]["connected"] = True
             try:
                 ws.subscribe(tokens)
@@ -1168,15 +1176,41 @@ class FeedCaptureService:
                 logger.error(f"Feed Lab: Kite subscribe failed: {e}")
 
         def on_close(ws, code, reason):
-            logger.warning(f"Feed Lab: Kite websocket closed ({code}, {reason})")
+            # 1006 = abnormal closure (no close frame) - with a valid
+            # token this is rare; repeated 1006 with no on_connect is
+            # the signature of an expired access token (Kite tokens
+            # die every morning ~06:00). Log the first few, then
+            # suppress so a dead-token session doesn't spam the log.
+            last_close["code"] = code
+            self._kite_connect_failures += 1
+            if self._kite_connect_failures <= 3 or self._kite_connect_failures % 50 == 0:
+                logger.warning(
+                    f"Feed Lab: Kite websocket closed ({code}, {reason}) "
+                    f"[failure #{self._kite_connect_failures}]"
+                )
             self._capture_ws[broker]["connected"] = False
 
         ticker = KiteTicker(KITE_API_KEY, _kite_token())
+        last_close = {"code": None}
         ticker.on_ticks = on_ticks
         ticker.on_connect = on_connect
         ticker.on_close = on_close
         self._kite_ticker = ticker
+        self._kite_connected_event.clear()
         ticker.connect(threaded=True)
+
+        # Connection verdict: if the ticker never connects, say WHY
+        # once, loudly - an expired-token session used to fail
+        # silently (20+ on_close warnings, zero ticks, empty CSV).
+        if not self._kite_connected_event.wait(timeout=10):
+            logger.error(
+                f"Feed Lab: Kite capture NOT connected after 10s "
+                f"({self._kite_connect_failures} close(s), last code "
+                f"{last_close['code']}) - the Kite access token is "
+                f"likely EXPIRED (tokens are daily; complete the Kite "
+                f"login in the app to resume capture). Retrying "
+                f"silently in the background."
+            )
 
         self._stop_event.wait()
         try:
