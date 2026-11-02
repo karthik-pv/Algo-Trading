@@ -5275,6 +5275,21 @@ filteredContracts.sort(([, a], [, b]) => {
             const posSellUChecked = posSellMode === 'U' ? 'checked' : '';
             const posSellDChecked = posSellMode === 'D' ? 'checked' : '';
 
+            // ============================================================
+            // TEMPORARY DISCIPLINE LOCK - PART 2: POSITIONS GRID
+            // (2026-11-02, user request - pairs with the Buy Grid lock in
+            // the options-table render above.) Disable the strategy and
+            // sell-mode radio groups so an open position's type cannot be
+            // changed mid-trade. Existing positions KEEP their recorded
+            // strategy/sell-mode (exit logic untouched) - the radios are
+            // only frozen against edits.
+            // TO UNDO: delete this block and the three
+            // "${posDisciplineDisable}" occurrences in the radio cells
+            // below.
+            // ============================================================
+            const posDisciplineDisable = DISCIPLINE_LOCK ? 'disabled' : '';
+            // ============ END TEMPORARY DISCIPLINE LOCK (PART 2) ============
+
             const { strikePrice, optionType } = resolveStrikeAndType(contract, pos.tradingsymbol);
 
             const level = pos.level || contract.level || computeLevelFromWindow(strikePrice, optionType);
@@ -5312,14 +5327,14 @@ filteredContracts.sort(([, a], [, b]) => {
                 <td><input type="number" class="lots-override-input" id="override-lots-sell-${domId}" placeholder="${pos.lots || 0}" value="${overrideLotsValue}" ondblclick="this.value=this.placeholder" title="Lots to sell on the next Sell click. Double-click resets to the leg's current lots."></td>
                 <td id="pos-code-${domId}" class="leg-code-cell">${legCode(currentStrategy, posSellMode)}</td>
                 <td class="type-cell">
-                    <label><input type="radio" name="sell-type-${domId}" value="UltraScalping" ${isUltraChecked}> U</label>
-                    <label><input type="radio" name="sell-type-${domId}" value="Scalping" ${isScalpingChecked}> S</label>
-                    <label><input type="radio" name="sell-type-${domId}" value="Intra" ${isIntraChecked}> I</label>
+                    <label><input type="radio" name="sell-type-${domId}" value="UltraScalping" ${isUltraChecked} ${posDisciplineDisable}> U</label>
+                    <label><input type="radio" name="sell-type-${domId}" value="Scalping" ${isScalpingChecked} ${posDisciplineDisable}> S</label>
+                    <label><input type="radio" name="sell-type-${domId}" value="Intra" ${isIntraChecked} ${posDisciplineDisable}> I</label>
                 </td>
                 <td class="type-cell">
-                    <label><input type="radio" name="sellmode-pos-${domId}" value="U" ${posSellUChecked}> U</label>
-                    <label><input type="radio" name="sellmode-pos-${domId}" value="D" ${posSellDChecked}> D</label>
-                    <label><input type="radio" name="sellmode-pos-${domId}" value="T" ${posSellTChecked}> T</label>
+                    <label><input type="radio" name="sellmode-pos-${domId}" value="U" ${posSellUChecked} ${posDisciplineDisable}> U</label>
+                    <label><input type="radio" name="sellmode-pos-${domId}" value="D" ${posSellDChecked} ${posDisciplineDisable}> D</label>
+                    <label><input type="radio" name="sellmode-pos-${domId}" value="T" ${posSellTChecked} ${posDisciplineDisable}> T</label>
                 </td>
             `;
         positionsTableBody.appendChild(row);
