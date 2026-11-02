@@ -2721,6 +2721,39 @@
                         </div>
                     </div>
                 </div>
+                <div class="field-row">
+                    <div class="field">
+                        <div class="field-caption">
+                            <label class="field-label" for="ATM_DRIFT_ENABLED">ATM Drift Guard</label>
+                            <span class="key-hint">ATM_DRIFT_ENABLED</span>
+                        </div>
+                        <label class="switch-row" title="When ON: the weekly option window is rebuilt automatically when the live near-month future drifts past a half-strike from the window's build-time ATM (protects against stale pre-market builds).">
+                            <input type="checkbox" name="ATM_DRIFT_ENABLED" id="ATM_DRIFT_ENABLED">
+                            <span class="switch"></span>
+                            <span class="switch-text">Rebuild window on ATM drift</span>
+                        </label>
+                    </div>
+                    <div class="field">
+                        <div class="field-caption">
+                            <label class="field-label" for="ATM_DRIFT_CHECK_SECS">Drift Check Every</label>
+                            <span class="key-hint">ATM_DRIFT_CHECK_SECS</span>
+                        </div>
+                        <div class="input-wrap">
+                            <input type="number" step="1" min="15" id="ATM_DRIFT_CHECK_SECS" name="ATM_DRIFT_CHECK_SECS" placeholder="60" />
+                            <span class="suffix">sec</span>
+                        </div>
+                    </div>
+                    <div class="field">
+                        <div class="field-caption">
+                            <label class="field-label" for="ATM_DRIFT_MIN_REBUILD_SECS">Min Rebuild Gap</label>
+                            <span class="key-hint">ATM_DRIFT_MIN_REBUILD_SECS</span>
+                        </div>
+                        <div class="input-wrap">
+                            <input type="number" step="1" min="60" id="ATM_DRIFT_MIN_REBUILD_SECS" name="ATM_DRIFT_MIN_REBUILD_SECS" placeholder="600" title="Minimum seconds between automatic window rebuilds, so a price oscillating on a strike boundary cannot thrash the table." />
+                            <span class="suffix">sec</span>
+                        </div>
+                    </div>
+                </div>
             </div>
         </section>
 

@@ -283,6 +283,12 @@ class Trader_Singleton:
     # overlapping setup runs that would corrupt the table state.
     _woc_setup_lock = threading.Lock()
 
+    # ATM-drift watchdog bookkeeping: the last successful window build
+    # (rate-limits rebuilds) and a one-shot launch guard.
+    _last_woc_rebuild_ts = 0.0
+    _atm_drift_watchdog_started = False
+
+
     _sell_order_lock = threading.Lock()
     _sell_in_flight = {}
     _SELL_IN_FLIGHT_TIMEOUT_SECS = 10
@@ -6004,6 +6010,97 @@ class Trader_Singleton:
                 f"persisted position ledger: {list(self._position_data)}"
             )
 
+    def _atm_drift_watchdog_core(self):
+        """
+        ATM-drift watchdog: the option window's ATM strike is computed
+        ONCE at build time from the near-month future quote. If that
+        quote was stale (e.g. a pre-market build served from the
+        instrument-list reduction cache), the whole window drifts away
+        from the price as the market moves - 2026-11-02: window built
+        at 08:48 from a cached 23,098.9 quote left the ATM stuck at
+        23100 while the true ATM became 23300 by 09:30.
+
+        Every ATM_DRIFT_CHECK_SECS during market hours, recompute the
+        round-half-up ATM from the LIVE near-month future LTP and
+        rebuild the window via setup_woc_subscriptions() when it no
+        longer matches the window's ATM. Rebuilds are rate-limited by
+        ATM_DRIFT_MIN_REBUILD_SECS so a price oscillating around a
+        strike boundary cannot thrash the table (a rebuild drops/
+        retires contracts and re-subscribes the feed).
+        """
+        while not self._stop_event.is_set():
+            try:
+                interval = int(float(
+                    fetch_from_json("appconfig.json", "ATM_DRIFT_CHECK_SECS") or 60
+                ))
+            except (TypeError, ValueError):
+                interval = 60
+            interval = max(interval, 15)
+            self._stop_event.wait(timeout=interval)
+            if self._stop_event.is_set():
+                return
+            try:
+                self._check_atm_drift()
+            except Exception as e:
+                logger.error(f"ATM-drift check failed: {e}", exc_info=True)
+
+    def _check_atm_drift(self):
+        """One drift evaluation: LIVE mode + market hours only, fresh
+        appconfig reads at the point of decision. A rebuild only fires
+        when the round-half-up ATM of the live FUT LTP differs from the
+        window's current ATM."""
+        if str(fetch_from_json("appconfig.json", "ATM_DRIFT_ENABLED") or "").strip().lower() \
+                in ("0", "false", "off", "no"):
+            return
+        if self._mode != "LIVE":
+            return
+        if not is_market_open():
+            return
+        try:
+            min_gap = int(float(
+                fetch_from_json("appconfig.json", "ATM_DRIFT_MIN_REBUILD_SECS") or 600
+            ))
+        except (TypeError, ValueError):
+            min_gap = 600
+        if time.time() - self._last_woc_rebuild_ts < min_gap:
+            return
+
+        meta = self._broker.get_instrument_meta()
+        strike_interval = int(meta.get("strike_interval") or 100)
+        if strike_interval <= 0:
+            return
+        fut_symbol = meta.get("near_month_future_token")
+        if not fut_symbol:
+            return
+        fut = self._broker.get_instrument_details(fut_symbol)
+        if not fut:
+            return
+
+        ltp = self.get_latest_price(str(fut["instrument_token"]))
+        if not ltp:
+            return
+        ltp = float(ltp)
+
+        # Same round-half-up rule as get_5_woc's BASE ATM calculation.
+        correct_atm = int((ltp // strike_interval) * strike_interval)
+        if ltp % strike_interval >= strike_interval / 2:
+            correct_atm += strike_interval
+
+        current = getattr(self, "_current_atm", None)
+        if not current or current.get("strike") is None:
+            return
+        current_strike = int(current["strike"])
+        if correct_atm == current_strike:
+            return
+
+        logger.warning(
+            f"ATM drift detected: window ATM {current_strike} vs live "
+            f"near-month FUT LTP {ltp:.1f} -> correct ATM {correct_atm}. "
+            f"Rebuilding the weekly option window."
+        )
+        self._last_woc_rebuild_ts = time.time()
+        self.setup_woc_subscriptions()
+
     def setup_woc_subscriptions(self):
         """
         Public entry point for the weekly-option table build.
@@ -6719,6 +6816,11 @@ class Trader_Singleton:
             self._last_price_flush_ts = time.time()
 
             logger.info("Weekly options setup completed")
+
+            # A fresh window build IS an ATM re-anchor - let the
+            # drift watchdog know so it does not immediately rebuild
+            # again (startup build, refresh click, drift rebuild).
+            self._last_woc_rebuild_ts = time.time()
 
 
             self.frontend_data_socket.emit(
@@ -7515,6 +7617,21 @@ class Trader_Singleton:
                 )
                 logger.info("Launching exit-fill watchdog thread ⏱")
                 watchdog.start()
+
+            # ATM-drift watchdog: rebuilds the weekly option window
+            # when the live near-month FUT drifts past a half-strike
+            # from the window's build-time ATM (stale pre-market
+            # quote leaves the whole grid anchored to the wrong
+            # strike - 2026-11-02).
+            if not getattr(self, "_atm_drift_watchdog_started", False):
+                self._atm_drift_watchdog_started = True
+                drift = threading.Thread(
+                    target=self._atm_drift_watchdog_core,
+                    daemon=True,
+                    name="atm-drift-watchdog",
+                )
+                logger.info("Launching ATM-drift watchdog thread 🛰")
+                drift.start()
 
             # One supervisor per process watches the watcher and
             # relaunches it if it ever dies or stalls again.
