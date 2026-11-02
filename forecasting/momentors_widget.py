@@ -231,7 +231,7 @@ def build_momentors(snapshot, price=None, levels=None):
         ("3M2", "30M", "3m2x", "3m2",
          "Trend_2452", "X_2452", "Y_2452", True),
         ("3O", "30M", "3ox", "3o",
-         "VOCTrendFlag", "VOCCrossOverIndex", "VOCCrossUnderIndex", True),
+         "VOCTrendFlag", "VOCCrossOverIndex", "VOCCrossUnderIndex", False),
         ("2P", "2H", "2px", "2p",
          "PVTTrendFlag", "PVTCrossOverIndex", "PVTCrossUnderIndex", True),
         ("2M1", "2H", "2m1x", "2m1",
@@ -239,7 +239,7 @@ def build_momentors(snapshot, price=None, levels=None):
         ("2M2", "2H", "2m2x", "2m2",
          "Trend_2452", "X_2452", "Y_2452", True),
         ("2O", "2H", "2ox", "2o",
-         "VOCTrendFlag", "VOCCrossOverIndex", "VOCCrossUnderIndex", True),
+         "VOCTrendFlag", "VOCCrossOverIndex", "VOCCrossUnderIndex", False),
     ]
     for _slot, tfkey, xlabel, slabel, tkey, okey, ukey, allow_dn, *win in specs:
         cell = _cross_cell(tf(tfkey), tkey, okey, ukey, allow_dn,
