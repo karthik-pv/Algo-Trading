@@ -4744,29 +4744,35 @@ filteredContracts.sort(([, a], [, b]) => {
                 : autoSellMode;
 
             // ============================================================
-            // TEMPORARY DISCIPLINE LOCK (2026-11-02, user request)
-            // Force every Buy Grid row to ULTRA_SCALPING strategy + D sell
-            // mode and disable both radio groups, so the strategy/sell-type
+            // TEMPORARY DISCIPLINE LOCK (updated 2026-11-03, user request;
+            // originally 2026-11-02 with all rows U + D)
+            // Force the Buy Grid rows by ROW POSITION and disable both
+            // radio groups on every row, so the strategy/sell-type
             // cannot be changed during the trading day. Purpose: remove the
             // mid-day temptation to switch to Intra "to play it safe"
             // (source of big losses / profit erosion).
+            // Row pattern (topmost + bottom-most = SD, middle 3 = UD):
+            //   row 1 (top)    -> SCALPING       + D  ("SD")
+            //   rows 2-4 (mid) -> ULTRA_SCALPING + D  ("UD")
+            //   row 5 (bottom) -> SCALPING       + D  ("SD")
             // TO UNDO: delete this block (everything reverts to the
             // manual/auto selection above) and remove the three
             // "${disciplineDisable}" occurrences in the radio cells below.
             // NOTE: this must run BEFORE the radio check-states below are
-            // computed, so every row renders with U + D actually checked.
+            // computed, so every row renders with its forced values checked.
             // ============================================================
             const DISCIPLINE_LOCK = true;
             let disciplineDisable = '';
             if (DISCIPLINE_LOCK) {
-                currentStrategy = 'ULTRA_SCALPING';
+                const isFirstOrLastRow = (displayRowIndex === 0 || displayRowIndex === 4);
+                currentStrategy = isFirstOrLastRow ? 'SCALPING' : 'ULTRA_SCALPING';
                 currentSellMode = 'D';
                 disciplineDisable = 'disabled';
             }
             // ============ END TEMPORARY DISCIPLINE LOCK ============
 
             // Radio check state (computed AFTER the lock so the forced
-            // U + D values are what actually renders checked)
+            // SD/UD values are what actually renders checked)
             const isIntraChecked = currentStrategy === 'INTRA' ? 'checked' : '';
             const isScalpingChecked = currentStrategy === 'SCALPING' ? 'checked' : '';
             const isUltraChecked = currentStrategy === 'ULTRA_SCALPING' ? 'checked' : '';
