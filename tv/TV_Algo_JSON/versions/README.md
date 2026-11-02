@@ -31,6 +31,7 @@ running in TradingView.
 | Strategy_TradingInvestAlgo_Data | v1.7 | 2026-11-01 | FIX: alert auto-disable on 15s charts (TV 15-firings/3-min limit) → "Emit" input (ALL/DATA/LEVELS/OPT), one message per alert per bar close |
 | Strategy_TradingInvestAlgo_Data | v1.8 | 2026-11-01 | LEVELS message HTF block enriched (D/W Trend_1226, K, KTrendFlag) for the SET UP table — reused existing D/W security, no extra calls |
 | Strategy_TradingInvestAlgo_Data | v1.9 | 2026-11-01 | NEW 1CVX/5CVX Momentors rows: price×session-VWAP cross ages (1M/5M, tiny f_vwap_cross security pair); DATA ~3,999/4,096 chars |
+| Strategy_TradingInvestAlgo_Data | v1.10 | 2026-11-02 | FIX: v1.9 dropped the comma after VOCCrossUnderIndex (1M+5M blocks) — every DATA message with an active VWAP cross was invalid JSON and the server rejected it (BIAS strip starved). Comma restored; all payloads otherwise unchanged |
 
 ## How to verify what TradingView is running
 

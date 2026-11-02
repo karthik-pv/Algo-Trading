@@ -1,9 +1,19 @@
 //@version=5
 // ============================================================================
 // Strategy_TradingInvestAlgo_Data
-// VERSION: 1.9  (2026-11-01)
+// VERSION: 1.10  (2026-11-02)
 // ----------------------------------------------------------------------------
 // CHANGELOG
+//   v1.10 2026-11-02  FIX: v1.9 dropped the comma after VOCCrossUnderIndex in
+//                     the 1M and 5M blocks - once a VWAP cross went active the
+//                     1CVX/5CVX rows were appended as
+//                     "VOCCrossUnderIndex":1"VWAPCrossOverIndex":2 (invalid
+//                     JSON) and EVERY MSG:"DATA" webhook was rejected by the
+//                     server (BIAS strip / Momentors starved; the PA widget
+//                     ran on persisted data). Comma restored in both blocks.
+//                     GUARANTEED UNCHANGED: all field names/values, message
+//                     split (DATA + LEVELS + OPT + HTF), alert cadence, and
+//                     every other payload message - only the two commas.
 //   v1.9  2026-11-01  NEW Momentors rows 1CVX / 5CVX (price crossing session
 //                     VWAP): two tiny request.security calls (1M and 5M,
 //                     f_vwap_cross - f_calc_all untouched) send
@@ -1156,7 +1166,7 @@ jsonStr += f_json_pair("VWAP", math.round(vwap_val_1m, 2)) + ","
 jsonStr += f_json_pair("VOC", math.round(voc_1m, 2)) + ","
 jsonStr += f_json_pair("VOCTrendFlag", voc_trend_flag_1m) + ","
 jsonStr += f_json_pair("VOCCrossOverIndex", voc_cross_over_index_1m) + ","
-jsonStr += f_json_pair("VOCCrossUnderIndex", voc_cross_under_index_1m)
+jsonStr += f_json_pair("VOCCrossUnderIndex", voc_cross_under_index_1m) + ","   // v1.10: comma restored (v1.9 dropped it when the 1CVX rows were inserted - every DATA message with an active VWAP cross emitted invalid JSON)
 jsonStr += f_json_pair("VWAPCrossOverIndex", vwapxo_1m) + ","       // v1.9: 1CVX row
 jsonStr += f_json_pair("VWAPCrossUnderIndex", vwapxu_1m)            // v1.9: 1CVX row
 jsonStr += "},"
@@ -1197,7 +1207,7 @@ jsonStr += f_json_pair("VWAP", math.round(vwap_val_5m, 2)) + ","
 jsonStr += f_json_pair("VOC", math.round(voc_5m, 2)) + ","
 jsonStr += f_json_pair("VOCTrendFlag", voc_trend_flag_5m) + ","
 jsonStr += f_json_pair("VOCCrossOverIndex", voc_cross_over_index_5m) + ","
-jsonStr += f_json_pair("VOCCrossUnderIndex", voc_cross_under_index_5m)
+jsonStr += f_json_pair("VOCCrossUnderIndex", voc_cross_under_index_5m) + ","   // v1.10: comma restored (same 5CVX bug as the 1M block)
 jsonStr += f_json_pair("VWAPCrossOverIndex", vwapxo_5m) + ","       // v1.9: 5CVX row
 jsonStr += f_json_pair("VWAPCrossUnderIndex", vwapxu_5m)            // v1.9: 5CVX row
 jsonStr += "},"
