@@ -125,6 +125,8 @@ class MStockSingleton:
     _feed_packets = 0
     _feed_last_packet_ts = 0.0
     _feed_max_gap = 0.0
+    # Total WS drops since process start (close-code forensics).
+    _reconnect_count = 0
 
     def __new__(cls):
         logger.info("Creating MStockSingleton instance...")
@@ -501,12 +503,29 @@ class MStockSingleton:
             except websockets.exceptions.ConnectionClosed as e:
                 self._ws_connected = False
                 connect_retries += 1
-                logger.warning(f"Connection closed: {e}. Reconnecting in 5s...")
+                self._reconnect_count += 1
+                # Forensics: the close code tells drops apart - 1006 =
+                # network/TCP death (no close frame), 1000 = clean
+                # server-side close, 1011 = server error, 4000+ =
+                # broker-internal policy codes. Without this, every
+                # drop looks identical and stability tuning is blind.
+                try:
+                    rcvd = e.rcvd.code if e.rcvd else None
+                except AttributeError:
+                    rcvd = getattr(e, "code", None)
+                logger.warning(
+                    f"MSTOCK WS CLOSED (#{self._reconnect_count} since start) "
+                    f"| code={rcvd} | detail={e} | reconnecting in 5s"
+                )
                 await asyncio.sleep(5)
             except Exception as e:
                 self._ws_connected = False
                 connect_retries += 1
-                logger.error(f"WebSocket error: {e}. Retrying in 5s...")
+                self._reconnect_count += 1
+                logger.error(
+                    f"WebSocket error (#{self._reconnect_count} since start): "
+                    f"{type(e).__name__}: {e}. Retrying in 5s..."
+                )
                 await asyncio.sleep(5)
 
     # async def _subscribe_to_instruments(self, instruments):
