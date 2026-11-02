@@ -5285,9 +5285,11 @@ filteredContracts.sort(([, a], [, b]) => {
             // only frozen against edits.
             // TO UNDO: delete this block and the three
             // "${posDisciplineDisable}" occurrences in the radio cells
-            // below.
+            // below. (POS_DISCIPLINE_LOCK is self-contained - it does
+            // not depend on the Buy Grid's DISCIPLINE_LOCK.)
             // ============================================================
-            const posDisciplineDisable = DISCIPLINE_LOCK ? 'disabled' : '';
+            const POS_DISCIPLINE_LOCK = true;
+            const posDisciplineDisable = POS_DISCIPLINE_LOCK ? 'disabled' : '';
             // ============ END TEMPORARY DISCIPLINE LOCK (PART 2) ============
 
             const { strikePrice, optionType } = resolveStrikeAndType(contract, pos.tradingsymbol);
