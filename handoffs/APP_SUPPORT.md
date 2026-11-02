@@ -75,7 +75,11 @@
   controls; limit-margin 10–100 tier 3→2%; ATM-drift watchdog; TV webhook failure dumps;
   Pine v1.10 comma fix; momentors 3O/2O down-mirror removed; TEMPORARY discipline lock
   (Buy Grid forced U/D + Positions Grid frozen); BK% click-shortcut gotcha documented with
-  live evidence. Commit refs in gotchas above.
+  live evidence. Commit refs in gotchas above. Evening feed session: LTP freshness guard
+  (`POSITION_LTP_STALE_SECS`, REST re-seed, commit `3b6f66b`); MStock WS close-code
+  forensics (`9cb4870`); Feed Lab Kite capture fails loudly on expired daily token
+  (`e77f2ef` — 2026-11-02 capture died on 1006s, stale token). Feed verdict: Kite ~2×
+  tick rate, 30–70× fewer dead intervals; MStock ~1.6s throttle is broker-side.
 - **2026-10-31** — doc created (living-handoff restructure). No app changes this session.
 - **2026-10-19** — Mac migration day: everything environmental broke and was fixed;
   architecture above locked; Kite feed + ngrok live. (archive: `2026-10-19_mac_migration.md`)
