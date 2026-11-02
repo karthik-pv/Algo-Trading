@@ -1385,6 +1385,28 @@ def trading_view():
     if data is None:
         body = raw[:500]
         logger.error(f"TradingView webhook: unparsable body (Content-Type: {request.content_type}): {body}")
+        # Failure-only diagnostics: dump the FULL raw body (plus the
+        # JSON decoder's break position, when available) so an
+        # over-4096-char alert truncation or an unescaped quote can be
+        # pinpointed without touching the trading path. Never dumps on
+        # success - the 15s DATA cadence only lands here when broken.
+        try:
+            import json as _json
+            dump_dir = resolve_data_path(os.path.join("tv", "TV_Algo_JSON", "incoming"))
+            os.makedirs(dump_dir, exist_ok=True)
+            stamp = datetime.now().strftime("%d%m_%H%M%S_%f")[:-3]
+            with open(os.path.join(dump_dir, f"FAILED_{stamp}.json"), "w", encoding="utf-8") as f:
+                f.write(raw or "")
+            try:
+                _json.loads(raw)
+            except _json.JSONDecodeError as jd:
+                pos = jd.pos
+                logger.error(
+                    f"JSONDecodeError at char {pos} of {len(raw or '')}: "
+                    f"{jd.msg} | ...{raw[max(0, pos-120):pos+120]}..."
+                )
+        except Exception as dump_err:
+            logger.error(f"Failed-body dump error: {dump_err}")
         return jsonify({"error": "unparsable webhook body"}), 400
     if data.get("MSG") == "LEVELS":
         # levels-ladder messages flow through to process_TradingView_Data
