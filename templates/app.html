@@ -4717,7 +4717,7 @@ filteredContracts.sort(([, a], [, b]) => {
 
 
             // Final strategy: manual choice > row auto-choice > saved mapping
-            const currentStrategy = manuallySetStrategyTokens.has(String(token))
+            let currentStrategy = manuallySetStrategyTokens.has(String(token))
                 ? (orderStrategyMapping[token] || 'ULTRA_SCALPING')
                 : (autoStrategy || orderStrategyMapping[token] || 'ULTRA_SCALPING');
 
@@ -4728,12 +4728,32 @@ filteredContracts.sort(([, a], [, b]) => {
 
 
             // Sell Mode radio state: manual choice > row auto-choice.
-            const currentSellMode = manuallySetSellModeTokens.has(String(token))
+            let currentSellMode = manuallySetSellModeTokens.has(String(token))
                 ? (orderSellModeMapping[token] || autoSellMode)
                 : autoSellMode;
             const sellUChecked = currentSellMode === 'U' ? 'checked' : '';
             const sellDChecked = currentSellMode === 'D' ? 'checked' : '';
             const sellTChecked = currentSellMode === 'T' ? 'checked' : '';
+
+            // ============================================================
+            // TEMPORARY DISCIPLINE LOCK (2026-11-02, user request)
+            // Force every Buy Grid row to ULTRA_SCALPING strategy + D sell
+            // mode and disable both radio groups, so the strategy/sell-type
+            // cannot be changed during the trading day. Purpose: remove the
+            // mid-day temptation to switch to Intra "to play it safe"
+            // (source of big losses / profit erosion).
+            // TO UNDO: delete this block (everything above reverts to the
+            // manual/auto selection) and remove the three
+            // "${disciplineDisable}" occurrences in the radio cells below.
+            // ============================================================
+            const DISCIPLINE_LOCK = true;
+            let disciplineDisable = '';
+            if (DISCIPLINE_LOCK) {
+                currentStrategy = 'ULTRA_SCALPING';
+                currentSellMode = 'D';
+                disciplineDisable = 'disabled';
+            }
+            // ============ END TEMPORARY DISCIPLINE LOCK ============
             
 
 
@@ -4750,14 +4770,14 @@ filteredContracts.sort(([, a], [, b]) => {
                 <td><input type="number" class="lots-override-input" id="override-lots-${token}" placeholder="${contract.lots || 0}" value="${contract.lots || 0}" ondblclick="this.value=this.placeholder" title="Double-click to reset to calculated lots"></td>
                 <td id="code-${token}" class="leg-code-cell">${legCode(currentStrategy, currentSellMode)}</td>
                 <td class="type-cell">
-                    <label><input type="radio" name="type-${token}" value="UltraScalping" ${isUltraChecked}> U</label>
-                    <label><input type="radio" name="type-${token}" value="Scalping" ${isScalpingChecked}> S</label>
-                    <label><input type="radio" name="type-${token}" value="Intra" ${isIntraChecked}> I</label>
+                    <label><input type="radio" name="type-${token}" value="UltraScalping" ${isUltraChecked} ${disciplineDisable}> U</label>
+                    <label><input type="radio" name="type-${token}" value="Scalping" ${isScalpingChecked} ${disciplineDisable}> S</label>
+                    <label><input type="radio" name="type-${token}" value="Intra" ${isIntraChecked} ${disciplineDisable}> I</label>
                 </td>
                 <td class="type-cell">
-                    <label><input type="radio" name="sellmode-${token}" value="U" ${sellUChecked}> U</label>
-                    <label><input type="radio" name="sellmode-${token}" value="D" ${sellDChecked}> D</label>
-                    <label><input type="radio" name="sellmode-${token}" value="T" ${sellTChecked}> T</label>
+                    <label><input type="radio" name="sellmode-${token}" value="U" ${sellUChecked} ${disciplineDisable}> U</label>
+                    <label><input type="radio" name="sellmode-${token}" value="D" ${sellDChecked} ${disciplineDisable}> D</label>
+                    <label><input type="radio" name="sellmode-${token}" value="T" ${sellTChecked} ${disciplineDisable}> T</label>
                 </td>
             `;
             optionsTableBody.appendChild(row);
