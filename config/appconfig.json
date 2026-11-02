@@ -60,7 +60,7 @@
     },
     "protection": {
         "LIMIT_MARGIN_PCT_LT_10": "5",
-        "LIMIT_MARGIN_PCT_10_100": "3",
+        "LIMIT_MARGIN_PCT_10_100": "2",
         "LIMIT_MARGIN_PCT_100_500": "2",
         "LIMIT_MARGIN_PCT_GT_500": "1",
         "LIMIT_MARGIN_MIN_PTS": "0.05",
