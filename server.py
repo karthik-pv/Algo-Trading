@@ -1338,29 +1338,36 @@ def _tv_dump_incoming(data):
         logger.error(f"tv incoming dump failed: {e}")
 
 
+_tv_persist_lock = threading.Lock()
+
+
 def _tv_persist_snapshot(data):
-    try:
-        now = time.time()
-        if data.get("MSG") == "LEVELS":
-            _tv_snap_cache["data"]["LEVELS"] = data.get("LEVELS") or {}
-            if data.get("HTF"):   # Pine v1.7: HTF rides inside LEVELS
-                _tv_snap_cache["data"]["HTF"] = data.get("HTF") or {}
-        elif data.get("MSG") == "HTF":
-            _tv_snap_cache["data"]["HTF"] = data.get("HTF") or {}   # Pine v1.6
-        elif data.get("INDICATORS") or data.get("SETUPS"):
-            _tv_snap_cache["data"]["SNAPSHOT"] = data
-        else:
-            return  # ALERTS / OPT / unknown - not needed by the widget
-        _tv_snap_cache["data"]["ts"] = datetime.now().strftime("%d %b %H:%M:%S")
-        if now - _tv_snap_cache["ts"] < 5:   # disk write at most every 5s
-            return
-        tmp = _TV_SNAPSHOT_PATH + ".tmp"
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(_tv_snap_cache["data"], f)
-        os.replace(tmp, _TV_SNAPSHOT_PATH)
-        _tv_snap_cache["ts"] = now
-    except Exception as e:
-        logger.error(f"tv snapshot persist failed: {e}")
+    # One writer at a time: two webhook threads sharing the .tmp path
+    # raced - the first os.replace() consumed it and the second failed
+    # with ENOENT ("tv snapshot persist failed") every so often.
+    with _tv_persist_lock:
+        try:
+            now = time.time()
+            if data.get("MSG") == "LEVELS":
+                _tv_snap_cache["data"]["LEVELS"] = data.get("LEVELS") or {}
+                if data.get("HTF"):   # Pine v1.7: HTF rides inside LEVELS
+                    _tv_snap_cache["data"]["HTF"] = data.get("HTF") or {}
+            elif data.get("MSG") == "HTF":
+                _tv_snap_cache["data"]["HTF"] = data.get("HTF") or {}   # Pine v1.6
+            elif data.get("INDICATORS") or data.get("SETUPS"):
+                _tv_snap_cache["data"]["SNAPSHOT"] = data
+            else:
+                return  # ALERTS / OPT / unknown - not needed by the widget
+            _tv_snap_cache["data"]["ts"] = datetime.now().strftime("%d %b %H:%M:%S")
+            if now - _tv_snap_cache["ts"] < 5:   # disk write at most every 5s
+                return
+            tmp = _TV_SNAPSHOT_PATH + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(_tv_snap_cache["data"], f)
+            os.replace(tmp, _TV_SNAPSHOT_PATH)
+            _tv_snap_cache["ts"] = now
+        except Exception as e:
+            logger.error(f"tv snapshot persist failed: {e}")
 
 
 def _tv_load_persisted():
