@@ -2081,6 +2081,15 @@ class Trader_Singleton:
             return
         if intent.get("provisional_anchor"):
             return
+        # D legs are bought INTO a falling premium, so their resting
+        # +BP% limit is born deeply "collapsed" - the trail would
+        # re-price it below the market within a second and market-out
+        # every D trade on entry (2026-11-03 10:05: both D legs exited
+        # ~2s after the buy, target 123.05/125.35 trailed to 114.1/117.9
+        # and filled instantly). The trail only makes sense for U legs
+        # (dip-then-bounce); D legs keep their target/SL semantics.
+        if str(intent.get("mode") or "").strip().upper() == "D":
+            return
         limit_price = float(intent.get("anchor_used") or 0)
         if limit_price <= 0:
             return
