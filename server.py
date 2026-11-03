@@ -449,7 +449,7 @@ APPCONFIG_FILE = resolve_data_path("appconfig.json")
 # _unflatten_config). Keys not listed here (e.g. the runtime-written
 # SELL_MODE) are preserved at the top level.
 APPCONFIG_GROUPS = {
-    "session": ["MODE", "BROKER", "UNDERLYING"],
+    "session": ["MODE", "BROKER", "UNDERLYING", "DATA_SOURCE"],
     "gating": ["TV_DATA_Validation_REQUIRED", "MARGIN_USAGE_PCT", "PRE_MARGIN_CHECK_NEEDED"],
     "trigger": ["COMPARISON_FUNCTION"],
     "pct": [
@@ -538,7 +538,13 @@ def _unflatten_config(flat_data, existing):
 # Default appconfig (used if the file is missing); mirrors
 # appconfig.example.json.
 APPCONFIG_DEFAULTS = {
-    "session": {"MODE": "LIVE", "BROKER": "MSTOCK", "UNDERLYING": "NIFTY"},
+    "session": {
+        "MODE": "LIVE", "BROKER": "MSTOCK", "UNDERLYING": "NIFTY",
+        # Indicator source for US/Intra entry-exit checks: the TV ATM
+        # option feed (MSG:"OPT") or the Nifty near-month future's own
+        # DATA-feed indicators (MSG:"DATA").
+        "DATA_SOURCE": "ATM_OPTION"
+    },
     "gating": {"TV_DATA_Validation_REQUIRED": False, "MARGIN_USAGE_PCT": "0.9"},
     "trigger": {"COMPARISON_FUNCTION": ["PCT"]},
     "pct": {

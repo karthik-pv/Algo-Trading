@@ -2117,6 +2117,19 @@
                             </select>
                         </div>
                     </div>
+                    <div class="field">
+                        <div class="field-caption">
+                            <label class="field-label" for="DATA_SOURCE">Indicator Source</label>
+                            <span class="key-hint">DATA_SOURCE</span>
+                        </div>
+                        <div class="input-wrap">
+                            <select id="DATA_SOURCE" name="DATA_SOURCE"
+                                    title="Which feed's indicator data the Intra/Ultra Scalping entry-exit checks use. NIFTY_FUTURE uses the NIFTY1 DATA alert - the TV ATM option (OPT) alert can then be disabled.">
+                                <option value="ATM_OPTION" selected>ATM OPTION - TV ATM CE/PE feed (OPT alert)</option>
+                                <option value="NIFTY_FUTURE">NIFTY FUTURE - NIFTY1 DATA feed (disable OPT alert)</option>
+                            </select>
+                        </div>
+                    </div>
                 </div>
             </div>
         </section>
