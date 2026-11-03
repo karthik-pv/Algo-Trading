@@ -5576,10 +5576,12 @@ class Trader_Singleton:
         # Indicator exits per strategy, evaluated on the traded option
         # contract's OWN data (contract_type = CE/PE): Ultra-Scalping
         # uses the 5s PM cross-down; Intra uses the 1m MACD2 cross-down.
+        # The data source (ATM option feed vs Nifty future's DATA-feed
+        # indicators) is chosen live via the DATA_SOURCE appconfig key.
         # Config-driven - OFF disables each.
         if order_strategy_type == "ULTRA_SCALPING":
             us_exit, us_reason = evaluate_ultra_scalping_exit(
-                self._optionData, side=contract_type or "CE"
+                self._get_signal_data(), side=contract_type or "CE"
             )
             if us_exit:
                 if log_enabled:
@@ -5587,7 +5589,7 @@ class Trader_Singleton:
                 return True
         elif order_strategy_type == "INTRA":
             in_exit, in_reason = evaluate_intra_exit(
-                self._optionData, side=contract_type or "CE"
+                self._get_signal_data(), side=contract_type or "CE"
             )
             if in_exit:
                 if log_enabled:
@@ -8469,6 +8471,38 @@ class Trader_Singleton:
             logger.error(f"SPATAM alert processing failed: {e}")
             return []
 
+    def _get_signal_data(self):
+        """
+        Indicator data used by the Intra / Ultra Scalping entry-exit
+        evaluators, chosen live via the DATA_SOURCE appconfig key
+        (ATM_OPTION | NIFTY_FUTURE) so a change applies without restart.
+
+        - ATM_OPTION: the MSG:"OPT" payload (ATM CE/PE blocks).
+        - NIFTY_FUTURE: the NIFTY1 near-month future's own indicator
+          blocks from the MSG:"DATA" feed (self._tradingView_Data),
+          wrapped under both CE and PE since the future has no call/put
+          split - the same block backs either trade direction.
+        """
+        try:
+            source = str(fetch_from_json("appconfig.json", "DATA_SOURCE") or "ATM_OPTION").strip().upper()
+        except Exception:
+            source = "ATM_OPTION"
+        if source == "NIFTY_FUTURE":
+            indicators = (self._tradingView_Data or {}).get("INDICATORS") or {}
+            if not indicators:
+                # Future mode selected but the TV DATA alert hasn't
+                # delivered anything yet - tell the user once.
+                if not getattr(self, "_fut_no_data_toast_sent", False):
+                    self._fut_no_data_toast_sent = True
+                    logger.warning("DATA_SOURCE=NIFTY_FUTURE but no TV DATA indicators received yet - enable the NIFTY1 DATA alert in TradingView")
+                    self.frontend_data_socket.emit('status_message', {
+                        "success": False,
+                        "message": "DATA_SOURCE=NIFTY_FUTURE: no NIFTY1 DATA indicators received yet - enable the TV DATA alert"
+                    })
+                return {}
+            return {"CE": indicators, "PE": indicators}
+        return self._optionData
+
     def process_option_data(self, data):
         """
         Receiver for MSG:"OPT" webhooks - the Pine script's third alert
@@ -8481,6 +8515,17 @@ class Trader_Singleton:
         frontend status line so stale option data is never trusted blindly.
         """
         try:
+            # When the user switched to the future feed (DATA_SOURCE =
+            # NIFTY_FUTURE) the TV OPT alert is typically disabled - any
+            # stray OPT payload is ignored instead of overwriting state.
+            try:
+                _source = str(fetch_from_json("appconfig.json", "DATA_SOURCE") or "ATM_OPTION").strip().upper()
+            except Exception:
+                _source = "ATM_OPTION"
+            if _source == "NIFTY_FUTURE":
+                logger.debug("TV OPT webhook ignored: DATA_SOURCE=NIFTY_FUTURE")
+                return []
+
             # The Pine OPT message carries CE/PE at the top level (next to
             # MSG/SYM/ATM_*); accept a nested {"OPT": {...}} envelope too.
             opt = data.get("OPT") if isinstance(data.get("OPT"), dict) else data
@@ -10903,7 +10948,8 @@ class Trader_Singleton:
                 # Indicator entry criteria per strategy (US_ENTRY_* /
                 # IN_ENTRY_*), evaluated on the traded option contract's
                 # OWN indicator data (CE block for CE orders, PE block
-                # for PE orders - the NIFTY1 feed is never used).
+                # for PE orders) - or on the Nifty future's DATA-feed
+                # indicators when DATA_SOURCE=NIFTY_FUTURE.
                 # WARN toasts and allows, STOP blocks.
                 if strategy in ("ULTRA_SCALPING", "INTRA"):
                     from core.signal_rules import entry_check_mode
@@ -10913,12 +10959,12 @@ class Trader_Singleton:
                     if strategy == "ULTRA_SCALPING":
                         check_key = "US_ENTRY_CHECK"
                         us_ok, us_failed, us_states = evaluate_ultra_scalping_entry(
-                            self._optionData, ltp, side=us_side
+                            self._get_signal_data(), ltp, side=us_side
                         )
                     else:
                         check_key = "IN_ENTRY_CHECK"
                         us_ok, us_failed, us_states = evaluate_intra_entry(
-                            self._optionData, ltp, side=us_side
+                            self._get_signal_data(), ltp, side=us_side
                         )
                     logger.info(
                         f"{strategy} entry check for {order_details.get('tradingsymbol', '')} "
