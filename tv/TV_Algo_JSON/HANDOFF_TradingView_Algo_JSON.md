@@ -136,7 +136,30 @@ Each family can be switched off via the indicator's "Extra S/R Levels" inputs; d
 - For regime/trend logic: prefer `SETUPS.DASHBOARD` (higher-TF MACD/stoch/PVT state) over per-bar indicator sniffing.
 - Keep a small ring buffer of the last N messages per chart if you want poise/momentum deltas (X rising/falling, flags flipping).
 
-## 8. Pointers back to source
+## 8. Indicator data source — ATM option feed vs Nifty future feed
+
+The algo app's Intra / Ultra Scalping entry-exit checks read their
+indicator blocks from a configurable source, chosen live via the
+appconfig **`DATA_SOURCE`** key (Session group in the App Config UI):
+
+- **`ATM_OPTION`** (default) — the Pine script's third alert message,
+  `MSG:"OPT"`: ATM CE/PE indicator blocks (5S/15S/1M/5M, same field
+  names as `INDICATORS` above) for the strike entered in the script's
+  "ATM Options" inputs. The app validates the payload's `ATM_STRIKE` /
+  `ATM_CE_SYM` / `ATM_PE_SYM` against its own current ATM and toasts on
+  mismatch.
+- **`NIFTY_FUTURE`** — no OPT alert needed. The evaluators run on the
+  Nifty near-month future's **own** indicator blocks, which already
+  arrive via the regular `MSG:"DATA"` alert (the script computes them
+  on `DATA_SYM = NSE:NIFTY1!`). Stray OPT webhooks are ignored in this
+  mode, so the TV OPT alert can simply be disabled. If no DATA
+  indicators have arrived yet, the checks report no-data and the app
+  toasts once, reminding you to enable the DATA alert.
+
+The future has no call/put split, so the same future block backs either
+trade direction (CE and PE orders).
+
+## 9. Pointers back to source
 
 - Producer script: `/Users/phvrao/Projects/TradingView/Strategy_TradingInvestAlgo_Data`
 - Levels reference (visual table version): `/Users/phvrao/Projects/TradingView/Strategy_EMAs_OCHL_cwcd v1.1`
