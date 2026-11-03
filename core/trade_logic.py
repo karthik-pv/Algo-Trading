@@ -3393,6 +3393,22 @@ class Trader_Singleton:
                                     f"Exit-pending re-stamp failed for "
                                     f"{key}: {stamp_error}"
                                 )
+                            # Push the pending-orders grid NOW - without
+                            # this the row keeps showing the OLD limit
+                            # until the next ~15s broker-book poll, and
+                            # a user watching it reads the edit as
+                            # failed and cancels a perfectly re-priced
+                            # order (2026-11-03 11:31).
+                            try:
+                                self.frontend_data_socket.emit(
+                                    'update_pending_orders',
+                                    self._merged_pending_orders()
+                                )
+                            except Exception as emit_error:
+                                logger.debug(
+                                    f"Pending-orders refresh after BP "
+                                    f"modify failed: {emit_error}"
+                                )
                             return
                         logger.warning(
                             f"BP override {override_pct}%: in-place modify "
@@ -3500,6 +3516,19 @@ class Trader_Singleton:
                     logger.debug(
                         f"Exit-pending re-stamp failed for {key}: "
                         f"{stamp_error}"
+                    )
+                # Same immediate grid refresh as the modify path - the
+                # re-placed row must not show its pre-cancel state for
+                # a whole poll cycle.
+                try:
+                    self.frontend_data_socket.emit(
+                        'update_pending_orders',
+                        self._merged_pending_orders()
+                    )
+                except Exception as emit_error:
+                    logger.debug(
+                        f"Pending-orders refresh after BP re-place "
+                        f"failed: {emit_error}"
                     )
             except Exception as place_error:
                 _bp_edit_failed(
