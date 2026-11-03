@@ -1788,6 +1788,12 @@ class Trader_Singleton:
                     "instrument_token": str(intent["instrument_token"]),
                     "lots": intent["lots"],
                     "strategy": intent.get("strategy"),
+                    # U/D leg mode - the collapse-trail must know it
+                    # (D legs are skipped; 2026-11-03: the EXIT intent
+                    # carried no mode, so intent.get("mode") was None
+                    # there and the D check never fired - both 10:05
+                    # D legs still trailed + filled seconds on entry).
+                    "mode": intent.get("mode"),
                     "override_book_profit_pct":
                         intent.get("override_book_profit_pct"),
                     "exchange": intent.get("exchange"),
@@ -2088,7 +2094,14 @@ class Trader_Singleton:
         # ~2s after the buy, target 123.05/125.35 trailed to 114.1/117.9
         # and filled instantly). The trail only makes sense for U legs
         # (dip-then-bounce); D legs keep their target/SL semantics.
-        if str(intent.get("mode") or "").strip().upper() == "D":
+        # The EXIT intent carries the mode directly, but fall back to
+        # the position_key suffix ("token:STRATEGY:D") so older intents
+        # (or future creators that forget "mode") are covered too.
+        leg_mode = str(intent.get("mode") or "").strip().upper()
+        if not leg_mode:
+            position_key = str(intent.get("position_key") or "")
+            leg_mode = position_key.rsplit(":", 1)[-1].strip().upper()
+        if leg_mode == "D":
             return
         limit_price = float(intent.get("anchor_used") or 0)
         if limit_price <= 0:
