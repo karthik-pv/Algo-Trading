@@ -2754,6 +2754,40 @@
                         </div>
                     </div>
                 </div>
+                <div class="field-row">
+                    <div class="field">
+                        <div class="field-caption">
+                            <label class="field-label" for="EXIT_TRAIL_ENABLED">Exit Collapse Trail</label>
+                            <span class="key-hint">EXIT_TRAIL_ENABLED</span>
+                        </div>
+                        <label class="switch-row" title="When ON: if the LTP falls Exit Trail Trigger % below a resting U/D SELL LIMIT, the limit is re-priced down to a marketable price (LTP - limit margin) so it fills as a taker instead of riding the collapse to the stop loss.">
+                            <input type="checkbox" name="EXIT_TRAIL_ENABLED" id="EXIT_TRAIL_ENABLED">
+                            <span class="switch"></span>
+                            <span class="switch-text">Re-price resting exit down on collapse</span>
+                        </label>
+                    </div>
+                    <div class="field">
+                        <div class="field-caption">
+                            <label class="field-label" for="EXIT_TRAIL_TRIGGER_PCT">Trail Trigger</label>
+                            <span class="key-hint">EXIT_TRAIL_TRIGGER_PCT</span>
+                        </div>
+                        <div class="input-wrap">
+                            <input type="number" step="0.1" min="0.1" id="EXIT_TRAIL_TRIGGER_PCT" name="EXIT_TRAIL_TRIGGER_PCT" placeholder="1" title="How far below the resting exit limit the LTP must fall (in %) before the limit is re-priced down." />
+                            <span class="suffix">%</span>
+                        </div>
+                    </div>
+                    <div class="field">
+                        <div class="field-caption">
+                            <label class="field-label" for="EXIT_FAST_SL_ENABLED">Fast SL on Resting Exits</label>
+                            <span class="key-hint">EXIT_FAST_SL_ENABLED</span>
+                        </div>
+                        <label class="switch-row" title="When ON: a stop-loss breach on a leg whose U/D exit is resting is acted on by the ~1s exit-fill watchdog (cancel exit + market sell), not only by the ~2s SL watcher. Same guarded sequence - the resting exit is cancelled and the live broker net verified before the market sell.">
+                            <input type="checkbox" name="EXIT_FAST_SL_ENABLED" id="EXIT_FAST_SL_ENABLED">
+                            <span class="switch"></span>
+                            <span class="switch-text">Cancel + market-out on stop breach (fast path)</span>
+                        </label>
+                    </div>
+                </div>
             </div>
         </section>
 

@@ -243,6 +243,12 @@ class Trader_Singleton:
     _watcher_generation = 0
     _watcher_thread_ref = None
     _watcher_supervisor_started = False
+    # Fast-SL re-entrancy guard: EXIT intent keys currently inside
+    # _fast_stop_loss_exit. The sweep runs from BOTH the exit-fill
+    # watchdog thread and the frontend pending-orders ping; without
+    # this, two sweeps could both cancel-then-market-sell the same
+    # collapsing leg (the second sell goes NET SHORT).
+    _fast_exit_in_flight = set()
     _voice_announcement_enabled = True
     # Per-minute clock announcer ("11 13", "1 15", "3 40" - 12-hour,
     # no AM/PM). Shares the single speaker with the P&L readout; None
@@ -2014,6 +2020,294 @@ class Trader_Singleton:
                     exc_info=True,
                 )
 
+    def _intent_fresh_ltp(self, intent):
+        """
+        Freshest LTP for an exit intent's instrument: the live position
+        leg first (it may hold a newer tick), else the contract-chain
+        price. Returns 0.0 when nothing trustworthy is available.
+        """
+        leg = (self._position_data or {}).get(
+            str(intent.get("position_key") or "")
+        ) or {}
+        ltp = leg.get("latest_price")
+        if not ltp:
+            ltp = (self._five_weekly_option_contracts.get(
+                intent.get("instrument_token")
+            ) or {}).get("ltp")
+        try:
+            ltp = float(ltp)
+        except (TypeError, ValueError):
+            ltp = 0.0
+        return ltp if ltp > 0 else 0.0
+
+    def _trail_exit_if_collapsed(self, intent, key):
+        """
+        Collapse-trail for a resting U/D SELL LIMIT (EXIT intent).
+
+        A resting limit is dead weight once the premium falls below it:
+        it can only wait for a bounce while the SL watcher's market-out
+        waits for the stop. When the LTP drops EXIT_TRAIL_TRIGGER_PCT
+        below the resting limit, re-price the limit DOWN to a marketable
+        price (fresh LTP - limit margin) so it fills as a taker and
+        closes the leg while a bid still exists - instead of riding the
+        fall all the way to the stop.
+
+        Config (live, App Config screen):
+          EXIT_TRAIL_ENABLED     - master switch (missing = on)
+          EXIT_TRAIL_TRIGGER_PCT - how far below the limit the LTP must
+                                   fall before the limit is re-priced
+
+        Each re-price LOWERS anchor_used, so the next trigger needs a
+        further drop - self-throttling on a falling tape (plus a 2s
+        modify round-trip gap). Provisional (click-anchored) exits are
+        skipped: the re-anchor path owns those until the real buy
+        average is known. LIVE only.
+        """
+        if str(getattr(self, "_mode", "") or "").upper() != "LIVE":
+            return
+        trail_enabled = fetch_from_json("appconfig.json", "EXIT_TRAIL_ENABLED")
+        if str(trail_enabled).strip().lower() in ("false", "0", "no", "off"):
+            return
+        try:
+            raw_trigger_pct = fetch_from_json(
+                "appconfig.json", "EXIT_TRAIL_TRIGGER_PCT"
+            )
+            trigger_pct = float(
+                raw_trigger_pct if raw_trigger_pct is not None else 1.0
+            )
+        except (TypeError, ValueError):
+            trigger_pct = 1.0
+        if trigger_pct <= 0:
+            return
+        if intent.get("provisional_anchor"):
+            return
+        limit_price = float(intent.get("anchor_used") or 0)
+        if limit_price <= 0:
+            return
+        ltp = self._intent_fresh_ltp(intent)
+        if ltp <= 0:
+            return
+        if ltp > limit_price * (1 - trigger_pct / 100.0):
+            return  # not collapsed enough (yet)
+        # Re-trail throttle: a modify round-trip needs a beat.
+        if time.time() - float(intent.get("trail_last_ts") or 0) < 2.0:
+            return
+        tick = 0.05
+        new_price = max(
+            round_to_tick(ltp - compute_limit_margin(ltp), tick, up=False),
+            tick,
+        )
+        if new_price >= limit_price:
+            return  # paranoia: never re-price UP
+        modified = self._broker.modify_exit_limit(
+            intent["order_id"], intent["trading_symbol"],
+            intent["instrument_token"], intent["lots"],
+            intent.get("exchange"), new_price,
+        )
+        if not modified:
+            # Ambiguous (the order may have just filled) - leave it;
+            # the status probe below resolves the true state.
+            logger.warning(
+                f"Exit trail modify failed for {key} - leaving the "
+                f"limit at {limit_price}"
+            )
+            return
+        intent["anchor_used"] = new_price
+        intent["trail_last_ts"] = time.time()
+        logger.info(
+            f"Exit trail for {intent['trading_symbol']} [{key}]: LTP {ltp} "
+            f"fell {trigger_pct}% below the resting limit {limit_price} - "
+            f"limit re-priced down to {new_price}"
+        )
+        try:
+            for leg_key in self._legs_for_exit_intent(intent):
+                self._set_leg_exit_pending(leg_key, new_price)
+        except Exception as stamp_error:
+            logger.debug(
+                f"Exit-pending re-stamp failed for {key}: {stamp_error}"
+            )
+        try:
+            trade_audit.update_resting_exit_price(
+                intent["trading_symbol"], new_price
+            )
+        except Exception as audit_error:
+            logger.debug(f"Exit trail audit update failed: {audit_error}")
+        try:
+            self.frontend_data_socket.emit('status_message', {
+                "success": True,
+                "message": (
+                    f"Resting exit for {intent['trading_symbol']} "
+                    f"trailed down {limit_price} -> {new_price} "
+                    f"(LTP {ltp}) to beat the collapse."
+                ),
+            })
+        except Exception:
+            pass
+
+    def _fast_stop_loss_exit(self, intent, key):
+        """
+        Fast-path stop-loss for a leg whose U/D exit is resting at the
+        broker (EXIT intent).
+
+        The main watcher's safety net cycles ~2s; when a premium is
+        collapsing, every extra second is points off the market-out.
+        The exit-fill watchdog already sweeps every ~1s, so a stop
+        breach detected HERE cancels the resting exit and market-sells
+        immediately - the SAME guarded sequence the watcher uses
+        (cancel resting SELLs first, verify the live broker net, only
+        then sell), never a naked short.
+
+        Config (live, App Config screen):
+          EXIT_FAST_SL_ENABLED - master switch (missing = on)
+        Stop math mirrors the watcher: PCT_STOP_LOSS off the buy
+        average, or PTS_LOSS in PNT comparison mode. LIVE only.
+        """
+        if str(getattr(self, "_mode", "") or "").upper() != "LIVE":
+            return
+        fast_sl_enabled = fetch_from_json("appconfig.json", "EXIT_FAST_SL_ENABLED")
+        if str(fast_sl_enabled).strip().lower() in ("false", "0", "no", "off"):
+            return
+        position_key = str(intent.get("position_key") or "")
+        leg = (self._position_data or {}).get(position_key)
+        if not leg:
+            return
+        try:
+            buy_avg = float(leg.get("average_price") or 0)
+        except (TypeError, ValueError):
+            buy_avg = 0.0
+        if buy_avg <= 0:
+            return
+        ltp = self._intent_fresh_ltp(intent)
+        if ltp <= 0:
+            return
+        comparison = fetch_from_json("appconfig.json", "COMPARISON_FUNCTION") or []
+        if "PNT" in comparison:
+            sl_price = buy_avg - self._strategy_threshold(
+                "PTS_LOSS", intent.get("strategy")
+            )
+        else:
+            sl_pct = self._strategy_threshold(
+                "PCT_STOP_LOSS", intent.get("strategy")
+            )
+            if sl_pct <= 0:
+                return  # no stop configured - watcher semantics too
+            sl_price = buy_avg * (1 - sl_pct / 100.0)
+        if ltp > sl_price:
+            return  # no breach (yet)
+        in_flight = self._fast_exit_in_flight
+        if key in in_flight:
+            return
+        in_flight.add(key)
+        try:
+            logger.warning(
+                f"FAST SL for {intent['trading_symbol']} [{key}]: LTP {ltp} "
+                f"breached the stop {sl_price} (buy avg {buy_avg}) while "
+                f"the exit is resting - cancelling the exit and "
+                f"market-selling now"
+            )
+            try:
+                cancelled, cancel_failed = self._cancel_pending_exit_orders(
+                    intent["trading_symbol"]
+                )
+            except RuntimeError as fetch_error:
+                logger.error(
+                    f"Fast SL aborted for {intent['trading_symbol']} "
+                    f"[{key}]: {fetch_error}"
+                )
+                return
+            if cancel_failed:
+                # The exit may have JUST filled - the status probe
+                # resolves it; selling now risks a net short.
+                logger.warning(
+                    f"Fast SL aborted for {intent['trading_symbol']} "
+                    f"[{key}]: the resting exit did not cancel cleanly"
+                )
+                return
+            qty = int(intent.get("lots") or 0)
+            net_qty = self._broker_net_qty_for_token(
+                intent["instrument_token"]
+            )
+            if net_qty is None:
+                logger.error(
+                    f"Fast SL aborted for {intent['trading_symbol']} "
+                    f"[{key}]: live net could not be verified"
+                )
+                return
+            if net_qty <= 0:
+                logger.info(
+                    f"Fast SL: position already closed at the broker for "
+                    f"{intent['trading_symbol']} - refreshing instead "
+                    f"of selling"
+                )
+                self.refresh_open_pos_buy_price()
+                return
+            if net_qty < qty:
+                logger.info(
+                    f"Fast SL: broker net {net_qty} lot(s) below the "
+                    f"leg's {qty} for {intent['trading_symbol']} "
+                    f"(partial exit fill?) - refreshing instead of "
+                    f"selling"
+                )
+                self.refresh_open_pos_buy_price()
+                return
+            # RMS backoff gate - same discipline as the watcher: never
+            # hammer a rejecting RMS with identical orders. The gate
+            # returns the seconds of backoff LEFT (0 = clear to sell).
+            if self._auto_sell_rms_gate(intent.get("instrument_token")) > 0:
+                return
+            trade_audit.record_sell_trigger(
+                token=str(intent["instrument_token"]),
+                lots=qty,
+                ltp=ltp,
+                source="SL_WATCHER_FAST",
+            )
+            try:
+                self._broker.sell_units(
+                    intent["trading_symbol"],
+                    intent["instrument_token"],
+                    qty,
+                    intent.get("exchange"),
+                    ltp,
+                    position_key=position_key,
+                )
+                trade_audit.record_sell_executed(
+                    str(intent["instrument_token"]), qty, ltp
+                )
+                # The exit was cancelled by us and the position is
+                # closed - retire the EXIT intent so no status probe
+                # raises a false "open without exit" alarm.
+                with self._pending_exit_lock:
+                    self._pending_exit_intents.pop(key, None)
+                self._auto_sell_rms_clear(intent.get("instrument_token"))
+                self.refresh_open_pos_buy_price()
+                try:
+                    self.frontend_data_socket.emit('status_message', {
+                        "success": True,
+                        "message": (
+                            f"FAST SL: {intent['trading_symbol']} exited "
+                            f"at market ({qty} lot(s)) - the stop was "
+                            f"breached while the exit was resting."
+                        ),
+                    })
+                except Exception:
+                    pass
+            except Exception as sell_error:
+                # Mirror the watcher: an RMS rejection must not re-fire
+                # identical orders every sweep - register the backoff.
+                self._auto_sell_rms_register(
+                    intent.get("instrument_token"),
+                    intent["trading_symbol"],
+                    str(sell_error),
+                    qty,
+                )
+                logger.error(
+                    f"Fast SL market-out failed for "
+                    f"{intent['trading_symbol']} [{key}]: {sell_error}",
+                    exc_info=True,
+                )
+        finally:
+            in_flight.discard(key)
+
     def _sweep_pending_exits(self):
         """
         Resolve pending U/D exit intents whose fill event was missed or
@@ -2072,6 +2366,33 @@ class Trader_Singleton:
                 # raise a false "position open without exit" alarm).
                 # The replacement is tracked under its own key.
                 continue
+            # Collapse-trail + fast-SL: only for EXIT intents (resting
+            # U/D exits). Both are LIVE-only no-ops when disabled; the
+            # fast path may pop the intent (it closed the leg itself),
+            # so re-check before probing status.
+            if intent.get("kind") == "EXIT":
+                try:
+                    self._trail_exit_if_collapsed(intent, key)
+                except Exception as trail_error:
+                    logger.error(
+                        f"Exit trail failed for {key}",
+                        exc_info=True,
+                    )
+                with self._pending_exit_lock:
+                    still_tracked = key in self._pending_exit_intents
+                if not still_tracked:
+                    continue
+                try:
+                    self._fast_stop_loss_exit(intent, key)
+                except Exception as fast_sl_error:
+                    logger.error(
+                        f"Fast SL check failed for {key}",
+                        exc_info=True,
+                    )
+                with self._pending_exit_lock:
+                    still_tracked = key in self._pending_exit_intents
+                if not still_tracked:
+                    continue
             try:
                 status = self._broker.fetch_order_status(intent["order_id"])
             except Exception as probe_error:
