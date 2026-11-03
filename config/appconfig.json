@@ -7,7 +7,8 @@
     "session": {
         "MODE": "LIVE",
         "BROKER": "MSTOCK",
-        "UNDERLYING": "NIFTY"
+        "UNDERLYING": "NIFTY",
+        "DATA_SOURCE": "NIFTY_FUTURE"
     },
     "gating": {
         "TV_DATA_Validation_REQUIRED": false,
@@ -23,9 +24,9 @@
         "PCT_BOOK_PROFIT_INTRA": "10",
         "PCT_STOP_LOSS_INTRA": "10",
         "PCT_BOOK_PROFIT_SCALPING": "6",
-        "PCT_STOP_LOSS_SCALPING": "6",
-        "PCT_BOOK_PROFIT_ULTRA_SCALPING": "4",
-        "PCT_STOP_LOSS_ULTRA_SCALPING": "2"
+        "PCT_STOP_LOSS_SCALPING": "4",
+        "PCT_BOOK_PROFIT_ULTRA_SCALPING": "6",
+        "PCT_STOP_LOSS_ULTRA_SCALPING": "6"
     },
     "pnt": {
         "PTS_PROFIT_INTRA": "10",
@@ -70,7 +71,8 @@
         "MANUAL_SELL_REPRICE_MAX_ATTEMPTS": "5",
         "ATM_DRIFT_ENABLED": true,
         "ATM_DRIFT_CHECK_SECS": "60",
-        "ATM_DRIFT_MIN_REBUILD_SECS": "600"
+        "ATM_DRIFT_MIN_REBUILD_SECS": "600",
+        "EXIT_TRAIL_TRIGGER_PCT": ""
     },
     "cash": {
         "CASH_BALANCE_PAPER_TRADING": "100000",
