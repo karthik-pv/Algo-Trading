@@ -16,6 +16,14 @@ get the week-constant extras (plain-W pivots) backfilled by week. Rate gates
 exclude the first WARMUP_SESSIONS sessions of the new coverage (EMA cold
 start); those stamps are healed by the new-wins merge.
 
+2026-11-03: adds the "psr3" 5m template (162 cols) — a NEW "MACD Line, Signal
+Line" pair at 125/126 (the next-TF K/D pair moved to 135/136); every later
+column shifts +2 (content-verified 1.0 on the full overlap). Also: prior-ingest
+extra columns (canon width >= BASE_WIDTH, e.g. "D EMA100 (TV2)") now map by
+their stripped name and gate on a 1e-3 relative drift tolerance on the recent
+converged span — HTF EMAs re-seed per download and converge too slowly for the
+1e-6 absolute gate; the new-wins merge heals the drifted history.
+
 New-template path per file:
   1. identify the TF (column count + anchor names),
   2. map every canonical column to the new template's columns — unique names
@@ -123,6 +131,11 @@ NEW_TEMPLATES = {
     # 30m psr2: 155 cols, same rename scheme; W pivots = the PLAIN variants
     # here (the 5m uses the low-TF ones); D Standard/HA pivots empty.
     "psr2:30m": (155, {"1s EMA9", "D P"}, 0.99),
+    # 2026-11-03 layout ("psr3", 5m): 162 cols — one NEW "MACD Line, Signal
+    # Line" pair inserted at the start of the 5m-TF indicator block (old
+    # 135/136); every later column shifts +2. Everything else identical to
+    # psr2 (same pivot renames, same block shapes).
+    "psr3:5m": (162, {"1s EMA9", "W P (low TF)"}, 0.98),
 }
 # canonical column -> candidate names in the psr2 template (content-matched).
 # Same renames for every TF; where both a plain and a "(low TF)" W variant
@@ -226,9 +239,34 @@ def psr2_block_map_30m():
 PSR2_BLOCK_MAPS = {"5m": psr2_block_map_5m(), "30m": psr2_block_map_30m()}
 
 
+# psr3 5m: the next-TF K/D pair (canon 32/33) moved to 135/136 and a new
+# MACD/Signal pair was inserted at 125/126 — i.e. every psr2 column from new
+# index 125 on shifts +2. Content-verified (rate 1.0 on the full overlap).
+def psr3_block_map_5m():
+    return {ci: (ni + 2 if ni >= 125 else ni)
+            for ci, ni in psr2_block_map_5m().items()}
+
+
+PSR3_BLOCK_MAPS = {"5m": psr3_block_map_5m()}
+
+
+def block_maps(mode):
+    return PSR3_BLOCK_MAPS if mode == "psr3" else PSR2_BLOCK_MAPS
+
+
 WARMUP_SESSIONS = 30   # overlap sessions excluded from rate gates — the long
 #   EMAs (5m EMA200: 26+ sessions) converge from each download's own cold start;
 #   disagreements decay geometrically and the new-wins merge heals those stamps
+
+# original (pre-extras) canonical widths — columns at/after these indices were
+# APPENDED by a prior psr2 ingest (seconds-EMAs, EMA ladders, "(TV2)" renames).
+# They carry the OLD download's EMA cold-start state, so they are gated on a
+# drift tolerance, not the exact-match gate: HTF EMAs (W/M) re-seed per
+# download and converge too slowly for 1e-6 absolute. 1e-3 RELATIVE still
+# discriminates a wrong-column mapping (EMAs of different periods/TFs are off
+# by tens of points — >= 1e-3 relative — on essentially every stamp).
+BASE_WIDTH = {"5m": 118, "30m": 116, "1m": 94}
+EXTRA_REL_TOL = 1e-3
 
 # plain-W pivot columns are period-constant per WEEK -> backfillable for
 # canonical-only rows; everything else extra (seconds-EMAs, VWAP HA, ...) is not.
@@ -307,12 +345,12 @@ def identify(path):
         if all(a in names for a in anchors) and "Q Standard P" in names:
             return tf, "psr", *read_csv(path)
     for tf, (ncols, anchors, _rate) in NEW_TEMPLATES.items():
-        if not tf.startswith("psr2:"):
+        if not tf.startswith(("psr2:", "psr3:")):
             continue
         if len(hdr) != ncols:
             continue
         if all(a in names for a in anchors):
-            return tf.split(":", 1)[1], "psr2", *read_csv(path)
+            return tf.split(":", 1)[1], tf.split(":", 1)[0], *read_csv(path)
     for tf, spec in LEGACY.items():
         if len(hdr) != spec["ncols"]:
             continue
@@ -377,11 +415,12 @@ def build_mapping(tf, canon_hdr, canon, new, nhdr_names, mode="psr"):
     for n, i in nhdr_names.items():
         by_base.setdefault(n.split("#")[0], []).append(i)
 
-    min_rate = NEW_TEMPLATES["psr2:" + tf if mode == "psr2" else tf][2]
-    unsupplied = (psr2_unsupplied(tf, canon_hdr) if mode == "psr2"
-                  else UNSUPPLIED[tf])
-    cands_map = PSR2_NAME_CANDS.get(tf, {}) if mode == "psr2" else {}
-    block_map = PSR2_BLOCK_MAPS.get(tf, {}) if mode == "psr2" else {}
+    min_rate = NEW_TEMPLATES[mode + ":" + tf if mode in ("psr2", "psr3")
+                             else tf][2]
+    unsupplied = (psr2_unsupplied(tf, canon_hdr)
+                  if mode in ("psr2", "psr3") else UNSUPPLIED[tf])
+    cands_map = PSR2_NAME_CANDS.get(tf, {}) if mode in ("psr2", "psr3") else {}
+    block_map = block_maps(mode).get(tf, {}) if mode in ("psr2", "psr3") else {}
     mapping, notes, seams = {}, [], {VWAP_SEAM[tf]} if tf in VWAP_SEAM else set()
     for ci, cname in enumerate(canon_hdr):
         if ci == 0:
@@ -394,7 +433,7 @@ def build_mapping(tf, canon_hdr, canon, new, nhdr_names, mode="psr"):
                          "dropped from the new template; proven exact vs TV)")
             continue
         if ci in seams:
-            src = nhdr_names[("Daily VWAP" if mode == "psr2"
+            src = nhdr_names[("Daily VWAP" if mode in ("psr2", "psr3")
                               else "Daily VWAP Standard")]
             mapping[ci] = src
             notes.append(f"  col {ci:2d} {cname:20s} -> col {src} 'Daily VWAP "
@@ -411,8 +450,9 @@ def build_mapping(tf, canon_hdr, canon, new, nhdr_names, mode="psr"):
                          f"({unsupplied[ci]})")
             continue
         cvals = [fnum(canon[t][ci]) for t in sample]
-        if mode == "psr2" and base in ("MACD Line", "Signal Line", "Plot",
-                                       "PVT", "Cross Up", "Cross Down", "K", "D"):
+        if mode in ("psr2", "psr3") and base in ("MACD Line", "Signal Line",
+                                                 "Plot", "PVT", "Cross Up",
+                                                 "Cross Down", "K", "D"):
             ni = block_map.get(ci)
             if ni is None and ci in unsupplied:
                 mapping[ci] = None
@@ -431,6 +471,13 @@ def build_mapping(tf, canon_hdr, canon, new, nhdr_names, mode="psr"):
                              "healed by new-wins merge)")
             continue
         cands = cands_map.get(base, by_base.get(base, []))
+        is_extra = ci >= BASE_WIDTH.get(tf, 10**9)
+        if not cands and is_extra and base.endswith(" (TV2)"):
+            # "(TV2)" rename from the earlier ingest's collision handling:
+            # map by the stripped name in the new file, content-verified below
+            stripped = base[:-len(" (TV2)")]
+            if stripped in nhdr_names:
+                cands = [stripped]
         if isinstance(cands, str):
             cands = [cands]
         cand_idx = [c if isinstance(c, int) else nhdr_names[c] for c in cands
@@ -441,6 +488,34 @@ def build_mapping(tf, canon_hdr, canon, new, nhdr_names, mode="psr"):
             rate, n = match_rate(cvals, nvals)
             if rate > best_rate:
                 best, best_rate, best_n = ni, rate, n
+        if is_extra and best is not None and best_rate < min_rate:
+            # drift-tolerant gate for prior-ingest extras (see EXTRA_REL_TOL)
+            recent = ncommon[-max(500, len(ncommon) // 5):]
+
+            def rel_rate(stamps):
+                m = tot = 0
+                for t in stamps:
+                    a, b = fnum(canon[t][ci]), fnum(new[t][best])
+                    if a is None or b is None:
+                        continue
+                    tot += 1
+                    if abs(a - b) <= EXTRA_REL_TOL * max(1.0, abs(b)):
+                        m += 1
+                return (m / tot) if tot else -1.0, tot
+
+            rate, n = rel_rate(recent)
+            if rate >= min_rate:
+                notes.append(f"  col {ci:2d} {cname:20s} -> col {best:3d} "
+                             f"EXTRA (prior ingest): exact-rate "
+                             f"{best_rate:.4f} (EMA re-seed drift, healed "
+                             f"by merge), recent rel-rate {rate:.4f} n={n} OK")
+                mapping[ci] = best
+                continue
+            fail(f"cannot map canonical col {ci} ({cname!r}): best "
+                 f"{base!r} candidate rate {best_rate:.4f} exact / "
+                 f"{rate:.4f} recent rel (< {min_rate}) — the new template's "
+                 f"{base!r} block does not match the canonical. "
+                 "Investigate before merging.")
         if best is None or best_rate < min_rate:
             fail(f"cannot map canonical col {ci} ({cname!r}): best "
                  f"{base!r} candidate rate {best_rate:.4f} "
@@ -489,7 +564,7 @@ def merge(tf, canon_hdr, canon, new, mapping, seams, psr_fb, mode="psr",
         ext_hdr += PSR_NAMES + TV_VWAP_NAMES
     # --- psr2 extras: unconsumed new columns, file order, non-empty only ----
     extra_src, week_const = [], set()
-    if mode == "psr2":
+    if mode in ("psr2", "psr3"):
         consumed = {v for v in mapping.values() if isinstance(v, int)}
         seen = set(ext_hdr)
         for ni, name in enumerate(occ_hdr):          # occ names, file order
@@ -747,6 +822,27 @@ def main():
                 cname = canon_hdr[ci].split("#")[0]
                 if cname in ("open", "high", "low", "close"):
                     continue
+                if ci >= BASE_WIDTH.get(tf, 10**9):
+                    # prior-ingest extra: drift-tolerant gate on the recent
+                    # converged span (see EXTRA_REL_TOL / build_mapping)
+                    recent = common[-max(500, len(common) // 5):]
+                    m = tot = 0
+                    for k in recent:
+                        a, b = fnum(canon[k][ci]), fnum(new[k][src])
+                        if a is None or b is None:
+                            continue
+                        tot += 1
+                        if abs(a - b) <= EXTRA_REL_TOL * max(1.0, abs(b)):
+                            m += 1
+                    rr = m / tot if tot else 1.0
+                    if rr < NEW_TEMPLATES[mode + ":" + tf
+                                          if mode in ("psr2", "psr3")
+                                          else tf][2]:
+                        fail(f"verification failed on extra col {ci} "
+                             f"({cname!r}): recent rel rate {rr:.4f}")
+                    print(f"  extra {cname!r}: recent rel-rate {rr:.4f} "
+                          f"n={tot} OK (EMA drift healed by merge)")
+                    continue
                 m = n = wm = wn = 0
                 maxd = 0.0
                 for k in common[::5]:
@@ -763,7 +859,9 @@ def main():
                     if abs(a - b) < 1e-6:
                         m += 1
                 rate = m / n if n else 1.0
-                if rate < NEW_TEMPLATES["psr2:" + tf if mode == "psr2" else tf][2]:
+                if rate < NEW_TEMPLATES[mode + ":" + tf
+                                        if mode in ("psr2", "psr3")
+                                        else tf][2]:
                     fail(f"verification failed on canon col {ci} ({canon_hdr[ci]!r}): "
                          f"match rate {rate:.4f} over {n} rows, maxdiff {maxd:.6g}")
                 if wm:
