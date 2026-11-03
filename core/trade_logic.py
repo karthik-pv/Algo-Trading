@@ -2224,8 +2224,79 @@ class Trader_Singleton:
             logger.warning(
                 f"FAST SL for {intent['trading_symbol']} [{key}]: LTP {ltp} "
                 f"breached the stop {sl_price} (buy avg {buy_avg}) while "
-                f"the exit is resting - cancelling the exit and "
-                f"market-selling now"
+                f"the exit is resting"
+            )
+            # Preferred path - MODIFY-IN-PLACE: re-price the resting
+            # exit to a marketable limit instead of cancel + fresh
+            # sell. (2026-11-03 12:08: the cancel+sell race let M.Stock
+            # RMS see the fresh sell as an OPENING SHORT while the
+            # cancel was still registering - it demanded Rs.5.66L of
+            # writing margin and rejected the stop-out twice, leaving
+            # the leg unprotected. A modify is one atomic broker
+            # operation: nothing to race, nothing new to margin-check,
+            # and the leg is never exit-less. The order fills as a
+            # taker immediately; the EXIT intent stays tracked and the
+            # status probe closes the leg when it reports TRADED.)
+            tick = 0.05
+            marketable = max(
+                round_to_tick(ltp - compute_limit_margin(ltp), tick, up=False),
+                tick,
+            )
+            if marketable >= float(intent.get("anchor_used") or 0):
+                # The resting limit is already at/below the marketable
+                # price - it fills as a taker on its own; nothing to do.
+                return
+            modified = None
+            try:
+                modified = self._broker.modify_exit_limit(
+                    intent["order_id"], intent["trading_symbol"],
+                    intent["instrument_token"], intent["lots"],
+                    intent.get("exchange"), marketable,
+                )
+            except Exception as modify_error:
+                logger.error(
+                    f"Fast SL modify failed for {intent['trading_symbol']} "
+                    f"[{key}]: {modify_error}",
+                    exc_info=True,
+                )
+            if modified:
+                logger.warning(
+                    f"Fast SL re-priced the resting exit for "
+                    f"{intent['trading_symbol']} [{key}] to a marketable "
+                    f"{marketable} (LTP {ltp}) - it fills as a taker; "
+                    f"no cancel/sell race"
+                )
+                with self._pending_exit_lock:
+                    tracked = self._pending_exit_intents.get(key)
+                    if tracked is not None:
+                        tracked["anchor_used"] = marketable
+                        tracked["fast_sl_repriced"] = True
+                try:
+                    trade_audit.update_resting_exit_price(
+                        intent["trading_symbol"], marketable
+                    )
+                except Exception as audit_error:
+                    logger.debug(
+                        f"Fast SL audit update failed for {key}: "
+                        f"{audit_error}"
+                    )
+                try:
+                    self.frontend_data_socket.emit('status_message', {
+                        "success": True,
+                        "message": (
+                            f"FAST SL: {intent['trading_symbol']} exit "
+                            f"re-priced to {marketable} (LTP {ltp}) - "
+                            f"stop was breached while resting."
+                        ),
+                    })
+                except Exception:
+                    pass
+                return
+            # Modify rejected/unsupported - fall back to the guarded
+            # cancel + sell sequence below.
+            logger.warning(
+                f"Fast SL falling back to cancel + market-sell for "
+                f"{intent['trading_symbol']} [{key}]"
             )
             try:
                 cancelled, cancel_failed = self._cancel_pending_exit_orders(
