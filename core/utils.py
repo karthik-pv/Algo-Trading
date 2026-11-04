@@ -45,6 +45,7 @@ _DATA_FILES = {
     "mstock_instrument_list_reduced.json",
     "PaperTrading.txt",
     "PlaybackPrice.csv",
+    "tv_last_payload.json",
     "tick_stats.json",
 }
 

@@ -36,3 +36,5 @@ tv/tv_algo_json/incoming/
 
 # TREPAT run-time tracking logs
 tv/spatam/Tracking_*.log
+tv_last_payload.json
+tv_last_snapshot.json
