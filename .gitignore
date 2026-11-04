@@ -33,3 +33,6 @@ z_JSON._Temp.txt
 
 # raw TV webhook debug dump (runtime data)
 tv/TV_Algo_JSON/incoming/
+
+# TREPAT run-time tracking logs
+tv/SPATAM/Tracking_*.log

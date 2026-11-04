@@ -1,43 +1,126 @@
-1) Tracking 1m Timeframe Trend and Price Action
-    1m PVT Crossed Down
-    1m MACD Crossed Down
-    Price rejected from --- levels // when 1m PVT/MACD Cross down)
-    1PM Downtrend Started
-    Nearby below Levels ---- //List EMAs above 1E21 and list all the Pivotal Levels (Just list the levels that are 50 points below)
-    Price rejected at 1E9.
-    Price rejected at 1E21.
-    Level ---- reached
-    
-    
-2) Tracking for Upswing
-    Support taken at ---- level         When price consolidates between the level and 1E9/1E21
-    1m PVT Crossed Up
-    1m MACD Crossed Up
-    1PM Uptrend Started
-    Nearby levels that could resist price : xyz (below 1E50)
-    1PME50 trend has started
-    
-    Price supported at 1E9.
-    Price supported at 1E21/50
-    Price rises
-    15s PVT Cross up
-    Synching 5s MACD Cross up
-        1o came up
-    Nearby above Levels ---- //List EMAs above 1E21 and list all the Pivotal Levels (Just list the levels that are 50 points above)
-    Crossing Level ----. Near by levels are ---- (levels near 50 points above)
-    Crossing Level ----- Near by levels are ---- (levels near 50 points above)
-    Price taking support 
+TREPAT Tracking Guideline — SOURCE OF TRUTH
+============================================
+(Engine: scripts/trepat_track.py — every announcement type below maps 1:1 to it.
+Rules at the bottom override wording. Names only — never Nifty price / level values.)
+
+Session Open
+============
+    Session open. Gap up/down +/-x.xx% from previous close.
+    Resistance within 50 pts above: <level names>
+    Support within 50 pts below: <level names>
+    (VOC announcements unavailable when export has no volume)
 
 
-2) Tracking Bias of the day
-    Current 3PM trend is -----
-    5PM Trend is
-    CV Trend is
-    Price taking support/facing resistance at a major level
+Tracking for Downswing
+======================
+    Price facing resistance at level xyz because of abc
+        // "because of <family trend>" ONLY when the level's role comes from a
+        // 3PM / 2PM / DPM / WPM / MPM trend (e.g. 30m EMAs under DPM).
+        // Pivots / VWAP are announced as plain level names, no reason.
+    Expect 1PXD_15PM Swing Down          // only when 5m PVT is downtrending
+    Price retested the level xyz
+        Expect 1PXD_15PM Swing Down
+    Price retested the level xyz again   // 3rd and subsequent touch of same level
+        Expect 1PXD_15PM Swing Down
+    Price is close to VWAP. About to cross down
+    Price takes support of level xyz (Avoid 1E9...Include Other EMAs / Pivotal Levels / VWAP)
+    Price comes below 1E21
+    1PM Swing Down started
+    Nearby below Levels: <pivotal levels within 50 pts below> | EMAs above 1E21: <names>
+    30m EMA50/100/200 acting as support/resistance (DPM Uptrend/Downtrend)
+        // DPM = Daily PVT/MACD2. DPM uptrending -> 30m EMA50/100/200 act as
+        // SUPPORT; DPM downtrending -> they act as RESISTANCE.
+        // D WAP (Daily VWAP) has nothing to do with DPM.
+    5m Stochastic cross down from OBZ/MZ/OSZ
+        Expect 1PXD_15PM Swing Downs
+    Price has crossed below 1E50
+    Price has retraced up to and faced resistance at 1E50
+    Price has retraced up to and faced resistance at 1E21
+    Price is close to VWAP. About to cross down
+    1m Candle crossed below VWAP
+    5m Candle crossed below VWAP
+    5PX about to cross down
+        // when 5m PVT is close to the zero line (within +/-0.2) and 1m PVT/MACD2
+        // is downtrending -> "5PX about to cross down"
+    5PXD — 5m PVT Cross Down
+    5M2XD — 5m MACD2 Cross Down
+    5PM Downtrend started
+        Expect 1PXD_15PM Swing Downs
+    1PXD_15PM Swing Down — 1m PXD with 15s PVT/M2XD confirmation
+        // the actual confirmed swing call: 1m PVT cross down accompanied by a
+        // 15s PVT / 15s MACD2 cross down within +/- 2 bars (15s)
 
-3)  Attention conditions
-    3ox     
-    1PM5o
-    1PMo
-    5PMZ
-    5PM 1- 5 (in uptrending bias)
+Tracking for Upswing
+======================
+    Price takes support of level xyz (Avoid 1E9...Include Other EMAs / Pivotal Levels / VWAP)
+    Price retested support xyz (again...)
+        Expect 1PXU_15PM Swing Up            // only when 5m PVT is uptrending
+    Price is close to VWAP. About to cross up
+    Price has gone above 1E21
+    1PM Swing up has started
+    Nearby above Levels: <pivotal levels within 50 pts above> | EMAs above 1E21: <names>
+    30m EMA50/100/200 acting as support/resistance (DPM Uptrend/Downtrend)
+    Price has gone above 1E50
+    Price has retraced down to and taken support of 1E50
+    Price has retraced down to and taken support at 1E21
+    5m Stochastic cross up from OSZ/MZ
+    5PX about to cross up
+        // when 5m PVT is close to the zero line (within +/-0.2) and 1m PVT/MACD2
+        // is uptrending -> "5PX about to cross up"
+    5PXU — 5m PVT Cross Up
+    5M2XU — 5m MACD2 Cross Up
+    5PM Uptrend started
+        Expect 1PXU_15PM Swing Ups
+    1m Candle crossed above VWAP
+    5m Candle crossed above VWAP
+    1PXU_15PM Swing Up — 1m PXU with 15s PVT/M2XU confirmation
+
+
+Bias statements (exact wording)
+===============================
+    Currently the Bias is Uptrend as we have 5PM Uptrend
+    Currently the Bias is Strong Uptrend as we have 5PM Uptrend above VWAP
+    Currently the Bias is Downtrend as we have 5PM Downtrend
+    Currently the Bias is Strong Downtrend as we have 5PM Downtrend below VWAP
+
+
+Momentors — "Attention : xyz"
+=============================
+    All cross momentors are announced as "Attention : <cross>":
+        1PX / 5PX     (PVT zero-crosses)
+        1M2X / 5M2X   (MACD2 signal crosses)
+        VOC crosses   (once volume is in the export)
+    Downswing: cross-DOWN momentors + VOC cross-UP moments (volume warning against the swing)
+    Upswing: cross-UP momentors + VOC cross-DOWN moments
+    // 15s PVT/MACD2 crosses are NOT announced separately — they only appear
+    // inside the 1PXD_15PM / 1PXU_15PM confirmation.
+
+
+Rules
+=====
+    1. Gap up/down in % at session open (only numeric value ever announced).
+    2. Never mention Nifty price or level values — level NAMES only.
+    3. D WAP has nothing to do with D PM. D PM is Daily PVT/MACD2; its trend
+       decides whether 30m EMA50/100/200 act as support or resistance.
+    4. "Expect 1PXU_15PM Swing Ups" only when 5m PVT has started uptrending
+       (mirror: "Expect 1PXD_15PM Swing Down" only when 5m PVT downtrending).
+    5. Stochastic zones only: OBZ / MZ / OSZ — no values. 5m timeframe only.
+    6. Retests count only after price moved ~25 pts away and returned
+       (3rd+ touch = "...again").
+    7. VWAP proximity warning fires within ~10 pts, once per direction per episode.
+    8. 15s PVT/MACD2 crosses are never announced standalone — they only confirm
+       1PXD_15PM / 1PXU_15PM.
+    9. Support/resistance touches are announced for ALL EMAs (1m/5m/30m —
+       EXCLUDING EMA9: no 1E9 / 5E9), all Pivotal Levels and VWAP, as price
+       travels up and down. Values of these EMAs/levels track their live bars.
+       EMA names: 1E21/1E50/1E100/1E200, 5E21/5E50/5E100/5E200, 30m EMA50/100/200.
+    8. 15s PVT/MACD2 crosses are never announced standalone — they only confirm
+       1PXD_15PM / 1PXU_15PM.
+   10. Same-tick touches are GROUPED into one line to keep it less noisy:
+       "Price retested support 1E100 and 1E200 again".
+   11. "5PX about to cross down/up": the 5m PVT is read ON THE 1M TIMEFRAME
+       (developing value, updates every minute). "cross down" ONLY when that
+       value is ABOVE zero but within +/-0.1 of the line, and 1m PVT<0 with
+       1m MACD2 falling; "cross up" ONLY when it is BELOW zero within +/-0.1,
+       and 1m PVT>0 with 1m MACD2 rising. Once per episode — re-arms after the
+       5m PVT (1m view) moves outside the band or crosses the line.
