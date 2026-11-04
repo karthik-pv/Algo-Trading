@@ -1437,12 +1437,6 @@ def trading_view():
     # force=True parses the body regardless of Content-Type, silent=True
     # returns None instead of raising 415 when the body is genuinely broken.
     data = request.get_json(force=True, silent=True)
-    if isinstance(data, dict):
-        # log the message type so DATA / LEVELS / ALERTS reception is verifiable
-        # per bar from the logs alone (count should pair 2x per 5m bar)
-        logger.info(f"TV webhook MSG={data.get('MSG')}")
-        _tv_dump_incoming(data)
-        _tv_persist_snapshot(data)
     if data is None and raw:
         # TEST-FEED REPAIR: the alert's SYM field can arrive as a study-object
         # dump with unescaped inner quotes (seen on the BTCUSD test chart),
@@ -1454,6 +1448,17 @@ def trading_view():
             logger.warning("Webhook body repaired (broken SYM field stripped)")
         except Exception:
             data = None
+    if isinstance(data, dict):
+        # v1.11 hardening: MSG log + incoming dump + snapshot persistence now
+        # run for BOTH clean and repaired payloads. Repaired messages used to
+        # skip this block (it sat above the repair), so a stream of
+        # broken-SYM webhooks left trader state fresh but the persisted
+        # snapshot frozen - the Momentors/Levels widget hydrated stale data
+        # on every restart (seen 2026-11-04: widget froze at the previous
+        # session's last snapshot all day).
+        logger.info(f"TV webhook MSG={data.get('MSG')}")
+        _tv_dump_incoming(data)
+        _tv_persist_snapshot(data)
     if data is None:
         body = raw[:500]
         logger.error(f"TradingView webhook: unparsable body (Content-Type: {request.content_type}): {body}")
