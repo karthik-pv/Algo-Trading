@@ -1378,6 +1378,39 @@ def _tv_load_persisted():
         return {}
 
 
+# Hydrate the trader's in-memory TV state from the last persisted webhook
+# payloads (2026-11-04): after a restart with the market off the Momentors /
+# Levels Ladder widget no longer has to wait for the first webhook, and any
+# code reading trader._tradingView_Data sees the last received snapshot.
+# Read-only hydration - never touches trade logic.
+_persisted_snap = _tv_load_persisted()
+if _persisted_snap:
+    if _persisted_snap.get("SNAPSHOT"):
+        trader._tradingView_Data = _persisted_snap["SNAPSHOT"]
+    if _persisted_snap.get("LEVELS"):
+        trader._tv_levels = _persisted_snap["LEVELS"]
+    if _persisted_snap.get("HTF"):
+        trader._tv_htf = _persisted_snap["HTF"]
+
+
+# Last-emitted socket payload persistence (2026-11-04): process_TradingView_Data
+# writes the full BIAS / SetUps / Forecast payload to data/tv_last_payload.json
+# so GET /tv/last_data can serve it on page load with the market closed (the
+# socket event update_trading_view_data only fires on a live webhook).
+_TV_LAST_PAYLOAD_PATH = os.path.join(DATA_DIR, "tv_last_payload.json")
+
+
+@app.route("/tv/last_data")
+def tv_last_data():
+    try:
+        with open(_TV_LAST_PAYLOAD_PATH, encoding="utf-8") as f:
+            payload = json.load(f)
+        payload["source"] = "persisted"
+        return jsonify(payload)
+    except Exception:
+        return jsonify({"source": "none"})
+
+
 @app.route("/trading_view_webhook" , methods = ["POST"])
 def trading_view():
     import re

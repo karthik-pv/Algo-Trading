@@ -3569,6 +3569,20 @@ document.addEventListener('DOMContentLoaded', function() {
         applyTVValidationPayload(payload);
     });
 
+    // Last-received TV data on page load (2026-11-04): with the market
+    // closed the socket event above never fires, so BIAS / SetUps /
+    // Forecast / Ladder stayed blank. Fetch the last payload the server
+    // persisted from the previous webhook and feed it through the exact
+    // same handler. Live webhooks simply overwrite it afterwards.
+    fetch('/tv/last_data').then(r => r.json()).then(payload => {
+        if (payload && payload.source === 'persisted') {
+            console.log("Painting last persisted TradingView data (market closed / pre-webhook)");
+            if (payload.Forecast) { applySetupCall(payload.Forecast); applyPaSetupCall(payload.Forecast); }
+            applyPaLevels(payload);
+            applyTVValidationPayload(payload);
+        }
+    }).catch(() => {});
+
     // === Setup Call panel rendering ===
     const TC_MODES = ['ultra_scalp', 'scalp', 'intraday'];
     function applySetupCall(forecast) {

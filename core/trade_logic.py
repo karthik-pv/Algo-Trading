@@ -8802,6 +8802,26 @@ class Trader_Singleton:
             except Exception as forecast_err:
                 logger.warning("Forecast engine failed: %s" % forecast_err)
 
+            # ✅ Persist the exact socket payload (2026-11-04): BIAS / SetUps /
+            # Forecast only reach the UI via the live socket emit below, so a
+            # page load (or app restart) with the market closed showed blank
+            # panels. The last payload is written to data/tv_last_payload.json
+            # (gitignored runtime file) and served by GET /tv/last_data so the
+            # frontend can repaint the last received TV data. Atomic +
+            # throttled like the tv_last_snapshot.json writer in server.py.
+            try:
+                from core.utils import resolve_data_path
+                payload_path = resolve_data_path("tv_last_payload.json")
+                tmp_path = payload_path + ".tmp"
+                now_ts = datetime.datetime.now()
+                if now_ts - getattr(self, "_tv_payload_ts", datetime.datetime.min) > datetime.timedelta(seconds=5):
+                    with open(tmp_path, "w", encoding="utf-8") as pf:
+                        json.dump(json_data, pf)
+                    os.replace(tmp_path, payload_path)
+                    self._tv_payload_ts = now_ts
+            except Exception as persist_err:
+                logger.warning("tv_last_payload persist failed: %s" % persist_err)
+
             # ✅ Emit event to frontend (Socket.IO)
             self.frontend_data_socket.emit("update_trading_view_data", json_data)
 
