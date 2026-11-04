@@ -61,16 +61,25 @@ def main(paths):
     gap_pct = (open_px - prev_close) / prev_close * 100
 
     # ---------- static pivotal levels (names only) ----------
+    # Full pivot ladder from the export: P/R1-R3/S1-S3 for D/W/M/Q.
+    # W "(low TF)" pivots skipped as near-duplicates of W pivots (dedup below).
     row = d5[d5['D P'].notna()]
     lv = row.iloc[0] if len(row) else d5.iloc[0]
     levels = {}
     for c, name in [('D P','PD P'), ('D R1','R1 D'), ('D R2','R2 D'), ('D R3','R3 D'),
                     ('D S1','S1 D'), ('D S2','S2 D'), ('D S3','S3 D'),
-                    ('W P','P W'), ('W R1','R1 W'), ('W S1','S1 W'),
-                    ('M P','P M'), ('M R1','R1 M'), ('M S1','S1 M'),
-                    ('Q P','P Q'), ('Daily VWAP','Daily VWAP')]:
+                    ('W P','P W'), ('W R1','R1 W'), ('W R2','R2 W'), ('W R3','R3 W'),
+                    ('W S1','S1 W'), ('W S2','S2 W'), ('W S3','S3 W'),
+                    ('M P','P M'), ('M R1','R1 M'), ('M R2','R2 M'), ('M R3','R3 M'),
+                    ('M S1','S1 M'), ('M S2','S2 M'), ('M S3','S3 M'),
+                    ('Q P','P Q'), ('Q R1','R1 Q'), ('Q R2','R2 Q'), ('Q R3','R3 Q'),
+                    ('Q S1','S1 Q'), ('Q S2','S2 Q'), ('Q S3','S3 Q'),
+                    ('Daily VWAP','Daily VWAP')]:
         v = lv.get(c)
         if pd.notna(v):
+            # dedup: skip a level within 5 pts of one already registered
+            if any(abs(float(v) - u) <= 5 for u in levels.values()):
+                continue
             levels[name] = float(v)
     # DPM-driven dynamic levels: 30m EMA50/100/200
     dyn = {'30m EMA50': '30m EMA50', '30m EMA100': '30m EMA100', '30m EMA200': '30m EMA200'}
@@ -334,11 +343,16 @@ def main(paths):
         r5_pvt = r5['PVT']
         pvt5_up_now = pd.notna(r5_pvt) and r5_pvt > 0    # 5m PVT uptrending (point-in-time)
         pvt5_dn_now = pd.notna(r5_pvt) and r5_pvt < 0    # 5m PVT downtrending
-        # collect same-tick touches across levels, then announce grouped
+        # collect same-tick touches across levels, then announce grouped.
+        # Levels already in a touch episode (away not re-armed) are NOT counted
+        # as new touches, but ARE included in the grouped line when a fresh
+        # touch fires in the same tick — continuous co-support must be named.
         tick_res, tick_sup = [], []   # (name, first_touch, again)
+        cont_res, cont_sup = [], []   # continuing (same-episode) names
         for name, val in cur_levels.items():
             if abs(px - val) <= NEAR:
                 if not away.get(name, True):
+                    (cont_res if px < val else cont_sup).append(name)
                     continue
                 first = name not in touches
                 if first:
@@ -358,6 +372,11 @@ def main(paths):
                     tick_sup.append((name, first, again))
             elif abs(px - val) > 25 and name in touches:
                 away[name] = True
+        fresh_res, fresh_sup = len(tick_res), len(tick_sup)
+        if fresh_res:
+            tick_res += [(n, False, False) for n in cont_res if n not in [x[0] for x in tick_res]]
+        if fresh_sup:
+            tick_sup += [(n, False, False) for n in cont_sup if n not in [x[0] for x in tick_sup]]
 
         def group(names):
             return names[0] if len(names) == 1 else ', '.join(names[:-1]) + ' and ' + names[-1]
