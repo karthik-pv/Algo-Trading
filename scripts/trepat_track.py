@@ -447,7 +447,8 @@ def main(paths):
              f'// === DATA END ===')
     try:
         src = open(pine_path, encoding='utf-8').read()
-        src = re.sub(r'// === DATA BEGIN.*?// === DATA END ===', block, src, flags=re.S)
+        src = re.sub(r'// === DATA BEGIN.*?// === DATA END ===',
+                     lambda m: block, src, flags=re.S)  # lambda: no escape processing
         open(pine_path, 'w', encoding='utf-8').write(src)
         print(f"[strip] trepat_strip.pine updated with {len(by_min)} minute cells — "
               f"paste it into the TradingView Pine editor", file=sys.stderr)
