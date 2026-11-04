@@ -435,7 +435,23 @@ if UNDERLYING not in UNDERLYING_TO_EXCHANGE:
 
 EXCHANGE = UNDERLYING_TO_EXCHANGE[UNDERLYING]
 
-broker: BrokerInterface = BROKER_MAP[CURRENT_BROKER]()
+# A dead broker login (e.g. an expired/invalid Kite API key) must never
+# stop the app from loading - the config UI is the only way to switch
+# BROKER to MSTOCK/SIMULATOR. If the active broker cannot even be
+# constructed, fall back to the SimulatorAdapter (no real orders, no
+# network login) and keep going so the web interface comes up; the
+# fallback is logged loudly and the broker change is applied via the
+# config UI + restart.
+try:
+    broker: BrokerInterface = BROKER_MAP[CURRENT_BROKER]()
+except Exception:
+    logger.exception(
+        f"Broker '{CURRENT_BROKER}' failed to initialize - falling back to "
+        "SIMULATOR so the app can load. Open the config UI, fix the broker "
+        "settings (e.g. switch BROKER to MSTOCK) and restart."
+    )
+    CURRENT_BROKER = "SIMULATOR"
+    broker: BrokerInterface = BROKER_MAP[CURRENT_BROKER]()
 
 trader = Trader_Singleton()
 
@@ -2791,7 +2807,19 @@ if 1==1: #__name__ == "__main__":
         # broker.dev_start()
         #logger.info("Starting in development mode...")
         # uncomment for prod
-        broker.prod_start()
+        # prod_start failure (bad/expired credentials, login dialog
+        # declined, token rejected) must not kill the app: without the
+        # web UI the user has no way to fix the broker config. Log and
+        # continue - the app comes up degraded and trading will fail
+        # loudly until the broker is fixed from the config UI.
+        try:
+            broker.prod_start()
+        except Exception:
+            logger.exception(
+                f"broker.prod_start() failed for '{CURRENT_BROKER}' - the app "
+                "will load in a degraded state so the broker can be fixed "
+                "from the config UI."
+            )
 
         # Session health for BOTH brokers is independent of the ACTIVE
         # one: the Feed Lab (chain capture, feed pills, dual-broker
