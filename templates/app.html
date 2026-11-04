@@ -78,25 +78,6 @@
     .toggle-button { background-color: transparent; color: #ccc; border: 1px solid #666; padding: 0.6rem 1.2rem; cursor: pointer; font-size: 0.9rem; font-weight: 500; transition: background-color 0.3s; }
     .toggle-button.active-toggle { background-color: #2e7d32; color: white; }
     #buy-widget-container.put-view .toggle-button.active-toggle { background-color: #c62828; }
-    .announcement-toggle-label {
-        display: inline-flex;
-        align-items: center;
-        gap: 6px;
-        color: #ccc;
-        font-size: 0.85rem;
-        margin-right: 10px;
-        padding: 6px 8px;
-        border: 1px solid #666;
-        border-radius: 7px;
-        background-color: transparent;
-        user-select: none;
-    }
-    .announcement-toggle-label input[type="checkbox"] {
-        width: 14px;
-        height: 14px;
-        accent-color: #2e7d32;
-        cursor: pointer;
-    }
     .buy-button { background-color: #28a745; color: white; border: none; padding: 0.6rem 1rem; border-radius: 5px; cursor: pointer; font-size: 0.9rem; font-weight: 500; transition: background-color 0.2s; }
     .buy-button:disabled {background-color: #ccc; color: #666;cursor: not-allowed;opacity: 0.7;}    
     .buy-button:hover { background-color: #218838; }
@@ -553,17 +534,6 @@
         align-items: center;
         gap: 0.5rem;
         flex: 0 0 auto;
-    }
-
-    /* Cash-balance pill: same box look it had in the toggle container. */
-    .status-bar-actions .expiry-label {
-        background-color: hsl(0, 1%, 26%);
-        padding: 5px 10px;
-        border-radius: 4px;
-        border: 1px solid #c8c8c8;
-        display: inline-flex;
-        align-items: center;
-        white-space: nowrap;
     }
 </style>
 <style>
@@ -1691,16 +1661,12 @@
 
         </div>
 
-    <!-- Right: Refresh / Calls / Puts (cash balance moved to the status bar) -->
+    <!-- Right: Balance / Calls / Puts (announcement toggles moved to the App Config screen) -->
     <div class="toggle-buttons">
-        <label class="announcement-toggle-label" title="Enable or disable voice announcement" aria-label="Voice announcement toggle">
-            <input type="checkbox" id="announcementToggle" checked>
-            <span aria-hidden="true">&#128266;</span>
-        </label>
-
-        <label class="announcement-toggle-label" title="Enable or disable per-minute time announcement" aria-label="Time announcement toggle">
-            <input type="checkbox" id="timeAnnounceToggle" checked>
-            <span aria-hidden="true">&#128336;</span>
+        <label id="availableBalance" class="expiry-label" title="Available balance to trade &#8594; Net P/L for the day (realized + open) and its % of the day's opening balance">
+            <span id="availableBalanceValue">--</span>
+            <span id="openProfitValue" class="profit" style="display: none;"></span>
+            <span id="openProfitPct" class="profit" style="display: none;"></span>
         </label>
 
         <button class="toggle-button active-toggle" id="callBtn">
@@ -1721,11 +1687,6 @@
             <div class="status-bar-actions">
                 <button id="sellAllBtn" class="sell-button" disabled title="Sell every open position leg">Sell All</button>
                 <button id="cancelAllBtn" class="sell-button cancel-btn" disabled title="Cancel every pending order">Cancel All</button>
-                <label id="availableBalance" class="expiry-label" title="Available balance to trade &#8594; Net P/L for the day (realized + open) and its % of the day's opening balance">
-                    <span id="availableBalanceValue">--</span>
-                    <span id="openProfitValue" class="profit" style="display: none;"></span>
-                    <span id="openProfitPct" class="profit" style="display: none;"></span>
-                </label>
             </div>
             <div id="playbackControls" class="playback-controls" style="display: none;">
                 <input type="datetime-local" id="playbackStartInput" step="1"
@@ -2908,6 +2869,31 @@
                             <input type="number" id="EMA_TOLERANCE_PTS" name="EMA_TOLERANCE_PTS" placeholder="5" />
                             <span class="suffix">pts</span>
                         </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ============ ANNOUNCEMENTS (live toggles, no save required) ============ -->
+        <section class="card span-2">
+            <div class="card-rail">
+                <span class="card-title" title="Voice announcements for P&amp;L and per-minute time calls. Toggles apply immediately (no Save needed) and are shared across all open tabs.">Announcements</span>
+            </div>
+            <div class="card-body">
+                <div class="field-row">
+                    <div class="field">
+                        <label class="switch-row" title="Enable or disable voice announcement">
+                            <input type="checkbox" id="announcementToggle" checked>
+                            <span class="switch" aria-hidden="true"></span>
+                            <span class="switch-text">&#128266; Voice announcements</span>
+                        </label>
+                    </div>
+                    <div class="field">
+                        <label class="switch-row" title="Enable or disable per-minute time announcement">
+                            <input type="checkbox" id="timeAnnounceToggle" checked>
+                            <span class="switch" aria-hidden="true"></span>
+                            <span class="switch-text">&#128336; Time announcements</span>
+                        </label>
                     </div>
                 </div>
             </div>
