@@ -425,7 +425,7 @@ def main(paths):
     import os
     import re
     pine_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                             'tv', 'spatam', 'trepat_strip.pine')
+                             'tv', 'spatam', 'trepat.pine')
     by_min = {}
     for t, _, text in events:
         by_min.setdefault(t.strftime('%H%M'), []).append(text)
@@ -450,7 +450,7 @@ def main(paths):
         src = re.sub(r'// === DATA BEGIN.*?// === DATA END ===',
                      lambda m: block, src, flags=re.S)  # lambda: no escape processing
         open(pine_path, 'w', encoding='utf-8').write(src)
-        print(f"[strip] trepat_strip.pine updated with {len(by_min)} minute cells — "
+        print(f"[strip] trepat.pine updated with {len(by_min)} minute cells — "
               f"paste it into the TradingView Pine editor", file=sys.stderr)
     except OSError as e:
         print(f"[strip] could not update {pine_path}: {e}", file=sys.stderr)
