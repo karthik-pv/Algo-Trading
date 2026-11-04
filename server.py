@@ -1,5 +1,6 @@
 import json
 import threading
+import collections
 import logging
 import asyncio
 import csv
@@ -1325,6 +1326,30 @@ _TV_INCOMING_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                 "tv", "TV_Algo_JSON", "incoming")
 _tv_incoming_seq = 0
 
+# Rolling price memory for the Momentors sup/res row (2026-11-04): that row
+# anchors on the level the 1m-PVT leg LAUNCHED from (user rule change - the
+# old "highest level below price" read kept advancing to every newly
+# reclaimed rung, e.g. showing CAM R3 after a rise that started at 5E100).
+# Finding the leg's swing extreme needs recent price history, which no
+# snapshot carries - so every TV webhook that brings a Close price appends
+# (ts, price) here. ~15s cadence, 720 samples = ~3h. In-memory only - no
+# disk writes, no trade-logic touchpoints; widget-read on /momentor/data.
+_TV_PRICE_MEMORY = collections.deque(maxlen=720)
+
+
+def _tv_remember_price(data):
+    """Record the Close price carried by a LEVELS webhook (best-effort)."""
+    try:
+        rows = ((data or {}).get("LEVELS") or {}).get("CW_CD") or []
+        for r in rows:
+            if isinstance(r, (list, tuple)) and len(r) >= 2 and str(r[0]) == "Close":
+                px = float(r[1])
+                if px > 0:
+                    _TV_PRICE_MEMORY.append((time.time(), px))
+                break
+    except Exception:
+        pass  # a widget aid must never break the webhook path
+
 
 def _tv_dump_incoming(data):
     global _tv_incoming_seq
@@ -1459,6 +1484,7 @@ def trading_view():
         logger.info(f"TV webhook MSG={data.get('MSG')}")
         _tv_dump_incoming(data)
         _tv_persist_snapshot(data)
+        _tv_remember_price(data)
     if data is None:
         body = raw[:500]
         logger.error(f"TradingView webhook: unparsable body (Content-Type: {request.content_type}): {body}")
@@ -1974,7 +2000,8 @@ def momentor_data():
                         break
             payload = {
                 "top": mw.build_topstrip(snapshot, price, levels),
-                "momentors": mw.build_momentors(snapshot, price, levels),
+                "momentors": mw.build_momentors(snapshot, price, levels,
+                                                price_history=list(_TV_PRICE_MEMORY)),
                 "states": mw.build_states(snapshot, price),
                 "ladder": mw.build_ladder(snapshot, levels, price),
                 "source": source,

@@ -18,6 +18,9 @@ Momentor representation (user spec, 2026-11-01):
   fresh cross (age 1-4)  -> uppercase X form, dark green/red, count shown
   aged out (age > 4)     -> lowercase state form, light green/red, no count
 VOC state rows below zero (1o/5o) render grey (no downtrend mirror).
+sup/res top row (user rule change 2026-11-04): shows the level the current
+1m-PVT leg ORIGINATED from (launch rung at the leg's swing extreme), not
+the highest level below price - needs the server's rolling price memory.
 """
 
 # ---------------------------------------------------------------- helpers
@@ -142,6 +145,9 @@ def _5sxtoz_cell(ind):
 
 # ------------------------------------------------------------- level row
 
+import time
+
+
 def _short_level(name):
     """Ladder row name -> compact token: '1m EMA100' -> '1E100',
     '5m EMA50' -> '5E50', '2h EMA200' -> '2E200', 'D EMA100' -> 'DE100';
@@ -156,13 +162,34 @@ def _short_level(name):
     return name
 
 
-def _support_resistance_row(levels, price, rising):
-    """Top momentor row: the level the price just used. Rising = took
-    support (level below close) and riding up; falling = faced resistance
-    (level above close) and rejected down. Multiple candidates -> the
-    highest-priced one (user rule)."""
+def _leg_extreme(price_history, age_bars, low=True):
+    """Swing extreme of the current 1m-PVT leg: min price (low=True) or max
+    price over the last `age_bars` minutes of the rolling price memory.
+    Returns None when no usable history exists (fresh start / leg older
+    than the memory span - the caller then falls back)."""
+    if not price_history or not age_bars or age_bars <= 0:
+        return None
+    if age_bars > 180:  # memory spans ~3h; an older leg is out of reach
+        return None
+    cutoff = time.time() - age_bars * 60 - 15  # 1m bar + one sample slack
+    pts = [p for ts, p in price_history if ts >= cutoff]
+    if len(pts) < 2:  # too thin to trust as a swing extreme
+        return None
+    return min(pts) if low else max(pts)
+
+
+def _support_resistance_row(levels, price, rising, leg_extreme=None):
+    """Top momentor row: the level the rise/fall ORIGINATED from (user rule
+    change 2026-11-04, replacing the old 'highest level below price' read,
+    which kept advancing to every newly reclaimed rung - a rise from 5E100
+    that later reclaimed CAM R3 used to flip the row to CAM R3).
+    Rising: the rung closest ABOVE the current 1m-PVT leg's swing low (the
+    launch support). Falling (mirror): the rung closest BELOW the leg's
+    swing high (the launch resistance). No leg extreme available (fresh
+    start, leg older than the price memory) -> falls back to the old rule:
+    highest level below price rising, highest above price falling."""
     if price is None:
-        return {"name": "lvl", "value": "-", "color": "grey"}
+        return {"name": "-", "value": "-", "color": "grey"}
     rows = []
     for r in ((levels or {}).get("CW_CD") or []):
         if isinstance(r, (list, tuple)) and len(r) >= 2 and str(r[0]) != "Close":
@@ -171,6 +198,12 @@ def _support_resistance_row(levels, price, rising):
             except (TypeError, ValueError):
                 continue
     if rising:
+        if leg_extreme is not None:
+            cands = [(n, p) for n, p in rows if p >= leg_extreme]
+            if cands:
+                n, p = min(cands, key=lambda x: x[1])
+                return {"name": "sup", "value": "%s \u2191" % _short_level(n),
+                        "color": "dark-green", "lvl": p}
         cands = [(n, p) for n, p in rows if p < price]
         if cands:
             n, p = max(cands, key=lambda x: x[1])
@@ -178,6 +211,12 @@ def _support_resistance_row(levels, price, rising):
                     "color": "dark-green", "lvl": p}
         return {"name": "sup", "value": "-", "color": "grey"}
     if rising is False:
+        if leg_extreme is not None:
+            cands = [(n, p) for n, p in rows if p <= leg_extreme]
+            if cands:
+                n, p = max(cands, key=lambda x: x[1])
+                return {"name": "res", "value": "%s \u2193" % _short_level(n),
+                        "color": "dark-red", "lvl": p}
         cands = [(n, p) for n, p in rows if p > price]
         if cands:
             n, p = max(cands, key=lambda x: x[1])
@@ -189,10 +228,13 @@ def _support_resistance_row(levels, price, rising):
 
 # ------------------------------------------------------------- momentors
 
-def build_momentors(snapshot, price=None, levels=None):
+def build_momentors(snapshot, price=None, levels=None, price_history=None):
     """Rows for the Momentors table, in the user's sheet order.
     First column is ALL LOWERCASE (user rule). Row order:
-    sup/res level row, 5s (5m Stoch zone), 1e50, then fresh crosses."""
+    sup/res level row, 5s (5m Stoch zone), 1e50, then fresh crosses.
+    price_history: rolling (ts, price) samples kept by the server - used to
+    anchor the sup/res row on the 1m-PVT leg's launch rung (user rule
+    2026-11-04); falls back to the old nearest-level read without it."""
     ind = ((snapshot or {}).get("INDICATORS")) or {}
 
     def tf(key):
@@ -203,8 +245,19 @@ def build_momentors(snapshot, price=None, levels=None):
     rising = True if e50.get("value") == "UP" else \
         (False if e50.get("value") == "DN" else None)
 
+    # 1m-PVT leg anchor for the sup/res row: the cross age (carried,
+    # no-repaint) says when the current leg started; the rolling price
+    # memory supplies the leg's swing extreme within that window.
+    leg_extreme = None
+    if rising is not None:
+        b1 = tf("1M")
+        leg_age = _i(b1.get("PVTCrossOverIndex") if rising
+                     else b1.get("PVTCrossUnderIndex"))
+        leg_extreme = _leg_extreme(price_history, leg_age, low=rising)
+
     rows = [
-        dict(_support_resistance_row(levels, price, rising), name="sup"
+        dict(_support_resistance_row(levels, price, rising, leg_extreme),
+             name="sup"
              if rising else ("res" if rising is False else "lvl")),
         dict(_5sxtoz_cell(ind), name="5s"),
         dict(e50, name="1e50"),
