@@ -32,6 +32,8 @@ running in TradingView.
 | Strategy_TradingInvestAlgo_Data | v1.8 | 2026-11-01 | LEVELS message HTF block enriched (D/W Trend_1226, K, KTrendFlag) for the SET UP table — reused existing D/W security, no extra calls |
 | Strategy_TradingInvestAlgo_Data | v1.9 | 2026-11-01 | NEW 1CVX/5CVX Momentors rows: price×session-VWAP cross ages (1M/5M, tiny f_vwap_cross security pair); DATA ~3,999/4,096 chars |
 | Strategy_TradingInvestAlgo_Data | v1.10 | 2026-11-02 | FIX: v1.9 dropped the comma after VOCCrossUnderIndex (1M+5M blocks) — every DATA message with an active VWAP cross was invalid JSON and the server rejected it (BIAS strip starved). Comma restored; all payloads otherwise unchanged |
+| Strategy_TradingInvestAlgo_Data | v1.11 | 2026-11-04 | OPT block REMOVED (moved to the new standalone Strategy_TradingInvestAlgo_Data_OPT indicator); SYM field dropped from DATA + LEVELS (unused downstream, shredded JSON) — all other DATA/LEVELS fields byte-identical to v1.10 |
+| Strategy_TradingInvestAlgo_Data_OPT | v1.0 | 2026-11-04 | NEW standalone indicator: MSG:"OPT" ATM CE/PE indicator blocks spun off from Strategy_TradingInvestAlgo_Data v1.10 — one chart instance, one TV alert; payload byte-identical to v1.10's OPT message minus SYM |
 
 ## How to verify what TradingView is running
 
