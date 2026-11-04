@@ -1820,7 +1820,7 @@
             <div id="ml-ladder" style="flex:0 0 auto;">
                 <div id="ml-ladder-scroll" style="height:411px; overflow-y:auto;">
                     <table class="option-table" id="ml-ladder-table">
-                        <thead><tr><th class="center">Price</th><th>Level</th><th class="center">Pts</th><th>State</th></tr></thead>
+                        <thead><tr><th class="center">Price</th><th>Level</th><th class="center">Pts</th><th>SPATAM</th></tr></thead>
                         <tbody id="ml-ladder-body">
                             <tr><td colspan="4" class="no-options">Waiting for levels&hellip;</td></tr>
                         </tbody>
@@ -3945,9 +3945,13 @@ document.addEventListener('DOMContentLoaded', function() {
             'dark-green': '#548235', 'dark-red': '#C00000',
             'light-green': '#C6EFCE', 'light-red': '#FFC7CE',
             'red': '#CC0000', 'green': '#2E7D32',
-            'amber': '#B8860B', 'grey': '#888888'
+            'amber': '#B8860B', 'grey': '#888888',
+            // SPATAM levels-table shades (v1.13 FAM tag column)
+            'spatam-dark-green': '#02580B', 'spatam-light-green': '#C5FAB7',
+            'spatam-dark-red': '#F91C06', 'spatam-light-red': '#FAB9B1'
         };
-        const mlTextColor = c => (c === 'light-green' || c === 'light-red') ? '#333' : '#fff';
+        const mlTextColor = c => (c === 'light-green' || c === 'light-red' ||
+                                  c === 'spatam-light-green' || c === 'spatam-light-red') ? '#333' : '#fff';
         // Ladder scroll-glide state: in-flight animation frame handle and
         // when the user last scrolled the ladder by hand
         let mlScrollAnim = null;

@@ -500,6 +500,43 @@ CHIP_MAP = [
 # (2026-11-01: the +/-150pt headroom filter was removed - the ladder now
 # shows ALL levels; the scroll container + Close-centering handle the rest.)
 
+# v1.13 FAM: the SPATAM levels-table 4th-column tags arrive IN the LEVELS
+# webhook (LEVELS.FAM) - seven comma-joined "<tag><U|D><1|0>" segments in the
+# fixed family order 5,3,2,D,W,M,Q (tag text exactly as the chart prints it;
+# U/D = PVT direction, 1/0 = dark shade = MACD2 agrees with the PVT trend).
+# Level name -> family segment index (same mapping as SPATAM's f_levelTag).
+FAM_IDX = {
+    "1m EMA50": 0,
+    "1m EMA100": 1, "1m EMA200": 1,
+    "5m EMA50": 2, "5m EMA100": 2, "5m EMA200": 2,
+    "30m EMA50": 3, "30m EMA100": 3, "30m EMA200": 3,
+    "2h EMA50": 4, "2h EMA100": 4, "2h EMA200": 4,
+    "D EMA100": 5, "D EMA200": 5,
+    "W EMA100": 6, "W EMA200": 6,
+}
+# (up, dark) -> chip_color key; shades match SPATAM's table colors exactly.
+FAM_COLORS = {
+    (True, True): "spatam-dark-green", (True, False): "spatam-light-green",
+    (False, True): "spatam-dark-red", (False, False): "spatam-light-red",
+}
+
+
+def _parse_fam(levels):
+    """Parse LEVELS.FAM into {level_name: (tag, up, dark)}; None when absent
+    (pre-v1.13 webhook) or malformed."""
+    fam = (levels or {}).get("FAM")
+    if not isinstance(fam, str) or not fam:
+        return None
+    segs = fam.split(",")
+    if len(segs) != 7:
+        return None
+    out = {}
+    for name, idx in FAM_IDX.items():
+        seg = segs[idx] or ""
+        if len(seg) >= 3:
+            out[name] = (seg[:-2], seg[-2] == "U", seg[-1] == "1")
+    return out
+
 
 def build_ladder(snapshot, levels, price=None):
     """ALL Levels Ladder rows, sorted price-desc, the Close row highlighted
@@ -523,12 +560,15 @@ def build_ladder(snapshot, levels, price=None):
     if price is None:
         price = close
 
-    # resolve endorsing PM states once per chip
+    # resolve endorsing PM states once per chip (fallback when the webhook
+    # carries no FAM - pre-v1.13 Pine)
     chip_states = {}
     for _names, chip, tfs in CHIP_MAP:
         vals = [_pm_up(ind.get(tf)) for tf in tfs]
         known = [v for v in vals if v is not None]
         chip_states[chip] = (all(known) and known[0]) if known else None
+
+    fam = _parse_fam(levels)
 
     out = []
     if price is not None:
@@ -540,7 +580,11 @@ def build_ladder(snapshot, levels, price=None):
             dist = abs(row["price"] - price)
             chip = chip_for(row["name"])
             chip_color = None
-            if chip is not None:
+            if fam is not None and row["name"] in fam:
+                # v1.13: the SPATAM tag, verbatim + its own table shading
+                chip, up, dark = fam[row["name"]]
+                chip_color = FAM_COLORS[(up, dark)]
+            elif chip is not None:
                 st = chip_states[chip]
                 if st is True:
                     chip_color = "dark-green"    # support in an uptrend
