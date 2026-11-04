@@ -519,22 +519,6 @@
         color: #000 !important;
         font-weight: 700;
     }
-
-    /* Sell All / Cancel All / cash-balance pill sit together at the left
-       of the status bar (the Mode box moved to the tab bar in base.html).
-       Scoped here so the table-row Sell buttons keep their size. */
-    .status-bar-actions .sell-button {
-        padding: 5px 10px;
-        font-size: 0.8rem;
-        font-weight: 700;
-    }
-
-    .status-bar-actions {
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
-        flex: 0 0 auto;
-    }
 </style>
 <style>
 /* ===== CSS from orders.html ===== */
@@ -1661,13 +1645,11 @@
 
         </div>
 
-    <!-- Right: Balance / Calls / Puts (announcement toggles moved to the App Config screen) -->
+    <!-- Right: Sell All / Cancel All / Calls / Puts
+         (Balance box moved to the Orders tab; announcement toggles moved to the App Config screen) -->
     <div class="toggle-buttons">
-        <label id="availableBalance" class="expiry-label" title="Available balance to trade &#8594; Net P/L for the day (realized + open) and its % of the day's opening balance">
-            <span id="availableBalanceValue">--</span>
-            <span id="openProfitValue" class="profit" style="display: none;"></span>
-            <span id="openProfitPct" class="profit" style="display: none;"></span>
-        </label>
+        <button id="sellAllBtn" class="sell-button" disabled title="Sell every open position leg">Sell All</button>
+        <button id="cancelAllBtn" class="sell-button cancel-btn" disabled title="Cancel every pending order">Cancel All</button>
 
         <button class="toggle-button active-toggle" id="callBtn">
             Calls
@@ -1684,10 +1666,8 @@
         <!-- Left zone: Sell/Cancel actions + playback controls.
              The trading-mode pill now lives in the tab bar (base.html). -->
         <div id="statusBarLeft" class="status-bar-left">
-            <div class="status-bar-actions">
-                <button id="sellAllBtn" class="sell-button" disabled title="Sell every open position leg">Sell All</button>
-                <button id="cancelAllBtn" class="sell-button cancel-btn" disabled title="Cancel every pending order">Cancel All</button>
-            </div>
+            <!-- Sell All / Cancel All moved to the trade-screen header
+                 (toggle-buttons zone, next to Calls/Puts). -->
             <div id="playbackControls" class="playback-controls" style="display: none;">
                 <input type="datetime-local" id="playbackStartInput" step="1"
                        title="Playback start date &amp; time (seconds included)">
@@ -1840,6 +1820,15 @@
                     <span class="cash-caption">Net P/L</span>
                     <span id="cashCurrentValue">--</span>
                     <span id="cashChangePct">--</span>                    
+                </label>
+                <label id="availableBalance" class="expiry-label" title="Available balance to trade &#8594; OBal: day's opening balance &#183; CBal: current balance (broker cash now). The +/- figure is Net P/L for the day (realized + open) with its % of the day's opening balance">
+                    <span class="cash-caption" title="Open Balance">OBal</span>
+                    <span id="openBalanceValue">--</span>
+                    <span class="cash-arrow">&#8594;</span>
+                    <span class="cash-caption" title="Current Balance">CBal</span>
+                    <span id="availableBalanceValue">--</span>
+                    <span id="openProfitValue" class="profit" style="display: none;"></span>
+                    <span id="openProfitPct" class="profit" style="display: none;"></span>
                 </label>
                 <label id="brokerageSummaryLabel" class="expiry-label charges-summary" style="display: none;" title="Brokerage charged across the trades shown (flat per executed order) - % of the day's opening cash balance">
                     <span class="cash-caption">Brok</span>
@@ -3129,6 +3118,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const availableBalanceEl = document.getElementById('availableBalanceValue');
     const openProfitEl = document.getElementById('openProfitValue');
     const openProfitPctEl = document.getElementById('openProfitPct');
+    const openBalanceEl = document.getElementById('openBalanceValue');
     // Latest available balance (from /fund_summary) - the denominator
     // for the open-profit % shown in the Balance Box.
     let latestCashBalance = 0;
@@ -3142,6 +3132,14 @@ document.addEventListener('DOMContentLoaded', function() {
     let dayStartCashBalance = 0;
 
     function updateBalanceBoxProfit() {
+        // OBal: the day's opening balance (next to the Orders-tab Open
+        // Balance summary) -- rendered whenever any balance input changes.
+        if (openBalanceEl) {
+            openBalanceEl.textContent = dayStartCashBalance > 0
+                ? Math.round(dayStartCashBalance).toLocaleString('en-IN')
+                : '--';
+        }
+
         if (!openProfitEl || !openProfitPctEl) return;
 
         let unrealizedPl = 0;
@@ -4586,7 +4584,7 @@ document.addEventListener('DOMContentLoaded', function() {
             // Only show 'Fetching...' when no balance is displayed yet;
             // a background refresh converging to a fresh value should
             // update in place instead of flashing the placeholder.
-            if (availableBalanceEl && !availableBalanceEl.textContent.startsWith('Bal:')) {
+            if (availableBalanceEl && availableBalanceEl.textContent === '--') {
                 availableBalanceEl.textContent = 'Fetching...';
             }
             const response = await fetch('/fund_summary');
@@ -4594,7 +4592,7 @@ document.addEventListener('DOMContentLoaded', function() {
             const summary = await response.json();
             latestCashBalance = parseFloat(summary.data.cash_balance) || 0;
             const cashBalance = latestCashBalance.toLocaleString('en-IN', { maximumFractionDigits: 0 });
-            if (availableBalanceEl) availableBalanceEl.textContent = `Bal: ${cashBalance}`;
+            if (availableBalanceEl) availableBalanceEl.textContent = cashBalance;
             updateBalanceBoxProfit();
         } catch (error) {
             console.error("Could not fetch fund summary:", error);
