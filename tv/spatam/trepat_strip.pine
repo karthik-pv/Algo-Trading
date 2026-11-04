@@ -389,4 +389,9 @@ col(string s) =>
 h = has ? 1.0 : 0.04
 c = has ? col(msg) : color.new(color.gray, 88)
 
-plot(h, "TREPAT", color=c, style=plot.style_columns, tooltip=has ? msg : "")
+plot(h, "TREPAT", color=c, style=plot.style_columns)
+// tooltips live on labels (plot has none): one tiny marker per event bar
+if has
+    label.new(bar_index, 0.5, "", xloc.bar_index, yloc.price, color.new(color.white, 100),
+         label.style_none, color.new(color.white, 100), size.tiny,
+         tooltip = msg)
