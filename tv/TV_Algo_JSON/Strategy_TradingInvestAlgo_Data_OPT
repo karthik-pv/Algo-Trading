@@ -1,0 +1,161 @@
+//@version=5
+// ============================================================================
+// Strategy_TradingInvestAlgo_Data_OPT
+// VERSION: 1.0  (2026-11-04)
+// ----------------------------------------------------------------------------
+// CHANGELOG
+//   v1.0  2026-11-04  SPIN-OFF from Strategy_TradingInvestAlgo_Data v1.10: the
+//                     ATM option CE/PE indicator message (MSG:"OPT") moved out
+//                     of the main indicator into this standalone one - ONE
+//                     chart instance, ONE TV alert. The OPT payload is
+//                     BYTE-IDENTICAL to v1.10's MSG:"OPT" message (same field
+//                     names, same values) - except the SYM field is dropped
+//                     (unused downstream; it arrived as a study-object dump
+//                     with unescaped inner quotes, shredding the JSON and
+//                     forcing the server's repair path on every message).
+//                     Set the ATM-Options inputs to match the Algo app.
+// ----------------------------------------------------------------------------
+// One alert per bar close (realtime):
+//   MSG:"OPT" - ATM CE/PE compact indicator blocks (PVT poise/trend,
+//               MACD 12/26 + 24/52 trend flags, EMA9/21, VOC; 5S/15S/1M/5M)
+// Consumed by the Algo app's process_option_data (Ultra-Scalping criteria).
+// ============================================================================
+indicator("Strategy_TradingInvestAlgo_Data_OPT", "", false)
+
+//PVT config - MUST match Strategy_TradingInvestAlgo_Data (same calc, carried
+// values are compared against the main indicator's underlying PVT)
+kEma = "EMA"
+kSma = "SMA"
+kVwma = "VWMA"
+kWma = "WMA"
+
+pvt_maType = kEma
+pvt_short = 3
+pvt_long = 10
+pvt_shouldNormalize = true
+pvt_normalizeLookback = 25
+
+smooth(t, sig, len) =>
+    ma = float(sig)         // None
+    if t == kSma            // Simple
+        ma := ta.sma(sig, len)
+    if t == kEma            // Exponential
+        ma := ta.ema(sig, len)
+    if t == kWma            // Weighted
+        ma := ta.wma(sig, len)
+    if t == kVwma           // VWMA
+        ma := ta.vwma(sig, len)
+    ma
+
+calc_pvt(ma, sig, short, long) =>
+    src = sig
+    vt = ta.cum(ta.change(src) / src[1] * volume)
+    sh = smooth(ma, vt, short)
+    lg = smooth(ma, vt, long)
+    sh - lg
+
+maxAbs(series, len) =>
+    max = float(0)
+    for i = 0 to len-1
+        max := math.max(max, math.abs(series[i]))
+    max
+
+//JSON helpers - MUST match Strategy_TradingInvestAlgo_Data
+f_json_pair(key, val) =>
+    "\"" + key + "\":" + str.tostring(val)
+
+f_json_pair_str(key, val) =>
+    "\"" + key + "\":\"" + val + "\""
+
+//ATM OPTIONS - inputs (CE/PE indicator data for the Algo app)-------------------------------
+// Strike MUST be entered to match the ATM shown in the Algo app - Pine cannot fetch a
+// series-derived symbol, so the app validates the match and warns on mismatch.
+string optExchange = input.string("NSE", "Option exchange", group="ATM Options")
+string optRoot     = input.string("NIFTY", "Option root", group="ATM Options")
+string optExpiry   = input.string("261006", "Option expiry (yyMMdd)", group="ATM Options")
+int    optAtmStrike = input.int(22700, "ATM strike (match Algo app)", minval=1, group="ATM Options")
+
+//ATM OPTIONS - compact per-TF stats for the CE/PE contracts (criteria fields only)----------
+// PVT poise/trend, MACD trend flags (12/26 + 24/52), EMA9/21 and VOC - the subset the
+// Algo app's Ultra-Scalping entry/exit criteria evaluate.
+
+opt_calc() =>
+    //PVT (same params as the main indicator's f_calc_all)
+    raw_pvt = calc_pvt(pvt_maType, close, pvt_short, pvt_long)
+    value_pvt = pvt_shouldNormalize ? raw_pvt / maxAbs(raw_pvt, pvt_normalizeLookback) * 1.0 : raw_pvt
+    pvt_poise = value_pvt > value_pvt[1] ? 1 : -1
+    pvt_trend = value_pvt > 0 ? 1 : -1
+    //MACD trend flags
+    [macdline_1226, signalLine_1226, histLine_1226] = ta.macd(close, 12, 26, 9)
+    [macdline_2452, signalLine_2452, histLine_2452] = ta.macd(close, 24, 52, 9)
+    trend_1226 = macdline_1226 > signalLine_1226 ? 1 : -1
+    trend_2452 = macdline_2452 > signalLine_2452 ? 1 : -1
+    //EMAs
+    ema9  = ta.ema(close, 9)
+    ema21 = ta.ema(close, 21)
+    //VOC
+    shortV = ta.ema(volume, 9)
+    longV  = ta.ema(volume, 21)
+    voc = 100 * (shortV - longV) / longV
+    [value_pvt, pvt_poise, pvt_trend, trend_1226, trend_2452, ema9, ema21, voc]
+
+opt_ce_sym = optExchange + ":" + optRoot + optExpiry + "C" + str.tostring(optAtmStrike)
+opt_pe_sym = optExchange + ":" + optRoot + optExpiry + "P" + str.tostring(optAtmStrike)
+
+[o_pvt_ce_5s, o_pvt_poise_ce_5s, o_pvt_trend_ce_5s, o_tr1226_ce_5s, o_tr2452_ce_5s, o_ema9_ce_5s, o_ema21_ce_5s, o_voc_ce_5s]     = request.security(opt_ce_sym, "5S",  opt_calc(), lookahead = barmerge.lookahead_on)
+[o_pvt_ce_15s, o_pvt_poise_ce_15s, o_pvt_trend_ce_15s, o_tr1226_ce_15s, o_tr2452_ce_15s, o_ema9_ce_15s, o_ema21_ce_15s, o_voc_ce_15s] = request.security(opt_ce_sym, "15S", opt_calc(), lookahead = barmerge.lookahead_on)
+[o_pvt_ce_1m, o_pvt_poise_ce_1m, o_pvt_trend_ce_1m, o_tr1226_ce_1m, o_tr2452_ce_1m, o_ema9_ce_1m, o_ema21_ce_1m, o_voc_ce_1m]       = request.security(opt_ce_sym, "1",   opt_calc(), lookahead = barmerge.lookahead_on)
+[o_pvt_ce_5m, o_pvt_poise_ce_5m, o_pvt_trend_ce_5m, o_tr1226_ce_5m, o_tr2452_ce_5m, o_ema9_ce_5m, o_ema21_ce_5m, o_voc_ce_5m]       = request.security(opt_ce_sym, "5",   opt_calc(), lookahead = barmerge.lookahead_on)
+[o_pvt_pe_5s, o_pvt_poise_pe_5s, o_pvt_trend_pe_5s, o_tr1226_pe_5s, o_tr2452_pe_5s, o_ema9_pe_5s, o_ema21_pe_5s, o_voc_pe_5s]       = request.security(opt_pe_sym, "5S",  opt_calc(), lookahead = barmerge.lookahead_on)
+[o_pvt_pe_15s, o_pvt_poise_pe_15s, o_pvt_trend_pe_15s, o_tr1226_pe_15s, o_tr2452_pe_15s, o_ema9_pe_15s, o_ema21_pe_15s, o_voc_pe_15s] = request.security(opt_pe_sym, "15S", opt_calc(), lookahead = barmerge.lookahead_on)
+[o_pvt_pe_1m, o_pvt_poise_pe_1m, o_pvt_trend_pe_1m, o_tr1226_pe_1m, o_tr2452_pe_1m, o_ema9_pe_1m, o_ema21_pe_1m, o_voc_pe_1m]       = request.security(opt_pe_sym, "1",   opt_calc(), lookahead = barmerge.lookahead_on)
+[o_pvt_pe_5m, o_pvt_poise_pe_5m, o_pvt_trend_pe_5m, o_tr1226_pe_5m, o_tr2452_pe_5m, o_ema9_pe_5m, o_ema21_pe_5m, o_voc_pe_5m]       = request.security(opt_pe_sym, "5",   opt_calc(), lookahead = barmerge.lookahead_on)
+
+// ———— the single message: MSG:"OPT" —————
+// Fields mirror the main indicator's INDICATORS names. v1.0: SYM field NOT
+// sent (unused downstream; the study-object dump it produced shredded the
+// JSON - see CHANGELOG).
+f_opt_tf_json(value_pvt, pvt_poise, pvt_trend, tr1226, tr2452, ema9, ema21, voc) =>
+    s = "{"
+    s += f_json_pair("PVT", math.round(value_pvt, 2)) + ","
+    s += f_json_pair("PVTPoiseFlag", pvt_poise) + ","
+    s += f_json_pair("PVTTrendFlag", pvt_trend) + ","
+    s += f_json_pair("Trend_1226", tr1226) + ","
+    s += f_json_pair("Trend_2452", tr2452) + ","
+    s += f_json_pair("EMA9", math.round(ema9)) + ","
+    s += f_json_pair("EMA21", math.round(ema21)) + ","
+    s += f_json_pair("VOC", math.round(voc, 2))
+    s += "}"
+
+f_opt_side_json(t5s, t15s, t1m, t5m) =>
+    s = "{"
+    s += "\"5S\":"  + t5s + ","
+    s += "\"15S\":" + t15s + ","
+    s += "\"1M\":"  + t1m + ","
+    s += "\"5M\":"  + t5m
+    s += "}"
+
+optStr = "{"
+optStr += f_json_pair_str("MSG", "OPT") + ","                          // message type: OPT
+optStr += f_json_pair_str("ATM_CE_SYM", opt_ce_sym) + ","              // contract the data belongs to
+optStr += f_json_pair_str("ATM_PE_SYM", opt_pe_sym) + ","
+optStr += f_json_pair("ATM_STRIKE", optAtmStrike) + ","
+optStr += "\"CE\":" + f_opt_side_json(
+     f_opt_tf_json(o_pvt_ce_5s, o_pvt_poise_ce_5s, o_pvt_trend_ce_5s, o_tr1226_ce_5s, o_tr2452_ce_5s, o_ema9_ce_5s, o_ema21_ce_5s, o_voc_ce_5s),
+     f_opt_tf_json(o_pvt_ce_15s, o_pvt_poise_ce_15s, o_pvt_trend_ce_15s, o_tr1226_ce_15s, o_tr2452_ce_15s, o_ema9_ce_15s, o_ema21_ce_15s, o_voc_ce_15s),
+     f_opt_tf_json(o_pvt_ce_1m, o_pvt_poise_ce_1m, o_pvt_trend_ce_1m, o_tr1226_ce_1m, o_tr2452_ce_1m, o_ema9_ce_1m, o_ema21_ce_1m, o_voc_ce_1m),
+     f_opt_tf_json(o_pvt_ce_5m, o_pvt_poise_ce_5m, o_pvt_trend_ce_5m, o_tr1226_ce_5m, o_tr2452_ce_5m, o_ema9_ce_5m, o_ema21_ce_5m, o_voc_ce_5m)) + ","
+optStr += "\"PE\":" + f_opt_side_json(
+     f_opt_tf_json(o_pvt_pe_5s, o_pvt_poise_pe_5s, o_pvt_trend_pe_5s, o_tr1226_pe_5s, o_tr2452_pe_5s, o_ema9_pe_5s, o_ema21_pe_5s, o_voc_pe_5s),
+     f_opt_tf_json(o_pvt_pe_15s, o_pvt_poise_pe_15s, o_pvt_trend_pe_15s, o_tr1226_pe_15s, o_tr2452_pe_15s, o_ema9_pe_15s, o_ema21_pe_15s, o_voc_pe_15s),
+     f_opt_tf_json(o_pvt_pe_1m, o_pvt_poise_pe_1m, o_pvt_trend_pe_1m, o_tr1226_pe_1m, o_tr2452_pe_1m, o_ema9_pe_1m, o_ema21_pe_1m, o_voc_pe_1m),
+     f_opt_tf_json(o_pvt_pe_5m, o_pvt_poise_pe_5m, o_pvt_trend_pe_5m, o_tr1226_pe_5m, o_tr2452_pe_5m, o_ema9_pe_5m, o_ema21_pe_5m, o_voc_pe_5m))
+optStr += "}"
+
+// ———— emit ————————————————————————————————————————————————————————
+// Fire ONLY on realtime bars: exactly ONE alert per bar close (well under
+// TV's 15-firings-per-3-min limit).
+if barstate.isrealtime and barstate.isconfirmed
+    alert(optStr, alert.freq_once_per_bar_close)
+
+//https://kendra-preantepenultimate-complementarily.ngrok-free.dev/trading_view_webhook
