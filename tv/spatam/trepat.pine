@@ -401,6 +401,6 @@ if barstate.islast
 // tooltips live on labels (plot has none): a small solid dot at the base of
 // each event column — visible anchor with a large-enough hit area
 if has
-    label.new(bar_index, 0.10, "", xloc.bar_index, yloc.price, c,
-         label.style_label_up, color.new(color.white, 100), size.tiny,
+    label.new(bar_index, 0.10, " ", xloc.bar_index, yloc.price, c,
+         label.style_label_up, color.new(c, 70), size.small,
          tooltip = msg)
