@@ -1453,6 +1453,17 @@ def tv_last_data():
         return jsonify({"source": "none"})
 
 
+@app.route("/tv/trend")
+def tv_trend():
+    """Live trend-transition tracking summary (per-TF states, time-in-state,
+    FAM/HTF, recent flips) - sourced from the forecasting TrendTracker."""
+    from forecasting.trend_track import trend_tracker
+    summary = trend_tracker.summary()
+    if summary is None:
+        return jsonify({"source": "none"})
+    return jsonify(summary)
+
+
 @app.route("/trading_view_webhook" , methods = ["POST"])
 def trading_view():
     import re

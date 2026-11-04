@@ -8752,6 +8752,12 @@ class Trader_Singleton:
                 # the full field names before anything reads them.
                 if data.get("HTF"):
                     self._tv_htf = expand_htf(data.get("HTF") or {})
+                # trend transition tracking (FAM + HTF); failure-contained
+                try:
+                    from forecasting.trend_track import trend_tracker
+                    trend_tracker.on_levels(data)
+                except Exception as track_err:
+                    logger.warning("trend tracking (LEVELS) failed: %s" % track_err)
                 return []
 
             # MSG:"HTF": compact Weekly/Daily/Quarterly PM states for the
@@ -8763,6 +8769,13 @@ class Trader_Singleton:
                 return []
 
             self._tradingView_Data = data
+            # trend transition tracking (per-TF states + transitions);
+            # failure-contained, read-only for trade logic
+            try:
+                from forecasting.trend_track import trend_tracker
+                trend_tracker.on_data(data)
+            except Exception as track_err:
+                logger.warning("trend tracking failed: %s" % track_err)
             logger.debug(f"TradingView Data is assigned to internal variable {self._tradingView_Data}")
             #logger.debug(f"1m EMA 50:{data['EMA']['1m']['EMA50']}")
 
@@ -8814,6 +8827,14 @@ class Trader_Singleton:
                 "CE_REASON": self._tv_ce_reason,
                 "PE_REASON": self._tv_pe_reason
             }
+
+            # trend transition tracking summary (current states, time-in-state,
+            # recent flips) - rides the existing socket emit; failure-contained
+            try:
+                from forecasting.trend_track import trend_tracker
+                json_data["TrendTracking"] = trend_tracker.summary()
+            except Exception as track_err:
+                logger.warning("trend tracking summary failed: %s" % track_err)
 
             # ✅ PAInsight forecasting engine (non-invasive; failure-contained)
             try:
