@@ -1,6 +1,6 @@
 > **[SUPERSEDED 2026-10-31]** This file remains the canonical VOCABULARY only. The
 > operational handoff (current rules, mined insights, data state) is now
-> `handoffs/FORECASTING.md` — start there; the insight sections below are mirrored
+> `handoffs/forecasting.md` — start there; the insight sections below are mirrored
 > there with `[STATS]` tags.
 
 # Glossary — shared nomenclature
@@ -221,7 +221,7 @@ carries of 5m/30m PVT. **Still missing:** 2H Stoch/VOC, D Stoch/VOC, D/W/M EMAs,
 
 **Level interactions — all five called, all levels:** **approaching** (Δ ≤ ~12 pts, 1m EMAs excluded — price hugs them) · **crossed above** / **crossed below** / **took support at** / **faced resistance at**, plus the 1m EMA21 retrace-support (wick touch). Ladder: 1E9/1E21/1E50/1E100/1E200 · 5E4/5E9/5E21/5E50/5E100/5E200 · 3E50/3E100/3E200 · 2E50/2E100/2E200 · DE100/DE200 (+ W/M if touched) · VWAP · Round100s · PDH/PDL/PDC/PDOpen. Tight clusters print as one line; same level+event deduped 15 min.
 
-## LEVELS from the TradingView webhook payload (new 2026-10-18 — see `HANDOFF_TradingView_Algo_JSON.md` §5)
+## LEVELS from the TradingView webhook payload (new 2026-10-18 — see `tradingview_algo_json.md` §5)
 
 **ALL OHLC-derived level families are computed on HEIKIN-ASHI OHLC of the reference period** (user-confirmed 2026-10-18) — not raw OHLC. This includes PDH/PDL/PDC: those names mean the HA-previous-day values, not the printed highs/lows. HA chain per TF: HA-C = (O+H+L+C)/4; HA-O = (prev HA-O + prev HA-C)/2; HA-H = max(H, HA-O, HA-C); HA-L = min(L, HA-O, HA-C). In a falling period the HA-O rides above the raw highs — HA-H = that HA-O ceiling (e.g. W rows read PWH 23129 vs raw 22830).
 

@@ -14,7 +14,7 @@ The widget area has FOUR tables, always referred to by these names.
 User's layout summary (2026-11-04): **"Topmost is BIAS table. On the left we
 have Momentors, below that the SetUp table. On the right we have the Levels
 Ladder."** Together these four are the **SPATAM Algo UI Tables** — the app-side
-mirror of the SPATAM chart indicator (see `tv/SPATAM/HANDOFF_SPATAM.md`).
+mirror of the SPATAM chart indicator (see `tv/SPATAM/spatam.md`).
 
 | # | Registered name | Position | Contents |
 |---|---|---|---|
@@ -109,7 +109,7 @@ individually — up-components occupy the left cell, retracing/downtrending
   column: colour-filled cell, fixed text colour) — since Pine v1.12/v1.13 the
   chip is the **SPATAM family trend tag, VERBATIM from the webhook**
   (`LEVELS.FAM`, decoded by `build_ladder` in `forecasting/momentors_widget.py` —
-  see `SPATAM_LEVELS_LADDER_FAM.md`). TradingView is the single source of
+  see `spatam_levels_ladder_fam.md`). TradingView is the single source of
   truth; the app never recalculates it. Dark green/red when MACD2 agrees with
   the PVT direction, light shades when it retraces against it. Example chips
   (verified 2026-11-04): `5PM2` `3PM2` `2PM` `MPM` `QPM2`. A higher-TF PM

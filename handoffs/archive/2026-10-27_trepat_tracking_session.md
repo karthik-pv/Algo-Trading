@@ -1,3 +1,6 @@
+> **SUPERSEDED (2026-11-05)** — living doc for TREPAT: [`handoffs/trepat.md`](../trepat.md).
+> Kept for the session-transcript context only. Never edited after archiving.
+
 # Handoff — TREPA Tracking Session
 
 **Session:** `ses_e84cd6526ffeq86sJAeY6s59JM` (OpenCode, titled "TREPATracking")
@@ -39,7 +42,7 @@ TradingView alert (JSON, TV throttles ≤1 msg / 15 s per alert; bursts expected
 - `MSG:"DATA"` — `SYM` + `INDICATORS{5S,15S,1M,5M,30M,2H}` + `SETUPS{DASHBOARD,1M,5M,30M,2H,D}`
 - `MSG:"LEVELS"` — `SYM` + `LEVELS{CW_CD,CW_ND,NW_ND}` (S/R ladder, sorted desc, `["Close",v]` anchor)
 
-**Full schema doc:** `/Users/phvrao/Projects/TradingView/TV_Algo_JSON/HANDOFF_TradingView_Algo_JSON.md`
+**Full schema doc:** `/Users/phvrao/Projects/TradingView/TV_Algo_JSON/tradingview_algo_json.md`
 (§6 consumer gotchas: bare NaN → parse tolerantly; no timestamp in payload — stamp on arrival;
 TV 4096-char cap is why DATA/LEVELS are split; R5/S5 default off.)
 
@@ -74,7 +77,7 @@ TV 4096-char cap is why DATA/LEVELS are split; R5/S5 default off.)
 |---|---|
 | This project (Pine scripts, alerts, receiver) | `/Users/phvrao/Projects/TradingView` |
 | Backup receiver | `/Users/phvrao/Projects/TradingView/TV_Algo_JSON/trepa_receiver.py` |
-| Feed schema doc | `/Users/phvrao/Projects/TradingView/TV_Algo_JSON/HANDOFF_TradingView_Algo_JSON.md` |
+| Feed schema doc | `/Users/phvrao/Projects/TradingView/TV_Algo_JSON/tradingview_algo_json.md` |
 | Algo app (feed consumer) | `/Users/phvrao/Projects/Algo-Trading` |
 | **Live snapshot+forecast log** | `/Users/phvrao/Projects/Algo-Trading/data/forecasts/<date>.jsonl` |
 | Insight store / PA tradecase | `/Users/phvrao/Projects/Algo-Trading/data/insight/` (store.json, setups/setup_pa_tradecase.json) |

@@ -24,7 +24,7 @@ It is a **post-session / replay tool** (reads downloaded CSVs), not live.
 | `tv/SPATAM/Tracking` | **The guideline — SOURCE OF TRUTH.** Every announcement type maps 1:1 to the engine. User keeps editing this; engine must be re-synced whenever it changes |
 | `scripts/trepat_track.py` | The engine. Reads the three export CSVs, writes the chronological log |
 | `tv/SPATAM/Tracking_<date>.log` | Run-time output — NEVER committed (gitignored) |
-| `tv/SPATAM/HANDOFF_SPATAM.md` | Sibling: the SPATAM indicator (vocabulary definitions: PM tags, PVT/VOC/MACD2, dashboard) |
+| `tv/SPATAM/spatam.md` | Sibling: the SPATAM indicator (vocabulary definitions: PM tags, PVT/VOC/MACD2, dashboard) |
 
 Commit: `TREPAT: tracking engine + guideline (source of truth)` → `c6d8fc5` (2026-11-05).
 
@@ -91,7 +91,7 @@ the new day (or accept args; not yet implemented). Overwrite the same
   in the ±0.1 band, consider retracting the "5PX about to cross" call. Not implemented
 - **Auto-file-discovery** — engine still hardcodes download filenames
 - **Live mode** — currently replay-only; could later be wired to the Algo app's
-  TTS queue like SPATAM alerts (see HANDOFF_SPATAM §6)
+  TTS queue like SPATAM alerts (see spatam.md §6)
 
 ## 8. First-version validation (2026-11-04 session)
 
