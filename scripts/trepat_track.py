@@ -2,7 +2,7 @@
 """TREPAT — Trend Price Action Tracking.
 
 Reads TradingView bar exports (15s / 1m / 5m) for NSE:NIFTY1! and produces a
-chronological tracking commentary per tv/SPATAM/Tracking templates.
+chronological tracking commentary per tv/spatam/Tracking templates.
 
 Conventions (per user):
 - Level NAMES only in announcements — no NIFTY price / level values (gap % allowed).

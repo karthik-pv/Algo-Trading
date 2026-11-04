@@ -24,7 +24,7 @@ The **announcer** (`announcer-71bb.onrender.com`) is **retired** — SPATAM no l
 |---|---|
 | `TradingView/Levels/SPATAM` | **The live script** (paste into TV Pine Editor). Line 4 has `// VERSION: YYYY-MM-DD.N` — always verify after copying |
 | `TradingView/Levels/spatam.md` | This document |
-| `TradingView/TV_Algo_JSON/tradingview_algo_json.md` | Sibling producer: the `DATA`/`LEVELS` JSON feed (`Strategy_TradingInvestAlgo_Data`) → same Algo app |
+| `handoffs/tradingview_algo_json.md` | Sibling producer: the `DATA`/`LEVELS` JSON feed (`strategy_tradinginvestalgo_data`) → same Algo app |
 | `TradingView/Lookout/Lookouts` | Legacy alert engine (announcer era) — reference only; its lookout families were ported into SPATAM (see §5) |
 
 ---

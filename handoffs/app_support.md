@@ -66,7 +66,7 @@
 - **TV MSG:DATA v1.10** (2026-11-02, tag `tv-data-v1.10`): v1.9 dropped a comma after
   `VOCCrossUnderIndex` (1M+5M blocks) — every DATA alert with an active VWAP cross was
   invalid JSON and the server rejected it (BIAS strip starved). Webhook failure dumps now
-  land in `tv/TV_Algo_JSON/incoming/FAILED_*.json` (commit `5c55659`). Also: momentors
+  land in `tv/tv_algo_json/incoming/FAILED_*.json` (commit `5c55659`). Also: momentors
   3O/2O rows no longer mirror VOC cross-downs — hidden while VOC < 0 (commit `27072e0`).
 - **A dead broker login must never block app startup** (2026-11-04, commit `9636050`):
   `broker = BROKER_MAP[CURRENT_BROKER]()` at import time (server.py ~line 438) used to
@@ -95,14 +95,15 @@
   generic "Option chain updated - new WOC factors applied" toast is suppressed for 10s
   after a drift toast (never both). Rebuild mechanics untouched.
 - **OPT data split out of the main Pine indicator** (2026-11-04, tags `tv-data-v1.11` /
-  `tv-data-opt-v1.0`): `Strategy_TradingInvestAlgo_Data` v1.11 no longer sends
+  `tv-data-opt-v1.0`): `strategy_tradinginvestalgo_data` v1.11 no longer sends
   MSG:"OPT" (opt_calc + 8 CE/PE security calls + the OPT message + ATM-Options inputs
   removed); the SYM field is dropped from DATA + LEVELS (unused downstream — it arrived
   as a study-object dump with unescaped quotes, shredding EVERY message on 2026-11-04,
-  177/177 broken). New standalone `Strategy_TradingInvestAlgo_Data_OPT` v1.0 sends the
+  177/177 broken). New standalone `strategy_tradinginvestalgo_data_opt` v1.0 sends the
   byte-identical OPT payload (minus SYM) from its own chart instance + one TV alert.
-  DATA/LEVELS fields are byte-identical to v1.10. Rollback: paste the v1.10 snapshot
-  from `versions/`. TV-side setup: main indicator instances (DATA + LEVELS alerts) +
+  DATA/LEVELS fields are byte-identical to v1.10. Rollback: git tag `tv-data-v1.10`
+  (no snapshot copies — TV keeps version history). TV-side setup: main indicator
+  instances (DATA + LEVELS alerts) +
   the new OPT indicator instance (one alert) — the old third instance (Emit=OPT) is
   retired.
 - **Momentors sup/res row = the leg's LAUNCH rung** (2026-11-04, commit `ffac0ff`):
@@ -121,7 +122,7 @@
   alerts not firing; only SPATAM arrived — TV alerts re-armed by the user; NIFTY
   reference chart confirmed intentional); repaired webhooks now also dump+persist
   (`0be8e82`); WOC split — Pine v1.11 (OPT removed, SYM dropped) + new standalone
-  `Strategy_TradingInvestAlgo_Data_OPT` v1.0 (`tv-data-v1.11` / `tv-data-opt-v1.0`);
+  `strategy_tradinginvestalgo_data_opt` v1.0 (`tv-data-v1.11` / `tv-data-opt-v1.0`);
   ATM-drift toast now names the strike move, generic WOC toast suppressed for the same
   rebuild (`487d73b`); Momentors sup/res row re-anchored on the 1m-PVT leg's launch rung
   with a server-side rolling price memory (`ffac0ff`). OPEN: the ATM-drift dead-band

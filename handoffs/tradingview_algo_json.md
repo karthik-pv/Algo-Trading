@@ -1,7 +1,7 @@
 # Handoff — TradingView → Algo App JSON Feed
 
-**Producer:** `Strategy_TradingInvestAlgo_Data` (Pine v5 indicator)
-**Location:** `/Users/phvrao/Projects/TradingView/Strategy_TradingInvestAlgo_Data`
+**Producer:** `strategy_tradinginvestalgo_data` (Pine v5 indicator)
+**Location:** `/Users/phvrao/Projects/TradingView/strategy_tradinginvestalgo_data`
 **Consumer:** the "forecasting" algo app (webhook receiver)
 **Status:** LEVELS section (S/R levels from `Strategy_EMAs_OCHL_cwcd v1.1`) added 2026-10-18. Same day, payload was **split into two alert messages** (`DATA` / `LEVELS`) to respect TradingView's **4096-char per alert message** limit; level rows are compact `[Name, Value]` pairs.
 
@@ -166,6 +166,6 @@ trade direction (CE and PE orders).
 
 ## 9. Pointers back to source
 
-- Producer script: `/Users/phvrao/Projects/TradingView/Strategy_TradingInvestAlgo_Data`
+- Producer script: `/Users/phvrao/Projects/TradingView/strategy_tradinginvestalgo_data`
 - Levels reference (visual table version): `/Users/phvrao/Projects/TradingView/Strategy_EMAs_OCHL_cwcd v1.1`
 - SetUps code origin: `/Users/phvrao/Projects/TradingView/Strategy_SetUps_Label`

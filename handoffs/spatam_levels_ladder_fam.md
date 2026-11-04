@@ -10,7 +10,7 @@ Domain: TradingView SPATAM indicator ↔ Algo app Levels-Ladder rendering.
 
 The **Levels Ladder** tables in the Algo app show the same rows as the
 SPATAM chart's levels table (CW-CD / CW-ND / NW-ND). As of Pine
-`Strategy_TradingInvestAlgo_Data` **v1.12/v1.13**, the chart's **4th column
+`strategy_tradinginvestalgo_data` **v1.12/v1.13**, the chart's **4th column
 — the family trend tag — is delivered IN the webhook JSON** and printed by
 the app **verbatim**: TradingView is the single source of truth; the app
 never recalculates it.
@@ -95,16 +95,15 @@ Security-call count: 31 of TV's 40.
 | `cdbdff4` (14:13) | Algo side: `expand_htf` + PA-ladder tag column. |
 | `1c9d8df` (14:28) | Widget ladder (ml-ladder) State → SPATAM tag column. |
 
-Rollback = paste the previous snapshot from
-`tv/TV_Algo_JSON/versions/` back into the TV Pine editor (app side tolerates
-both formats).
+Rollback = `git checkout <tag> -- tv/tv_algo_json/strategy_tradinginvestalgo_data`
+(tag `tv-data-vX.Y`) and paste that copy into the TV Pine editor (app side
+tolerates both formats).
 
 ## 8. Verification checklist
 
 1. TV editor header: `VERSION: 1.13` (script
-   `Strategy_TradingInvestAlgo_Data`; snapshot
-   `versions/Strategy_TradingInvestAlgo_Data_v1.13_2026-11-04.pine`).
-2. `tv/TV_Algo_JSON/incoming/latest_LEVELS.json` → `LEVELS.FAM` present,
+   `strategy_tradinginvestalgo_data`; git tag `tv-data-v1.13`).
+2. `tv/tv_algo_json/incoming/latest_LEVELS.json` → `LEVELS.FAM` present,
    7 segments; `LEVELS.HTF` keys compact (`P/M1/M2/K/KT`).
 3. `python -c "from core.utils import expand_htf"` → full names restored.
 4. App: both ladder tables show tag cells matching the SPATAM chart table,
@@ -115,13 +114,13 @@ both formats).
 
 ## 9. Cross-references
 
-- Payload shape + HTF semantics: `tv/TV_Algo_JSON/tradingview_algo_json.md`
+- Payload shape + HTF semantics: `tv/tv_algo_json/tradingview_algo_json.md`
 - Widget tables & momentor rules: `handoffs/1pm_momentors_levels.md` (the
   four **SPATAM Algo UI Tables**: BIAS, MOMENTORS, SET UP, LEVELS LADDER)
-- SPATAM indicator itself: `tv/SPATAM/spatam.md`
+- SPATAM indicator itself: `tv/spatam/spatam.md`
 - The four widget tables (BIAS / MOMENTORS / SET UP / LEVELS LADDER — the
   "SPATAM Algo UI Tables"): `handoffs/1pm_momentors_levels.md`
-- Versioning convention: `tv/TV_Algo_JSON/versions/README.md`
+- Versioning convention: AGENTS.md §1 (version bump + changelog + git tag; no snapshot copies)
 
 ## Changelog (append-only)
 

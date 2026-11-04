@@ -9,8 +9,8 @@ __pycache__/
 
 # Runtime data (logs, tokens, instrument dumps, paper trades)
 data/
-tv/TV_Algo_JSON/alerts_log.jsonl
-tv/TV_Algo_JSON/state_latest.json
+tv/tv_algo_json/alerts_log.jsonl
+tv/tv_algo_json/state_latest.json
 
 # Machine-local config; example is tracked, variants are not
 # config/appconfig.json
@@ -32,7 +32,7 @@ logs
 z_JSON._Temp.txt
 
 # raw TV webhook debug dump (runtime data)
-tv/TV_Algo_JSON/incoming/
+tv/tv_algo_json/incoming/
 
 # TREPAT run-time tracking logs
-tv/SPATAM/Tracking_*.log
+tv/spatam/Tracking_*.log

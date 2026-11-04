@@ -1323,7 +1323,7 @@ _tv_snap_cache = {"data": {}, "ts": 0.0}
 # sends is written as its own JSON file under tv/TVAlgo_JSON/incoming/ so the
 # payloads can be inspected directly. Runtime data - gitignored.
 _TV_INCOMING_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                                "tv", "TV_Algo_JSON", "incoming")
+                                "tv", "tv_algo_json", "incoming")
 _tv_incoming_seq = 0
 
 # Rolling price memory for the Momentors sup/res row (2026-11-04): that row
@@ -1507,7 +1507,7 @@ def trading_view():
         # success - the 15s DATA cadence only lands here when broken.
         try:
             import json as _json
-            dump_dir = resolve_data_path(os.path.join("tv", "TV_Algo_JSON", "incoming"))
+            dump_dir = resolve_data_path(os.path.join("tv", "tv_algo_json", "incoming"))
             os.makedirs(dump_dir, exist_ok=True)
             stamp = datetime.now().strftime("%d%m_%H%M%S_%f")[:-3]
             with open(os.path.join(dump_dir, f"FAILED_{stamp}.json"), "w", encoding="utf-8") as f:

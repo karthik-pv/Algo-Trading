@@ -14,7 +14,7 @@ The widget area has FOUR tables, always referred to by these names.
 User's layout summary (2026-11-04): **"Topmost is BIAS table. On the left we
 have Momentors, below that the SetUp table. On the right we have the Levels
 Ladder."** Together these four are the **SPATAM Algo UI Tables** — the app-side
-mirror of the SPATAM chart indicator (see `tv/SPATAM/spatam.md`).
+mirror of the SPATAM chart indicator (see `tv/spatam/spatam.md`).
 
 | # | Registered name | Position | Contents |
 |---|---|---|---|
@@ -150,7 +150,7 @@ script instance count as ONE alert. Therefore:
   session stamps key off the chart's session — not NSE-meaningful on a 24/7
   chart.
 - Version ceremony: bump VERSION + CHANGELOG, dated snapshot in
-  `tv/TV_Algo_JSON/versions/`, git tag `tv-data-vX.Y`, README table row.
+  git tag `tv-data-vX.Y` (no physical snapshot copies; TV keeps version history).
 
 ## 7. App-side implementation
 
@@ -160,7 +160,7 @@ script instance count as ONE alert. Therefore:
 | Endpoint (read-only, 1s TTL cache, fail-safe → HTTP 200 + `error`) | `server.py` `GET /momentor/data` |
 | Widget UI + 2s poller (IIFE, try/catch) | `templates/app.html` (`#ml-widget-container`, below Pending Orders) |
 | Webhook envelopes (LEVELS/HTF stored, never clobber the snapshot or run trade logic) | `core/trade_logic.py` `process_TradingView_Data` — **the envelope checks MUST run before `_tradingView_Data = data`** (a v1.7 regression made the widget blank between DATA messages) |
-| Raw webhook dump (debug aid) | `server.py` `_tv_dump_incoming` → `tv/TV_Algo_JSON/incoming/` (gitignored, retention-capped ~300 files) |
+| Raw webhook dump (debug aid) | `server.py` `_tv_dump_incoming` → `tv/tv_algo_json/incoming/` (gitignored, retention-capped ~300 files) |
 
 ## 8. Persistence (restart-safe)
 

@@ -5,7 +5,7 @@ Sources (both already in memory on the trader object, no new state created):
   - snapshot = trader._tradingView_Data  -> INDICATORS / SETUPS blocks
   - levels   = trader._tv_levels         -> LEVELS.CW_CD rows [Name, Price]
 
-Every INDICATORS TF block carries (tv/TV_Algo_JSON/Strategy_TradingInvestAlgo_Data):
+Every INDICATORS TF block carries (tv/tv_algo_json/strategy_tradinginvestalgo_data):
   PVT + PVTTrendFlag + PVTCrossOverIndex/UnderIndex (barssince+1),
   MACD_1226/Signal_1226 + X_1226/Y_1226, MACD_2452/Signal_2452 + X_2452/Y_2452,
   K/D + KTrendFlag + KCrossoverIndex/KCrossUnderIndex,

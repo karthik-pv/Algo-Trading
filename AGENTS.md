@@ -7,27 +7,23 @@ user preferences — do not ask for confirmation on them each time.
 
 The user must be able to trust what is running in TradingView at all times.
 Every change to a Pine script in `tv/` (e.g.
-`tv/TV_Algo_JSON/Strategy_TradingInvestAlgo_Data`) MUST:
+`tv/tv_algo_json/strategy_tradinginvestalgo_data`) MUST:
 
 1. **Bump the version** in the script's header banner (`VERSION: x.y`) and add
    a `CHANGELOG` line with the date + one-line description of the change,
    including what is guaranteed UNCHANGED (payload messages etc.).
-2. **Snapshot a dated copy** in `tv/TV_Algo_JSON/versions/`:
-   `<ScriptName>_v<MAJOR.MINOR>_<YYYY-MM-DD>.pine` — this copy is the
-   rollback: pasting the previous snapshot back into the TradingView editor
-   must always restore the prior behavior exactly.
-3. **Tag the commit**: `git tag <script>-vX.Y` (e.g. `tv-data-v1.1`) and push
+2. **Tag the commit**: `git tag <script>-vX.Y` (e.g. `tv-data-v1.1`) and push
    the tag.
-4. **Commit + push** — commit messages follow the existing style
+3. **Commit + push** — commit messages follow the existing style
    (`Area: what changed`), one logical change per commit.
-5. Update the version table in `tv/TV_Algo_JSON/versions/README.md`.
 
-Full convention: `tv/TV_Algo_JSON/versions/README.md`.
+No physical snapshot copies in the repo — TradingView keeps the version
+history; the git tag is the rollback point.
 
 ## 2. Runtime files are never committed
 
-Logs/state such as `tv/TV_Algo_JSON/alerts_log.jsonl`,
-`tv/TV_Algo_JSON/state_latest.json`, `data/`, tokens, dumps — keep them out of
+Logs/state such as `tv/tv_algo_json/alerts_log.jsonl`,
+`tv/tv_algo_json/state_latest.json`, `data/`, tokens, dumps — keep them out of
 git (already in `.gitignore`).
 
 ## 3. Config changes apply live

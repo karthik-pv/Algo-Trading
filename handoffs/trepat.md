@@ -21,10 +21,10 @@ It is a **post-session / replay tool** (reads downloaded CSVs), not live.
 
 | File | Purpose |
 |---|---|
-| `tv/SPATAM/Tracking` | **The guideline — SOURCE OF TRUTH.** Every announcement type maps 1:1 to the engine. User keeps editing this; engine must be re-synced whenever it changes |
+| `tv/spatam/Tracking` | **The guideline — SOURCE OF TRUTH.** Every announcement type maps 1:1 to the engine. User keeps editing this; engine must be re-synced whenever it changes |
 | `scripts/trepat_track.py` | The engine. Reads the three export CSVs, writes the chronological log |
-| `tv/SPATAM/Tracking_<date>.log` | Run-time output — NEVER committed (gitignored) |
-| `tv/SPATAM/spatam.md` | Sibling: the SPATAM indicator (vocabulary definitions: PM tags, PVT/VOC/MACD2, dashboard) |
+| `tv/spatam/Tracking_<date>.log` | Run-time output — NEVER committed (gitignored) |
+| `tv/spatam/spatam.md` | Sibling: the SPATAM indicator (vocabulary definitions: PM tags, PVT/VOC/MACD2, dashboard) |
 
 Commit: `TREPAT: tracking engine + guideline (source of truth)` → `c6d8fc5` (2026-11-05).
 
@@ -48,7 +48,7 @@ Gotchas (all confirmed the hard way):
 
 ```bash
 cd ~/Projects/Algo-Trading
-./venv/bin/python scripts/trepat_track.py > tv/SPATAM/Tracking_<date>.log
+./venv/bin/python scripts/trepat_track.py > tv/spatam/Tracking_<date>.log
 ```
 Paths of the three CSVs are hardcoded in `__main__` — update the filenames for
 the new day (or accept args; not yet implemented). Overwrite the same
