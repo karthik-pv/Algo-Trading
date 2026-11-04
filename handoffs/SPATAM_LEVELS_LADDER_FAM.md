@@ -116,8 +116,11 @@ both formats).
 ## 9. Cross-references
 
 - Payload shape + HTF semantics: `tv/TV_Algo_JSON/HANDOFF_TradingView_Algo_JSON.md`
-- Widget tables & momentor rules: `handoffs/1PM_MOMENTORS_LEVELS.md`
+- Widget tables & momentor rules: `handoffs/1PM_MOMENTORS_LEVELS.md` (the
+  four **SPATAM Algo UI Tables**: BIAS, MOMENTORS, SET UP, LEVELS LADDER)
 - SPATAM indicator itself: `tv/SPATAM/HANDOFF_SPATAM.md`
+- The four widget tables (BIAS / MOMENTORS / SET UP / LEVELS LADDER — the
+  "SPATAM Algo UI Tables"): `handoffs/1PM_MOMENTORS_LEVELS.md`
 - Versioning convention: `tv/TV_Algo_JSON/versions/README.md`
 
 ## Changelog (append-only)

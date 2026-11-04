@@ -10,6 +10,7 @@ lives in `archive/` (read-only; each file carries a supersession banner).
 | **Commentary** (tracking & commentary module) | [`COMMENTARY.md`](COMMENTARY.md) | tracking sessions, commentary vocabulary/style |
 | **Trade Backtest** (validated studies & playbooks) | [`TRADE_BACKTEST.md`](TRADE_BACKTEST.md) | backtesting setups, validation runs |
 | **SPATAM ↔ Levels Ladder** (FAM tag column, wire format, renderers) | [`SPATAM_LEVELS_LADDER_FAM.md`](SPATAM_LEVELS_LADDER_FAM.md) | the ladder tag column mismatches the chart, or the LEVELS payload changes |
+| **SPATAM Algo UI Tables** (the 4 widget tables: BIAS, MOMENTORS, SET UP, LEVELS LADDER) | [`1PM_MOMENTORS_LEVELS.md`](1PM_MOMENTORS_LEVELS.md) | a widget table looks wrong, or table naming/layout questions come up |
 
 Vocabulary for all modules: [`forecasting/Glossary.md`](../forecasting/Glossary.md).
 

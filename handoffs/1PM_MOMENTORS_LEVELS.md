@@ -1,21 +1,26 @@
-# HANDOFF — 1PM Momentors & Levels Ladder widget
+# HANDOFF — SPATAM Algo UI Tables (1PM Momentors & Levels Ladder widget)
 
 Created: 2026-11-01 (session "1PM Momentors & Levels Ladder")
 Status: **LIVE** — read-only dashboard widget, no order-path interaction.
-Last updated: 2026-11-01 (Pine v1.9, three-alert 15s architecture, all four
-tables live and verified).
+Last updated: 2026-11-04 (renamed per user: these four tables are the
+**SPATAM Algo UI Tables**; chips now the verbatim SPATAM FAM tag, Pine v1.13).
 
 ---
 
-## 0. Registered table names (user convention, 2026-11-01)
+## 0. Registered table names (user convention, 2026-11-01; confirmed as the
+## "SPATAM Algo UI Tables", 2026-11-04)
 
-The widget area has FOUR tables, always referred to by these names:
+The widget area has FOUR tables, always referred to by these names.
+User's layout summary (2026-11-04): **"Topmost is BIAS table. On the left we
+have Momentors, below that the SetUp table. On the right we have the Levels
+Ladder."** Together these four are the **SPATAM Algo UI Tables** — the app-side
+mirror of the SPATAM chart indicator (see `tv/SPATAM/HANDOFF_SPATAM.md`).
 
 | # | Registered name | Position | Contents |
 |---|---|---|---|
 | 1 | **BIAS table** | top-most, spans the two below | `PA / 5PM / CV / 3S` + set-apart `3PM`; grey caption row + colour-filled trend row (arrows per component) |
 | 2 | **MOMENTORS table** | second, left | momentor rows + the TF state rows (`1/5/3/2/D`) directly beneath |
-| 3 | **LEVELS LADDER table** | second, right | S/R levels ±150 pts, yellow Close row, PM-state chips in 4th column |
+| 3 | **LEVELS LADDER table** | second, right | S/R levels ±150 pts, yellow Close row, SPATAM tag chips in 4th column |
 | 4 | **SET UP table** | third, left (below MOMENTORS) | dynamic green/red component columns per TF |
 
 ---
@@ -100,9 +105,16 @@ individually — up-components occupy the left cell, retracing/downtrending
   **Close row on a bright yellow background** (`#ffd54d`, bold dark text,
   `<<<` marker) — always prominent mid-table.
 - `Pts` = |level − close| (headroom).
-- **Chips** (4th column, styled like the MOMENTORS 2nd column: colour-filled
-  cell, fixed text colour) — a higher-TF PM uptrend endorses its lower-TF
-  EMA rungs as supports (green chip); downtrend makes them resistances (red):
+- **Chips** (4th column, header **SPATAM**, styled like the MOMENTORS 2nd
+  column: colour-filled cell, fixed text colour) — since Pine v1.12/v1.13 the
+  chip is the **SPATAM family trend tag, VERBATIM from the webhook**
+  (`LEVELS.FAM`, decoded by `build_ladder` in `forecasting/momentors_widget.py` —
+  see `SPATAM_LEVELS_LADDER_FAM.md`). TradingView is the single source of
+  truth; the app never recalculates it. Dark green/red when MACD2 agrees with
+  the PVT direction, light shades when it retraces against it. Example chips
+  (verified 2026-11-04): `5PM2` `3PM2` `2PM` `MPM` `QPM2`. A higher-TF PM
+  uptrend endorses its lower-TF EMA rungs as supports (green chip); downtrend
+  makes them resistances (red). Historic (pre-v1.12) fixed chip map:
 
   | Chip | Endorsing state | Rungs |
   |---|---|---|

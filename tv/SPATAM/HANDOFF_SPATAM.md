@@ -72,6 +72,10 @@ Top → bottom (row split derived from `Dashboard height`, exact 10/30/20/40 at 
 The old large Momentum grid was **removed** (helpers `f_momRow/f_arrow/f_xs/f_stoch_bg/f_pvt_bg/
 f_voc_bg/f_zone_stoch` remain defined if ever re-added).
 
+> **App-side mirror** — the Algo app widget shows the same data as FOUR
+> **SPATAM Algo UI Tables**: BIAS (top), MOMENTORS (left), SET UP (below it),
+> LEVELS LADDER (right). See `handoffs/1PM_MOMENTORS_LEVELS.md`.
+
 ---
 
 ## 4. Engine (per-TF stats via `request.security`)
