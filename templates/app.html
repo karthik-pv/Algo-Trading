@@ -4147,11 +4147,19 @@ document.addEventListener('DOMContentLoaded', function() {
         // handler via data-ltp-symbol (works even when the grid
         // rendered before the chain arrived).
         if (chainChanged) {
-            const message = 'Option chain updated - new WOC factors applied';
-            if (document.hidden) {
-                pendingStatusMessage = { message: message, type: 'success' };
-            } else {
-                showInlineStatus(message, 'success', 6000);
+            // An ATM-drift rebuild announces itself with its own toast
+            // ("ATM Strike Price moved up/down from X to Y") - skip this
+            // generic message when one landed in the last 10s so the user
+            // never sees both for the same rebuild (2026-11-04).
+            const driftToastFresh =
+                Date.now() - (window.__lastWocDriftToastTs || 0) < 10000;
+            if (!driftToastFresh) {
+                const message = 'Option chain updated - new WOC factors applied';
+                if (document.hidden) {
+                    pendingStatusMessage = { message: message, type: 'success' };
+                } else {
+                    showInlineStatus(message, 'success', 6000);
+                }
             }
         }
     });
@@ -4977,6 +4985,14 @@ filteredContracts.sort(([, a], [, b]) => {
 
         if (success && /refresh(ed|ing) position/i.test(message)) {
             return;
+        }
+
+        // ATM-drift rebuilds announce themselves (server, 2026-11-04);
+        // stamp the time so the generic "new WOC factors applied" toast
+        // from the imminent chain event is skipped - the drift message
+        // already told the user why the window changed.
+        if (success && /^ATM Strike Price moved/.test(message)) {
+            window.__lastWocDriftToastTs = Date.now();
         }
 
         if (document.hidden) {

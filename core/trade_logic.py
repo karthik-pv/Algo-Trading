@@ -6559,6 +6559,23 @@ class Trader_Singleton:
             f"near-month FUT LTP {ltp:.1f} -> correct ATM {correct_atm}. "
             f"Rebuilding the weekly option window."
         )
+        # Tell the UI WHY the window is about to change (user request
+        # 2026-11-04): the generic "new WOC factors applied" toast is
+        # suppressed by the frontend for a few seconds after this, so the
+        # drift message is the one the user sees. Emitted BEFORE the
+        # rebuild - the chain event fires inside it.
+        try:
+            socket = getattr(self, "frontend_data_socket", None)
+            if socket:
+                direction = "up" if correct_atm > current_strike else "down"
+                socket.emit('status_message', {
+                    "success": True,
+                    "message": (f"ATM Strike Price moved {direction} from "
+                                f"{current_strike} to {correct_atm} - "
+                                f"option window rebuilt")
+                })
+        except Exception:
+            pass  # a toast must never break the drift check
         self._last_woc_rebuild_ts = time.time()
         self.setup_woc_subscriptions()
 
