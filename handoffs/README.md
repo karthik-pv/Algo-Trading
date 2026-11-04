@@ -9,6 +9,7 @@ lives in `archive/` (read-only; each file carries a supersession banner).
 | **App Support** (server, brokers, feeds, ngrok, machine config) | [`APP_SUPPORT.md`](APP_SUPPORT.md) | the app breaks, feeds/tunnels, machine/broker setup |
 | **Commentary** (tracking & commentary module) | [`COMMENTARY.md`](COMMENTARY.md) | tracking sessions, commentary vocabulary/style |
 | **Trade Backtest** (validated studies & playbooks) | [`TRADE_BACKTEST.md`](TRADE_BACKTEST.md) | backtesting setups, validation runs |
+| **SPATAM ↔ Levels Ladder** (FAM tag column, wire format, renderers) | [`SPATAM_LEVELS_LADDER_FAM.md`](SPATAM_LEVELS_LADDER_FAM.md) | the ladder tag column mismatches the chart, or the LEVELS payload changes |
 
 Vocabulary for all modules: [`forecasting/Glossary.md`](../forecasting/Glossary.md).
 
