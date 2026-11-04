@@ -68,9 +68,66 @@
   invalid JSON and the server rejected it (BIAS strip starved). Webhook failure dumps now
   land in `tv/TV_Algo_JSON/incoming/FAILED_*.json` (commit `5c55659`). Also: momentors
   3O/2O rows no longer mirror VOC cross-downs — hidden while VOC < 0 (commit `27072e0`).
+- **A dead broker login must never block app startup** (2026-11-04, commit `9636050`):
+  `broker = BROKER_MAP[CURRENT_BROKER]()` at import time (server.py ~line 438) used to
+  crash the app on a missing/invalid `KITE_API_KEY`, and a failed `broker.prod_start()`
+  killed startup too (the big try only caught KeyboardInterrupt). Both now log and
+  continue: constructor failure falls back to the SIMULATOR adapter (web UI always
+  loads → the user can switch BROKER to MSTOCK in the config UI); `prod_start()` failure
+  logs and loads degraded. NOTE: broker API keys live in the gitignored `.env`, not
+  appconfig.
+- **Momentors widget can freeze silently on stale data — check the snapshot date first**
+  (2026-11-04 session): the widget hydrates from `data/tv_last_snapshot.json` at startup.
+  Symptom: Momentors rows showing yesterday's crosses (e.g. `5px green 2` while the chart
+  crossed down). Diagnosis recipe: check the `ts`/mtime of `data/tv_last_snapshot.json`
+  + `data/logs/latest_DATA.json`; grep the launcher log for `TV webhook MSG=DATA` (last
+  clean one). On 2026-11-04 the root cause was TV-side: DATA + LEVELS alerts not firing
+  at all (only SPATAM ALERTS arrived) — the TV alert dialogs needed re-arming; the
+  frozen snapshot's Close (23763 = NIFTY level) is the user's DELIBERATE reference chart
+  for SENSEX, not a bug.
+- **Repaired webhooks now persist too** (2026-11-04, commit `0be8e82`): the broken-SYM
+  repair path used to skip MSG-logging / incoming-dump / `_tv_persist_snapshot`, so a
+  day of broken-SYM messages left the persisted snapshot (and the widget's restart
+  hydration) frozen. The dump/persist block now runs for BOTH clean and repaired
+  payloads. Symptom before the fix: widget fine in-session, stale after every restart.
+- **WOC ATM-drift toast now says WHY** (2026-11-04, commit `487d73b`): drift rebuilds
+  toast "ATM Strike Price moved up/down from X to Y - option window rebuilt"; the
+  generic "Option chain updated - new WOC factors applied" toast is suppressed for 10s
+  after a drift toast (never both). Rebuild mechanics untouched.
+- **OPT data split out of the main Pine indicator** (2026-11-04, tags `tv-data-v1.11` /
+  `tv-data-opt-v1.0`): `Strategy_TradingInvestAlgo_Data` v1.11 no longer sends
+  MSG:"OPT" (opt_calc + 8 CE/PE security calls + the OPT message + ATM-Options inputs
+  removed); the SYM field is dropped from DATA + LEVELS (unused downstream — it arrived
+  as a study-object dump with unescaped quotes, shredding EVERY message on 2026-11-04,
+  177/177 broken). New standalone `Strategy_TradingInvestAlgo_Data_OPT` v1.0 sends the
+  byte-identical OPT payload (minus SYM) from its own chart instance + one TV alert.
+  DATA/LEVELS fields are byte-identical to v1.10. Rollback: paste the v1.10 snapshot
+  from `versions/`. TV-side setup: main indicator instances (DATA + LEVELS alerts) +
+  the new OPT indicator instance (one alert) — the old third instance (Emit=OPT) is
+  retired.
+- **Momentors sup/res row = the leg's LAUNCH rung** (2026-11-04, commit `ffac0ff`):
+  user rule change — the row anchors on the 1m-PVT leg's origin (rung closest above the
+  leg's swing low rising / below its swing high falling, window = 1M
+  PVTCrossOverIndex/UnderIndex minutes), NOT the highest level below price (which kept
+  advancing to every newly reclaimed rung: "rose from 5E100, why CAM R3?"). Needs the
+  server's rolling price memory (`_TV_PRICE_MEMORY`, ~3h @ 15s, in-memory only, fed by
+  every LEVELS webhook Close). Fallback to the old rule when no memory (fresh restart,
+  leg older than ~3h, no cross age).
 
 ## 4. CHANGELOG (append-only)
 
+- **2026-11-04** — session "Appsupport": dead-broker-login no longer blocks app startup
+  (SIMULATOR fallback, `9636050`); diagnosed the frozen Momentors widget (TV DATA/LEVELS
+  alerts not firing; only SPATAM arrived — TV alerts re-armed by the user; NIFTY
+  reference chart confirmed intentional); repaired webhooks now also dump+persist
+  (`0be8e82`); WOC split — Pine v1.11 (OPT removed, SYM dropped) + new standalone
+  `Strategy_TradingInvestAlgo_Data_OPT` v1.0 (`tv-data-v1.11` / `tv-data-opt-v1.0`);
+  ATM-drift toast now names the strike move, generic WOC toast suppressed for the same
+  rebuild (`487d73b`); Momentors sup/res row re-anchored on the 1m-PVT leg's launch rung
+  with a server-side rolling price memory (`ffac0ff`). OPEN: the ATM-drift dead-band
+  idea (rebuild every ~10 min on choppy days — LTP hovering at strike midpoints) was
+  discussed, NOT implemented; interim = raise `ATM_DRIFT_MIN_REBUILD_SECS` in the
+  config UI or switch `ATM_DRIFT_ENABLED` off.
 - **2026-11-02** — big app session: manual-sell LIMIT parity + re-price watchdog + appconfig
   controls; limit-margin 10–100 tier 3→2%; ATM-drift watchdog; TV webhook failure dumps;
   Pine v1.10 comma fix; momentors 3O/2O down-mirror removed; TEMPORARY discipline lock
