@@ -1,5 +1,5 @@
 //@version=6
-indicator("trepat", "trepat", overlay = false)
+indicator("trepat", "trepat", overlay = false, max_labels_count = 500)
 // ============================================================================
 // TREPAT strip — Trend Price Action Tracking viewer (historical)
 // ----------------------------------------------------------------------------
