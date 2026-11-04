@@ -398,11 +398,9 @@ if barstate.islast
     table.cell(st, 1, 0, str.tostring(map.size(m_min) + map.size(m_sec)), text_color = color.gray, text_size = size.small)
     table.cell(st, 0, 1, "bar key", text_color = color.gray, text_size = size.small)
     table.cell(st, 1, 1, key + (has ? " ✓" : " (no data)"), text_color = color.gray, text_size = size.small)
-// tooltips live on boxes (plot has none): one transparent box per event bar
-// covering the FULL column area — hovering anywhere on the cell shows the msg
+// tooltips live on labels only (plot/box have none): a faint bubble sized to
+// cover the column area — hover anywhere on the haze to read the messages
 if has
-    box.new(bar_index, 1.0, bar_index + 1, 0.0,
-         border_color = color.new(color.white, 100),
-         xloc = xloc.bar_index,
-         bgcolor = color.new(color.white, 100),
-         tooltip = msg)
+    label.new(bar_index, 0.5, " \n \n ", xloc.bar_index, yloc.price,
+         color.new(c, 88), label.style_label_center, color.new(color.white, 100),
+         size.small, tooltip = msg)
