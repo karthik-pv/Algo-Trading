@@ -142,6 +142,25 @@
     white-space: nowrap;
 }
 
+/* Header row: uniform height across the info labels (MSTOCK / SENSEX /
+   LTP / change / date) and the action buttons (Sell All / Cancel All /
+   Calls / Puts) - sized to the info-label box. Buttons drop their
+   vertical padding so the fixed height does the sizing. */
+.toggle-container .expiry-label,
+.toggle-container .sell-button,
+.toggle-container .toggle-button {
+    height: 28px;
+    box-sizing: border-box;
+}
+.toggle-container .sell-button,
+.toggle-container .toggle-button {
+    padding-top: 0;
+    padding-bottom: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
 #nmf_pts.profit, #nmf_chgo.profit {
     background-color: #00B050;
     border-color: #00B050;
