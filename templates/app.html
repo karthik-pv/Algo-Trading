@@ -75,7 +75,10 @@
         border-radius: 7px;
         overflow: hidden;
     }
-    .toggle-button { background-color: transparent; color: #ccc; border: 1px solid #666; padding: 0.6rem 1.2rem; cursor: pointer; font-size: 0.9rem; font-weight: 500; transition: background-color 0.3s; }
+    /* Calls/Puts: same size/look as the Sell All / Cancel All buttons
+       (.sell-button geometry) - colors kept as-is (inactive transparent
+       with grey text, active green / red in put-view). */
+    .toggle-button { background-color: transparent; color: #ccc; border: none; padding: 0.6rem 1rem; border-radius: 5px; cursor: pointer; font-size: 0.9rem; font-weight: 500; transition: background-color 0.3s; }
     .toggle-button.active-toggle { background-color: #2e7d32; color: white; }
     #buy-widget-container.put-view .toggle-button.active-toggle { background-color: #c62828; }
     .buy-button { background-color: #28a745; color: white; border: none; padding: 0.6rem 1rem; border-radius: 5px; cursor: pointer; font-size: 0.9rem; font-weight: 500; transition: background-color 0.2s; }
