@@ -1787,7 +1787,7 @@
     <div id="ordersGridWrapper">
         <div class="orders-header">
             <div class="toggle-buttons">
-                <label id="cashSummaryLabel" class="expiry-label cash-summary" style="display: none;" title="OBal: opening balance of the day (broker start-of-day figure where known) &#8594; Gross P/L from the trades shown (before charges) &#8594; Net P/L after brokerage + other charges, with return % &#8594; CBal: current balance (broker cash now)">
+                <label id="cashSummaryLabel" class="expiry-label cash-summary" style="display: none;" title="OBal: opening balance of the day (broker start-of-day figure where known) &#183; CBal: current balance (broker cash now) &#183; Gross P/L from the trades shown (before charges) &#183; Net P/L after brokerage + other charges, with return %">
                     <!-- <span class="cash-caption">Cash</span>
                     <span id="cashBeginValue">--</span>
                     <span class="cash-arrow">&#8594;</span>
@@ -1795,17 +1795,14 @@
                     <span id="cashChangePct">--</span> -->
                     <span class="cash-caption" title="Open Balance">OBal</span>
                     <span id="cashBeginValue">--</span>
-                    <span class="cash-arrow">&#8594;</span>
+                    <span class="cash-caption" title="Current Balance">CBal</span>
+                    <span id="availableBalanceValue">--</span>
                     <span class="cash-caption">Gross P/L</span>
                     <span id="cashGrossValue">--</span>
                     <span id="cashGrossPct">--</span>
-                    <span class="cash-arrow">&#8594;</span>
                     <span class="cash-caption">Net P/L</span>
                     <span id="cashCurrentValue">--</span>
                     <span id="cashChangePct">--</span>
-                    <span class="cash-arrow">&#8594;</span>
-                    <span class="cash-caption" title="Current Balance">CBal</span>
-                    <span id="availableBalanceValue">--</span>
                 </label>
                 <label id="brokerageSummaryLabel" class="expiry-label charges-summary" style="display: none;" title="Brokerage charged across the trades shown (flat per executed order) - % of the day's opening cash balance">
                     <span class="cash-caption">Brok</span>
