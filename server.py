@@ -30,7 +30,7 @@ from adapter.simulator_adapter import SimulatorAdapter
 from adapter.playback_adapter import PlaybackAdapter
 from core.trading_view_handler import trading_view_handle_func
 
-from core.utils import is_market_open, fetch_from_json, load_json_with_retry, backup_old_logs, resolve_day_start_cash, check_internet_connectivity, clear_json_cache, UNDERLYING_TO_EXCHANGE, resolve_data_path, DATA_DIR, _flatten_config
+from core.utils import is_market_open, fetch_from_json, load_json_with_retry, backup_old_logs, resolve_day_start_cash, check_internet_connectivity, clear_json_cache, UNDERLYING_TO_EXCHANGE, resolve_data_path, DATA_DIR, _flatten_config, expand_htf
 from core.ngrok_tunnel import start_ngrok_tunnel, stop_ngrok_tunnel, set_notifier as set_ngrok_notifier
 
 from adapter.mstock_utils import save_orders_to_xlsx, build_orders_export,write_orders_workbook
@@ -1392,9 +1392,10 @@ def _tv_persist_snapshot(data):
             if data.get("MSG") == "LEVELS":
                 _tv_snap_cache["data"]["LEVELS"] = data.get("LEVELS") or {}
                 if data.get("HTF"):   # Pine v1.7: HTF rides inside LEVELS
-                    _tv_snap_cache["data"]["HTF"] = data.get("HTF") or {}
+                    # v1.12: expand the compact wire keys (P/M1/M2/K/KT)
+                    _tv_snap_cache["data"]["HTF"] = expand_htf(data.get("HTF") or {})
             elif data.get("MSG") == "HTF":
-                _tv_snap_cache["data"]["HTF"] = data.get("HTF") or {}   # Pine v1.6
+                _tv_snap_cache["data"]["HTF"] = expand_htf(data.get("HTF") or {})   # Pine v1.6
             elif data.get("INDICATORS") or data.get("SETUPS"):
                 _tv_snap_cache["data"]["SNAPSHOT"] = data
             else:

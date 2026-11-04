@@ -3833,15 +3833,41 @@ document.addEventListener('DOMContentLoaded', function() {
             return;
         }
 
-        // NEW (user): the Pine-built ladder from the LEVELS webhook - rendered
-        // exactly like the chart's CW-CD table: yellow title, rows sorted
-        // descending with the Close row (gray, <<<) inserted in place, and the
-        // distance column = points from the live close.
+        // The Pine-built ladder from the LEVELS webhook - rendered exactly
+        // like the chart's CW-CD table: yellow title, rows sorted descending
+        // with the Close row (gray, <<<) inserted in place, and the last
+        // column = the SPATAM family trend tag (v1.12 FAM), verbatim from
+        // TradingView. Points-from-close survive as a hover tooltip.
         const levels = payload && payload.Levels;
         if (levels && Object.keys(levels).length) {
+            // v1.12: FAM - the seven SPATAM family trend tags, one segment
+            // per family in the fixed order 5,3,2,D,W,M,Q. Each segment is
+            // "<tag><U|D><1|0>" built by Pine (same f_familyTag formula as
+            // the chart table's 4th column) and is printed here VERBATIM;
+            // only the colors are decoded: U/D = green/red, 1/0 = dark/light
+            // shade (dark = MACD2 agrees with the PVT trend).
+            const famSegs = typeof levels.FAM === 'string' ? levels.FAM.split(',') : null;
+            // level name -> family index (same mapping as SPATAM's f_levelTag)
+            const FAM_IDX = { '1m EMA50': 0, '1m EMA100': 1, '1m EMA200': 1,
+                '5m EMA50': 2, '5m EMA100': 2, '5m EMA200': 2,
+                '30m EMA50': 3, '30m EMA100': 3, '30m EMA200': 3,
+                '2h EMA50': 4, '2h EMA100': 4, '2h EMA200': 4,
+                'D EMA100': 5, 'D EMA200': 5,
+                'W EMA100': 6, 'W EMA200': 6 };
+            const famTag = (label) => {
+                if (!famSegs || !(label in FAM_IDX)) return null;
+                const seg = famSegs[FAM_IDX[label]] || '';
+                if (seg.length < 3) return null;
+                const tag = seg.slice(0, -2), dir = seg.slice(-2, -1), dark = seg.slice(-1) === '1';
+                const bg = dir === 'U' ? (dark ? '#02580b' : '#c5fab7') : (dark ? '#f91c06' : '#fab9b1');
+                const fg = dark ? '#ffffff' : '#000000';
+                return { tag, bg, fg };
+            };
             let html = '';
             Object.keys(levels).forEach((key) => {
-                const rows = (levels[key] || [])
+                const raw = levels[key];
+                if (!Array.isArray(raw)) return;   // FAM etc. - not a level table
+                const rows = raw
                     .map((r) => ({ label: String(r[0]), px: parseFloat(r[1]) }))
                     .filter((r) => isFinite(r.px));
                 if (!rows.length) return;
@@ -3850,18 +3876,21 @@ document.addEventListener('DOMContentLoaded', function() {
                 html += '<table class="pa-cwcd"><tbody>';
                 let closeShown = false;
                 rows.forEach((r) => {
+                    const t = famTag(r.label);
+                    const d = Math.round(Math.abs(r.px - price));
                     if (!closeShown && price >= r.px) {
-                        html += `<tr class="pa-cwcd-close"><td>${price.toFixed(0)}</td>` +
-                            `<td>Close</td><td>&lt;&lt;&lt;</td></tr>`;
+                        html += `<tr class="pa-cwcd-close"><td title="live close">${price.toFixed(0)}</td>` +
+                            `<td>Close</td><td></td></tr>`;
                         closeShown = true;
                     }
-                    const d = Math.round(Math.abs(r.px - price));
-                    html += `<tr><td>${r.px.toFixed(0)}</td><td>${r.label}</td>` +
-                        `<td>${d || ''}</td></tr>`;
+                    html += `<tr><td title="${d || 0} pts from close">${r.px.toFixed(0)}</td><td>${r.label}</td>` +
+                        (t ? `<td style="background:${t.bg};color:${t.fg};text-align:center;">${t.tag}</td>`
+                           : `<td></td>`) +
+                        `</tr>`;
                 });
                 if (!closeShown) {
-                    html += `<tr class="pa-cwcd-close"><td>${price.toFixed(0)}</td>` +
-                        `<td>Close</td><td>&lt;&lt;&lt;</td></tr>`;
+                    html += `<tr class="pa-cwcd-close"><td title="live close">${price.toFixed(0)}</td>` +
+                        `<td>Close</td><td></td></tr>`;
                 }
                 html += '</tbody></table>';
             });

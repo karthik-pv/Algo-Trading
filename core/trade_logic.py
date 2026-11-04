@@ -36,7 +36,8 @@ from core.audit_log import trade_audit
 
 from core.utils import (
     fetch_from_json,
-    find_matching_object , is_market_open , write_to_json , compute_limit_margin , round_to_tick , get_exchange_for_underlying , get_underlying_for_symbol , resolve_data_path , DATA_DIR
+    find_matching_object , is_market_open , write_to_json , compute_limit_margin , round_to_tick , get_exchange_for_underlying , get_underlying_for_symbol , resolve_data_path , DATA_DIR,
+    expand_htf
 )
 from core.signal_rules import (
     evaluate_ultra_scalping_entry,
@@ -8746,9 +8747,11 @@ class Trader_Singleton:
             if isinstance(data, dict) and data.get("MSG") == "LEVELS":
                 self._tv_levels = data.get("LEVELS") or {}
                 # Pine v1.7: the compact W/D/Q PM states ride inside the
-                # LEVELS message - pick them up for the widget chips
+                # LEVELS message - pick them up for the widget chips.
+                # v1.12: expand the compact wire keys (P/M1/M2/K/KT) back to
+                # the full field names before anything reads them.
                 if data.get("HTF"):
-                    self._tv_htf = data.get("HTF") or {}
+                    self._tv_htf = expand_htf(data.get("HTF") or {})
                 return []
 
             # MSG:"HTF": compact Weekly/Daily/Quarterly PM states for the
@@ -8756,7 +8759,7 @@ class Trader_Singleton:
             # (additive, mirrors the LEVELS envelope; touches nothing in
             # the order path).
             if isinstance(data, dict) and data.get("MSG") == "HTF":
-                self._tv_htf = data.get("HTF") or {}
+                self._tv_htf = expand_htf(data.get("HTF") or {})
                 return []
 
             self._tradingView_Data = data

@@ -854,3 +854,31 @@ def resolve_day_start_cash(broker, trade_date=None):
     return None, "unavailable"
 
 
+
+
+# ---------------------------------------------------------------------------
+# TradingView LEVELS-HTF wire compaction (Pine v1.12, 2026-11-04).
+# The LEVELS message rides close to TradingView's 4096-char alert cap, so the
+# HTF block keys are compact on the wire (P/M1/M2/K/KT) to fund the FAM tag
+# string. expand_htf() restores the full field names every widget reader
+# expects BEFORE anything stores the block. Unknown keys pass through
+# untouched, so old full-name messages (Pine <= v1.11 / MSG:"HTF") are
+# unchanged - the map is applied idempotently.
+_HTF_KEY_MAP = {
+    "P": "PVTTrendFlag",
+    "M1": "Trend_1226",
+    "M2": "Trend_2452",
+    "KT": "KTrendFlag",
+}
+
+
+def expand_htf(htf):
+    """Expand compact LEVELS-HTF wire keys back to the full field names."""
+    if not isinstance(htf, dict):
+        return htf
+    out = {}
+    for tf, block in htf.items():
+        if isinstance(block, dict):
+            block = {_HTF_KEY_MAP.get(k, k): v for k, v in block.items()}
+        out[tf] = block
+    return out
