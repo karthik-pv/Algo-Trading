@@ -1,9 +1,16 @@
 //@version=5
 // ============================================================================
 // Strategy_TradingInvestAlgo_Data
-// VERSION: 1.12  (2026-11-04)
+// VERSION: 1.13  (2026-11-04)
 // ----------------------------------------------------------------------------
 // CHANGELOG
+//   v1.13 2026-11-04  FIX: v1.12 emitted FAM OUTSIDE the LEVELS object (root
+//                     sibling of LEVELS/HTF) - the app reads payload.Levels
+//                     (= data.LEVELS) and never saw it, so the Levels-Ladder
+//                     tag column stayed blank. FAM is now emitted INSIDE the
+//                     LEVELS object (last key, after NW_ND). Segment format,
+//                     wire size (~3,979/4,096) and every other message
+//                     UNCHANGED from v1.12.
 //   v1.12 2026-11-04  NEW: the LEVELS message now carries "FAM" - the seven
 //                     family trend tags EXACTLY as SPATAM's levels-table 4th
 //                     column (f_familyTag: PVT sign + MACD1 12/26 + MACD2
@@ -1456,11 +1463,12 @@ levelsStr += f_json_pair_str("MSG", "LEVELS") + ","   // message type: LEVELS (v
 levelsStr += "\"LEVELS\":{"
 levelsStr += "\"CW_CD\":" + f_levelsJson(levels_array_curday_curwk) + ","   // current week - current day
 levelsStr += "\"CW_ND\":" + f_levelsJson(levels_array_nxtday_curwk) + ","   // current week - next day
-levelsStr += "\"NW_ND\":" + f_levelsJson(levels_array_nxtday_nxtwk)         // next week - next day
-levelsStr += "}"
+levelsStr += "\"NW_ND\":" + f_levelsJson(levels_array_nxtday_nxtwk) + ","       // next week - next day
 // v1.12: the seven family trend tags (SPATAM's levels-table 4th column) as
 // one compact string - ~55 chars, funded by the compacted HTF keys below.
-levelsStr += ",\"FAM\":\"" + famStr + "\""
+// INSIDE the LEVELS object so it reaches the app via _tv_levels untouched.
+levelsStr += "\"FAM\":\"" + famStr + "\""
+levelsStr += "}"
 // v1.7: the compact W/D/Q PM states ride INSIDE the LEVELS message (it has
 // ~2K of spare room) so each per-alert instance fires exactly ONE message
 // per bar close - required to stay under TV's 15-firings-per-3-min limit
