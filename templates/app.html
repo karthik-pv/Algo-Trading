@@ -1695,12 +1695,11 @@
                     <th>MPrice</th>
                     <th>Lots</th>
                     <th>Qty(O)</th>
-                    <th>Strategy Type</th>
-                    <th>Sell Type</th>
+                    <th>SS</th>
                 </tr>
             </thead>
             <tbody id="pendingOrdersBody">
-                <tr><td colspan="17" class="no-options">No pending orders</td></tr>
+                <tr><td colspan="16" class="no-options">No pending orders</td></tr>
             </tbody>
         </table>
     </div>
@@ -5002,13 +5001,15 @@ filteredContracts.sort(([, a], [, b]) => {
     // from the symbol), Order Type, Limit Price (the resting price -
     // the U/D exit target), BPrice (the joined leg's buy price),
     // MPrice (live market, shows distance to fill), Lots/Qty, and the
-    // leg's Strategy/Sell Type when the order belongs to a position.
+    // leg's SS code (same legCode value as the Position Grid's SS
+    // column: strategy letter + sell-mode letter, e.g. UT / SD / IT)
+    // when the order belongs to a position.
     //
     // DROPPED: Symbol / Order ID / Order Status (per request; the
     // cancel button still carries the order id internally).
     //
     // Orphan orders (never filled, e.g. stale market buys) have no leg:
-    // P/L/%/PTS/BP%/SL%/Strategy/Sell Type/BPrice show '--' and
+    // P/L/%/PTS/BP%/SL%/SS/BPrice show '--' and
     // Levels/MPrice show '--' when the strike is outside the current
     // contract window.
     socket.on('update_pending_orders', function(orders) {
@@ -5025,7 +5026,7 @@ filteredContracts.sort(([, a], [, b]) => {
 
         if (!hasOrders) {
             pendingOrdersBody.innerHTML =
-                `<tr><td colspan="17" class="no-options">No pending orders</td></tr>`;
+                `<tr><td colspan="16" class="no-options">No pending orders</td></tr>`;
             return;
         }
 
@@ -5099,8 +5100,7 @@ filteredContracts.sort(([, a], [, b]) => {
                 <td>${Number.isFinite(marketPrice) && marketPrice > 0 ? marketPrice.toFixed(2) : '--'}</td>
                 <td>${Number.isFinite(lots) ? lots : '--'}</td>
                 <td>${qtyUnits || '--'}</td>
-                <td>${strategyLabel}</td>
-                <td>${sellTypeLabel}</td>
+                <td id="pending-code-${order.order_id}" class="leg-code-cell">${legCode(strategyLabel, sellTypeLabel)}</td>
             `;
             pendingOrdersBody.appendChild(row);
         });
