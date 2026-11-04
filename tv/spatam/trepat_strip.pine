@@ -1,11 +1,13 @@
 //@version=6
+indicator("TREPAT strip", "TREPAT", overlay = false)
 // ============================================================================
 // TREPAT strip — Trend Price Action Tracking viewer (historical)
 // ----------------------------------------------------------------------------
 // VERSION: 1.1
 // CHANGELOG:
-//  2026-11-05  v1.1  Strip auto-detects chart TF (15s -> per-second cells,
-//                    1m -> per-minute aggregates) — no user setting.
+//  2026-11-05  v1.1  Add missing indicator() declaration (editor refused the
+//                    script without it); strip auto-detects chart TF (15s ->
+//                    per-second cells, 1m -> per-minute aggregates).
 //  2026-11-05  v1.0  First version. Pane strip for the 1m chart: one column
 //                    per minute, hover a cell to read that minute's tracking
 //                    messages. Text is embedded verbatim from the tracking
