@@ -202,7 +202,7 @@ var string TREPAT_DATA = "202611040915|Session open. Gap down -0.01% from previo
   "20261104101600|Price has crossed below 1E50\nPrice has retraced up to and faced resistance at 1E50~" +
   "20261104101645|Price is close to VWAP. About to cross down~" +
   "20261104101700|1m Candle crossed below VWAP~" +
-  "20261104101715|Price is close to VWAP. About to cross up~" +
+  "20261104101730|Price is close to VWAP. About to cross up~" +
   "20261104101800|Price retested support 1E100\nExpect 1PXU_15PM Swing Up~" +
   "20261104101930|Price retested support R1 D and 1E100\nExpect 1PXU_15PM Swing Up~" +
   "20261104102000|5PXD — 5m PVT Cross Down\nAttention : 5PX Cross Down\n5m Candle crossed below VWAP~" +
@@ -228,7 +228,7 @@ var string TREPAT_DATA = "202611040915|Session open. Gap down -0.01% from previo
   "20261104104800|Price has gone above 1E50~" +
   "20261104104900|Price is close to VWAP. About to cross up~" +
   "20261104105000|5PX about to cross up\n5m Stochastic cross up from OSZ~" +
-  "20261104105030|Price is close to VWAP. About to cross down~" +
+  "20261104105045|Price is close to VWAP. About to cross down~" +
   "20261104105145|Price retested support 1E100, R1 D and 1E50 again~" +
   "20261104105200|Price has retraced down to and taken support at 1E21~" +
   "20261104105300|Price has crossed below 1E50~" +
@@ -303,9 +303,9 @@ var string TREPAT_DATA = "202611040915|Session open. Gap down -0.01% from previo
   "20261104125900|Attention : 1PX Cross Up\n1PXU_15PM Swing Up — 1m PXU with 15s PVT/M2XU confirmation~" +
   "20261104130500|5m Candle crossed above VWAP~" +
   "20261104130545|Price retested the level R1 D again~" +
-  "20261104130600|Price is close to VWAP. About to cross down~" +
+  "20261104130615|Price is close to VWAP. About to cross down~" +
   "20261104130700|1m Candle crossed above VWAP~" +
-  "20261104131030|Price is close to VWAP. About to cross up~" +
+  "20261104131045|Price is close to VWAP. About to cross up~" +
   "20261104133500|5m Stochastic cross down from OBZ~" +
   "20261104134000|Price retested the level R2 D again~" +
   "20261104134400|Price has retraced down to and taken support at 1E21~" +

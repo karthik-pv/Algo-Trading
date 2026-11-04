@@ -299,13 +299,17 @@ def main(paths):
         # confirms 1PXD_15PM / 1PXU_15PM below.
         # 1PXD_15PM / 1PXU_15PM confirmations
         j1 = d1.index[d1['time'] == t.floor('min')]
-        # VWAP proximity warning (pre-cross)
+        # VWAP proximity warning (pre-cross). Direction = the side price is
+        # APPROACHING from (previous bar's position), not where it just
+        # landed — at the cross bar itself, current-side flips wrongly.
         r5 = d5.iloc[d5_state(t)]
         vw_now = r5.get('Daily VWAP')
-        if pd.notna(vw_now):
+        if pd.notna(vw_now) and i > 0:
             vwap_key = 'vwappro'
-            if abs(px - vw_now) <= 10:
-                side = 'down' if px > vw_now else 'up'
+            r5p = d5.iloc[max(d5_state(t) - 1, 0)]
+            vw_prev = r5p.get('Daily VWAP')
+            if pd.notna(vw_prev) and abs(px - vw_now) <= 10:
+                side = 'down' if c15[i-1] > vw_prev else 'up'
                 key = vwap_key + side
                 if last15.get(key) is None or (t - last15[key]).total_seconds() >= 600:
                     last15[key] = t
