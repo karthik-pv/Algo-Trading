@@ -137,23 +137,6 @@
     white-space: nowrap;
 }
 
-/* Balance Box open-profit (+/-%) additions */
-#openProfitValue,
-#openProfitPct {
-    margin-left: 8px;
-    font-weight: 700;
-}
-
-#openProfitPct::before {
-    content: '(';
-    font-weight: 400;
-}
-
-#openProfitPct::after {
-    content: ')';
-    font-weight: 400;
-}
-
 #nmf_pts.profit, #nmf_chgo.profit {
     background-color: #00B050;
     border-color: #00B050;
@@ -1804,13 +1787,13 @@
     <div id="ordersGridWrapper">
         <div class="orders-header">
             <div class="toggle-buttons">
-                <label id="cashSummaryLabel" class="expiry-label cash-summary" style="display: none;" title="Opening balance of the day (broker start-of-day figure where known) &#8594; Gross P/L from the trades shown (before charges) &#8594; Net P/L after brokerage + other charges, with return %">
+                <label id="cashSummaryLabel" class="expiry-label cash-summary" style="display: none;" title="OBal: opening balance of the day (broker start-of-day figure where known) &#8594; Gross P/L from the trades shown (before charges) &#8594; Net P/L after brokerage + other charges, with return % &#8594; CBal: current balance (broker cash now)">
                     <!-- <span class="cash-caption">Cash</span>
                     <span id="cashBeginValue">--</span>
                     <span class="cash-arrow">&#8594;</span>
                     <span id="cashCurrentValue">--</span>
                     <span id="cashChangePct">--</span> -->
-                    <span class="cash-caption">Open Balance</span>
+                    <span class="cash-caption" title="Open Balance">OBal</span>
                     <span id="cashBeginValue">--</span>
                     <span class="cash-arrow">&#8594;</span>
                     <span class="cash-caption">Gross P/L</span>
@@ -1819,16 +1802,10 @@
                     <span class="cash-arrow">&#8594;</span>
                     <span class="cash-caption">Net P/L</span>
                     <span id="cashCurrentValue">--</span>
-                    <span id="cashChangePct">--</span>                    
-                </label>
-                <label id="availableBalance" class="expiry-label" title="Available balance to trade &#8594; OBal: day's opening balance &#183; CBal: current balance (broker cash now). The +/- figure is Net P/L for the day (realized + open) with its % of the day's opening balance">
-                    <span class="cash-caption" title="Open Balance">OBal</span>
-                    <span id="openBalanceValue">--</span>
+                    <span id="cashChangePct">--</span>
                     <span class="cash-arrow">&#8594;</span>
                     <span class="cash-caption" title="Current Balance">CBal</span>
                     <span id="availableBalanceValue">--</span>
-                    <span id="openProfitValue" class="profit" style="display: none;"></span>
-                    <span id="openProfitPct" class="profit" style="display: none;"></span>
                 </label>
                 <label id="brokerageSummaryLabel" class="expiry-label charges-summary" style="display: none;" title="Brokerage charged across the trades shown (flat per executed order) - % of the day's opening cash balance">
                     <span class="cash-caption">Brok</span>
@@ -3116,96 +3093,10 @@ document.addEventListener('DOMContentLoaded', function() {
     const announcementToggleEl = document.getElementById('announcementToggle');
     const timeAnnounceToggleEl = document.getElementById('timeAnnounceToggle');
     const availableBalanceEl = document.getElementById('availableBalanceValue');
-    const openProfitEl = document.getElementById('openProfitValue');
-    const openProfitPctEl = document.getElementById('openProfitPct');
-    const openBalanceEl = document.getElementById('openBalanceValue');
-    // Latest available balance (from /fund_summary) - the denominator
-    // for the open-profit % shown in the Balance Box.
+    // Latest available balance (from /fund_summary) - shown as CBal in
+    // the Orders-tab cash summary.
     let latestCashBalance = 0;
 
-    // Balance Box NET DAY P/L: realized P/L from today's executed
-    // trades (same rows the Orders grid shows) plus the unrealized
-    // P/L of the open position legs. Shown as integer rupees with
-    // its % of the day's opening balance (integer), both color-coded
-    // green/red. Always rendered - flat shows +0 (+0%).
-    let dayRealizedPl = 0;
-    let dayStartCashBalance = 0;
-
-    function updateBalanceBoxProfit() {
-        // OBal: the day's opening balance (next to the Orders-tab Open
-        // Balance summary) -- rendered whenever any balance input changes.
-        if (openBalanceEl) {
-            openBalanceEl.textContent = dayStartCashBalance > 0
-                ? Math.round(dayStartCashBalance).toLocaleString('en-IN')
-                : '--';
-        }
-
-        if (!openProfitEl || !openProfitPctEl) return;
-
-        let unrealizedPl = 0;
-        for (const key in openPositions) {
-            unrealizedPl += parseFloat(openPositions[key] && openPositions[key].total_pl) || 0;
-        }
-
-        const netDayPl = dayRealizedPl + unrealizedPl;
-
-        const plClass = netDayPl >= 0 ? 'profit' : 'loss';
-        openProfitEl.className = plClass;
-        openProfitPctEl.className = plClass;
-
-        const sign = netDayPl >= 0 ? '+' : '';
-        openProfitEl.textContent = `${sign}${Math.round(netDayPl).toLocaleString('en-IN')}`;
-
-        const pctBase = dayStartCashBalance > 0 ? dayStartCashBalance : latestCashBalance;
-        const pct = pctBase > 0 ? (netDayPl / pctBase) * 100 : 0;
-        openProfitPctEl.textContent = `${sign}${Math.round(pct)}%`;
-
-        openProfitEl.style.display = '';
-        openProfitPctEl.style.display = '';
-    }
-
-    function tradeTabDate() {
-        const now = new Date();
-        const yyyy = now.getFullYear();
-        const mm = String(now.getMonth() + 1).padStart(2, '0');
-        const dd = String(now.getDate()).padStart(2, '0');
-        return `${yyyy}-${mm}-${dd}`;
-    }
-
-    async function loadDayRealizedPl() {
-        try {
-            const tradeDate = tradeTabDate();
-            const [tradesRes, cashRes] = await Promise.all([
-                fetch('/get_executed_trades', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ trade_date: tradeDate })
-                }).catch(() => null),
-                fetch(`/day_cash?trade_date=${encodeURIComponent(tradeDate)}`).catch(() => null)
-            ]);
-
-            if (cashRes && cashRes.ok) {
-                const cashData = await cashRes.json();
-                if (cashData && cashData.success) {
-                    dayStartCashBalance = parseFloat(cashData.cash_balance) || 0;
-                }
-            }
-
-            if (tradesRes && tradesRes.ok) {
-                const tradesData = await tradesRes.json();
-                if (tradesData && tradesData.success) {
-                    dayRealizedPl = (tradesData.rows || []).reduce((total, row) => {
-                        const pnl = Number(row['PnL']);
-                        return Number.isFinite(pnl) ? total + pnl : total;
-                    }, 0);
-                }
-            }
-
-            updateBalanceBoxProfit();
-        } catch (error) {
-            console.error("Could not load day P/L:", error);
-        }
-    }
     const positionsTableBody = document.getElementById('positionsTableBody');
     const pendingOrdersBody = document.getElementById('pendingOrdersBody');
 
@@ -3469,8 +3360,6 @@ document.addEventListener('DOMContentLoaded', function() {
         if (data.underlying) underlyingValueEl.textContent = data.underlying;
         if (data.positions_data) {
             openPositions = data.positions_data;
-            updateBalanceBoxProfit();
-            loadDayRealizedPl();
         }
         if (data.order_strategy_mapping) {
             orderStrategyMapping = data.order_strategy_mapping;
@@ -4210,7 +4099,6 @@ document.addEventListener('DOMContentLoaded', function() {
     );
 
         openPositions = positions;
-        updateBalanceBoxProfit();
         // Seed each leg's freshness clock: the server just re-fetched
         // positions (with broker-side prices), so treat the shown LTP
         // as fresh from now and flag the leg only if no tick arrives
@@ -4506,7 +4394,6 @@ document.addEventListener('DOMContentLoaded', function() {
                 openPositions[key].pts_pl = tick.pts_pl;
                 openPositions[key].pct_pl = tick.pct_pl;
                 openPositions[key].total_pl = tick.total_pl;
-                updateBalanceBoxProfit();
             }
         }
         const marketPriceCell = document.getElementById(`market-price-${domId}`);
@@ -4575,7 +4462,6 @@ document.addEventListener('DOMContentLoaded', function() {
 
     socket.on('refresh_fund_summary', function() {
         fetchFundSummary(); // ✅ Called only after buy order completes
-        loadDayRealizedPl(); // realized day P/L changed with the cash
     });
 
     // --- UTILITY FUNCTIONS ---
@@ -4593,7 +4479,6 @@ document.addEventListener('DOMContentLoaded', function() {
             latestCashBalance = parseFloat(summary.data.cash_balance) || 0;
             const cashBalance = latestCashBalance.toLocaleString('en-IN', { maximumFractionDigits: 0 });
             if (availableBalanceEl) availableBalanceEl.textContent = cashBalance;
-            updateBalanceBoxProfit();
         } catch (error) {
             console.error("Could not fetch fund summary:", error);
             if (availableBalanceEl) availableBalanceEl.textContent = 'Error';
@@ -5103,7 +4988,6 @@ filteredContracts.sort(([, a], [, b]) => {
     if (sellBtn) { sellBtn.disabled = false; sellBtn.textContent = 'Sell'; }
     if (result.success) {
         showTransactionSuccess(`Sell order successful for ${result.tradingsymbol} (${result.lots} lots)`);
-        loadDayRealizedPl(); // realized day P/L changed with the exit
     } else {
         showInlineStatus(`Sell order failed for ${result.tradingsymbol}: ${result.error}`, 'error');
     }
@@ -5833,7 +5717,6 @@ filteredContracts.sort(([, a], [, b]) => {
 
 
     fetchFundSummary();
-    loadDayRealizedPl();
 });
 })();
 </script>
