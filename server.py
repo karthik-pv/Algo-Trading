@@ -1574,16 +1574,45 @@ def window_closing():
     return jsonify({"ok": True})
 
 
+def _desktop_bounds():
+    """Main-display desktop bounds via AppleScript, e.g. (0, 0, 2560, 1440)."""
+    try:
+        out = subprocess.run(
+            ["osascript", "-e",
+             'tell application "Finder" to get bounds of window of desktop'],
+            capture_output=True, text=True, timeout=5
+        ).stdout.strip()
+        x0, y0, x1, y1 = (int(v.strip()) for v in out.split(","))
+        return (x0, y0, x1, y1)
+    except Exception:
+        return None
+
+
 def _load_saved_window_geometry():
-    """Last app window bounds saved by the frontend, or None."""
+    """
+    Last app window bounds saved by the frontend, or None. The saved
+    bounds are validated against the current desktop: if the window
+    would land (partly) off-screen — a display change, or a stale
+    state from another screen — it is re-anchored to the RIGHT-TOP
+    corner at the saved size, so the app always reopens where the
+    user keeps it.
+    """
     try:
         with open(os.path.join(DATA_DIR, "window_state.json")) as f:
             state = json.load(f)
         x, y = int(state["x"]), int(state["y"])
         w, h = int(state["w"]), int(state["h"])
-        if -16384 <= x <= 16384 and -16384 <= y <= 16384 \
-                and 0 < w <= 16384 and 0 < h <= 16384:
-            return (x, y, w, h)
+        if not (0 < w <= 16384 and 0 < h <= 16384
+                and -16384 <= x <= 16384 and -16384 <= y <= 16384):
+            return None
+        desk = _desktop_bounds()
+        if desk:
+            dx0, dy0, dx1, dy1 = desk
+            if not (dx0 <= x and x + w <= dx1 and dy0 <= y and y + h <= dy1):
+                # Off-screen (or partly) — re-anchor right-top, same size.
+                x = max(dx0, dx1 - w)
+                y = dy0 + 31   # just below the macOS menu bar
+        return (x, y, w, h)
     except Exception:
         pass
     return None
