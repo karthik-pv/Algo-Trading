@@ -1,9 +1,24 @@
 //@version=5
 // ============================================================================
 // Strategy_TradingInvestAlgo_Data
-// VERSION: 1.11  (2026-11-04)
+// VERSION: 1.12  (2026-11-04)
 // ----------------------------------------------------------------------------
 // CHANGELOG
+//   v1.12 2026-11-04  NEW: the LEVELS message now carries "FAM" - the seven
+//                     family trend tags EXACTLY as SPATAM's levels-table 4th
+//                     column (f_familyTag: PVT sign + MACD1 12/26 + MACD2
+//                     24/52 per family, order 5,3,2,D,W,M,Q; each segment
+//                     "<tag><U|D><1|0>" = tag text, direction, dark shade).
+//                     Rendered verbatim as the last column of the Algo app's
+//                     Levels Ladder. Two tiny request.security calls added
+//                     (M + 3M family state - the only families not already
+//                     fetched). To fund the ~55 chars the LEVELS-HTF block
+//                     keys are compacted on the wire (P/M1/M2/K/KT, K rounded
+//                     to 2dp) - the server expands them back to the full
+//                     names (PVTTrendFlag/Trend_1226/Trend_2452/KTrendFlag)
+//                     before any widget reads them, so NO downstream reader
+//                     changes. LEVELS rows, DATA, HTF field VALUES (K now
+//                     2dp), alert split and cadence otherwise UNCHANGED.
 //   v1.11 2026-11-04  OPT block REMOVED (moved to the new standalone indicator
 //                     Strategy_TradingInvestAlgo_Data_OPT - one alert, MSG:"OPT").
 //                     Dropped: opt_calc + the 8 CE/PE security calls, the OPT
@@ -333,6 +348,18 @@ f_pm_state() =>
 [pvt_w, trend2452_w] = request.security(DATA_SYM, "W", f_pm_state())
 [pvt_q, trend2452_q] = request.security(DATA_SYM, "3M", f_pm_state())
 [pvt_d_c, trend2452_d_c] = request.security(DATA_SYM, "D", f_pm_state())
+
+// v1.12: full family state (PVT sign + MACD1 12/26 + MACD2 24/52) for the
+// Levels-Ladder FAM tag column - mirrors SPATAM's f_levelTag families. Only
+// M and Q need new security calls; 5m/30m/2h/D/W reuse the f_calc_all tuples
+// above (value_pvt_5m / trend_1226_5m / ... / trend_2452_w).
+f_fam_state() =>
+    [macdline_1226, signalLine_1226, _h1] = ta.macd(close, 12, 26, 9)
+    [macdline_2452, signalLine_2452, _h2] = ta.macd(close, 24, 52, 9)
+    [calc_pvt(pvt_maType, close, pvt_short, pvt_long) > 0 ? 1 : -1, macdline_1226 > signalLine_1226 ? 1 : -1, macdline_2452 > signalLine_2452 ? 1 : -1]
+
+[fam_pvt_m, fam_m1_m, fam_m2_m] = request.security(DATA_SYM, "M", f_fam_state())
+[fam_pvt_q, fam_m1_q, fam_m2_q] = request.security(DATA_SYM, "3M", f_fam_state())
 
 // v1.9: price-crossing-VWAP cross ages for the Momentors rows 1CVX (1m,
 // fresh window 1-20) and 5CVX (5m, fresh window 1-4). Separate tiny
@@ -1018,6 +1045,24 @@ f_levelsJson(lv) =>
     out += "]"
     out
 
+// v1.12: one FAM segment - the tag EXACTLY as SPATAM's levels-table 4th
+// column (f_familyTag), plus the two color bits the table shade carries:
+//   <tag> + U/D (PVT direction) + 1/0 (dark shade = MACD2 agrees with PVT).
+// The Algo app prints the tag verbatim and maps (direction, dark) to the
+// same colors SPATAM uses (dark/light green-red).
+f_tag_seg(int _pvt, int _m1, int _m2, string _pfx) =>
+    int pDir = _pvt > 0 ? 1 : -1
+    bool m1With = _m1 == pDir
+    bool m2With = _m2 == pDir
+    _pfx + "P" + (m2With ? (m1With ? "M" : "M2") : m1With ? "M1" : "") + (pDir == 1 ? "U" : "D") + (m2With ? "1" : "0")
+
+// FAM: the seven family tags in the fixed order 5,3,2,D,W,M,Q, comma-joined.
+// Level-name -> family (same mapping as SPATAM's f_levelTag):
+// 1m EMA50 -> 5m | 1m EMA100/200 -> 30m | 5m EMA50/100/200 -> 2h |
+// 30m EMA50/100/200 -> D | 2h EMA50/100/200 -> W | D EMA100/200 -> M |
+// W EMA100/200 -> Q.
+string famStr = f_tag_seg(value_pvt_5m > 0 ? 1 : -1, trend_1226_5m, trend_2452_5m, "5") + "," + f_tag_seg(value_pvt_30m > 0 ? 1 : -1, trend_1226_30m, trend_2452_30m, "3") + "," + f_tag_seg(value_pvt_2h > 0 ? 1 : -1, trend_1226_2h, trend_2452_2h, "2") + "," + f_tag_seg(value_pvt_d > 0 ? 1 : -1, trend_1226_d, trend_2452_d, "D") + "," + f_tag_seg(value_pvt_w > 0 ? 1 : -1, trend_1226_w, trend_2452_w, "W") + "," + f_tag_seg(fam_pvt_m, fam_m1_m, fam_m2_m, "M") + "," + f_tag_seg(fam_pvt_q, fam_m1_q, fam_m2_q, "Q")
+
 // jsonStr := jsonStr + "\"EMA\":{"
 
 // ————————————————————————————————
@@ -1413,27 +1458,33 @@ levelsStr += "\"CW_CD\":" + f_levelsJson(levels_array_curday_curwk) + ","   // c
 levelsStr += "\"CW_ND\":" + f_levelsJson(levels_array_nxtday_curwk) + ","   // current week - next day
 levelsStr += "\"NW_ND\":" + f_levelsJson(levels_array_nxtday_nxtwk)         // next week - next day
 levelsStr += "}"
+// v1.12: the seven family trend tags (SPATAM's levels-table 4th column) as
+// one compact string - ~55 chars, funded by the compacted HTF keys below.
+levelsStr += ",\"FAM\":\"" + famStr + "\""
 // v1.7: the compact W/D/Q PM states ride INSIDE the LEVELS message (it has
 // ~2K of spare room) so each per-alert instance fires exactly ONE message
 // per bar close - required to stay under TV's 15-firings-per-3-min limit
 // when the alert runs on a 15s chart.
+// v1.12: keys are COMPACT on the wire (P/M1/M2/K/KT, K at 2dp) to fund the
+// FAM string - the server expands them back to the full field names
+// (PVTTrendFlag/Trend_1226/Trend_2452/KTrendFlag) on ingest.
 levelsStr += ",\"HTF\":{"
 levelsStr += "\"W\":{"
-levelsStr += f_json_pair("PVTTrendFlag", pvt_w) + ","
-levelsStr += f_json_pair("Trend_2452", trend2452_w) + ","
-levelsStr += f_json_pair("K", k_w) + ","
-levelsStr += f_json_pair("KTrendFlag", k_trend_flag_w)
+levelsStr += f_json_pair("P", pvt_w) + ","
+levelsStr += f_json_pair("M2", trend2452_w) + ","
+levelsStr += f_json_pair("K", math.round(k_w, 2)) + ","
+levelsStr += f_json_pair("KT", k_trend_flag_w)
 levelsStr += "},"
 levelsStr += "\"D\":{"
-levelsStr += f_json_pair("PVTTrendFlag", value_pvt_d > 0 ? 1 : -1) + ","
-levelsStr += f_json_pair("Trend_1226", trend_1226_d) + ","
-levelsStr += f_json_pair("Trend_2452", trend_2452_d) + ","
-levelsStr += f_json_pair("K", k_d) + ","
-levelsStr += f_json_pair("KTrendFlag", k_trend_flag_d)
+levelsStr += f_json_pair("P", value_pvt_d > 0 ? 1 : -1) + ","
+levelsStr += f_json_pair("M1", trend_1226_d) + ","
+levelsStr += f_json_pair("M2", trend_2452_d) + ","
+levelsStr += f_json_pair("K", math.round(k_d, 2)) + ","
+levelsStr += f_json_pair("KT", k_trend_flag_d)
 levelsStr += "},"
 levelsStr += "\"Q\":{"
-levelsStr += f_json_pair("PVTTrendFlag", pvt_q) + ","
-levelsStr += f_json_pair("Trend_2452", trend2452_q)
+levelsStr += f_json_pair("P", pvt_q) + ","
+levelsStr += f_json_pair("M2", trend2452_q)
 levelsStr += "}"
 levelsStr += "}"
 levelsStr += "}"

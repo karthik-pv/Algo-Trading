@@ -31,8 +31,11 @@ Two messages arrive per bar close, both carrying `MSG` (type) and `SYM` (instrum
 // message 2 — MSG:"LEVELS"
 {
   "MSG": "LEVELS",
-  "SYM": "NSE:NIFTY261006C22700",
-  "LEVELS": { "CW_CD": [], "CW_ND": [], "NW_ND": [] }
+  "LEVELS": {
+    "CW_CD": [], "CW_ND": [], "NW_ND": [],
+    "FAM": "5PMU1,3PMU1,2PMD0,DPMU1,WPMU0,MPMD0,QPM2U1"
+  },
+  "HTF": { "W": {}, "D": {}, "Q": {} }
 }
 ```
 
@@ -41,6 +44,8 @@ Notes:
 - `INDICATORS` has **no** `"D"` / `"W"` blocks (they are computed in the script but currently commented out of the JSON). Daily/weekly context still arrives via `SETUPS.DASHBOARD` and `LEVELS` (D/W EMAs, pivots, PDH/PWH, VWAP W, …).
 - All multi-timeframe values are fetched with `request.security(..., lookahead_on)`; on realtime bars the higher-timeframe fields reflect the **developing** (live) bar of that timeframe.
 - The payload contains **no timestamp** — stamp messages with receiver-arrival time. `SYM` identifies the instrument.
+- **v1.12**: `LEVELS.FAM` = the seven SPATAM family trend tags (same `f_familyTag` formula as the chart table's 4th column), comma-joined in the fixed order **5, 3, 2, D, W, M, Q**. Each segment is `<tag><U|D><1|0>`: the tag text verbatim, the PVT direction (`U`/`D`), and the shade (`1` = dark — MACD2 agrees with the PVT trend, `0` = light). The Algo app prints these as the Levels-Ladder last column.
+- **v1.12**: the `LEVELS.HTF` block keys are compact on the wire (`P`/`M1`/`M2`/`K`/`KT` = `PVTTrendFlag`/`Trend_1226`/`Trend_2452`/`K`/`KTrendFlag`, K at 2dp) to fund `FAM` under the 4096-char alert cap — the server (`expand_htf` in `core/utils.py`) expands them back to full names on ingest, so all downstream readers see the original field names.
 
 ## 3. `INDICATORS.<TF>`
 
