@@ -428,7 +428,7 @@ def main(paths):
                              'tv', 'spatam', 'trepat.pine')
     by_min = {}
     for t, _, text in events:
-        by_min.setdefault(t.strftime('%H%M'), []).append(text)
+        by_min.setdefault(t.strftime('%Y%m%d%H%M'), []).append(text)
     chunks = []
     for k in sorted(by_min):
         esc = '\\n'.join(s.replace('\\', '\\\\').replace('"', '\\"') for s in by_min[k])
@@ -437,7 +437,7 @@ def main(paths):
     # reads these on 15s charts (15PM tracking at true bar resolution)
     by_sec = {}
     for t, _, text in events:
-        by_sec.setdefault(t.strftime('%H%M%S'), []).append(text)
+        by_sec.setdefault(t.strftime('%Y%m%d%H%M%S'), []).append(text)
     for k in sorted(by_sec):
         esc = '\\n'.join(s.replace('\\', '\\\\').replace('"', '\\"') for s in by_sec[k])
         chunks.append(f'"{k}|{esc}~"')
