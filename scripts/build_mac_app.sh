@@ -642,6 +642,14 @@ CONSOLE_LOG="$LOG_DIR/launcher_console.log"
 mkdir -p "$LOG_DIR"
 cd "$PROJECT_DIR" || exit 1
 
+# Raise the soft open-file limit - launchd gives the app the system
+# default of 256 and a descriptor leak crashes the server with
+# Errno 24 within hours (2026-11-05). The hard limit is unlimited,
+# so this always succeeds.
+if [ "$(ulimit -n)" -lt 10240 ] 2>/dev/null; then
+    ulimit -n 10240
+fi
+
 # Own pid, exported: the focus-supervisor fork checks this to know
 # when the launcher died (its own $PPID is not reliable).
 export LAUNCHER_PID="$$"
