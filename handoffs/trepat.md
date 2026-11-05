@@ -33,7 +33,10 @@ Commit: `TREPAT: tracking engine + guideline (source of truth)` → `c6d8fc5` (2
 Three TradingView chart-data exports in `~/Downloads` (names vary by suffix —
 check newest by mtime, pattern `NSE_NIFTY1!, <TF>_<hash>.csv`):
 
-- **15s** file → 15s bars + `PVT` + `MACD Line` (15s M1) + `1m K/D` (stoch) + full pivot/EMA ladder
+- **15s** file → 15s bars + pivots/EMAs + **`MACD Line`/`Signal Line` = the 15s MACD2
+  (MACD_2452), exported directly** + **`PVT` = the 1m PVT (PVT_1m object — constant
+  within each minute, NOT 15s PVT)** + `K/D` = 1m Stochastic. **No 15s PVT and no VOC
+  exist in this export** (confirmed against the 1m file and the chart object tree)
 - **1m** file → 1m bars + 1m `PVT`, `MACD Line` (M1), `MACD Line.1` (M2), `K/D`, `Daily VWAP` + **`PVT.1` = the 5m PVT seen on the 1m TF (developing value, updates every minute)** + 5m `K.1`
 - **5m** file → 5m bars + 5m `PVT`, `MACD Line` (M1), `MACD Line.1` (M2); `PVT.1/PVT.2/PVT.3` = 30m / 2H / Daily PVT; `MACD Line.2/.3` = 30m M1/M2; `.4/.5` = 2H M1/M2; `.6/.7` = D M1/M2; `K.1/D.1` = 30m stoch
 
