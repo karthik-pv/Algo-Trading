@@ -37,6 +37,7 @@ Tracking for Downswing
     Price has retraced up to and faced resistance at 1E50
     Price has retraced up to and faced resistance at 1E21
     Price is close to VWAP. About to cross down
+    15s Candle crossed below VWAP
     1m Candle crossed below VWAP
     5m Candle crossed below VWAP
     5PX about to cross down
@@ -71,6 +72,7 @@ Tracking for Upswing
     5M2XU — 5m MACD2 Cross Up
     5PM Uptrend started
         Expect 1PXU_15PM Swing Ups
+    15s Candle crossed above VWAP
     1m Candle crossed above VWAP
     5m Candle crossed above VWAP
     1PXU_15PM Swing Up — 1m PXU with 15s PVT/M2XU confirmation

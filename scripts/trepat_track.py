@@ -297,7 +297,16 @@ def main(paths):
         px = c15[i]
         # 15s momentors — not announced standalone (guideline); 15s only
         # confirms 1PXD_15PM / 1PXU_15PM below.
-        # 1PXD_15PM / 1PXU_15PM confirmations
+        # 15s Candle VWAP crosses — the actual cross event (the 1m/5m candle
+        # versions only fire on TF closes; these tell every real crossing)
+        if i > 0:
+            v15 = d15['Daily VWAP'].values[i]
+            vw15p = d15['Daily VWAP'].values[i-1]
+            if pd.notna(v15) and pd.notna(vw15p):
+                if c15[i-1] > vw15p and c15[i] <= v15:
+                    ev(t, "15s Candle crossed below VWAP")
+                elif c15[i-1] < vw15p and c15[i] >= v15:
+                    ev(t, "15s Candle crossed above VWAP")        # 1PXD_15PM / 1PXU_15PM confirmations
         j1 = d1.index[d1['time'] == t.floor('min')]
         # VWAP proximity warning (pre-cross). Direction = the side price is
         # APPROACHING from (previous bar's position), not where it just
