@@ -1,7 +1,13 @@
 //@version=5
 // ============================================================================
 // Strategy_TradingInvestAlgo_Data
-// VERSION: 1.13  (2026-11-04)
+// VERSION: 1.14  (2026-11-05)
+// ----------------------------------------------------------------------------
+// CHANGELOG
+//   v1.14 2026-11-05  DATA_SYM follows the chart symbol (syminfo.tickerid)
+//                     instead of the v1.2 pin to NSE:NIFTY1! — a BTCUSD chart
+//                     now delivers BTCUSD data/alerts. Payload structure and
+//                     every message UNCHANGED.
 // ----------------------------------------------------------------------------
 // CHANGELOG
 //   v1.13 2026-11-04  FIX: v1.12 emitted FAM OUTSIDE the LEVELS object (root
@@ -114,13 +120,14 @@
 // ============================================================================
 indicator("Strategy_TradingInvestAlgo_Data", "", false)
 
-//DATA SYMBOL - pinned (v1.2)----------------------------------------------
-// Every payload value is computed from this symbol regardless of the chart
-// the indicator sits on (all request.security calls use it).
-// Lets a 24/7 chart (e.g. BTCUSD) deliver Nifty alerts while NSE is closed.
+//DATA SYMBOL - follows the chart (v1.14)--------------------------------------
+// Every payload value is computed from the symbol the indicator sits on
+// (all request.security calls use it). v1.2 pinned it to NSE:NIFTY1! so a
+// 24/7 chart could deliver Nifty alerts while NSE was closed; v1.14 reverts
+// to the chart symbol so BTCUSD (or any) chart sends its own data.
 // NOTE: keep exactly ONE live alert at a time - a BTCUSD-chart alert and a
 // NIFTY1!-chart alert both active would double-fire every message.
-string DATA_SYM = "NSE:NIFTY1!"
+string DATA_SYM = syminfo.tickerid
 
 //EXTRA S/R LEVELS - inputs (from Strategy_EMAs_OCHL_cwcd v1.1)--------------------------------
 
