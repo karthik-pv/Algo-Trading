@@ -2853,6 +2853,32 @@ def _fund_summary_autorefresh_loop():
 threading.Thread(target=_fund_summary_autorefresh_loop, daemon=True,
                  name="fund-summary-autorefresh").start()
 
+
+# Open-fd watermark: the app runs under the launcher's 256-file soft
+# limit, and a slow descriptor leak (unclosed sockets/files) crashes
+# it with Errno 24 after 1-2 hours (2026-11-05). One line per cycle
+# makes any future leak visible in the logs long before it becomes a
+# crash - alert threshold is 200 of 256.
+def _fd_watermark_loop():
+    while True:
+        try:
+            import resource
+            fd_count = len(os.listdir("/dev/fd")) if os.path.isdir("/dev/fd") else -1
+            soft, _hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+            if fd_count >= 0:
+                level = logger.warning if fd_count >= 200 else logger.info
+                level(
+                    f"FD WATCH | open fds: {fd_count} "
+                    f"(soft limit {soft}) - warning threshold 200"
+                )
+        except Exception:
+            pass
+        time.sleep(300)
+
+
+threading.Thread(target=_fd_watermark_loop, daemon=True,
+                 name="fd-watermark").start()
+
 # ========================== end Feed Lab block ==========================
 
 
