@@ -379,7 +379,7 @@ if barstate.isfirst and str.length(TREPAT_DATA) > 0
         kv = str.split(e, "|")
         if array.size(kv) == 2
             k = array.get(kv, 0)
-            if str.length(k) == 10
+            if str.length(k) == 12
                 map.put(m_min, k, array.get(kv, 1))
             else if str.length(k) == 14
                 map.put(m_sec, k, array.get(kv, 1))
