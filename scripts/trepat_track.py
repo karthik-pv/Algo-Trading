@@ -268,24 +268,18 @@ def main(paths):
             ev(t, "5m Candle crossed above VWAP")
 
     # ---------- 15s-level events ----------
+    # Column mapping (verified against the 1m file, user's object tree):
+    #   MACD Line/Signal Line = 15s MACD2 (MACD_2452) — exported directly
+    #   PVT = 1m PVT (PVT_1m object; constant within each minute)
+    #   K/D = 1m Stochastic
+    # There is NO 15s PVT and NO VOC in the export.
     c15 = d15['close'].values
-    pvt15 = d15['PVT'].values
-    ema = lambda x, n: pd.Series(x).ewm(span=n, adjust=False).mean().values
-    m2s_line = ema(c15, 24) - ema(c15, 52)          # 15s MACD2 not exported — synthesized
-    m2s_sig = pd.Series(m2s_line).ewm(span=9, adjust=False).mean().values
-    x15 = []
-    for i in range(1, len(c15)):
-        if pd.notna(pvt15[i-1]) and pd.notna(pvt15[i]):
-            if pvt15[i-1] > 0 >= pvt15[i]:
-                x15.append((i, 'D'))
-            elif pvt15[i-1] < 0 <= pvt15[i]:
-                x15.append((i, 'U'))
+    m2s_line = d15['MACD Line'].values
+    m2s_sig = d15['Signal Line'].values
     x15m2 = [(i, 'D' if m2s_line[i-1] > m2s_sig[i-1] and m2s_line[i] <= m2s_sig[i] else 'U')
              for i in range(1, len(c15))
              if (m2s_line[i-1] > m2s_sig[i-1] and m2s_line[i] <= m2s_sig[i])
              or (m2s_line[i-1] < m2s_sig[i-1] and m2s_line[i] >= m2s_sig[i])]
-    xd15 = {d15['time'][i] for i, d in x15 if d == 'D'}
-    xu15 = {d15['time'][i] for i, d in x15 if d == 'U'}
     xd15m2 = {d15['time'][i] for i, d in x15m2 if d == 'D'}
     xu15m2 = {d15['time'][i] for i, d in x15m2 if d == 'U'}
     fired_xd = fired_xu = None
@@ -329,12 +323,14 @@ def main(paths):
             curr = d1['PVT'].iloc[ji]
             lo, hi = t - pd.Timedelta(seconds=30), t + pd.Timedelta(seconds=30)
             if pd.notna(prev) and prev > 0 >= curr:
-                acc = any(lo <= x <= hi for x in xd15) or any(lo <= x <= hi for x in xd15m2)
+                # confirmation = 15s MACD2 cross within +/-30s (the only real
+                # 15s data; 15s PVT is not exported — col 'PVT' is the 1m PVT)
+                acc = any(lo <= x <= hi for x in xd15m2)
                 if acc and (fired_xd is None or (t - fired_xd).total_seconds() > 300):
                     fired_xd = t
                     ev(t, "1PXD_15PM Swing Down — 1m PXD with 15s PVT/M2XD confirmation")
             if pd.notna(prev) and prev < 0 <= curr:
-                acc = any(lo <= x <= hi for x in xu15) or any(lo <= x <= hi for x in xu15m2)
+                acc = any(lo <= x <= hi for x in xu15m2)
                 if acc and (fired_xu is None or (t - fired_xu).total_seconds() > 300):
                     fired_xu = t
                     ev(t, "1PXU_15PM Swing Up — 1m PXU with 15s PVT/M2XU confirmation")
@@ -473,7 +469,7 @@ if __name__ == '__main__':
     import os
     dl = os.path.expanduser('~/Downloads')
     main({
-        '15s': f"{dl}/NSE_NIFTY1!, 15S_f3fe0.csv",
+        '15s': f"{dl}/NSE_NIFTY1!, 15S_ae324.csv",
         '1m':  f"{dl}/NSE_NIFTY1!, 1_4b5a1.csv",
         '5m':  f"{dl}/NSE_NIFTY1!, 5_b6473.csv",
     })

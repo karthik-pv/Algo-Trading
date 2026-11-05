@@ -39,7 +39,7 @@ var string TREPAT_DATA = "202611040915|Session open. Gap down -0.01% from previo
   "202611041001|Price is close to VWAP. About to cross down~" +
   "202611041003|Price has retraced up to and faced resistance at 1E21~" +
   "202611041004|Price back above 1E21~" +
-  "202611041007|Attention : 1PX Cross Up\n1PXU_15PM Swing Up — 1m PXU with 15s PVT/M2XU confirmation~" +
+  "202611041007|Attention : 1PX Cross Up~" +
   "202611041013|Price comes below 1E21\n1PM Swing Down started\n30m EMA50/100/200 acting as support (DPM Uptrend)\nAttention : 1PX Cross Down\n1PXD_15PM Swing Down — 1m PXD with 15s PVT/M2XD confirmation~" +
   "202611041014|Price has retraced down to and taken support of 1E50~" +
   "202611041015|5PX about to cross down~" +
@@ -71,13 +71,13 @@ var string TREPAT_DATA = "202611040915|Session open. Gap down -0.01% from previo
   "202611041054|Price comes below 1E21\n1PM Swing Down started\nNearby below Levels — Pivotal: Daily VWAP\nEMAs above 1E21 (within 50 pts): 1E50, 1E100\n30m EMA50/100/200 acting as support (DPM Uptrend)~" +
   "202611041056|Price back above 1E21~" +
   "202611041057|Price comes below 1E21\n1PM Swing Down started\nNearby below Levels — Pivotal: Daily VWAP\nEMAs above 1E21 (within 50 pts): 1E50, 1E100\n30m EMA50/100/200 acting as support (DPM Uptrend)\nPrice retested support 1E200 again~" +
-  "202611041058|Attention : 1PX Cross Down\n1PXD_15PM Swing Down — 1m PXD with 15s PVT/M2XD confirmation~" +
+  "202611041058|Attention : 1PX Cross Down~" +
   "202611041059|Price retested support 5E50 again~" +
   "202611041105|5m Stochastic cross down from OSZ~" +
   "202611041108|Price has retraced up to and faced resistance at 1E21~" +
   "202611041109|Price retested the level 1E200 and 1E21 again\nExpect 1PXD_15PM Swing Down~" +
   "202611041110|5m Stochastic cross up from OSZ~" +
-  "202611041111|Price back above 1E21\nAttention : 1PX Cross Up\n1PXU_15PM Swing Up — 1m PXU with 15s PVT/M2XU confirmation~" +
+  "202611041111|Price back above 1E21\nAttention : 1PX Cross Up~" +
   "202611041112|Price has retraced up to and faced resistance at 1E50\nPrice retested the level Daily VWAP, 1E100 and 1E50 again\nExpect 1PXD_15PM Swing Down~" +
   "202611041115|5PX about to cross up~" +
   "202611041117|Price has gone above 1E50\nPrice retested the level R1 D again\nExpect 1PXD_15PM Swing Down~" +
@@ -85,7 +85,7 @@ var string TREPAT_DATA = "202611040915|Session open. Gap down -0.01% from previo
   "202611041121|Price retested support Daily VWAP and 1E100 again~" +
   "202611041124|Price has retraced down to and taken support at 1E21~" +
   "202611041126|Price comes below 1E21\n1PM Swing Down started\nEMAs above 1E21 (within 50 pts): 1E50, 1E100\n30m EMA50/100/200 acting as support (DPM Uptrend)\nPrice has crossed below 1E50\nPrice retested support 1E200 again~" +
-  "202611041127|Attention : 1PX Cross Down\n1PXD_15PM Swing Down — 1m PXD with 15s PVT/M2XD confirmation~" +
+  "202611041127|Attention : 1PX Cross Down~" +
   "202611041128|Price back above 1E21\nPrice has gone above 1E50~" +
   "202611041129|Price comes below 1E21\n1PM Swing Down started\nEMAs above 1E21 (within 50 pts): 1E50, 1E100\n30m EMA50/100/200 acting as support (DPM Uptrend)\nPrice has crossed below 1E50~" +
   "202611041132|Price retested support 5E50 again~" +
@@ -97,7 +97,7 @@ var string TREPAT_DATA = "202611040915|Session open. Gap down -0.01% from previo
   "202611041146|Price has retraced up to and faced resistance at 1E21~" +
   "202611041200|Price has retraced up to and faced resistance at 1E21~" +
   "202611041202|Price back above 1E21\nPrice has retraced up to and faced resistance at 1E50~" +
-  "202611041203|Attention : 1PX Cross Up\n1PXU_15PM Swing Up — 1m PXU with 15s PVT/M2XU confirmation~" +
+  "202611041203|Attention : 1PX Cross Up~" +
   "202611041204|Price retested the level 5E50 and 1E50 again\nExpect 1PXD_15PM Swing Down~" +
   "202611041205|Price comes below 1E21\n1PM Swing Down started\nNearby below Levels — Pivotal: R2 M\nEMAs above 1E21 (within 50 pts): 1E50, 1E100, 1E200, 5E50\n30m EMA50/100/200 acting as support (DPM Uptrend)\n5m Stochastic cross up from OSZ~" +
   "202611041208|Price back above 1E21\nPrice retested the level 5E50 and 1E50 again\nExpect 1PXD_15PM Swing Down~" +
@@ -106,7 +106,7 @@ var string TREPAT_DATA = "202611040915|Session open. Gap down -0.01% from previo
   "202611041215|Price takes support of level 5E100 and R2 M~" +
   "202611041217|Price has retraced up to and faced resistance at 1E21~" +
   "202611041223|Price back above 1E21\nPrice has retraced up to and faced resistance at 1E50~" +
-  "202611041224|Attention : 1PX Cross Up\n1PXU_15PM Swing Up — 1m PXU with 15s PVT/M2XU confirmation~" +
+  "202611041224|Attention : 1PX Cross Up~" +
   "202611041225|Price has gone above 1E50\n5PXU — 5m PVT Cross Up\nAttention : 5PX Cross Up\nPrice retested the level 1E100 and 5E50 again\nPrice retested the level 1E200, 1E100 and 5E50 again~" +
   "202611041228|Price retested the level Daily VWAP again~" +
   "202611041230|5PM Uptrend started — Expect 1PXU_15PM Swing Ups\nCurrently the Bias is Uptrend as we have 5PM Uptrend\nPrice retested support 1E200 again\nExpect 1PXU_15PM Swing Up~" +
@@ -121,11 +121,11 @@ var string TREPAT_DATA = "202611040915|Session open. Gap down -0.01% from previo
   "202611041249|Attention : 1M2X Cross Up~" +
   "202611041251|Price retested support 1E100 and 1E200 again\nExpect 1PXU_15PM Swing Up~" +
   "202611041254|Price has retraced down to and taken support of 1E50~" +
-  "202611041255|Price comes below 1E21\n1PM Swing Down started\n30m EMA50/100/200 acting as support (DPM Uptrend)\nAttention : 1PX Cross Down\n1PXD_15PM Swing Down — 1m PXD with 15s PVT/M2XD confirmation\nPrice retested support 5E50, 1E50, 1E100 and 1E200 again\nExpect 1PXU_15PM Swing Up~" +
+  "202611041255|Price comes below 1E21\n1PM Swing Down started\n30m EMA50/100/200 acting as support (DPM Uptrend)\nAttention : 1PX Cross Down\nPrice retested support 5E50, 1E50, 1E100 and 1E200 again\nExpect 1PXU_15PM Swing Up~" +
   "202611041256|Price back above 1E21~" +
   "202611041257|Price is close to VWAP. About to cross up~" +
   "202611041258|Price retested the level R1 D again~" +
-  "202611041259|Attention : 1PX Cross Up\n1PXU_15PM Swing Up — 1m PXU with 15s PVT/M2XU confirmation~" +
+  "202611041259|Attention : 1PX Cross Up~" +
   "202611041305|5m Candle crossed above VWAP\nPrice retested the level R1 D again~" +
   "202611041306|15s Candle crossed above VWAP\nPrice is close to VWAP. About to cross down~" +
   "202611041307|1m Candle crossed above VWAP\n15s Candle crossed below VWAP\n15s Candle crossed above VWAP~" +
@@ -137,32 +137,32 @@ var string TREPAT_DATA = "202611040915|Session open. Gap down -0.01% from previo
   "202611041340|Price retested the level R2 D again~" +
   "202611041344|Price has retraced down to and taken support at 1E21~" +
   "202611041345|5M2XD — 5m MACD2 Cross Down\nAttention : 5M2X Cross Down~" +
-  "202611041348|Price comes below 1E21\n1PM Swing Down started\n30m EMA50/100/200 acting as support (DPM Uptrend)\nAttention : 1PX Cross Down\n1PXD_15PM Swing Down — 1m PXD with 15s PVT/M2XD confirmation~" +
+  "202611041348|Price comes below 1E21\n1PM Swing Down started\n30m EMA50/100/200 acting as support (DPM Uptrend)\nAttention : 1PX Cross Down~" +
   "202611041352|Price back above 1E21~" +
   "202611041353|Price comes below 1E21\n1PM Swing Down started\nNearby below Levels — Pivotal: R1 D\n30m EMA50/100/200 acting as support (DPM Uptrend)~" +
   "202611041354|Price back above 1E21~" +
   "202611041356|Price comes below 1E21\n1PM Swing Down started\n30m EMA50/100/200 acting as support (DPM Uptrend)~" +
   "202611041357|Price back above 1E21~" +
-  "202611041358|Attention : 1PX Cross Up\n1PXU_15PM Swing Up — 1m PXU with 15s PVT/M2XU confirmation~" +
+  "202611041358|Attention : 1PX Cross Up~" +
   "202611041401|Price comes below 1E21\n1PM Swing Down started\nNearby below Levels — Pivotal: R1 D\n30m EMA50/100/200 acting as support (DPM Uptrend)\nPrice has retraced down to and taken support of 1E50\nAttention : 1PX Cross Down\n1PXD_15PM Swing Down — 1m PXD with 15s PVT/M2XD confirmation~" +
   "202611041402|Price has crossed below 1E50~" +
   "202611041403|Price retested support 1E100 again\nExpect 1PXU_15PM Swing Up~" +
   "202611041413|Price has gone above 1E50~" +
   "202611041415|Price back above 1E21~" +
-  "202611041416|Attention : 1PX Cross Up\n1PXU_15PM Swing Up — 1m PXU with 15s PVT/M2XU confirmation~" +
+  "202611041416|Attention : 1PX Cross Up~" +
   "202611041425|Price retested the level R2 D again~" +
   "202611041430|Price has retraced down to and taken support at 1E21~" +
   "202611041431|Price comes below 1E21\n1PM Swing Down started\n30m EMA50/100/200 acting as support (DPM Uptrend)\nPrice has retraced down to and taken support of 1E50~" +
-  "202611041432|Attention : 1PX Cross Down\n1PXD_15PM Swing Down — 1m PXD with 15s PVT/M2XD confirmation~" +
+  "202611041432|Attention : 1PX Cross Down~" +
   "202611041435|Price back above 1E21\n5m Stochastic cross up from MZ~" +
   "202611041437|Price comes below 1E21\n1PM Swing Down started\n30m EMA50/100/200 acting as support (DPM Uptrend)~" +
   "202611041438|Price back above 1E21\nAttention : 1PX Cross Up\n1PXU_15PM Swing Up — 1m PXU with 15s PVT/M2XU confirmation~" +
   "202611041441|Attention : 1PX Cross Down\n1PXD_15PM Swing Down — 1m PXD with 15s PVT/M2XD confirmation~" +
   "202611041444|Price retested the level R2 D again~" +
-  "202611041448|Attention : 1PX Cross Up\n1PXU_15PM Swing Up — 1m PXU with 15s PVT/M2XU confirmation~" +
+  "202611041448|Attention : 1PX Cross Up~" +
   "202611041450|Price retested support 1E21 again\nExpect 1PXU_15PM Swing Up~" +
-  "202611041504|Attention : 1PX Cross Down\n1PXD_15PM Swing Down — 1m PXD with 15s PVT/M2XD confirmation~" +
-  "202611041505|Attention : 1PX Cross Up\n1PXU_15PM Swing Up — 1m PXU with 15s PVT/M2XU confirmation~" +
+  "202611041504|Attention : 1PX Cross Down~" +
+  "202611041505|Attention : 1PX Cross Up~" +
   "202611041506|Price has retraced down to and taken support of 1E50\nAttention : 1PX Cross Down~" +
   "202611041507|Price comes below 1E21\n1PM Swing Down started\n30m EMA50/100/200 acting as support (DPM Uptrend)~" +
   "202611041508|Price back above 1E21~" +
@@ -198,7 +198,7 @@ var string TREPAT_DATA = "202611040915|Session open. Gap down -0.01% from previo
   "20261104100100|Price is close to VWAP. About to cross down~" +
   "20261104100300|Price has retraced up to and faced resistance at 1E21~" +
   "20261104100400|Price back above 1E21~" +
-  "20261104100700|Attention : 1PX Cross Up\n1PXU_15PM Swing Up — 1m PXU with 15s PVT/M2XU confirmation~" +
+  "20261104100700|Attention : 1PX Cross Up~" +
   "20261104101300|Price comes below 1E21\n1PM Swing Down started\n30m EMA50/100/200 acting as support (DPM Uptrend)\nAttention : 1PX Cross Down\n1PXD_15PM Swing Down — 1m PXD with 15s PVT/M2XD confirmation~" +
   "20261104101400|Price has retraced down to and taken support of 1E50~" +
   "20261104101500|5PX about to cross down~" +
@@ -243,13 +243,13 @@ var string TREPAT_DATA = "202611040915|Session open. Gap down -0.01% from previo
   "20261104105600|Price back above 1E21~" +
   "20261104105700|Price comes below 1E21\n1PM Swing Down started\nNearby below Levels — Pivotal: Daily VWAP\nEMAs above 1E21 (within 50 pts): 1E50, 1E100\n30m EMA50/100/200 acting as support (DPM Uptrend)~" +
   "20261104105745|Price retested support 1E200 again~" +
-  "20261104105800|Attention : 1PX Cross Down\n1PXD_15PM Swing Down — 1m PXD with 15s PVT/M2XD confirmation~" +
+  "20261104105800|Attention : 1PX Cross Down~" +
   "20261104105915|Price retested support 5E50 again~" +
   "20261104110500|5m Stochastic cross down from OSZ~" +
   "20261104110800|Price has retraced up to and faced resistance at 1E21~" +
   "20261104110945|Price retested the level 1E200 and 1E21 again\nExpect 1PXD_15PM Swing Down~" +
   "20261104111000|5m Stochastic cross up from OSZ~" +
-  "20261104111100|Price back above 1E21\nAttention : 1PX Cross Up\n1PXU_15PM Swing Up — 1m PXU with 15s PVT/M2XU confirmation~" +
+  "20261104111100|Price back above 1E21\nAttention : 1PX Cross Up~" +
   "20261104111200|Price has retraced up to and faced resistance at 1E50~" +
   "20261104111215|Price retested the level Daily VWAP, 1E100 and 1E50 again\nExpect 1PXD_15PM Swing Down~" +
   "20261104111500|5PX about to cross up~" +
@@ -260,7 +260,7 @@ var string TREPAT_DATA = "202611040915|Session open. Gap down -0.01% from previo
   "20261104112400|Price has retraced down to and taken support at 1E21~" +
   "20261104112600|Price comes below 1E21\n1PM Swing Down started\nEMAs above 1E21 (within 50 pts): 1E50, 1E100\n30m EMA50/100/200 acting as support (DPM Uptrend)\nPrice has crossed below 1E50~" +
   "20261104112615|Price retested support 1E200 again~" +
-  "20261104112700|Attention : 1PX Cross Down\n1PXD_15PM Swing Down — 1m PXD with 15s PVT/M2XD confirmation~" +
+  "20261104112700|Attention : 1PX Cross Down~" +
   "20261104112800|Price back above 1E21\nPrice has gone above 1E50~" +
   "20261104112900|Price comes below 1E21\n1PM Swing Down started\nEMAs above 1E21 (within 50 pts): 1E50, 1E100\n30m EMA50/100/200 acting as support (DPM Uptrend)\nPrice has crossed below 1E50~" +
   "20261104113200|Price retested support 5E50 again~" +
@@ -272,7 +272,7 @@ var string TREPAT_DATA = "202611040915|Session open. Gap down -0.01% from previo
   "20261104114600|Price has retraced up to and faced resistance at 1E21~" +
   "20261104120000|Price has retraced up to and faced resistance at 1E21~" +
   "20261104120200|Price back above 1E21\nPrice has retraced up to and faced resistance at 1E50~" +
-  "20261104120300|Attention : 1PX Cross Up\n1PXU_15PM Swing Up — 1m PXU with 15s PVT/M2XU confirmation~" +
+  "20261104120300|Attention : 1PX Cross Up~" +
   "20261104120400|Price retested the level 5E50 and 1E50 again\nExpect 1PXD_15PM Swing Down~" +
   "20261104120500|Price comes below 1E21\n1PM Swing Down started\nNearby below Levels — Pivotal: R2 M\nEMAs above 1E21 (within 50 pts): 1E50, 1E100, 1E200, 5E50\n30m EMA50/100/200 acting as support (DPM Uptrend)\n5m Stochastic cross up from OSZ~" +
   "20261104120800|Price back above 1E21~" +
@@ -282,7 +282,7 @@ var string TREPAT_DATA = "202611040915|Session open. Gap down -0.01% from previo
   "20261104121515|Price takes support of level 5E100 and R2 M~" +
   "20261104121700|Price has retraced up to and faced resistance at 1E21~" +
   "20261104122300|Price back above 1E21\nPrice has retraced up to and faced resistance at 1E50~" +
-  "20261104122400|Attention : 1PX Cross Up\n1PXU_15PM Swing Up — 1m PXU with 15s PVT/M2XU confirmation~" +
+  "20261104122400|Attention : 1PX Cross Up~" +
   "20261104122500|Price has gone above 1E50\n5PXU — 5m PVT Cross Up\nAttention : 5PX Cross Up~" +
   "20261104122515|Price retested the level 1E100 and 5E50 again~" +
   "20261104122530|Price retested the level 1E200, 1E100 and 5E50 again~" +
@@ -301,12 +301,12 @@ var string TREPAT_DATA = "202611040915|Session open. Gap down -0.01% from previo
   "20261104124900|Attention : 1M2X Cross Up~" +
   "20261104125115|Price retested support 1E100 and 1E200 again\nExpect 1PXU_15PM Swing Up~" +
   "20261104125400|Price has retraced down to and taken support of 1E50~" +
-  "20261104125500|Price comes below 1E21\n1PM Swing Down started\n30m EMA50/100/200 acting as support (DPM Uptrend)\nAttention : 1PX Cross Down\n1PXD_15PM Swing Down — 1m PXD with 15s PVT/M2XD confirmation~" +
+  "20261104125500|Price comes below 1E21\n1PM Swing Down started\n30m EMA50/100/200 acting as support (DPM Uptrend)\nAttention : 1PX Cross Down~" +
   "20261104125530|Price retested support 5E50, 1E50, 1E100 and 1E200 again\nExpect 1PXU_15PM Swing Up~" +
   "20261104125600|Price back above 1E21~" +
   "20261104125745|Price is close to VWAP. About to cross up~" +
   "20261104125830|Price retested the level R1 D again~" +
-  "20261104125900|Attention : 1PX Cross Up\n1PXU_15PM Swing Up — 1m PXU with 15s PVT/M2XU confirmation~" +
+  "20261104125900|Attention : 1PX Cross Up~" +
   "20261104130500|5m Candle crossed above VWAP~" +
   "20261104130545|Price retested the level R1 D again~" +
   "20261104130615|15s Candle crossed above VWAP\nPrice is close to VWAP. About to cross down~" +
@@ -325,32 +325,33 @@ var string TREPAT_DATA = "202611040915|Session open. Gap down -0.01% from previo
   "20261104134000|Price retested the level R2 D again~" +
   "20261104134400|Price has retraced down to and taken support at 1E21~" +
   "20261104134500|5M2XD — 5m MACD2 Cross Down\nAttention : 5M2X Cross Down~" +
-  "20261104134800|Price comes below 1E21\n1PM Swing Down started\n30m EMA50/100/200 acting as support (DPM Uptrend)\nAttention : 1PX Cross Down\n1PXD_15PM Swing Down — 1m PXD with 15s PVT/M2XD confirmation~" +
+  "20261104134800|Price comes below 1E21\n1PM Swing Down started\n30m EMA50/100/200 acting as support (DPM Uptrend)\nAttention : 1PX Cross Down~" +
   "20261104135200|Price back above 1E21~" +
   "20261104135300|Price comes below 1E21\n1PM Swing Down started\nNearby below Levels — Pivotal: R1 D\n30m EMA50/100/200 acting as support (DPM Uptrend)~" +
   "20261104135400|Price back above 1E21~" +
   "20261104135600|Price comes below 1E21\n1PM Swing Down started\n30m EMA50/100/200 acting as support (DPM Uptrend)~" +
   "20261104135700|Price back above 1E21~" +
-  "20261104135800|Attention : 1PX Cross Up\n1PXU_15PM Swing Up — 1m PXU with 15s PVT/M2XU confirmation~" +
+  "20261104135800|Attention : 1PX Cross Up~" +
   "20261104140100|Price comes below 1E21\n1PM Swing Down started\nNearby below Levels — Pivotal: R1 D\n30m EMA50/100/200 acting as support (DPM Uptrend)\nPrice has retraced down to and taken support of 1E50\nAttention : 1PX Cross Down\n1PXD_15PM Swing Down — 1m PXD with 15s PVT/M2XD confirmation~" +
   "20261104140200|Price has crossed below 1E50~" +
   "20261104140345|Price retested support 1E100 again\nExpect 1PXU_15PM Swing Up~" +
   "20261104141300|Price has gone above 1E50~" +
   "20261104141500|Price back above 1E21~" +
-  "20261104141600|Attention : 1PX Cross Up\n1PXU_15PM Swing Up — 1m PXU with 15s PVT/M2XU confirmation~" +
+  "20261104141600|Attention : 1PX Cross Up~" +
   "20261104142545|Price retested the level R2 D again~" +
   "20261104143000|Price has retraced down to and taken support at 1E21~" +
   "20261104143100|Price comes below 1E21\n1PM Swing Down started\n30m EMA50/100/200 acting as support (DPM Uptrend)\nPrice has retraced down to and taken support of 1E50~" +
-  "20261104143200|Attention : 1PX Cross Down\n1PXD_15PM Swing Down — 1m PXD with 15s PVT/M2XD confirmation~" +
+  "20261104143200|Attention : 1PX Cross Down~" +
   "20261104143500|Price back above 1E21\n5m Stochastic cross up from MZ~" +
   "20261104143700|Price comes below 1E21\n1PM Swing Down started\n30m EMA50/100/200 acting as support (DPM Uptrend)~" +
   "20261104143800|Price back above 1E21\nAttention : 1PX Cross Up\n1PXU_15PM Swing Up — 1m PXU with 15s PVT/M2XU confirmation~" +
-  "20261104144100|Attention : 1PX Cross Down\n1PXD_15PM Swing Down — 1m PXD with 15s PVT/M2XD confirmation~" +
+  "20261104144100|Attention : 1PX Cross Down~" +
+  "20261104144115|1PXD_15PM Swing Down — 1m PXD with 15s PVT/M2XD confirmation~" +
   "20261104144445|Price retested the level R2 D again~" +
-  "20261104144800|Attention : 1PX Cross Up\n1PXU_15PM Swing Up — 1m PXU with 15s PVT/M2XU confirmation~" +
+  "20261104144800|Attention : 1PX Cross Up~" +
   "20261104145030|Price retested support 1E21 again\nExpect 1PXU_15PM Swing Up~" +
-  "20261104150400|Attention : 1PX Cross Down\n1PXD_15PM Swing Down — 1m PXD with 15s PVT/M2XD confirmation~" +
-  "20261104150500|Attention : 1PX Cross Up\n1PXU_15PM Swing Up — 1m PXU with 15s PVT/M2XU confirmation~" +
+  "20261104150400|Attention : 1PX Cross Down~" +
+  "20261104150500|Attention : 1PX Cross Up~" +
   "20261104150600|Price has retraced down to and taken support of 1E50\nAttention : 1PX Cross Down~" +
   "20261104150700|Price comes below 1E21\n1PM Swing Down started\n30m EMA50/100/200 acting as support (DPM Uptrend)~" +
   "20261104150800|Price back above 1E21~" +
