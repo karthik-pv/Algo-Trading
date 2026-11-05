@@ -1,6 +1,10 @@
 //@version=5
 // SPATAM — SetUp, Price Action, Trend, Alerts & Momentum
 indicator("SPATAM", "", true,scale=scale.none, max_labels_count=500)
+// VERSION: 2026-11-05.38 — alertJsonOn default flipped to TRUE (plain-text
+//   alert flushes get silently dropped by the Algo app — fresh-chart adds
+//   lost voice readout; seen 2026-11-05 on the BTCUSD chart). Any OTHER
+//   behaviour UNCHANGED.
 // VERSION: 2026-10-28.37 — fix: crossCount40 declared float (math.sum returns series float)
 
 levels_array_curday_curwk  = array.new_string(0)
@@ -47,7 +51,7 @@ bool tagAlertsOn    = input.bool(true, "Family trend tag changes (2PM formed/los
 bool syncAlertsOn   = input.bool(true, "5m PVT × MACD2 sync cross (Attention …)", group="Alerts")
 bool dailyAlertsOn  = input.bool(false, "Fire Daily (D) alerts", group="Alerts")
 bool weeklyAlertsOn = input.bool(false, "Fire Weekly (W) alerts", group="Alerts")
-bool alertJsonOn    = input.bool(false, "Send alert flush as JSON (for the Algo app)", group="Alerts", tooltip="ON: payload = {\"MSG\":\"ALERTS\",\"SYM\":…,\"ALERTS\":[{\"T\":\"hh:mm:ss\",\"TXT\":\"…\"},…]} — per-event IST fire-times; route it next to DATA/LEVELS. OFF: plain single-line text.")
+bool alertJsonOn    = input.bool(true, "Send alert flush as JSON (for the Algo app)", group="Alerts", tooltip="ON: payload = {\"MSG\":\"ALERTS\",\"SYM\":…,\"ALERTS\":[{\"T\":\"hh:mm:ss\",\"TXT\":\"…\"},…]} — per-event IST fire-times; route it next to DATA/LEVELS. OFF: plain single-line text — the app silently drops it (no voice, no log).")
 
 // Scenario: 5PX_1o_15PM ------------------------------------------------------------------------
 bool scen1On     = input.bool(true, "Enable 5PX_1o_15PM", group="Scenario: 5PX_1o_15PM")
