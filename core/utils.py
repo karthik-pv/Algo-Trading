@@ -667,10 +667,13 @@ def check_internet_connectivity(
     for attempt in range(1, retries + 1):
         for url in urls:
             try:
-                response = requests.get(url, timeout=timeout)
-                if response.status_code < 500:
-                    logger.info(f"Internet connectivity confirmed via {url}")
-                    return True
+                # Context manager so the underlying socket is released
+                # immediately - an unclosed response here leaks one fd
+                # per probe, and probes run on every connectivity retry.
+                with requests.get(url, timeout=timeout) as response:
+                    if response.status_code < 500:
+                        logger.info(f"Internet connectivity confirmed via {url}")
+                        return True
             except requests.RequestException as error:
                 logger.debug(f"Connectivity probe failed for {url}: {error}")
 

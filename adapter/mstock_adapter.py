@@ -3568,6 +3568,7 @@ class MStockAdapter(BrokerInterface):
         results = {}
         for name, (method, url) in endpoints.items():
             m = method.upper()
+            resp = None
             try:
                 if m == "GET":
                     resp = requests.get(url, headers=headers, timeout=timeout)
@@ -3595,3 +3596,9 @@ class MStockAdapter(BrokerInterface):
                 results[name] = ("DOWN", "ConnectionError")
             except Exception as e:
                 results[name] = ("DOWN", str(e))
+            finally:
+                # Release the socket even on the failure paths - this
+                # health check fires repeatedly and an unclosed
+                # response here leaks one fd per endpoint per pass.
+                if resp is not None:
+                    resp.close()
