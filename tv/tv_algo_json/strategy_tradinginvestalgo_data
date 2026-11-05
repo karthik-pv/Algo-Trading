@@ -8,8 +8,6 @@
 //                     instead of the v1.2 pin to NSE:NIFTY1! — a BTCUSD chart
 //                     now delivers BTCUSD data/alerts. Payload structure and
 //                     every message UNCHANGED.
-// ----------------------------------------------------------------------------
-// CHANGELOG
 //   v1.13 2026-11-04  FIX: v1.12 emitted FAM OUTSIDE the LEVELS object (root
 //                     sibling of LEVELS/HTF) - the app reads payload.Levels
 //                     (= data.LEVELS) and never saw it, so the Levels-Ladder
