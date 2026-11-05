@@ -71,6 +71,13 @@ CHAIN_STRIKES = 5          # ATM +/- 5 strikes -> 11 strikes x CE & PE
 _CHAIN_POLL_S = 30.0       # supervisor poll interval
 _CHAIN_TAG_PREFIX = "chain"
 
+# Kite LTP circuit breaker (see FeedLabService._fut_ltp): after an
+# auth-flavoured Kite failure, Kite LTP attempts are suppressed for
+# this long so a dead Kite token/API key costs one warning per window
+# instead of one leaked socket per poll.
+_KITE_LTP_BREAKER_S = 900.0
+_kite_ltp_breaker = {"open_until": 0.0, "error": None}
+
 # A silence longer than this between consecutive captured rows means
 # the capture itself was not running (app closed/restarted or capture
 # stopped) - it is an app-uptime boundary, never a feed stall.
@@ -828,18 +835,43 @@ class FeedCaptureService:
         """Near-month future's last traded price, for anchoring the
         ATM. Primary source: Kite REST quote. Fallback (no Kite token):
         M.Stock's quote API, but ONLY when a fresh JWT already exists -
-        the supervisor must never trigger an OTP dialog."""
+        the supervisor must never trigger an OTP dialog.
+
+        Circuit breaker: when Kite rejects the token/api_key, further
+        Kite attempts are suppressed for _KITE_LTP_BREAKER_S (15 min)
+        so a multi-day Kite outage degrades to MStock-only instead of
+        leaking a socket and a DEBUG line every poll (observed 430
+        failed calls in 2h on 2026-11-05, exhausting the 256-fd limit
+        and crashing the app every 1-2 hours)."""
         cfg = UNDERLYING_CONFIG[str(underlying).upper()]
         exchange = cfg["exchange"]
-        try:
-            kite = KiteSingleton().get_kite()
-            ltp_resp = kite.ltp([f"{exchange}:{kite_fut_sym}"])
-            return float(list(ltp_resp.values())[0]["last_price"]), "KITE"
-        except Exception as kite_error:
-            logger.debug(f"Feed Lab: Kite fut LTP unavailable ({kite_error})")
+        kite_skipped_reason = None
+        if time.monotonic() < _kite_ltp_breaker["open_until"]:
+            kite_skipped_reason = _kite_ltp_breaker["error"]
+        else:
+            try:
+                kite = KiteSingleton().get_kite()
+                ltp_resp = kite.ltp([f"{exchange}:{kite_fut_sym}"])
+                _kite_ltp_breaker["open_until"] = 0.0
+                return float(list(ltp_resp.values())[0]["last_price"]), "KITE"
+            except Exception as kite_error:
+                err_text = str(kite_error).lower()
+                auth_shaped = any(
+                    token in err_text
+                    for token in ("api_key", "access_token", "tokenexception", "token")
+                )
+                # Auth rejections get the long window; transient network
+                # errors only a short one so recovery is quick.
+                window = _KITE_LTP_BREAKER_S if auth_shaped else 60.0
+                _kite_ltp_breaker["open_until"] = time.monotonic() + window
+                _kite_ltp_breaker["error"] = str(kite_error)
+                logger.warning(
+                    f"Feed Lab: Kite fut LTP unavailable ({kite_error}) - "
+                    f"Kite LTP suppressed for {int(window)}s, using fallback"
+                )
         if ms_fut and _mstock_jwt_fresh(fetch_from_json("access_token.json", "mstock_jwt_token") or ""):
             try:
-                resp = requests.post(
+                with requests.post(
                     "https://api.mstock.trade/openapi/typeb/instruments/quote",
                     headers={
                         "X-Mirae-Version": "1",
@@ -849,14 +881,19 @@ class FeedCaptureService:
                     json={"mode": "OHLC", "exchangeTokens": {
                         cfg["mstock_seg"]: [str(ms_fut["token"])]}},
                     timeout=15,
-                )
-                resp.raise_for_status()
-                fetched = resp.json().get("data", {}).get("fetched", [])
-                for q in fetched:
-                    if q.get("ltp") is not None:
-                        return float(q["ltp"]), "MSTOCK"
+                ) as resp:
+                    resp.raise_for_status()
+                    fetched = resp.json().get("data", {}).get("fetched", [])
+                    for q in fetched:
+                        if q.get("ltp") is not None:
+                            return float(q["ltp"]), "MSTOCK"
             except Exception as ms_error:
                 logger.debug(f"Feed Lab: M.Stock fut LTP unavailable ({ms_error})")
+        if kite_skipped_reason:
+            logger.debug(
+                f"Feed Lab: Kite LTP skipped (breaker open, last error: "
+                f"{kite_skipped_reason}) and no MStock fallback answered"
+            )
         return None, None
 
     def _resolve_chain_session(self, underlying):
