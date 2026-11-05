@@ -49,6 +49,44 @@ TOTP_WINDOW_SECONDS = 30
 TOTP_WINDOW_GUARD_SECONDS = 4
 KITE_CLOCK_SKEW_LIMIT_SECONDS = 15.0
 
+# ------------------------------------------------------------------
+# Hard broker disable. When Zerodha rejects the credentials themselves
+# (TokenException "Incorrect api_key or access_token"), there is no
+# point retrying anything Kite-side until the user fixes the key and
+# restarts the app: every failed REST call leaks a descriptor and the
+# relogin/ws-retry loops just burn log space and risk account lockout.
+# One log line, then every Kite entry point no-ops. The flag is
+# in-memory ONLY - a restart with a fixed key starts clean.
+# ------------------------------------------------------------------
+_kite_broker_disabled = {"disabled": False, "reason": None}
+
+
+def is_kite_broker_disabled():
+    """True once an invalid api_key/token has hard-disabled the Kite
+    side. Callers skip all Kite work (REST, websocket, relogin) until
+    the app is restarted with valid credentials."""
+    return _kite_broker_disabled["disabled"]
+
+
+def kite_broker_disabled_reason():
+    return _kite_broker_disabled["reason"]
+
+
+def disable_kite_broker(reason):
+    """Disable the Kite side for the rest of the process lifetime.
+    Logs exactly once - repeated calls with the flag already set are
+    silent so failing call sites never spam the log."""
+    if _kite_broker_disabled["disabled"]:
+        return
+    _kite_broker_disabled["disabled"] = True
+    _kite_broker_disabled["reason"] = str(reason)
+    logger.error(
+        f"KITE BROKER DISABLED for this session: {reason}. All Kite "
+        "REST/websocket/relogin activity is stopped until the app is "
+        "restarted with a valid KITE_API_KEY. Trading on the active "
+        "broker (MStock) is unaffected."
+    )
+
 # Errors where the request never reached Zerodha (or no reply came
 # back) - the ONLY failures safe to retry. Anything where Zerodha
 # actually answered (rejected password, HTTP error, bad JSON) must
@@ -521,6 +559,15 @@ class KiteSingleton:
             # empty grids. One cheap call decides: rejected tokens get
             # a fresh login right here at startup.
             if not self._token_is_accepted():
+                if is_kite_broker_disabled():
+                    # Credential rejection already logged and the Kite
+                    # side hard-disabled - do not attempt any login.
+                    logger.error(
+                        "Kite startup skipped - the broker is disabled "
+                        "for this session (invalid credentials). Fix "
+                        "KITE_API_KEY and restart the app."
+                    )
+                    return
                 logger.warning(
                     "Same-day Kite token is rejected by the API - "
                     "running a fresh login."
@@ -584,7 +631,16 @@ class KiteSingleton:
         try:
             self._kite.margins()
             return True
-        except (TokenException, InputException, PermissionException) as e:
+        except TokenException as e:
+            # Credential rejection (bad api_key / dead token shape) -
+            # hard-disable the Kite side for this process. Retrying
+            # only leaks descriptors and burns log; the user must fix
+            # the key and restart, at which point this flag starts
+            # clean. PermissionException is NOT a credential problem
+            # (wedged-token shape) and keeps the old behaviour.
+            disable_kite_broker(e)
+            return False
+        except (InputException, PermissionException) as e:
             logger.warning(f"Kite token check rejected: {e}")
             return False
         except Exception as e:
@@ -611,6 +667,11 @@ class KiteSingleton:
         (app-code prompt / browser fallback) where the user expects it.
         Interactive or not, a lock+cooldown guards the login attempts.
         """
+        if is_kite_broker_disabled():
+            # Credentials were rejected earlier - a re-login with the
+            # same bad key can only fail (and risks account lockout).
+            # Stay stopped until the app is restarted with a fixed key.
+            return False
         if not KITE_TOTP_SECRET:
             if not KiteSingleton._no_totp_notice_logged:
                 KiteSingleton._no_totp_notice_logged = True

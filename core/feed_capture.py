@@ -32,7 +32,10 @@ from core import broker_stats
 
 from core.utils import resolve_data_path, fetch_from_json, DATA_DIR
 from adapter.mstock_utils import parse_quote_message
-from core.kite_connector import KITE_API_KEY, KiteSingleton
+from core.kite_connector import (
+    KITE_API_KEY, KiteSingleton, disable_kite_broker,
+    is_kite_broker_disabled, kite_broker_disabled_reason,
+)
 from core.mstock_connector import MStockSingleton, WS_HOST, WS_PORT, _prompt_otp
 
 UNDERLYING_CONFIG = {
@@ -71,11 +74,11 @@ CHAIN_STRIKES = 5          # ATM +/- 5 strikes -> 11 strikes x CE & PE
 _CHAIN_POLL_S = 30.0       # supervisor poll interval
 _CHAIN_TAG_PREFIX = "chain"
 
-# Kite LTP circuit breaker (see FeedLabService._fut_ltp): after an
-# auth-flavoured Kite failure, Kite LTP attempts are suppressed for
-# this long so a dead Kite token/API key costs one warning per window
-# instead of one leaked socket per poll.
-_KITE_LTP_BREAKER_S = 900.0
+# Kite LTP circuit breaker (see FeedLabService._fut_ltp): a transient
+# Kite failure suppresses attempts for this long. Credential
+# rejections skip the breaker entirely and hard-disable the Kite side
+# for the session (core.kite_connector.disable_kite_broker).
+_KITE_LTP_BREAKER_S = 60.0
 _kite_ltp_breaker = {"open_until": 0.0, "error": None}
 
 # A silence longer than this between consecutive captured rows means
@@ -647,6 +650,12 @@ class FeedCaptureService:
         path = os.path.join(day_dir, f"kite_instruments_{exchange}.csv")
         if os.path.exists(path) and os.path.getsize(path) > 1000:
             return path
+        if is_kite_broker_disabled():
+            raise RuntimeError(
+                f"Kite broker disabled for this session "
+                f"({kite_broker_disabled_reason()}) - cannot download "
+                f"instrument dump. Fix KITE_API_KEY and restart."
+            )
         logger.info(f"Feed Lab: downloading Kite {exchange} instrument dump...")
         kite = KiteSingleton().get_kite()
         rows = kite.instruments(exchange)
@@ -733,6 +742,12 @@ class FeedCaptureService:
         fut = min(fut_rows, key=lambda r: _parse_expiry(r.get("expiry")))
 
         kite_singleton = KiteSingleton()
+        if is_kite_broker_disabled():
+            raise RuntimeError(
+                f"Kite broker disabled for this session "
+                f"({kite_broker_disabled_reason()}) - cannot anchor ATM. "
+                f"Fix KITE_API_KEY and restart."
+            )
         if not kite_singleton._access_token:
             kite_singleton.set_access_token(_kite_token())
         kite = kite_singleton.get_kite()
@@ -837,16 +852,24 @@ class FeedCaptureService:
         M.Stock's quote API, but ONLY when a fresh JWT already exists -
         the supervisor must never trigger an OTP dialog.
 
-        Circuit breaker: when Kite rejects the token/api_key, further
-        Kite attempts are suppressed for _KITE_LTP_BREAKER_S (15 min)
-        so a multi-day Kite outage degrades to MStock-only instead of
-        leaking a socket and a DEBUG line every poll (observed 430
-        failed calls in 2h on 2026-11-05, exhausting the 256-fd limit
-        and crashing the app every 1-2 hours)."""
+        Circuit breaker: a transient Kite error suppresses attempts
+        for 60s; a credential rejection (invalid api_key/token) hard-
+        disables the Kite side for the whole session via
+        disable_kite_broker() - one ERROR line, then MStock-only until
+        the app is restarted with a valid key. Background: a dead key
+        leaked a socket every poll (430 failed calls in 2h on
+        2026-11-05, exhausting the 256-fd limit, crashing the app
+        every 1-2 hours)."""
         cfg = UNDERLYING_CONFIG[str(underlying).upper()]
         exchange = cfg["exchange"]
         kite_skipped_reason = None
-        if time.monotonic() < _kite_ltp_breaker["open_until"]:
+        if is_kite_broker_disabled():
+            # Invalid credentials hard-disabled the Kite side - go
+            # straight to the MStock fallback, no failed REST calls.
+            kite_skipped_reason = (
+                f"broker disabled: {kite_broker_disabled_reason()}"
+            )
+        elif time.monotonic() < _kite_ltp_breaker["open_until"]:
             kite_skipped_reason = _kite_ltp_breaker["error"]
         else:
             try:
@@ -860,9 +883,15 @@ class FeedCaptureService:
                     token in err_text
                     for token in ("api_key", "access_token", "tokenexception", "token")
                 )
-                # Auth rejections get the long window; transient network
-                # errors only a short one so recovery is quick.
-                window = _KITE_LTP_BREAKER_S if auth_shaped else 60.0
+                if auth_shaped:
+                    # Credential rejection - hard-disable the Kite side
+                    # for this session (one ERROR line), no further
+                    # Kite REST/websocket attempts until restart.
+                    disable_kite_broker(kite_error)
+                    return None, None
+                # Transient network errors only get a short window so
+                # recovery is quick.
+                window = 60.0
                 _kite_ltp_breaker["open_until"] = time.monotonic() + window
                 _kite_ltp_breaker["error"] = str(kite_error)
                 logger.warning(
@@ -1172,6 +1201,16 @@ class FeedCaptureService:
 
     def _kite_worker(self, session):
         broker = "KITE"
+        if is_kite_broker_disabled():
+            # Invalid credentials hard-disabled the Kite side - no
+            # websocket, no retries. MStock worker runs unaffected.
+            logger.error(
+                f"Feed Lab: Kite capture skipped - broker disabled for "
+                f"this session ({kite_broker_disabled_reason()}). "
+                f"MStock capture continues."
+            )
+            self._kite_connected_event.set()  # unblock any waiter
+            return
         path = os.path.join(
             _day_dir(date.fromisoformat(session["date"])),
             f"{broker.lower()}_{session.get('tag') or session['underlying']}.csv")
