@@ -114,6 +114,21 @@
   server's rolling price memory (`_TV_PRICE_MEMORY`, ~3h @ 15s, in-memory only, fed by
   every LEVELS webhook Close). Fallback to the old rule when no memory (fresh restart,
   leg older than ~3h, no cross age).
+- **INTRA 1m-MACD2 exit is STATE-based, not cross-based — UNFIXED, neutralized by config**
+  (diagnosed 2026-11-02): `signal_rules.evaluate_intra_exit` exits when
+  `Trend_2452 == -1` (a standing bearish phase, ~50% of the time), so every INTRA buy
+  made while 1m MACD2 is below signal is sold within seconds of the next watcher pass
+  (2026-11-02: 4 instant exits, 23500CE re-bought 3× sold at ~13s each). The user set
+  `IN_EXIT_1M_MACD2 = OFF` in the config UI to stop it — **re-enabling it re-creates the
+  instant-sell**. Proper fix when wanted: gate on a FRESH cross (`Y_2452 == 1`, payload
+  already carries the cross ages) or on crosses occurring after entry time. Related: the
+  entry gate (`IN_ENTRY_CHECK: WARN`) merely warns on the same state — entry and exit
+  disagreed by design.
+- **Pine versioning convention changed** (AGENTS.md, 2026-11-07): NO physical snapshot
+  copies / `versions/README.md` any more — bump VERSION + CHANGELOG in the banner, commit,
+  tag `<script>-vX.Y`, push; the git tag is the rollback point (TradingView keeps editor
+  history). Paths are lowercase (`tv/tv_algo_json/...`). Older docs may still reference
+  the snapshot flow.
 
 ## 4. CHANGELOG (append-only)
 
@@ -137,7 +152,9 @@
   (`POSITION_LTP_STALE_SECS`, REST re-seed, commit `3b6f66b`); MStock WS close-code
   forensics (`9cb4870`); Feed Lab Kite capture fails loudly on expired daily token
   (`e77f2ef` — 2026-11-02 capture died on 1006s, stale token). Feed verdict: Kite ~2×
-  tick rate, 30–70× fewer dead intervals; MStock ~1.6s throttle is broker-side.
+  tick rate, 30–70× fewer dead intervals; MStock ~1.6s throttle is broker-side. INTRA
+  1m-MACD2 state-vs-cross instant-sell diagnosed → user disabled via
+  `IN_EXIT_1M_MACD2=OFF` (code fix still OPEN — see gotchas).
 - **2026-10-31** — doc created (living-handoff restructure). No app changes this session.
 - **2026-10-19** — Mac migration day: everything environmental broke and was fixed;
   architecture above locked; Kite feed + ngrok live. (archive: `2026-10-19_mac_migration.md`)
