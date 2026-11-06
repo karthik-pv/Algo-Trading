@@ -3081,24 +3081,44 @@ document.addEventListener('DOMContentLoaded', function () {
         // Show the live window size in the App Config "App Window"
         // fields, so dragging the window then clicking Save in App
         // Config persists the dragged size (2026-11-06). A field the
-        // user is currently editing is left alone.
+        // user is currently editing is left alone. Minimized/hidden
+        // windows report 0x0 - skip those, keep the last real size.
+        if (w < 200 || h < 200) return;
         [["APP_WINDOW_WIDTH", w], ["APP_WINDOW_HEIGHT", h]].forEach(
             function (pair) {
                 var el = document.getElementById(pair[0]);
                 if (el && document.activeElement !== el) {
-                    el.value = pair[1];
+                    if (String(pair[1]) !== el.value) {
+                        el.value = pair[1];
+                        // Mark the config form dirty so Save lights up
+                        // after a drag-resize (2026-11-06).
+                        el.dispatchEvent(new Event('change', { bubbles: true }));
+                    }
                 }
             });
     }
+    // Native WebKit windows (macOS Dock session) report outerWidth 0 -
+    // the content size is the real window size there (2026-11-06).
+    function liveWindowSize() {
+        return [
+            window.outerWidth > 0 ? window.outerWidth : window.innerWidth,
+            window.outerHeight > 0 ? window.outerHeight : window.innerHeight
+        ];
+    }
     function reportState(useBeacon) {
         try {
+            var live = liveWindowSize();
             var state = {
                 x: window.screenX,
                 y: window.screenY,
-                w: window.outerWidth,
-                h: window.outerHeight
+                w: live[0],
+                h: live[1]
             };
             mirrorToConfigInputs(state.w, state.h);
+            // Native WebKit window: dock_shell owns the persisted
+            // window state itself - never overwrite it with page-side
+            // coordinates (2026-11-06).
+            if (window.outerWidth < 200 || window.outerHeight < 200) return;
             var key = state.x + ',' + state.y + ',' + state.w + ',' + state.h;
             if (key === lastKey) return;
             lastKey = key;
@@ -3117,7 +3137,8 @@ document.addEventListener('DOMContentLoaded', function () {
     }
     window.addEventListener('resize', function () { reportState(false); });
     // Initial fill of the App Config window-size boxes (no drag yet).
-    mirrorToConfigInputs(window.outerWidth, window.outerHeight);
+    var live0 = liveWindowSize();
+    mirrorToConfigInputs(live0[0], live0[1]);
     window.addEventListener('pagehide', function () {
         reportState(true);
         // Tell the server the window went away. Chrome background
@@ -6919,6 +6940,66 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     saveBtn.addEventListener('click', saveConfig);
+
+    // APP WINDOW live mirror (independent of the window-state reporter):
+    // keeps the Width/Height boxes showing the real window size at load,
+    // while dragging, and whenever the boxes are not being edited.
+    (function () {
+        const wEl = form.querySelector('[name="APP_WINDOW_WIDTH"]');
+        const hEl = form.querySelector('[name="APP_WINDOW_HEIGHT"]');
+        if (!wEl || !hEl) return;
+        function syncFromWindow() {
+            var live = liveWindowSize();
+            var changed = false;
+            if (live[0] >= 200 && document.activeElement !== wEl
+                    && String(live[0]) !== wEl.value) {
+                wEl.value = live[0];
+                changed = true;
+            }
+            if (live[1] >= 200 && document.activeElement !== hEl
+                    && String(live[1]) !== hEl.value) {
+                hEl.value = live[1];
+                changed = true;
+            }
+            if (changed) refreshDirtyState();
+        }
+        window.addEventListener('resize', syncFromWindow);
+        syncFromWindow();
+    })();
+
+    // APP WINDOW live resize: editing the Width/Height boxes resizes
+    // the app window as you type (debounced). Chrome --app windows
+    // allow window.resizeTo from the page. The window-state reporter
+    // mirrors the resulting real size back into the boxes, so after
+    // Chrome applies/clamps the size the boxes show the truth.
+    (function () {
+        const wEl = form.querySelector('[name="APP_WINDOW_WIDTH"]');
+        const hEl = form.querySelector('[name="APP_WINDOW_HEIGHT"]');
+        if (!wEl || !hEl) return;
+        let timer = null;
+        function applySize() {
+            const w = parseInt(wEl.value, 10);
+            const h = parseInt(hEl.value, 10);
+            if (w >= 200 && h >= 200) {
+                try { window.resizeTo(w, h); } catch (e) { /* ignore */ }
+                // Native WebKit window (Dock session): outerWidth reads
+                // 0 and window.resizeTo is a no-op there - ask the
+                // server to resize the dock_shell window instead
+                // (2026-11-06).
+                if (window.outerWidth < 200) {
+                    fetch('/resize_app_window', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ w: w, h: h })
+                    }).catch(function () {});
+                }
+            }
+        }
+        [wEl, hEl].forEach((el) => el.addEventListener('input', () => {
+            clearTimeout(timer);
+            timer = setTimeout(applySize, 300);
+        }));
+    })();
 
     // Reset to last loaded/saved values
     cancelBtn.addEventListener('click', () => {

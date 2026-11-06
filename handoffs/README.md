@@ -7,6 +7,7 @@ lives in `archive/` (read-only; each file carries a supersession banner).
 |---|---|---|
 | **Forecasting** (1PME50 / 3PM / 2PM / DPM / levels, Scalping & Intra Swing styles) | [`forecasting.md`](forecasting.md) | any forecasting, insight-mining, or trading-setup session |
 | **App Support** (server, brokers, feeds, ngrok, machine config) | [`app_support.md`](app_support.md) | the app breaks, feeds/tunnels, machine/broker setup |
+| **App Start-Up Window** (window geometry, APP_WINDOW_WIDTH/HEIGHT, per-platform launch paths) | [`app_start_up.md`](app_start_up.md) | the app window opens wrong-sized/positioned, or App Config window-size questions |
 | **Commentary** (tracking & commentary module) | [`commentary.md`](commentary.md) | tracking sessions, commentary vocabulary/style |
 | **Trade Backtest** (validated studies & playbooks) | [`trade_backtest.md`](trade_backtest.md) | backtesting setups, validation runs |
 | **SPATAM ↔ Levels Ladder** (FAM tag column, wire format, renderers) | [`spatam_levels_ladder_fam.md`](spatam_levels_ladder_fam.md) | the ladder tag column mismatches the chart, or the LEVELS payload changes |

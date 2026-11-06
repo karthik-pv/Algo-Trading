@@ -191,7 +191,15 @@ def _open_app_window_to(url):
             r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
         ):
             if os.path.exists(candidate):
-                subprocess.Popen([candidate, f"--app={url}"])
+                args = [candidate, f"--app={url}"]
+                geom = _load_saved_window_geometry()
+                if geom:
+                    gx, gy, gw, gh = geom
+                    args += [
+                        f"--window-position={gx},{gy}",
+                        f"--window-size={gw},{gh}",
+                    ]
+                subprocess.Popen(args)
                 return
     import webbrowser
     webbrowser.open(url)
@@ -1579,6 +1587,86 @@ def save_window_state():
         return jsonify({"ok": False, "error": str(e)}), 400
 
 
+def _apply_config_size_to_native_window():
+    """
+    Dock session startup: dock_shell reads data/window_state.json when
+    it opens the native WebKit window and restores that frame. When App
+    Config pins a window size, pre-write the RIGHT-TOP anchored frame
+    here - BEFORE the Flask port comes up (dock_shell waits for the
+    port, so it cannot have read the file yet). Runs on every start
+    (2026-11-06).
+    """
+    cw, ch = _configured_window_size()
+    if cw is None and ch is None:
+        return  # nothing pinned - leave dock_shell's own restore
+    state = {}
+    try:
+        with open(os.path.join(DATA_DIR, "window_state.json")) as f:
+            state = json.load(f)
+    except Exception:
+        pass
+    w = cw or int(state.get("w") or 0)
+    h = ch or int(state.get("h") or 0)
+    desk = _desktop_bounds()
+    if not (w and h) or not desk:
+        return
+    dx0, dy0, dx1, _dy1 = desk
+    frame = {"x": max(dx0, dx1 - w), "y": dy0 + 31, "w": w, "h": h}
+    try:
+        tmp = os.path.join(DATA_DIR, "window_state.json.tmp")
+        with open(tmp, "w") as f:
+            json.dump(frame, f)
+        os.replace(tmp, os.path.join(DATA_DIR, "window_state.json"))
+        logger.info(f"Native app window frame set from config: {frame}")
+    except Exception as e:
+        logger.warning(f"Could not write window state from config: {e}")
+
+
+def _resize_native_app_window(w, h, x=None, y=None):
+    """
+    Resize/position the native WebKit app window (dock_shell process,
+    macOS Dock sessions). Window bounds are not scriptable via
+    window.resizeTo from a WKWebView page, so System Events is used.
+    Returns True on success (2026-11-06).
+    """
+    script = f'''
+    tell application "System Events" to tell process "dock_shell"
+        set position of window 1 to {{{x}, {y}}}
+        set size of window 1 to {{{w}, {h}}}
+    end tell
+    '''
+    try:
+        subprocess.run(["osascript", "-e", script],
+                       capture_output=True, text=True, timeout=5)
+        return True
+    except Exception as e:
+        logger.warning(f"native window resize failed: {e}")
+        return False
+
+
+@app.route("/resize_app_window", methods=["POST"])
+def resize_app_window():
+    """
+    Called by the app page when the user types a size into the App
+    Config window boxes inside the native WebKit window (no Chrome
+    window.resizeTo there). The window is anchored to the RIGHT-TOP
+    corner of the main display, same as the Chrome startup path.
+    """
+    data = request.get_json(silent=True) or {}
+    try:
+        w, h = int(data.get("w")), int(data.get("h"))
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "error": "bad size"}), 400
+    if not (200 <= w <= 16384 and 200 <= h <= 16384):
+        return jsonify({"ok": False, "error": "size out of range"}), 400
+    desk = _desktop_bounds()
+    if not desk:
+        return jsonify({"ok": False, "error": "no desktop"}), 500
+    dx0, dy0, dx1, _dy1 = desk
+    ok = _resize_native_app_window(w, h, max(dx0, dx1 - w), dy0 + 31)
+    return jsonify({"ok": ok})
+
+
 @app.route("/window_closing", methods=["POST"])
 def window_closing():
     """
@@ -1593,7 +1681,49 @@ def window_closing():
 
 
 def _desktop_bounds():
-    """Main-display desktop bounds via AppleScript, e.g. (0, 0, 2560, 1440)."""
+    """Main-display desktop bounds in points, e.g. (0, 0, 2560, 1440).
+    CoreGraphics via ctypes needs no macOS automation permission; the
+    osascript Finder query is only a fallback (and is denied in the
+    launchd/Dock context anyway - 2026-11-06)."""
+    try:
+        import ctypes
+        import ctypes.util
+
+        class _CGPoint(ctypes.Structure):
+            _fields_ = [("x", ctypes.c_double), ("y", ctypes.c_double)]
+
+        class _CGSize(ctypes.Structure):
+            _fields_ = [("width", ctypes.c_double), ("height", ctypes.c_double)]
+
+        class _CGRect(ctypes.Structure):
+            _fields_ = [("origin", _CGPoint), ("size", _CGSize)]
+
+        cg = ctypes.CDLL(ctypes.util.find_library("CoreGraphics"))
+        cg.CGMainDisplayID.restype = ctypes.c_uint32
+        cg.CGDisplayBounds.restype = _CGRect
+        cg.CGDisplayBounds.argtypes = [ctypes.c_uint32]
+        b = cg.CGDisplayBounds(cg.CGMainDisplayID())
+        return (int(b.origin.x), int(b.origin.y),
+                int(b.origin.x + b.size.width), int(b.origin.y + b.size.height))
+    except Exception:
+        pass
+    if sys.platform == "win32":
+        # Primary monitor work area (minus the taskbar) via ctypes -
+        # no permissions needed (2026-11-06).
+        try:
+            import ctypes
+
+            class _RECT(ctypes.Structure):
+                _fields_ = [("left", ctypes.c_long), ("top", ctypes.c_long),
+                            ("right", ctypes.c_long), ("bottom", ctypes.c_long)]
+
+            user32 = ctypes.windll.user32
+            user32.SetProcessDPIAware()
+            rect = _RECT()
+            if user32.SystemParametersInfoW(48, 0, ctypes.byref(rect), 0):
+                return (rect.left, rect.top, rect.right, rect.bottom)
+        except Exception:
+            pass
     try:
         out = subprocess.run(
             ["osascript", "-e",
@@ -1658,7 +1788,7 @@ def _load_saved_window_geometry():
             if not (dx0 <= x and x + w <= dx1 and dy0 <= y and y + h <= dy1):
                 # Off-screen (or partly) — re-anchor right-top, same size.
                 x = max(dx0, dx1 - w)
-                y = dy0 + 31   # just below the macOS menu bar
+                y = dy0 + (31 if sys.platform == "darwin" else 0)
         return (x, y, w, h)
 
     # Config override: fixed size, anchored top-right every start.
@@ -1668,7 +1798,8 @@ def _load_saved_window_geometry():
     if not (w and h) or not desk:
         return None  # missing dimension / no desktop -> Chrome default
     dx0, dy0, dx1, _dy1 = desk
-    return (max(dx0, dx1 - w), dy0 + 31, w, h)
+    return (max(dx0, dx1 - w),
+            dy0 + (31 if sys.platform == "darwin" else 0), w, h)
 
 
 def _stop_leftover_app_chrome(profile):
@@ -1798,8 +1929,20 @@ def _open_app_window_when_ready():
         r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
     ):
         if os.path.exists(candidate):
-            subprocess.Popen([candidate, f"--app=http://127.0.0.1:{SERVER_PORT}"])
-            logger.info("App window opened.")
+            args = [candidate, f"--app=http://127.0.0.1:{SERVER_PORT}"]
+            geom = _load_saved_window_geometry()
+            if geom:
+                x, y, w, h = geom
+                args += [
+                    f"--window-position={x},{y}",
+                    f"--window-size={w},{h}",
+                ]
+                logger.info(
+                    f"App window opened (Chrome/Edge app mode, "
+                    f"{w}x{h} at {x},{y}).")
+            else:
+                logger.info("App window opened (Chrome/Edge app mode).")
+            subprocess.Popen(args)
             return
 
     import webbrowser
@@ -3058,6 +3201,13 @@ if 1==1: #__name__ == "__main__":
                 daemon=True,
                 name="browser-opener"
             ).start()
+        else:
+            # Dock session: dock_shell opens the native WebKit window
+            # and restores the frame in window_state.json - pre-write
+            # the App Config frame (if pinned) so the window opens at
+            # it. Must run before the Flask port binds (dock_shell
+            # waits for the port, then reads the file).
+            _apply_config_size_to_native_window()
 
         if CURRENT_BROKER == "MSTOCK":
             logger.info("FLASK: Launching Flask thread...")
