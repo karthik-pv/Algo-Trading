@@ -6802,6 +6802,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function applyConfig(data) {
         Object.entries(data).forEach(([key, value]) => {
+            // The App Window size boxes mirror the LIVE window size
+            // (window-state reporter, 1.5s interval) so the user can
+            // resize and just click Save. Saved config values must not
+            // clobber them (2026-11-06).
+            if (key === "APP_WINDOW_WIDTH" || key === "APP_WINDOW_HEIGHT") return;
             const el = form.querySelector(`[name="${key}"]`);
             if (!el) return;
 
