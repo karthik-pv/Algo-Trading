@@ -5936,6 +5936,12 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     function rollStaleOrdersDate() {
         if (!ordersDateInput || ordersDateInput.disabled) return; // upload in progress
+        // An uploaded contract-note view owns the picker (the upload set
+        // it to the note's trade date) - the auto-roll must not hijack it
+        // to today and silently swap the grid to broker data (user report
+        // 2026-11-07: downloaded an Excel that carried the PREVIOUS day's
+        // trades because the picker still held the uploaded note's date).
+        if (ordersSource === 'upload') return;
         const today = getTodayTradeDate();
         if (!ordersDateUserPicked && ordersDateInput.value && ordersDateInput.value < today) {
             ordersDateInput.value = today;
