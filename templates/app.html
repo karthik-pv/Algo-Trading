@@ -3077,6 +3077,19 @@ document.addEventListener('DOMContentLoaded', function () {
 // restore app-window bounds across restarts.
 (function () {
     var lastKey = null;
+    function mirrorToConfigInputs(w, h) {
+        // Show the live window size in the App Config "App Window"
+        // fields, so dragging the window then clicking Save in App
+        // Config persists the dragged size (2026-11-06). A field the
+        // user is currently editing is left alone.
+        [["APP_WINDOW_WIDTH", w], ["APP_WINDOW_HEIGHT", h]].forEach(
+            function (pair) {
+                var el = document.getElementById(pair[0]);
+                if (el && document.activeElement !== el) {
+                    el.value = pair[1];
+                }
+            });
+    }
     function reportState(useBeacon) {
         try {
             var state = {
@@ -3085,6 +3098,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 w: window.outerWidth,
                 h: window.outerHeight
             };
+            mirrorToConfigInputs(state.w, state.h);
             var key = state.x + ',' + state.y + ',' + state.w + ',' + state.h;
             if (key === lastKey) return;
             lastKey = key;
@@ -3102,6 +3116,8 @@ document.addEventListener('DOMContentLoaded', function () {
         } catch (e) { /* never break the app over this */ }
     }
     window.addEventListener('resize', function () { reportState(false); });
+    // Initial fill of the App Config window-size boxes (no drag yet).
+    mirrorToConfigInputs(window.outerWidth, window.outerHeight);
     window.addEventListener('pagehide', function () {
         reportState(true);
         // Tell the server the window went away. Chrome background
