@@ -519,6 +519,9 @@ APPCONFIG_GROUPS = {
         "IN_ENTRY_ENABLED", "IN_ENTRY_CHECK",
         "IN_ENTRY_5M_PVT", "IN_EXIT_1M_MACD2",
     ],
+    # Startup size of the Chrome app window. Empty = keep using the
+    # size/position the frontend saves to window_state.json.
+    "window": ["APP_WINDOW_WIDTH", "APP_WINDOW_HEIGHT"],
 }
 
 _KEY_TO_GROUP = {
@@ -655,7 +658,11 @@ APPCONFIG_DEFAULTS = {
         "IN_ENTRY_CHECK": "WARN",
         "IN_ENTRY_5M_PVT": "ABOVE_ZERO",
         "IN_EXIT_1M_MACD2": "TREND_2452_DOWN"
-    }
+    },
+    # App window startup size in px (empty = follow the frontend-saved
+    # window state; when set, the window always opens top-right at this
+    # size).
+    "window": {"APP_WINDOW_WIDTH": "", "APP_WINDOW_HEIGHT": ""}
 }
 
 @app.route("/appconfig")
@@ -1599,6 +1606,23 @@ def _desktop_bounds():
         return None
 
 
+def _configured_window_size():
+    """
+    App-configured startup window size (App Config: APP_WINDOW_WIDTH /
+    APP_WINDOW_HEIGHT) or (None, None) when not set. Read straight from
+    disk (not the fetch_from_json cache) so a config-UI save applies at
+    the next app start (2026-11-06).
+    """
+    try:
+        with open(APPCONFIG_FILE, encoding="utf-8") as f:
+            flat = _flatten_config(json.load(f))
+        w = int(str(flat.get("APP_WINDOW_WIDTH") or "").strip() or 0)
+        h = int(str(flat.get("APP_WINDOW_HEIGHT") or "").strip() or 0)
+        return (w if w > 0 else None, h if h > 0 else None)
+    except Exception:
+        return (None, None)
+
+
 def _load_saved_window_geometry():
     """
     Last app window bounds saved by the frontend, or None. The saved
@@ -1607,14 +1631,26 @@ def _load_saved_window_geometry():
     state from another screen — it is re-anchored to the RIGHT-TOP
     corner at the saved size, so the app always reopens where the
     user keeps it.
+
+    App Config override (APP_WINDOW_WIDTH / APP_WINDOW_HEIGHT): when
+    either is set it fixes that startup dimension and the window is
+    always anchored to the RIGHT-TOP corner of the main display at
+    that size, every start (2026-11-06). Leave both empty to keep
+    following the frontend-saved window state.
     """
+    cw, ch = _configured_window_size()
     try:
         with open(os.path.join(DATA_DIR, "window_state.json")) as f:
             state = json.load(f)
         x, y = int(state["x"]), int(state["y"])
         w, h = int(state["w"]), int(state["h"])
-        if not (0 < w <= 16384 and 0 < h <= 16384
-                and -16384 <= x <= 16384 and -16384 <= y <= 16384):
+        saved_ok = (0 < w <= 16384 and 0 < h <= 16384
+                    and -16384 <= x <= 16384 and -16384 <= y <= 16384)
+    except Exception:
+        saved_ok = False
+
+    if cw is None and ch is None:
+        if not saved_ok:
             return None
         desk = _desktop_bounds()
         if desk:
@@ -1624,9 +1660,15 @@ def _load_saved_window_geometry():
                 x = max(dx0, dx1 - w)
                 y = dy0 + 31   # just below the macOS menu bar
         return (x, y, w, h)
-    except Exception:
-        pass
-    return None
+
+    # Config override: fixed size, anchored top-right every start.
+    w = cw or (w if saved_ok else 0)
+    h = ch or (h if saved_ok else 0)
+    desk = _desktop_bounds()
+    if not (w and h) or not desk:
+        return None  # missing dimension / no desktop -> Chrome default
+    dx0, dy0, dx1, _dy1 = desk
+    return (max(dx0, dx1 - w), dy0 + 31, w, h)
 
 
 def _stop_leftover_app_chrome(profile):

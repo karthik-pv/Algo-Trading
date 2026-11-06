@@ -3006,6 +3006,35 @@
             </div>
         </section>
 
+        <!-- ============ APP WINDOW ============ -->
+        <section class="card span-2">
+            <div class="card-rail">
+                <span class="card-title" title="Startup size of the app window. When set, the window always opens anchored to the top-right of the main display at this size, every start. Leave both empty to keep following the window size/position the app remembers from your last session. Takes effect at the next app start.">App Window</span>
+            </div>
+            <div class="card-body">
+                <div class="field-row">
+                    <div class="field">
+                        <div class="field-caption">
+                            <label class="field-label" for="APP_WINDOW_WIDTH">Window Width</label>
+                            <span class="key-hint">APP_WINDOW_WIDTH</span>
+                        </div>
+                        <div class="input-wrap">
+                            <input type="number" step="1" min="0" id="APP_WINDOW_WIDTH" name="APP_WINDOW_WIDTH" placeholder="e.g. 1280 (empty = remembered)" />
+                        </div>
+                    </div>
+                    <div class="field">
+                        <div class="field-caption">
+                            <label class="field-label" for="APP_WINDOW_HEIGHT">Window Height</label>
+                            <span class="key-hint">APP_WINDOW_HEIGHT</span>
+                        </div>
+                        <div class="input-wrap">
+                            <input type="number" step="1" min="0" id="APP_WINDOW_HEIGHT" name="APP_WINDOW_HEIGHT" placeholder="e.g. 800 (empty = remembered)" />
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
     </div>
     </form>
 </main>
