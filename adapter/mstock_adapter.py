@@ -2410,7 +2410,23 @@ class MStockAdapter(BrokerInterface):
                     if side_index >= 6:
                         order_id = values[0]
                         order_time = values[1]
-                        trade_time = values[2]
+                        # The annexure layout is Order No, Order Time,
+                        # Trade No, Trade Time, ... so a fixed offset
+                        # grabs the Trade No (e.g. "14205670") whenever
+                        # the note carries a Trade No column - and the
+                        # failed parse silently fell back to Order Time,
+                        # which prints fabricated :00 seconds. Scan the
+                        # cells between Order Time and the side column
+                        # for the first time-like token instead; older
+                        # notes without a Trade No column still resolve
+                        # (their Trade Time is the first match).
+                        trade_time = next(
+                            (
+                                value for value in values[2:side_index]
+                                if re.match(r"^\d{1,2}:\d{2}(?::\d{2})?$", value.strip())
+                            ),
+                            "",
+                        )
                         symbol = values[side_index - 1]
                         quantity = int(float(values[side_index + 1]))
                         price = float(values[side_index + 3])
