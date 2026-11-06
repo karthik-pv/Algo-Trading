@@ -6512,6 +6512,13 @@ document.addEventListener('DOMContentLoaded', function() {
 
 
     function scheduleOrdersRefresh() {
+        // An uploaded contract-note/tradebook view is a deliberate frozen
+        // snapshot - auto-refresh events (live order results, broker-side
+        // fill detections from the background poll) must NOT clobber it
+        // (user report 2026-11-07: uploaded rows "vanished after some
+        // time" while being watched). Manual refresh / date change still
+        // calls loadOrders() directly and resets the view on purpose.
+        if (ordersSource === 'upload') return;
         if (ordersRefreshTimer) clearTimeout(ordersRefreshTimer);
         ordersRefreshTimer = setTimeout(loadOrders, 1500);
     }
