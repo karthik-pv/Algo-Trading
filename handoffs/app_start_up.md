@@ -3,6 +3,8 @@
 > **LIVING DOCUMENT** — updated in place. Covers how the app window opens on every
 > platform (macOS Dock app, macOS manual launch, Windows), and the App Config
 > `APP_WINDOW_WIDTH` / `APP_WINDOW_HEIGHT` feature (2026-11-06, session with the user).
+> General UI mechanics (config form contract, dirty/Save flow, no-cache serving) live in
+> [`ui_general.md`](ui_general.md).
 
 ## 1. What the feature does
 
@@ -83,6 +85,8 @@ launchd/Dock context ("no desktop" failures).
 
 ## Changelog
 
+- **2026-11-07** — Added cross-reference banner to [`ui_general.md`](ui_general.md)
+  (general UI mechanics moved there; this doc stays window/startup-specific).
 - **2026-11-06** — Feature created: `APP_WINDOW_WIDTH`/`APP_WINDOW_HEIGHT` App Config
   keys (group `window`), App Window card in the config form, live mirror + Save-enable
   on drag, resize-on-type (resizeTo on Chrome, `/resize_app_window` + System Events on
