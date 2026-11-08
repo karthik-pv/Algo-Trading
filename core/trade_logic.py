@@ -6195,7 +6195,18 @@ class Trader_Singleton:
         """
         Persist the latest real (non-fallback) price for a symbol so a
         later session can fall back to it when every live source fails.
+        MARKET-HOURS GUARD (2026-11-08): off-hours saves are skipped -
+        an off-hours boot used to re-persist a stale/persisted value it
+        had just fallen back to, resetting its age and laundering a
+        Friday-morning wrong REST quote (24588) through weekend boots
+        while the true close was 25050 -> ATM window built at 24600.
         """
+        if not is_market_open():
+            logger.debug(
+                f"Not persisting last-known price for {symbol}: market closed "
+                f"(off-hours saves would echo stale values)."
+            )
+            return
         try:
             write_to_json(
                 {str(symbol): self._last_known_price_entry(symbol, ltp, open_price, prev_close)},
@@ -6208,8 +6219,15 @@ class Trader_Singleton:
         """
         Persist many last-known price entries in a single file write.
         entries: {symbol: entry_dict} as produced by _last_known_price_entry.
+        MARKET-HOURS GUARD: see save_last_known_price (2026-11-08).
         """
         if not entries:
+            return
+        if not is_market_open():
+            logger.debug(
+                f"Not persisting {len(entries)} last-known price(s): market closed "
+                f"(off-hours saves would echo stale values)."
+            )
             return
         try:
             write_to_json(entries, self._LAST_KNOWN_PRICES_FILE)
