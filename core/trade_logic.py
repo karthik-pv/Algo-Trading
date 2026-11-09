@@ -15,6 +15,7 @@ from flask_socketio import SocketIO
 from interface.broker_interface import BrokerInterface
 from loguru import logger
 import json
+import csv
 
 import time
 
@@ -8609,18 +8610,20 @@ class Trader_Singleton:
         try:
             path = os.path.join(
                 DATA_DIR, "logs", "SPATAM",
-                time.strftime("SPATAM_Alerts_%Y-%m-%d.txt")
+                time.strftime("SPATAM_Alerts_%Y-%m-%d.csv")
             )
-            with open(path, "r", encoding="utf-8") as f:
+            with open(path, "r", encoding="utf-8", newline="") as f:
                 out = []
-                for line in f:
-                    line = line.strip()
-                    if not line:
+                for row in csv.reader(f):
+                    if not row or row[0].strip().lower() == "time":
+                        continue  # header
+                    stamp = row[0].strip()
+                    txt = (row[1].strip() if len(row) > 1 else "")
+                    if not txt:
                         continue
-                    stamp, sep, txt = line.partition(" | ")
                     out.append({
-                        "T": stamp if sep else "",
-                        "TXT": txt if sep else stamp,
+                        "T": stamp,
+                        "TXT": txt,
                         "SYM": "",  # v1.11+ carries no SYM
                         "ts": "",
                     })
@@ -8655,10 +8658,23 @@ class Trader_Singleton:
                 return []
             spatam_log_dir = os.path.join(DATA_DIR, "logs", "SPATAM")
             os.makedirs(spatam_log_dir, exist_ok=True)
-            path = os.path.join(spatam_log_dir, time.strftime("SPATAM_Alerts_%Y-%m-%d.txt"))
+            # CSV per day (user rule 2026-11-09): time,alert rows for EOD
+            # review - opens straight in Excel. The TV-side stamp ("T")
+            # is the bar time; quotes/commas handled by the csv module.
+            path = os.path.join(spatam_log_dir, time.strftime("SPATAM_Alerts_%Y-%m-%d.csv"))
+            new_file = not os.path.exists(path)
             with self._spatam_alert_file_lock:
-                with open(path, "a", encoding="utf-8") as f:
-                    f.write("\n".join(lines) + "\n")
+                with open(path, "a", newline="", encoding="utf-8") as f:
+                    w = csv.writer(f)
+                    if new_file:
+                        w.writerow(["time", "alert"])
+                    for stamp, txt in [(s, x) for (s, x) in
+                                       [(str(rec.get("T") or "").strip(),
+                                         str(rec.get("TXT") or "").strip())
+                                        for rec in (data.get("ALERTS") or [])
+                                        if isinstance(rec, dict)]
+                                       if x]:
+                        w.writerow([stamp, txt])
             logger.info(f"SPATAM: {len(lines)} alert(s) persisted -> {path}")
             # Web-UI tracking log (2026-11-09): SYM-tagged ring buffer + live
             # socket push. Read-only for the trade engine - persistence and

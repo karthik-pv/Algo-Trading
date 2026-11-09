@@ -4120,9 +4120,9 @@ document.addEventListener('DOMContentLoaded', function() {
                     return !sym || sym.includes(TEST_SYM) || sym === 'REPAIRED';
                 })
                 .map(r => {
-                    const stamp = r.T || r.ts || '';
+                    // No time stamp in the UI (user rule 2026-11-09) -
+                    // the CSV day-log keeps it for EOD review.
                     return `<div class="pa-alert-line${markNew ? ' pa-alert-new' : ''}">
-                        <span class="pa-alert-time">${esc(stamp)}</span>
                         <span class="pa-alert-txt">${esc(r.TXT || '')}</span>
                     </div>`;
                 });
