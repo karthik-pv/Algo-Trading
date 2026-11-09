@@ -196,7 +196,8 @@ def main(paths):
         if os.path.exists(tpl_path):
             tpl = json.load(open(tpl_path))
             header = [str(v) for v in d1full.columns]
-            if header == tpl['headers']:
+            strip = lambda c: re.sub(r'\.\d+$', '', c)   # dedup-suffix tolerant
+            if [strip(c) for c in header] == [strip(c) for c in tpl['headers']]:
                 new_names = [f"{d} {h}" if d else h
                              for h, d in zip(tpl['headers'], tpl['descriptors'])]
                 d1full.columns = new_names
@@ -233,6 +234,8 @@ def main(paths):
                     ('M S1', 'S1 M'), ('M S2', 'S2 M'), ('M S3', 'S3 M'),
                     ('Q P', 'P Q'), ('Q R1', 'R1 Q'), ('Q R2', 'R2 Q'), ('Q R3', 'R3 Q'),
                     ('Q S1', 'S1 Q'), ('Q S2', 'S2 Q'), ('Q S3', 'S3 Q'),
+                    ('Y P', 'P Y'), ('Y R1', 'R1 Y'), ('Y R2', 'R2 Y'), ('Y R3', 'R3 Y'),
+                    ('Y S1', 'S1 Y'), ('Y S2', 'S2 Y'), ('Y S3', 'S3 Y'),
                     ('Daily VWAP', 'Daily VWAP')]:
         v = lv.get(c)
         if pd.notna(v):
@@ -411,11 +414,11 @@ def main(paths):
         if pd.notna(e50[i-1]) and c1[i-1] > e50[i-1] and px < e50[i]:
             above50 = False
             if pd.notna(pvt1[i]) and pvt1[i] < 0:
-                ev(t, "Attention : Price has crossed below 1E50..")
+                ev(t, "Price has crossed below 1E50..")
         elif pd.notna(e50[i-1]) and c1[i-1] < e50[i-1] and px > e50[i]:
             above50 = True
             if pd.notna(pvt1[i]) and pvt1[i] > 0:
-                ev(t, "Attention : Price has crossed above 1E50..")
+                ev(t, "Price has crossed above 1E50..")
         # 1E50 retrace-that-holds
         if above50 and pd.notna(e50[i]) and abs(px - e50[i]) <= NEAR and px > e50[i]:
             if not e50_sup:
@@ -433,9 +436,9 @@ def main(paths):
             e50_res = False
         # 1m candle VWAP cross
         if pd.notna(vwap1[i-1]) and c1[i-1] > vwap1[i-1] and px < vwap1[i]:
-            ev(t, "Attention : Price crossed down VWAP (1m)..")
+            ev(t, "Price crossed down VWAP (1m)..")
         elif pd.notna(vwap1[i-1]) and c1[i-1] < vwap1[i-1] and px > vwap1[i]:
-            ev(t, "Attention : Price crossed up VWAP (1m)..")
+            ev(t, "Price crossed up VWAP (1m)..")
         # 5PZ — 5m PVT about to cross (pre-call), +/-0.1 band, once per episode
         if has_pvt5:
             v5 = pvt5v[i]
@@ -445,12 +448,12 @@ def main(paths):
                     and not getattr(main, '_pzc_dn', False):
                 main._pzc_dn = True
                 main._pzc_up = False
-                ev(t, "Attention : 5PZ DT")
+                ev(t, "5PZ DT")
             elif pd.notna(v5) and -0.1 <= v5 < 0 and pvt1[i] > 0 and m2_rise \
                     and not getattr(main, '_pzc_up', False):
                 main._pzc_up = True
                 main._pzc_dn = False
-                ev(t, "Attention : 5PZ UT")
+                ev(t, "5PZ UT")
             elif pd.notna(v5) and abs(v5) > 0.1:
                 main._pzc_dn = False
                 main._pzc_up = False
@@ -459,9 +462,9 @@ def main(paths):
         for nm, pv in pvt_panes:
             if i > 0 and pd.notna(pv[i - 1]) and pd.notna(pv[i]):
                 if pv[i - 1] > 0 >= pv[i]:
-                    ev(t, f"Attention : {nm} DT")
+                    ev(t, f"{nm} DT")
                 elif pv[i - 1] < 0 <= pv[i]:
-                    ev(t, f"Attention : {nm} UT")
+                    ev(t, f"{nm} UT")
         # MX: <pane> MACD Line vs its own Signal Line; HTF panes stamp on
         # boundary rows, so compare with the previous non-NaN row
         for nm, ln, sg in macd_pairs:
@@ -470,14 +473,14 @@ def main(paths):
                 j -= 1
             if j >= 0:
                 if ln[j] > sg[j] and ln[i] <= sg[i]:
-                    ev(t, f"Attention : {nm} DT")
+                    ev(t, f"{nm} DT")
                 elif ln[j] < sg[j] and ln[i] >= sg[i]:
-                    ev(t, f"Attention : {nm} UT")
+                    ev(t, f"{nm} UT")
         # ox: VOC cross-UP only (no UT/DT, cross-downs not announced)
         for nm, vv in voc_panes:
             if i > 0 and pd.notna(vv[i - 1]) and pd.notna(vv[i]):
                 if vv[i - 1] <= 0 < vv[i]:
-                    ev(t, f"Attention : {nm}")
+                    ev(t, f"{nm}")
 
         # price-action follow-through on major EMAs — "rises above" / "falls
         # below": an AGGRESSIVE candle (body >= 1.5x avg of the previous 5)
@@ -564,12 +567,12 @@ def main(paths):
                 if nm in MAJOR_EMAS:
                     pend_fire[nm] = (is_res, i)
             if is_res:
-                base = (f"Attention : Price facing resistance at {group(names)}.." if any_first
-                        else f"Attention : Price retested the level {group(names)}"
+                base = (f"Price facing resistance at {group(names)}.." if any_first
+                        else f"Price retested the level {group(names)}"
                              + (" again.." if any_again else ".."))
             else:
-                base = (f"Attention : Price takes support of {group(names)}.." if any_first
-                        else f"Attention : Price retested the level {group(names)}"
+                base = (f"Price takes support of {group(names)}.." if any_first
+                        else f"Price retested the level {group(names)}"
                              + (" again.." if any_again else ".."))
             # may-cross note — each PVT pane only speaks for ITS mapped EMA
             # cluster (MAY_CROSS_MAP): 3P for 1E100/200, 2P for 5E50/100/200,
@@ -610,12 +613,12 @@ def main(paths):
             above_vwap = pd.notna(vwap1[i]) and c1[i] > vwap1[i]
             below_vwap = pd.notna(vwap1[i]) and c1[i] < vwap1[i]
             if tag and 'PM Uptrend' in str(tag) and 'PM Uptrend' not in str(ptag):
-                pfx = "Attention : " if (pd.notna(vwap1[i-1]) and c1[i-1] < vwap1[i-1] and px > vwap1[i]) else ""
+                pfx = "" if (pd.notna(vwap1[i-1]) and c1[i-1] < vwap1[i-1] and px > vwap1[i]) else ""
                 ev(t, pfx + "5PM Uptrend started..")
                 ev(t, "Bias is " + ("Strong Uptrend" if above_vwap else "Uptrend") +
                     " as we have 5PM Uptrend" + (" above VWAP" if above_vwap else ""))
             if tag and 'PM Downtrend' in str(tag) and 'PM Downtrend' not in str(ptag):
-                pfx = "Attention : " if (pd.notna(vwap1[i-1]) and c1[i-1] > vwap1[i-1] and px < vwap1[i]) else ""
+                pfx = "" if (pd.notna(vwap1[i-1]) and c1[i-1] > vwap1[i-1] and px < vwap1[i]) else ""
                 ev(t, pfx + "5PM Downtrend started..")
                 ev(t, "Bias is " + ("Strong Downtrend" if below_vwap else "Downtrend") +
                     " as we have 5PM Downtrend" + (" below VWAP" if below_vwap else ""))
@@ -628,10 +631,10 @@ def main(paths):
                 if pd.notna(k5[jp]) and pd.notna(dd5[jp]) and pd.notna(k5[i]) and pd.notna(dd5[i]):
                     if k5[jp] > dd5[jp] and k5[i] <= dd5[i]:
                         zone = 'OBZ' if k5[jp] >= 80 else 'OSZ' if k5[jp] <= 20 else 'MZ'
-                        ev(t, f"Attention : 5m Stochastic cross down from {zone}..")
+                        ev(t, f"5m Stochastic cross down from {zone}..")
                     elif k5[jp] < dd5[jp] and k5[i] >= dd5[i]:
                         zone = 'OSZ' if k5[jp] <= 20 else 'OBZ' if k5[jp] >= 80 else 'MZ'
-                        ev(t, f"Attention : 5m Stochastic cross up from {zone}..")
+                        ev(t, f"5m Stochastic cross up from {zone}..")
 
     events.sort(key=lambda x: (x[0], x[1]))
 
@@ -709,7 +712,7 @@ def main(paths):
 if __name__ == '__main__':
     dl = os.path.expanduser('~/Downloads')
     main({
-        '1m': f"{dl}/NSE_NIFTY1!, 1_bc27d.csv",
+        '1m': f"{dl}/NSE_NIFTY1!, 1_3c909.csv",
         '15s': None,
         '5m': None,
     })
