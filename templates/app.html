@@ -1790,7 +1790,7 @@
                      (socket 'spatam_alerts' + GET /tv/spatam_alerts on load).
                      TEST MODE: SYMs containing BTC only - see the JS block. -->
                 <div id="ml-tracking-title" style="border:3px solid #b9b9b9; border-radius:4px; padding:4px 10px; font-weight:700; color:#9ec5fe; margin-bottom:8px;">
-                    Tracking Log (BTC) <span id="pa-alerts-updated" style="font-weight:400; font-size:0.78em; color:#777;"></span>
+                    Tracking Log <span id="pa-alerts-updated" style="font-weight:400; font-size:0.78em; color:#777;"></span>
                 </div>
                 <div id="pa-alerts-body" class="no-options" style="width:300px; height:411px; overflow-y:auto; border:3px solid #b9b9b9; border-radius:4px; padding:4px;">
                     Waiting for SPATAM alerts&hellip;
@@ -4082,11 +4082,11 @@ document.addEventListener('DOMContentLoaded', function() {
     })();
 
     // === Tracking Log (SPATAM ALERTS — right of the Levels Ladder) ===
-    // TEST MODE (2026-11-09): only SYMs containing BTC are shown until the
-    // NIFTY switch-over. Lines arrive over the 'spatam_alerts' socket event;
-    // GET /tv/spatam_alerts hydrates on page load. Newest line on top.
+    // Permanent (2026-11-09): shows the NIFTY SPATAM feed. Lines arrive over
+    // the 'spatam_alerts' socket event; GET /tv/spatam_alerts hydrates on
+    // page load. Newest line on top.
     (function () {
-        const TEST_SYM = 'BTC';
+        const TEST_SYM = 'NIFTY';
         const body = document.getElementById('pa-alerts-body');
         const updated = document.getElementById('pa-alerts-updated');
         if (!body) return;
@@ -4096,10 +4096,10 @@ document.addEventListener('DOMContentLoaded', function() {
         function render(records, markNew) {
             const rows = (records || [])
                 .filter(r => {
-                    // TEST MODE: BTCUSD only. NOTE: the BTC test chart's SYM
-                    // field arrives as a study-object dump and the server's
-                    // JSON repair replaces it with "REPAIRED" - accept that
-                    // as BTC (REPAIRED only happens on this chart today).
+                    // NIFTY feed only. NOTE: a broken SYM field (study-object
+                    // dump with unescaped quotes) is replaced by the server's
+                    // JSON repair with "REPAIRED" - accept that too so a
+                    // broken-SYM flush is never silently dropped.
                     const sym = (r.SYM || '').toUpperCase();
                     return sym.includes(TEST_SYM) || sym === 'REPAIRED';
                 })
