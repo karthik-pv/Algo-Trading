@@ -1749,13 +1749,16 @@
             line-height: 1.2;
         }
     </style>
-    <div class="widget-container" id="ml-widget-container">
+    <div class="widget-container" id="ml-widget-container" style="display:flex; gap:16px; align-items:flex-start;">
       <!-- inline-block wrapper: its width is set by the widest child (the
            grid), so the top strip can be width:100% of EXACTLY the
-           momentors+levels span and never wider -->
-      <div style="display:inline-block;">
+           momentors+levels span and never wider. The Tracking Log sits
+           OUTSIDE the wrapper as a second flex column - it starts at the
+           very top of the widget (right below Pending Orders) and the top
+           strip's width is JS-synced to the Levels Ladder width. -->
+      <div style="display:inline-block; flex:0 0 auto;">
         <div id="ml-top-strip" style="margin-bottom:8px;">
-            <table class="option-table" id="ml-top-table"><tbody id="ml-top-body">
+            <table class="option-table" id="ml-top-table" style="width:100%; table-layout:fixed;"><tbody id="ml-top-body">
                 <tr><td colspan="6" class="no-options">Waiting for TradingView data&hellip;</td></tr>
             </tbody></table>
         </div>
@@ -1785,17 +1788,16 @@
                     </table>
                 </div>
             </div>
-            <div id="ml-tracking" style="flex:0 0 auto;">
-                <!-- Tracking Log (2026-11-09): SPATAM ALERTS as they arrive
-                     (socket 'spatam_alerts' + GET /tv/spatam_alerts on load).
-                     TEST MODE: SYMs containing BTC only - see the JS block. -->
-                <div id="ml-tracking-title" style="border:3px solid #b9b9b9; border-radius:4px; padding:4px 10px; font-weight:700; color:#9ec5fe; margin-bottom:8px;">
-                    Tracking Log <span id="pa-alerts-updated" style="font-weight:400; font-size:0.78em; color:#777;"></span>
-                </div>
-                <div id="pa-alerts-body" class="no-options" style="width:300px; height:411px; overflow-y:auto; border:3px solid #b9b9b9; border-radius:4px; padding:4px;">
-                    Waiting for SPATAM alerts&hellip;
-                </div>
-            </div>
+        </div>
+      </div>
+      <div id="ml-tracking" style="flex:1 1 220px; min-width:220px;">
+        <!-- Tracking Log (2026-11-09): SPATAM ALERTS as they arrive
+             (socket 'spatam_alerts' + GET /tv/spatam_alerts on load). -->
+        <div id="ml-tracking-title" style="border:3px solid #b9b9b9; border-radius:4px; padding:4px 10px; font-weight:700; color:#9ec5fe; margin-bottom:8px;">
+            Tracking Log <span id="pa-alerts-updated" style="font-weight:400; font-size:0.78em; color:#777;"></span>
+        </div>
+        <div id="pa-alerts-body" class="no-options" style="height:411px; overflow-y:auto; border:3px solid #b9b9b9; border-radius:4px; padding:4px;">
+            Waiting for SPATAM alerts&hellip;
         </div>
       </div>
     </div>
@@ -4079,6 +4081,17 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         loadMomentors();
         setInterval(loadMomentors, 2000);
+
+        // top strip width = Levels Ladder width (user request 2026-11-09):
+        // the strip table is width:100% table-layout:fixed, so sizing the
+        // strip div pins the table to the ladder's on-screen width.
+        const topStrip = document.getElementById('ml-top-strip');
+        const ladderBox = document.getElementById('ml-ladder');
+        if (topStrip && ladderBox) {
+            const syncStrip = () => { topStrip.style.width = ladderBox.offsetWidth + 'px'; };
+            syncStrip();
+            setInterval(syncStrip, 2000);
+        }
     })();
 
     // === Tracking Log (SPATAM ALERTS — right of the Levels Ladder) ===
