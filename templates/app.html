@@ -574,7 +574,10 @@
         display: flex;
         align-items: center;
         justify-content: space-between;
-        flex-wrap: wrap;
+        /* One line, always (user rule 2026-11-09): the date picker,
+           Upload / Download / Refresh controls share the line with the
+           cash + charges chips instead of wrapping below them. */
+        flex-wrap: nowrap;
         gap: 8px;
         margin-bottom: 8px;
     }
@@ -656,6 +659,16 @@
         display: flex;
         align-items: center;
         gap: 10px;
+        /* Shrink-able but never wrapping - the trades-stats span
+           truncates with an ellipsis if the line gets tight. */
+        flex: 0 1 auto;
+        min-width: 0;
+    }
+
+    #ordersTradeStats {
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
     }
 
     #ordersCountLabel {
