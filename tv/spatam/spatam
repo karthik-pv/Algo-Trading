@@ -1,6 +1,16 @@
 //@version=5
 // SPATAM — SetUp, Price Action, Trend, Alerts & Momentum
 indicator("SPATAM", "", true,scale=scale.none, max_labels_count=500)
+// VERSION: 2026-11-09.39 — TREPAT port: alert families rewritten to the FINAL
+//   catalog (tv/spatam/Tracking_spatam) ported 1:1 from the replay oracle
+//   scripts/trepat_track.py. New: level-touch engine (touch/retest/again +
+//   may-cross + Expect 1PX_15PM), aggressive-candle follow-through, 1PMX with
+//   level attribution, 1E50/1E21 retrace-that-holds, 1m candle VWAP cross,
+//   5PZ once-per-episode, session-open gap/ladder/VOC, Yearly (12M) pivot
+//   ladder, 5PM-start Bias lines, 5m stoch zone crosses, PX/MX/ox momentors
+//   with catalog names (1M2X/5M1X/…, old SX/M1X/M2X/M2z/Pz/oz codes and the
+//   'Attention : ' prefix REMOVED). Old-vocabulary ALERTS are gone, NOT
+//   aliased — the app needs no mapping. DATA/LEVELS payloads UNCHANGED.
 // VERSION: 2026-11-05.38 — alertJsonOn default flipped to TRUE (plain-text
 //   alert flushes get silently dropped by the Algo app — fresh-chart adds
 //   lost voice readout; seen 2026-11-05 on the BTCUSD chart). Any OTHER
@@ -1891,214 +1901,483 @@ if array.size(alertQ) > 0 and bar_index - lastFlushBar >= flushBars
     array.clear(alertTs)
 
 //═══════════════════════════════════════════════════════════════════════════════════════════════════
-// LOOKOUT FAMILIES (core port from Lookouts, fed by this script's engine) — fire on CONFIRMED bars
+// TREPAT COMMENTARY — ported 1:1 from scripts/trepat_track.py (replay oracle).
+// Spec: tv/spatam/Tracking_spatam (FINAL catalog). The 1m layer (touches,
+// retests, 1PMX, 1E50/1E21 relations, 1m VWAP cross, 5PZ, Expect,
+// aggressive-candle follow-through) evaluates once per 1m bar; HTF momentors
+// stamp on their own TF boundaries. The Alert Log table shows the same lines
+// the ALERTS flush sends — one vocabulary, one runtime.
 //═══════════════════════════════════════════════════════════════════════════════════════════════════
 bool barOK = alertsOn and barstate.isconfirmed
-// 5-zone code for the 1m Stochastic (OSZ/NOSZ/MZ/NOBZ/OBZ) — appended to 1SX alerts
-string k1m_zone_txt = k1m < 20 ? " OSZ" : k1m < 40 ? " NOSZ" : k1m < 60 ? " MZ" : k1m < 80 ? " NOBZ" : " OBZ"
-// EMA21 on the CHART timeframe — with the chart on 15s this IS the 15s EMA21
-float eChart21 = ta.ema(close, 21)
 
-// — S/R + crossings at EMA levels (family #1) —
-float[] alv = array.new_float()
-string[] acd = array.new_string()
-f_addLvl(_a, _n, _v, _nm) =>
+// — extra pulls: EMA21 per TF, M EMA grid, Yearly pivots, 1m OHLC + prev-5 body avg —
+f_ema21() =>
+    ta.ema(close, 21)
+f_1m_bar() =>
+    b = math.abs(close - open)
+    [open, high, low, close, (ta.sma(b, 6) * 6 - b) / 5]
+ema21_1m = request.security(syminfo.tickerid, "1", f_ema21(), lookahead = barmerge.lookahead_on)
+ema21_5m = request.security(syminfo.tickerid, "5", f_ema21(), lookahead = barmerge.lookahead_on)
+ema21_30m = request.security(syminfo.tickerid, "30", f_ema21(), lookahead = barmerge.lookahead_on)
+ema21_2h = request.security(syminfo.tickerid, "120", f_ema21(), lookahead = barmerge.lookahead_on)
+ema21_d = request.security(syminfo.tickerid, "D", f_ema21(), lookahead = barmerge.lookahead_on)
+ema21_w = request.security(syminfo.tickerid, "W", f_ema21(), lookahead = barmerge.lookahead_on)
+ema21_m = request.security(syminfo.tickerid, "M", f_ema21(), lookahead = barmerge.lookahead_on)
+[ema9_m, ema50_m, ema100_m, ema200_m] = request.security(syminfo.tickerid, "M", get_EMA9_EMA50_EMA100_EMA200_Stats_res(), lookahead = barmerge.lookahead_on)
+[P_y,R1_y,R2_y,R3_y,R4_y,R5_y,S1_y,S2_y,S3_y,S4_y,S5_y, prevYHigh, prevYLow, prevYClose] = request.security(syminfo.tickerid, "12M", get_PrevPeriodPivots(), lookahead = barmerge.lookahead_on)
+[o1m, h1m, l1m, c1m, bavg5] = request.security(syminfo.tickerid, "1", f_1m_bar(), lookahead = barmerge.lookahead_on)
+
+// TF boundary stamps (global scope so ta.* evaluates every bar)
+bool newDay = ta.change(time("D")) != 0
+bool new1m  = ta.change(time("1")) != 0
+bool new5m  = ta.change(time("5")) != 0
+bool new30  = ta.change(time("30")) != 0
+bool new2h  = ta.change(time("120")) != 0
+
+// — level universe (fixed, engine names): 33 EMAs + 35 pivots + Daily VWAP —
+//   1E9 / 1E21 excluded from touches (dedicated events only). MAJOR = the
+//   EMA50/100/200 clusters that arm the price-action follow-through.
+var string[] lvName = str.split("1E50,1E100,1E200,5E9,5E21,5E50,5E100,5E200,3E9,3E21,3E50,3E100,3E200,2E9,2E21,2E50,2E100,2E200,DE9,DE21,DE50,DE100,DE200,WE9,WE21,WE50,WE100,WE200,ME9,ME21,ME50,ME100,ME200,PD P,R1 D,R2 D,R3 D,S1 D,S2 D,S3 D,P W,R1 W,R2 W,R3 W,S1 W,S2 W,S3 W,P M,R1 M,R2 M,R3 M,S1 M,S2 M,S3 M,P Q,R1 Q,R2 Q,R3 Q,S1 Q,S2 Q,S3 Q,P Y,R1 Y,R2 Y,R3 Y,S1 Y,S2 Y,S3 Y,Daily VWAP", ",")
+var float[]  lvVal   = array.new_float(array.size(lvName), na)
+var int[]    lvTouch = array.new_int(array.size(lvName), 0)
+var bool[]   lvAway  = array.new_bool(array.size(lvName), true)
+var int[]    lvPendB = array.new_int(array.size(lvName), -1000000)   // follow-through armed-at bar
+var bool[]   lvPendR = array.new_bool(array.size(lvName), false)     // armed as resistance?
+
+f_lvIdx(string _n) =>
+    int _r = -1
+    for i = 0 to array.size(lvName) - 1
+        if array.get(lvName, i) == _n
+            _r := i
+    _r
+f_lvSet(string _n, float _v) =>
     if not na(_v)
-        array.push(_a, _v)
-        array.push(_n, _nm)
-f_addLvl(alv, acd, ema50_1m,  "1E50")
-f_addLvl(alv, acd, ema100_1m, "1E1")
-f_addLvl(alv, acd, ema200_1m, "1E2")
-f_addLvl(alv, acd, ema50_5m,  "5E50")
-f_addLvl(alv, acd, ema100_5m, "5E1")
-f_addLvl(alv, acd, ema200_5m, "5E2")
-f_addLvl(alv, acd, ema50_30m, "3E50")
-f_addLvl(alv, acd, ema100_30m, "3E1")
-f_addLvl(alv, acd, ema200_30m, "3E2")
-f_addLvl(alv, acd, ema50_2h,  "2E50")
-f_addLvl(alv, acd, ema100_2h, "2E1")
-f_addLvl(alv, acd, ema200_2h, "2E2")
-if dailyAlertsOn
-    f_addLvl(alv, acd, ema100_d, "DE1")
-    f_addLvl(alv, acd, ema200_d, "DE2")
-if weeklyAlertsOn
-    f_addLvl(alv, acd, ema100_w, "WE1")
-    f_addLvl(alv, acd, ema200_w, "WE2")
+        int _i = f_lvIdx(_n)
+        if _i >= 0
+            array.set(lvVal, _i, _v)
+f_isStat(string _n) =>
+    _n == "Daily VWAP" or _n == "PD P" or str.contains(_n, " D") or str.contains(_n, " W") or str.contains(_n, " M") or str.contains(_n, " Q") or str.contains(_n, " Y")
+f_lvStatic(float _v, string _n) =>
+    if not na(_v)
+        bool dup = false
+        for i = 0 to array.size(lvName) - 1
+            float u = array.get(lvVal, i)
+            if not na(u) and f_isStat(array.get(lvName, i)) and math.abs(_v - u) <= 5
+                dup := true
+        if not dup
+            f_lvSet(_n, _v)
 
-// Group same-type level events into ONE message (Lookouts behaviour): 
-// "Crossing down @ 1E50 and 1E1" instead of two separate alerts.
-f_alertJoined(string _prefix, string[] _names) =>
-    if array.size(_names) == 1
-        f_alert(_prefix + array.get(_names, 0))
-    else if array.size(_names) > 1
-        string joined = ""
-        for i = 0 to array.size(_names) - 1
-            joined += (i == 0 ? "" : i == array.size(_names) - 1 ? " and " : ", ") + array.get(_names, i)
-        f_alert(_prefix + joined)
+// constants (engine parity)
+float T_NEAR = 15.0
+float T_RETREAT = 25.0
+float T_PCT = 0.5
 
-if barOK and srAlertsOn and array.size(alv) > 0
-    string[] supNames = array.new_string()
-    string[] resNames = array.new_string()
-    string[] xupNames = array.new_string()
-    string[] xdnNames = array.new_string()
-    for i = 0 to array.size(alv) - 1
-        float lv = array.get(alv, i)
-        string cd = array.get(acd, i)
-        bool gateOK = str.startswith(cd, "D") ? dailyAlertsOn : str.startswith(cd, "W") ? weeklyAlertsOn : true
-        if gateOK
-            // Crossings (close-through) take precedence — S/R fire only on same-side retests
-            if close > lv and close[1] <= lv
-                array.push(xupNames, cd)
-            else if close < lv and close[1] >= lv
-                array.push(xdnNames, cd)
-            else if low <= lv and close > lv
-                array.push(supNames, cd)
-            else if high >= lv and close < lv
-                array.push(resNames, cd)
-    f_alertJoined("Support @ ", supNames)
-    f_alertJoined("Resistance @ ", resNames)
-    f_alertJoined("Crossing up @ ", xupNames)
-    f_alertJoined("Crossing down @ ", xdnNames)
+// refresh EMA levels every bar (they hug price)
+if barstate.isconfirmed
+    f_lvSet("1E50", ema50_1m)
+    f_lvSet("1E100", ema100_1m)
+    f_lvSet("1E200", ema200_1m)
+    f_lvSet("5E9", ema9_5m)
+    f_lvSet("5E21", ema21_5m)
+    f_lvSet("5E50", ema50_5m)
+    f_lvSet("5E100", ema100_5m)
+    f_lvSet("5E200", ema200_5m)
+    f_lvSet("3E9", ema9_30m)
+    f_lvSet("3E21", ema21_30m)
+    f_lvSet("3E50", ema50_30m)
+    f_lvSet("3E100", ema100_30m)
+    f_lvSet("3E200", ema200_30m)
+    f_lvSet("2E9", ema9_2h)
+    f_lvSet("2E21", ema21_2h)
+    f_lvSet("2E50", ema50_2h)
+    f_lvSet("2E100", ema100_2h)
+    f_lvSet("2E200", ema200_2h)
+    f_lvSet("DE9", ema9_d)
+    f_lvSet("DE21", ema21_d)
+    f_lvSet("DE50", ema50_d)
+    f_lvSet("DE100", ema100_d)
+    f_lvSet("DE200", ema200_d)
+    f_lvSet("WE9", ema9_w)
+    f_lvSet("WE21", ema21_w)
+    f_lvSet("WE50", ema50_w)
+    f_lvSet("WE100", ema100_w)
+    f_lvSet("WE200", ema200_w)
+    f_lvSet("ME9", ema9_m)
+    f_lvSet("ME21", ema21_m)
+    f_lvSet("ME50", ema50_m)
+    f_lvSet("ME100", ema100_m)
+    f_lvSet("ME200", ema200_m)
 
-// — Attention: price NEAR a level (within range, no touch yet) that could act as R/S.
-//   R/S decided by the level's FAMILY trend (1P/5P/3P/2P/DP/WP — the Levels-Ladder tags):
-//   level above price + family trend down → could provide resistance
-//   level below price + family trend up   → could provide support
-//   Each level latched while it stays near — re-announces only after price moves away. —
-var string[] nearLatched = array.new_string()
-float nearRange = 50.0
-if barOK and srAlertsOn and array.size(alv) > 0
-    string[] nearNow = array.new_string()
-    string[] resNear = array.new_string()
-    string[] supNear = array.new_string()
-    for i = 0 to array.size(alv) - 1
-        float lv = array.get(alv, i)
-        string cd = array.get(acd, i)
-        float dist = close - lv
-        if math.abs(dist) <= nearRange
-            float famPvt = str.startswith(cd, "1") ? value_pvt_1m : str.startswith(cd, "5") ? value_pvt_5m : str.startswith(cd, "3") ? value_pvt_30m : str.startswith(cd, "2") ? value_pvt_2h : str.startswith(cd, "D") ? value_pvt_d : value_pvt_w
-            array.push(nearNow, cd)
-            bool latched = false
-            if array.size(nearLatched) > 0
-                for j = 0 to array.size(nearLatched) - 1
-                    if array.get(nearLatched, j) == cd
-                        latched := true
-            if not latched
-                if dist > 0 and famPvt < 0
-                    array.push(resNear, cd)
-                else if dist < 0 and famPvt > 0
-                    array.push(supNear, cd)
-    if array.size(resNear) > 0
-        string j = ""
-        for i = 0 to array.size(resNear) - 1
-            j += (i == 0 ? "" : ", ") + array.get(resNear, i)
-        f_alert("Attention : " + j + " could provide resistance..")
-    if array.size(supNear) > 0
-        string j = ""
-        for i = 0 to array.size(supNear) - 1
-            j += (i == 0 ? "" : ", ") + array.get(supNear, i)
-        f_alert("Attention : " + j + " could provide support..")
-    array.clear(nearLatched)
-    if array.size(nearNow) > 0
-        for i = 0 to array.size(nearNow) - 1
-            array.push(nearLatched, array.get(nearNow, i))
+// static pivots rebuilt each new day, dedup within 5 pts (engine order D→W→M→Q→Y→VWAP);
+// Daily VWAP frozen at day start (engine parity)
+var float vwapOpen = na
+if newDay and barstate.isconfirmed
+    array.fill(lvVal, na)
+    f_lvSet("1E50", ema50_1m)
+    f_lvSet("1E100", ema100_1m)
+    f_lvSet("1E200", ema200_1m)
+    f_lvSet("5E9", ema9_5m)
+    f_lvSet("5E21", ema21_5m)
+    f_lvSet("5E50", ema50_5m)
+    f_lvSet("5E100", ema100_5m)
+    f_lvSet("5E200", ema200_5m)
+    f_lvSet("3E9", ema9_30m)
+    f_lvSet("3E21", ema21_30m)
+    f_lvSet("3E50", ema50_30m)
+    f_lvSet("3E100", ema100_30m)
+    f_lvSet("3E200", ema200_30m)
+    f_lvSet("2E9", ema9_2h)
+    f_lvSet("2E21", ema21_2h)
+    f_lvSet("2E50", ema50_2h)
+    f_lvSet("2E100", ema100_2h)
+    f_lvSet("2E200", ema200_2h)
+    f_lvSet("DE9", ema9_d)
+    f_lvSet("DE21", ema21_d)
+    f_lvSet("DE50", ema50_d)
+    f_lvSet("DE100", ema100_d)
+    f_lvSet("DE200", ema200_d)
+    f_lvSet("WE9", ema9_w)
+    f_lvSet("WE21", ema21_w)
+    f_lvSet("WE50", ema50_w)
+    f_lvSet("WE100", ema100_w)
+    f_lvSet("WE200", ema200_w)
+    f_lvSet("ME9", ema9_m)
+    f_lvSet("ME21", ema21_m)
+    f_lvSet("ME50", ema50_m)
+    f_lvSet("ME100", ema100_m)
+    f_lvSet("ME200", ema200_m)
+    f_lvStatic(P_d, "PD P")
+    f_lvStatic(R1_d, "R1 D")
+    f_lvStatic(R2_d, "R2 D")
+    f_lvStatic(R3_d, "R3 D")
+    f_lvStatic(S1_d, "S1 D")
+    f_lvStatic(S2_d, "S2 D")
+    f_lvStatic(S3_d, "S3 D")
+    f_lvStatic(P_w, "P W")
+    f_lvStatic(R1_w, "R1 W")
+    f_lvStatic(R2_w, "R2 W")
+    f_lvStatic(R3_w, "R3 W")
+    f_lvStatic(S1_w, "S1 W")
+    f_lvStatic(S2_w, "S2 W")
+    f_lvStatic(S3_w, "S3 W")
+    f_lvStatic(P_m, "P M")
+    f_lvStatic(R1_m, "R1 M")
+    f_lvStatic(R2_m, "R2 M")
+    f_lvStatic(R3_m, "R3 M")
+    f_lvStatic(S1_m, "S1 M")
+    f_lvStatic(S2_m, "S2 M")
+    f_lvStatic(S3_m, "S3 M")
+    f_lvStatic(P_q, "P Q")
+    f_lvStatic(R1_q, "R1 Q")
+    f_lvStatic(R2_q, "R2 Q")
+    f_lvStatic(R3_q, "R3 Q")
+    f_lvStatic(S1_q, "S1 Q")
+    f_lvStatic(S2_q, "S2 Q")
+    f_lvStatic(S3_q, "S3 Q")
+    f_lvStatic(P_y, "P Y")
+    f_lvStatic(R1_y, "R1 Y")
+    f_lvStatic(R2_y, "R2 Y")
+    f_lvStatic(R3_y, "R3 Y")
+    f_lvStatic(S1_y, "S1 Y")
+    f_lvStatic(S2_y, "S2 Y")
+    f_lvStatic(S3_y, "S3 Y")
+    vwapOpen := vwapSession
+    f_lvSet("Daily VWAP", vwapOpen)
+    array.fill(lvTouch, 0)
+    array.fill(lvAway, true)
+    array.fill(lvPendB, -1000000)
 
-// — Attention: VWAP approach + cross (1m + 5m), up + down.
-//   "About to cross" = price within vwapNearPts of VWAP on the wrong side + the driving PM trending.
-//   "Crossed"       = actual cross + PM agreement. 5m cross derived from chart bars via 5m boundaries
-//                     (no extra security pull — budget is full). Each "about to" latched per approach. —
-bool pm15Up = pvt_trend_flag_15s == 1 and trend15s == 1
-bool pm15Dn = pvt_trend_flag_15s == -1 and trend15s == -1
-bool pm1Up  = pvt_trend_flag_1m == 1 and trend1 == 1
-bool pm1Dn  = pvt_trend_flag_1m == -1 and trend1 == -1
-float distVwap = vwapSession - close
-bool nearBelow = not vwapUp and distVwap <= vwapNearPts and distVwap >= 0   // below VWAP, within range
-bool nearAbove = vwapUp and (close - vwapSession) <= vwapNearPts            // above VWAP, within range
-// 5m-bar side of VWAP, tracked on chart bars (boundary update — no pull):
-var bool side5Up = na
-var bool side5UpPrev = na
-bool new5m = ta.change(time("5")) != 0
-if new5m
-    side5UpPrev := side5Up
-    side5Up := close > vwapSession
-bool xUp5 = new5m and side5Up and side5UpPrev == false
-bool xDn5 = new5m and not side5Up and side5UpPrev == true
-var bool abtUp1m = false
-var bool abtDn1m = false
-var bool abtUp5m = false
-var bool abtDn5m = false
-// Consolidation around VWAP: >=4 crosses within the last 40 chart bars = price hugging VWAP.
-// Announce once at onset; while active, SUPPRESS the about-to/crossed attentions (anti-noise).
-float crossCount40 = math.sum(vwapXUp1m ? 1 : 0, 40) + math.sum(vwapXDn1m ? 1 : 0, 40)
-bool consolVwap   = crossCount40 >= 4
-var bool consolAnnounced = false
-// PM-trend STARTS (fresh transitions, not ongoing states):
-bool pm5Up = value_pvt_5m > 0 and trend5 == 1
-bool pm5Dn = value_pvt_5m < 0 and trend5 == -1
-bool pm1StartUp = pm1Up and not pm1Up[1]
-bool pm1StartDn = pm1Dn and not pm1Dn[1]
-bool pm5StartUp = pm5Up and not pm5Up[1]
-bool pm5StartDn = pm5Dn and not pm5Dn[1]
-int  barsSinceXUp = ta.barssince(vwapXUp1m)
-int  barsSinceXDn = ta.barssince(vwapXDn1m)
-if barOK and vwapAlertsOn
-    if consolVwap
-        if not consolAnnounced
-            f_alert("Attention : Price consolidating around VWAP..")
-            consolAnnounced := true
-    else
-        consolAnnounced := false
-    // 1m: about to cross up — 15PM uptrending, price below and near (suppressed while consolidating)
-    if nearBelow and pm15Up and not consolVwap
-        if not abtUp1m
-            f_alert("Attention : Price about to cross up VWAP (1m)..")
-            abtUp1m := true
-    else
-        abtUp1m := false
-    // 1m: about to cross down — 15PM downtrending, price above and near (suppressed while consolidating)
-    if nearAbove and pm15Dn and not consolVwap
-        if not abtDn1m
-            f_alert("Attention : Price about to cross down VWAP (1m)..")
-            abtDn1m := true
-    else
-        abtDn1m := false
-    // 5m: about to cross up — 1PM uptrending (suppressed while consolidating)
-    if nearBelow and pm1Up and not consolVwap
-        if not abtUp5m
-            f_alert("Attention : Price about to cross up VWAP (5m)..")
-            abtUp5m := true
-    else
-        abtUp5m := false
-    // 5m: about to cross down — 1PM downtrending (suppressed while consolidating)
-    if nearAbove and pm1Dn and not consolVwap
-        if not abtDn5m
-            f_alert("Attention : Price about to cross down VWAP (5m)..")
-            abtDn5m := true
-    else
-        abtDn5m := false
-    // Crossed (event fires on the cross bar itself, gated by PM agreement; suppressed while consolidating):
-    if vwapXUp1m and (pm15Up or pm1Up) and not consolVwap
-        f_alert("Attention : Price crossed up VWAP (1m)..")
-    if vwapXDn1m and (pm15Dn or pm1Dn) and not consolVwap
-        f_alert("Attention : Price crossed down VWAP (1m)..")
-    if xUp5 and pm1Up and not consolVwap
-        f_alert("Attention : Price crossed up VWAP (5m)..")
-    if xDn5 and pm1Dn and not consolVwap
-        f_alert("Attention : Price crossed down VWAP (5m)..")
-    // PRIORITY — PM uptrend/downtrend STARTS as price crosses VWAP (fires even while consolidating):
-    if pm1StartUp and vwapUp and barsSinceXUp <= 5
-        f_alert("Attention : 1PM uptrend starts on VWAP cross up..")
-    if pm1StartDn and not vwapUp and barsSinceXDn <= 5
-        f_alert("Attention : 1PM downtrend starts on VWAP cross down..")
-    if pm5StartUp and vwapUp and barsSinceXUp <= 20
-        f_alert("Attention : 5PM uptrend starts on VWAP cross up..")
-    if pm5StartDn and not vwapUp and barsSinceXDn <= 20
-        f_alert("Attention : 5PM downtrend starts on VWAP cross down..")
+// — session open (catalog §1) —
+if barOK and newDay
+    float gapPct = (c1m - prevDayClose) / prevDayClose * 100
+    f_alert("Session open. " + (gapPct >= 0 ? "Gap up " : "Gap down ") + (gapPct >= 0 ? "+" : "") + str.tostring(gapPct, "#.##") + "% from previous close.")
+    string[] abv = array.new_string()
+    string[] blw = array.new_string()
+    for i = 0 to array.size(lvName) - 1
+        float v = array.get(lvVal, i)
+        if not na(v) and not na(c1m)
+            if v - c1m > 0 and v - c1m <= c1m * T_PCT / 100
+                array.push(abv, array.get(lvName, i))
+            if c1m - v > 0 and c1m - v <= c1m * T_PCT / 100
+                array.push(blw, array.get(lvName, i))
+    f_alert("Resistance within .5% above: " + (array.size(abv) > 0 ? array.join(abv, ", ") : "none"))
+    f_alert("Support within .5% below: " + (array.size(blw) > 0 ? array.join(blw, ", ") : "none"))
+    string[] vocs = array.new_string()
+    if voc_1m > 0
+        array.push(vocs, "1o")
+    if voc_5m > 0
+        array.push(vocs, "5o")
+    if voc_30m > 0
+        array.push(vocs, "3o")
+    if voc_2h > 0
+        array.push(vocs, "2o")
+    if voc_d > 0
+        array.push(vocs, "Do")
+    f_alert("VOC at open: " + (array.size(vocs) > 0 ? array.join(vocs, ", ") : "none above 0"))
 
-// — HTF S / M1 / M2 crosses + M2 z-curl (family #3) —
-// — one-shot latch: fire _cond only on the FIRST chart bar of each HTF bar.
-//   Fixes cross/Pz alerts re-firing every chart bar while the HTF condition
-//   holds (e.g. 1PX UT firing on all four 15s sub-bars of the crossing 1m bar).
+// — grouping + wording helper —
+f_group(string[] _n) =>
+    int _sz = array.size(_n)
+    string _r = ""
+    if _sz == 1
+        _r := array.get(_n, 0)
+    else if _sz > 1
+        for i = 0 to _sz - 1
+            _r += (i == 0 ? "" : i == _sz - 1 ? " and " : ", ") + array.get(_n, i)
+    _r
+
+// may-cross: pane -> the EMA cluster it governs (catalog §2); uptrend = pane PVT > 0
+// 3P:1E100/1E200 · 2P:5E50/100/200 · DP:3E50/100/200 · WP:2E50/100/200 · MP:DE50/100/200
+f_paneGov(int _p, string _n) =>
+    _p == 0 ? (_n == "1E100" or _n == "1E200") : _p == 1 ? (_n == "5E50" or _n == "5E100" or _n == "5E200") : _p == 2 ? (_n == "3E50" or _n == "3E100" or _n == "3E200") : _p == 3 ? (_n == "2E50" or _n == "2E100" or _n == "2E200") : (_n == "DE50" or _n == "DE100" or _n == "DE200")
+f_paneUp(int _p) =>
+    _p == 0 ? value_pvt_30m > 0 : _p == 1 ? value_pvt_2h > 0 : _p == 2 ? value_pvt_d > 0 : _p == 3 ? value_pvt_w > 0 : value_pvt_m > 0
+
+var string lastSupGrp = ""
+var string lastResGrp = ""
+
+// — 1m layer: once per 1m bar —
+// carried state (1m boundary to boundary)
+var float e50Prev = na
+var float cPrev = na
+var float vwapPrev = na
+var bool below21 = false
+var bool above50 = false
+var bool e21Res = false
+var bool e21Sup = false
+var bool e50Sup = false
+var bool e50Res = false
+var int ret21Bar = -1000000
+var int ret50Bar = -1000000
+var bool pzcUp = false
+var bool pzcDn = false
+var bool was5Up = false
+var bool was5Dn = false
+
+if barOK and new1m and not na(c1m) and not na(o1m)
+    // ---- aggressive-candle follow-through (checked BEFORE re-arming — catalog §2) ----
+    for i = 0 to array.size(lvName) - 1
+        int pb = array.get(lvPendB, i)
+        if pb >= 0 and bar_index - pb > 15
+            array.set(lvPendB, i, -1000000)
+        else if pb >= 0 and bar_index > pb
+            float val = array.get(lvVal, i)
+            if not na(val) and not na(bavg5) and bavg5 > 0
+                float body = math.abs(c1m - o1m)
+                if body >= 1.5 * bavg5
+                    bool isResP = array.get(lvPendR, i)
+                    if not isResP and c1m > val and c1m > o1m
+                        f_alert("Price rises above " + array.get(lvName, i))
+                        array.set(lvPendB, i, -1000000)
+                    else if isResP and c1m < val and c1m < o1m
+                        f_alert("Price falls below " + array.get(lvName, i))
+                        array.set(lvPendB, i, -1000000)
+
+    // ---- touch engine (wick-aware range overlap, approach side) ----
+    string[] tickRes = array.new_string()
+    string[] tickSup = array.new_string()
+    string[] contRes = array.new_string()
+    string[] contSup = array.new_string()
+    string[] firstRes = array.new_string()
+    string[] firstSup = array.new_string()
+    string[] againRes = array.new_string()
+    string[] againSup = array.new_string()
+    for i = 0 to array.size(lvName) - 1
+        float val = array.get(lvVal, i)
+        string nm = array.get(lvName, i)
+        if na(val)
+            continue
+        bool inBand = (l1m - val) <= T_NEAR and (h1m - val) >= -T_NEAR
+        if inBand
+            if not array.get(lvAway, i)
+                if c1m < val
+                    array.push(contRes, nm)
+                else
+                    array.push(contSup, nm)
+                continue
+            bool first = array.get(lvTouch, i) == 0
+            array.set(lvTouch, i, array.get(lvTouch, i) + 1)
+            array.set(lvAway, i, false)
+            // 1E21 / 1E50: touches within ~120s of a retrace line are suppressed
+            if nm == "1E21" or nm == "1E50"
+                int rb = nm == "1E21" ? ret21Bar : ret50Bar
+                if bar_index - rb < 2
+                    continue
+            bool again = not first and array.get(lvTouch, i) >= 3
+            if o1m >= val and c1m >= val
+                array.push(tickSup, nm)
+                if first
+                    array.push(firstSup, nm)
+                if again
+                    array.push(againSup, nm)
+            else if o1m <= val and c1m <= val
+                array.push(tickRes, nm)
+                if first
+                    array.push(firstRes, nm)
+                if again
+                    array.push(againRes, nm)
+        else if math.min(math.abs(l1m - val), math.abs(h1m - val)) > T_RETREAT and array.get(lvTouch, i) > 0
+            array.set(lvAway, i, true)
+
+    // ---- emit touch groups + may-cross + Expect + arm follow-through ----
+    bool hasRes = array.size(tickRes) > 0
+    bool hasSup = array.size(tickSup) > 0
+    if hasRes or hasSup
+        bool isRes = hasRes
+        string[] tickN = hasRes ? tickRes : tickSup
+        // ride-along: levels already in contact on the same side merge into the group
+        string[] contN = hasRes ? contRes : contSup
+        for j = 0 to array.size(contN) - 1
+            string cn = array.get(contN, j)
+            bool present = false
+            for i = 0 to array.size(tickN) - 1
+                if array.get(tickN, i) == cn
+                    present := true
+            if not present
+                array.push(tickN, cn)
+        string grp = f_group(tickN)
+        bool anyFirst = array.size(isRes ? firstRes : firstSup) > 0
+        bool anyAgain = array.size(isRes ? againRes : againSup) > 0
+        string base = ""
+        if anyFirst
+            base := (isRes ? "Price facing resistance at " : "Price takes support of ") + grp + ".."
+        else
+            base := "Price retested the level " + grp + (anyAgain ? " again.." : "..")
+        // remember acting level for 1PMX; arm follow-through for major EMA clusters
+        if anyFirst
+            if isRes
+                lastResGrp := grp
+            else
+                lastSupGrp := grp
+        for i = 0 to array.size(lvName) - 1
+            string nm = array.get(lvName, i)
+            bool inGrp = false
+            for j = 0 to array.size(tickN) - 1
+                if array.get(tickN, j) == nm
+                    inGrp := true
+            if inGrp and (str.contains(nm, "E50") or str.contains(nm, "E100") or str.contains(nm, "E200"))
+                array.set(lvPendB, i, bar_index)
+                array.set(lvPendR, i, isRes)
+        // may-cross note (first touches only)
+        string may = ""
+        if anyFirst
+            string[] panes = array.new_string()
+            for p = 0 to 4
+                bool gov = false
+                for j = 0 to array.size(tickN) - 1
+                    if f_paneGov(p, array.get(tickN, j))
+                        gov := true
+                if gov and (isRes ? f_paneUp(p) : not f_paneUp(p))
+                    array.push(panes, p == 0 ? "3P" : p == 1 ? "2P" : p == 2 ? "DP" : p == 3 ? "WP" : "MP")
+            if array.size(panes) > 0
+                string pl = array.join(panes, "/")
+                may := isRes ? " May cross up since " + pl + (array.size(panes) > 1 ? " are uptrending.." : " is uptrending..") : " May cross down since " + pl + (array.size(panes) > 1 ? " are downtrending.." : " is downtrending..")
+        f_alert(base + may)
+        // Expect pre-call: 1m PVT trending INTO the level AND within ±0.1 of zero
+        bool gate = math.abs(value_pvt_1m) <= 0.1 and (isRes ? value_pvt_1m > 0 : value_pvt_1m < 0)
+        if gate
+            f_alert(isRes ? "Expect 1PX_15PM DT" : "Expect 1PX_15PM UT")
+
+    // ---- 1PMX swing start (catalog §6) ----
+    bool pvtXDn = pvt_cross_under_index_1m == 1
+    bool pvtXUp = pvt_cross_over_index_1m == 1
+    bool m2XDn = y1 == 1
+    bool m2XUp = x1 == 1
+    bool pvtDn = value_pvt_1m < 0
+    bool m2Dn = trend1 == -1
+    bool pmxDn = (pvtDn and m2XDn) or (m2Dn and pvtXDn) or (pvtXDn and m2XDn)
+    bool pmxUp = ((not pvtDn) and m2XUp) or ((not m2Dn) and pvtXUp) or (pvtXUp and m2XUp)
+    if pmxDn
+        f_alert(lastResGrp != "" ? "1PMX DT Resistance @ " + lastResGrp : "1PMX DT Resistance")
+    else if pmxUp
+        f_alert(lastSupGrp != "" ? "1PMX UT Support @ " + lastSupGrp : "1PMX UT Support")
+
+    // ---- 1E50 cross (gated on 1m PVT agreement) + retrace-that-holds ----
+    if not na(e50Prev) and not na(cPrev) and cPrev > e50Prev and c1m < ema50_1m
+        above50 := false
+        if value_pvt_1m < 0
+            f_alert("Price has crossed below 1E50..")
+    else if not na(e50Prev) and not na(cPrev) and cPrev < e50Prev and c1m > ema50_1m
+        above50 := true
+        if value_pvt_1m > 0
+            f_alert("Price has crossed above 1E50..")
+    if above50 and not na(ema50_1m) and math.abs(c1m - ema50_1m) <= T_NEAR and c1m > ema50_1m
+        if not e50Sup
+            e50Sup := true
+            ret50Bar := bar_index
+            f_alert("Price has retraced down to and taken support of 1E50..")
+    else if not na(ema50_1m) and c1m - ema50_1m > T_RETREAT
+        e50Sup := false
+    if (not above50) and not na(ema50_1m) and math.abs(c1m - ema50_1m) <= T_NEAR and c1m < ema50_1m
+        if not e50Res
+            e50Res := true
+            ret50Bar := bar_index
+            f_alert("Price has retraced up to and faced resistance at 1E50..")
+    else if not na(ema50_1m) and ema50_1m - c1m > T_RETREAT
+        e50Res := false
+
+    // ---- 1E21 retrace (state from close vs 1m EMA21) ----
+    if not na(cPrev) and not na(ema21_1m)
+        if not below21 and cPrev > ema21_1m and c1m < ema21_1m
+            below21 := true
+        else if below21 and cPrev < ema21_1m and c1m > ema21_1m
+            below21 := false
+    if below21 and not na(ema21_1m) and math.abs(c1m - ema21_1m) <= T_NEAR and c1m < ema21_1m
+        if not e21Res
+            e21Res := true
+            ret21Bar := bar_index
+            f_alert("Price has retraced up to and faced resistance at 1E21..")
+    else if not na(ema21_1m) and ema21_1m - c1m > T_RETREAT
+        e21Res := false
+    if (not below21) and not na(ema21_1m) and math.abs(c1m - ema21_1m) <= T_NEAR and c1m > ema21_1m
+        if not e21Sup
+            e21Sup := true
+            ret21Bar := bar_index
+            f_alert("Price has retraced down to and taken support of 1E21..")
+    else if not na(ema21_1m) and c1m - ema21_1m > T_RETREAT
+        e21Sup := false
+
+    // ---- 1m candle VWAP cross ----
+    if not na(vwapPrev) and not na(cPrev) and cPrev > vwapPrev and c1m < vwapSession
+        f_alert("Price crossed down VWAP (1m)..")
+    else if not na(vwapPrev) and not na(cPrev) and cPrev < vwapPrev and c1m > vwapSession
+        f_alert("Price crossed up VWAP (1m)..")
+
+    // ---- 5PZ pre-call (5m PVT in ±0.1 band, 1m PVT + MACD2 falling/rising, once per episode) ----
+    if value_pvt_5m > 0 and value_pvt_5m <= 0.1 and value_pvt_1m < 0 and poise1 == -1 and not pzcDn
+        pzcDn := true
+        pzcUp := false
+        f_alert("5PZ DT")
+    else if value_pvt_5m < 0 and value_pvt_5m >= -0.1 and value_pvt_1m > 0 and poise1 == 1 and not pzcUp
+        pzcUp := true
+        pzcDn := false
+        f_alert("5PZ UT")
+    else if math.abs(value_pvt_5m) > 0.1
+        pzcDn := false
+        pzcUp := false
+
+    // ---- 5PM trend start + Bias (catalog §8 wording; tag "5PM" = PVT+M1+M2 all aligned) ----
+    [tag5, tag5bg, tag5fg] = f_familyTag(value_pvt_5m, trend5_1226, trend5, "5")
+    bool is5UpT = tag5 == "5PM" and value_pvt_5m > 0
+    bool is5DnT = tag5 == "5PM" and value_pvt_5m < 0
+    if biasAlertsOn
+        if is5UpT and not was5Up
+            bool aboveV = c1m > vwapSession
+            f_alert("5PM Uptrend started..")
+            f_alert("Bias is " + (aboveV ? "Strong Uptrend" : "Uptrend") + " as we have 5PM Uptrend" + (aboveV ? " above VWAP" : ""))
+        if is5DnT and not was5Dn
+            bool belowV = c1m < vwapSession
+            f_alert("5PM Downtrend started..")
+            f_alert("Bias is " + (belowV ? "Strong Downtrend" : "Downtrend") + " as we have 5PM Downtrend" + (belowV ? " below VWAP" : ""))
+    was5Up := is5UpT
+    was5Dn := is5DnT
+
+    // carry 1m boundary values
+    e50Prev := ema50_1m
+    cPrev := c1m
+    vwapPrev := vwapSession
+
+// — fire-once helper (HTF stamps) —
 f_fire_once(bool _cond, int _tft) =>
     var int _last = na
     bool _fire = _cond and (na(_last) or _last != _tft)
@@ -2106,287 +2385,115 @@ f_fire_once(bool _cond, int _tft) =>
         _last := _tft
     _fire
 
-f_xAlerts(string _pfx, string _res, int _xu, int _xd, int _m1xu, int _m1xd, int _m2xu, int _m2xd, int _z, bool _gate, string _zone = "") =>
-    if _gate
-        int _tft = time(_res)
-        if f_fire_once(_xu == 1, _tft)
-            f_alert(_pfx + "SX UT" + _zone)
-        if f_fire_once(_xd == 1, _tft)
-            f_alert(_pfx + "SX DT" + _zone)
-        if f_fire_once(_m1xu == 1, _tft)
-            f_alert(_pfx + "M1X UT")
-        if f_fire_once(_m1xd == 1, _tft)
-            f_alert(_pfx + "M1X DT")
-        if f_fire_once(_m2xu == 1, _tft)
-            f_alert(_pfx + "M2X UT")
-        if f_fire_once(_m2xd == 1, _tft)
-            f_alert(_pfx + "M2X DT")
-        if f_fire_once(_z == 2, _tft)
-            f_alert(_pfx + "M2z UT")
-        if f_fire_once(_z == -2, _tft)
-            f_alert(_pfx + "M2z DT")
+// ---- HTF momentor crosses (stamp on own TF boundary; MX = MACD vs OWN signal) ----
+// PX: PVT zero-cross · MX: 1M2X(1m) 5M1X+5M2X(5m) 3M2X(30m) 2M1X+2M2X(2h) DM1X+DM2X(D) · ox: VOC cross-up only
 if barOK and crossAlertsOn
-    f_xAlerts("3", "30", k_crossover_index_30m, k_crossunder_index_30m, x30_1226, y30_1226, x30, y30, zCross30, true)
-    f_xAlerts("5", "5", k_crossover_index_5m, k_crossunder_index_5m, x5_1226, y5_1226, x5, y5, zCross5, true)
-    f_xAlerts("1", "1", k_crossover_index_1m, k_crossunder_index_1m, x1_1226, y1_1226, x1, y1, zCross1, true, k1m_zone_txt)
-    f_xAlerts("2", "120", k_crossover_index_2h, k_crossunder_index_2h, x2h_1226, y2h_1226, x2h, y2h, zCross2h, true)
-    f_xAlerts("D", "D", k_crossover_index_d, k_crossunder_index_d, xd_1226, yd_1226, xd, yd, zCrossd, dailyAlertsOn)
-    f_xAlerts("W", "W", k_crossover_index_w, k_crossunder_index_w, xw_1226, yw_1226, xw, yw, zCrossW, weeklyAlertsOn)
-
-// — PVT crosses, volume-confirmed by the lower TF (families #3/#4/#5) —
-if barOK
-    if f_fire_once(pvt_cross_over_index_1m == 1, time("1"))
-        f_alert("1PX UT")
     if f_fire_once(pvt_cross_under_index_1m == 1, time("1"))
         f_alert("1PX DT")
-    // 15s PM cross (PVT on 15s; MACD2 state rides along) — the ultra-scalp ignition
-    if f_fire_once(pvt_cross_over_index_15s == 1, time("15S"))
-        f_alert("15PMX UT")
-    if f_fire_once(pvt_cross_under_index_15s == 1, time("15S"))
-        f_alert("15PMX DT")
-    if f_fire_once(pvt_cross_over_index_5m == 1, time("5"))
-        f_alert(voc_1m > 0 ? "5PX1o UT" : "5PX UT")
-    if f_fire_once(pvt_cross_under_index_5m == 1, time("5"))
-        f_alert(voc_1m > 0 ? "5PX1o DT" : "5PX DT")
-    if f_fire_once(pvt_cross_over_index_30m == 1, time("30"))
-        f_alert(voc_5m > 0 ? "3PX5o UT" : "3PX UT")
-    if f_fire_once(pvt_cross_under_index_30m == 1, time("30"))
-        f_alert(voc_5m > 0 ? "3PX5o DT" : "3PX DT")
-    if f_fire_once(pvt_cross_over_index_2h == 1, time("120"))
-        f_alert(voc_5m > 0 and voc_30m > 0 ? "2PX35o UT" : voc_5m > 0 ? "2PX5o UT" : voc_30m > 0 ? "2PX3o UT" : "2PX UT")
-    if f_fire_once(pvt_cross_under_index_2h == 1, time("120"))
-        f_alert(voc_5m > 0 and voc_30m > 0 ? "2PX35o DT" : voc_5m > 0 ? "2PX5o DT" : voc_30m > 0 ? "2PX3o DT" : "2PX DT")
+    if f_fire_once(pvt_cross_over_index_1m == 1, time("1"))
+        f_alert("1PX UT")
+    if f_fire_once(y1 == 1, time("1"))
+        f_alert("1M2X DT")
+    if f_fire_once(x1 == 1, time("1"))
+        f_alert("1M2X UT")
+    if f_fire_once(new5m and pvt_cross_under_index_5m == 1, time("5"))
+        f_alert("5PX DT")
+    if f_fire_once(new5m and pvt_cross_over_index_5m == 1, time("5"))
+        f_alert("5PX UT")
+    if f_fire_once(new5m and y5_1226 == 1, time("5"))
+        f_alert("5M1X DT")
+    if f_fire_once(new5m and x5_1226 == 1, time("5"))
+        f_alert("5M1X UT")
+    if f_fire_once(new5m and y5 == 1, time("5"))
+        f_alert("5M2X DT")
+    if f_fire_once(new5m and x5 == 1, time("5"))
+        f_alert("5M2X UT")
+    if f_fire_once(new30 and pvt_cross_under_index_30m == 1, time("30"))
+        f_alert("3PX DT")
+    if f_fire_once(new30 and pvt_cross_over_index_30m == 1, time("30"))
+        f_alert("3PX UT")
+    if f_fire_once(new30 and y30 == 1, time("30"))
+        f_alert("3M2X DT")
+    if f_fire_once(new30 and x30 == 1, time("30"))
+        f_alert("3M2X UT")
+    if f_fire_once(new2h and pvt_cross_under_index_2h == 1, time("120"))
+        f_alert("2PX DT")
+    if f_fire_once(new2h and pvt_cross_over_index_2h == 1, time("120"))
+        f_alert("2PX UT")
+    if f_fire_once(new2h and y2h_1226 == 1, time("120"))
+        f_alert("2M1X DT")
+    if f_fire_once(new2h and x2h_1226 == 1, time("120"))
+        f_alert("2M1X UT")
+    if f_fire_once(new2h and y2h == 1, time("120"))
+        f_alert("2M2X DT")
+    if f_fire_once(new2h and x2h == 1, time("120"))
+        f_alert("2M2X UT")
     if dailyAlertsOn
-        if f_fire_once(pvt_cross_over_index_d == 1, time("D"))
-            f_alert(voc_30m > 0 and voc_2h > 0 ? "DPX32o UT" : voc_30m > 0 ? "DPX3o UT" : voc_2h > 0 ? "DPX2o UT" : "DPX UT")
-        if f_fire_once(pvt_cross_under_index_d == 1, time("D"))
-            f_alert(voc_30m > 0 and voc_2h > 0 ? "DPX32o DT" : voc_30m > 0 ? "DPX3o DT" : voc_2h > 0 ? "DPX2o DT" : "DPX DT")
-    if weeklyAlertsOn
-        if f_fire_once(pvt_cross_over_index_w == 1, time("W"))
-            f_alert(voc_d > 0 ? "WPXDo UT" : "WPX UT")
-        if f_fire_once(pvt_cross_under_index_w == 1, time("W"))
-            f_alert(voc_d > 0 ? "WPXDo DT" : "WPX DT")
+        if f_fire_once(newDay and pvt_cross_under_index_d == 1, time("D"))
+            f_alert("DPX DT")
+        if f_fire_once(newDay and pvt_cross_over_index_d == 1, time("D"))
+            f_alert("DPX UT")
+        if f_fire_once(newDay and yd_1226 == 1, time("D"))
+            f_alert("DM1X DT")
+        if f_fire_once(newDay and xd_1226 == 1, time("D"))
+            f_alert("DM1X UT")
+        if f_fire_once(newDay and yd == 1, time("D"))
+            f_alert("DM2X DT")
+        if f_fire_once(newDay and xd == 1, time("D"))
+            f_alert("DM2X UT")
+if barOK and vocAlertsOn
+    if f_fire_once(voc_crossover_index_1m == 1, time("1"))
+        f_alert("1ox")
+    if f_fire_once(new5m and voc_crossover_index_5m == 1, time("5"))
+        f_alert("5ox")
+    if f_fire_once(new30 and voc_crossover_index_30m == 1, time("30"))
+        f_alert("3ox")
+    if f_fire_once(new2h and voc_crossover_index_2h == 1, time("120"))
+        f_alert("2ox")
+    if dailyAlertsOn and f_fire_once(newDay and voc_crossover_index_d == 1, time("D"))
+        f_alert("Dox")
 
-// — 1SPX state: 1m Stoch up AND 1m PVT up AND price above chart-TF EMA21
-//   (on the 15s chart = 15s EMA21). "1SPX UT" on entering the state,
-//   "1SPX UT Ends" when price falls below it. —
-bool spxUp = k_trend_flag_1m == 1 and pvt_trend_flag_1m == 1 and close > eChart21
-var bool spxPrev = false
-if barOK
-    if spxUp and not spxPrev
-        f_alert("1SPX UT")
-    if spxPrev and not spxUp and close < eChart21
-        f_alert("1SPX UT Ends")
-    spxPrev := spxUp
+// ---- 5m stochastic zone cross (catalog §7: zones only, OBZ/MZ/OSZ) ----
+if barOK and crossAlertsOn and new5m
+    if k_crossover_index_5m == 1
+        f_alert("5m Stochastic cross up from " + (k5m <= 20 ? "OSZ" : k5m >= 80 ? "OBZ" : "MZ") + "..")
+    if k_crossunder_index_5m == 1
+        f_alert("5m Stochastic cross down from " + (k5m >= 80 ? "OBZ" : k5m <= 20 ? "OSZ" : "MZ") + "..")
 
-// — PVT pre-cross (family #9): PVT in (−0.1,0] about to cross up / (0,+0.1) down,
-//   confirmed only when the lower-TF PVT has already turned that way —
-if barOK and pzAlertsOn
-    if f_fire_once(value_pvt_5m > -0.1 and value_pvt_5m <= 0 and value_pvt_1m > 0, time("5"))
-        f_alert("5Pz UT")
-    if f_fire_once(value_pvt_5m >= 0 and value_pvt_5m < 0.1 and value_pvt_1m < 0, time("5"))
-        f_alert("5Pz DT")
-    if f_fire_once(value_pvt_30m > -0.1 and value_pvt_30m <= 0 and value_pvt_5m > 0, time("30"))
-        f_alert("3Pz UT")
-    if f_fire_once(value_pvt_30m >= 0 and value_pvt_30m < 0.1 and value_pvt_5m < 0, time("30"))
-        f_alert("3Pz DT")
-    if f_fire_once(value_pvt_2h > -0.1 and value_pvt_2h <= 0 and value_pvt_30m > 0, time("120"))
-        f_alert("2Pz UT")
-    if f_fire_once(value_pvt_2h >= 0 and value_pvt_2h < 0.1 and value_pvt_30m < 0, time("120"))
-        f_alert("2Pz DT")
-    if dailyAlertsOn
-        if f_fire_once(value_pvt_d > -0.1 and value_pvt_d <= 0 and value_pvt_2h > 0, time("D"))
-            f_alert("DPz UT")
-        if f_fire_once(value_pvt_d >= 0 and value_pvt_d < 0.1 and value_pvt_2h < 0, time("D"))
-            f_alert("DPz DT")
-    if weeklyAlertsOn
-        if f_fire_once(value_pvt_w > -0.1 and value_pvt_w <= 0 and value_pvt_d > 0, time("W"))
-            f_alert("WPz UT")
-        if f_fire_once(value_pvt_w >= 0 and value_pvt_w < 0.1 and value_pvt_d < 0, time("W"))
-            f_alert("WPz DT")
-
-// — VOC 3-state (family #10): oz (in −zone, rising, lower TF positive) → ox (just crossed 0)
-//   → o (solidly positive) → ends (left positive). Announced on state change, once per episode. —
-var string[] vocPrev = array.new_string(6, "")
-f_vocCheck(int _i, string _pfx, float _voc, bool _lowerPos, bool _gate) =>
-    if _gate and vocAlertsOn and barOK
-        string st = ""
-        if _voc > 0.1
-            st := _pfx + "o"
-        else if _voc > 0
-            st := _pfx + "ox"
-        else if _voc >= -0.1 and _voc > _voc[1] and _lowerPos
-            st := _pfx + "oz"
-        else if _voc[1] > 0.1
-            st := _pfx + "o ends"
-        if str.length(st) > 0 and st != array.get(vocPrev, _i)
-            f_alert(st)
-            array.set(vocPrev, _i, st)
-f_vocCheck(0, "1", voc_1m, true, true)
-f_vocCheck(1, "5", voc_5m, voc_1m > 0, true)
-f_vocCheck(2, "3", voc_30m, voc_5m > 0, true)
-f_vocCheck(3, "2", voc_2h, voc_5m > 0, true)
-f_vocCheck(4, "D", voc_d, voc_2h > 0, dailyAlertsOn)
-f_vocCheck(5, "W", voc_w, voc_d > 0, weeklyAlertsOn)
-
-// — 5m PVT × MACD2 sync cross (user lookout): both cross the same way on the same bar
-//   or within a couple of bars — "Attention 5PM Cross Down Sync" / "Attention 5PM Cross Up Sync".
-//   Fires once per sync episode; re-arms once the cross indices age out of the sync window. —
-var bool syncUpDone = false
-var bool syncDnDone = false
-if barOK and syncAlertsOn
-    bool pvtUpNow  = pvt_cross_over_index_5m == 1
-    bool pvtDnNow  = pvt_cross_under_index_5m == 1
-    bool m2UpNow   = x5 == 1
-    bool m2DnNow   = y5 == 1
-    bool pvtUpRecent = pvt_cross_over_index_5m <= 3
-    bool pvtDnRecent = pvt_cross_under_index_5m <= 3
-    bool m2UpRecent  = x5 <= 3
-    bool m2DnRecent  = y5 <= 3
-    bool syncUp = (pvtUpNow and m2UpRecent) or (m2UpNow and pvtUpRecent)
-    bool syncDn = (pvtDnNow and m2DnRecent) or (m2DnNow and pvtDnRecent)
-    if syncUp and not syncUpDone
-        f_alert("Attention 5PM Cross Up Sync")
-        syncUpDone := true
-    if syncDn and not syncDnDone
-        f_alert("Attention 5PM Cross Down Sync")
-        syncDnDone := true
-    if pvt_cross_over_index_5m > 3
-        syncUpDone := false
-    if pvt_cross_under_index_5m > 3
-        syncDnDone := false
-
-// — 30m VOC cross-up syncing with the 5m PM cross-down (user lookout): bullish 30m volume
-//   arriving into a fresh 5m PM breakdown — "Attention : 5PM_3ox". Once per episode; re-arms
-//   when the 5m PM sync window ages out. —
-var bool pm3oxDone = false
-if barOK and syncAlertsOn
-    bool pmDnSyncRecent = pvt_cross_under_index_5m <= 3 and y5 <= 3      // 5m PVT + MACD2 both recently crossed down
-    bool voc3UpRecent   = voc_crossover_index_30m <= 3                   // 30m VOC crossed up within the window
-    if pmDnSyncRecent and voc3UpRecent and not pm3oxDone
-        f_alert("Attention : 5PM_3ox")
-        pm3oxDone := true
-    if not pmDnSyncRecent
-        pm3oxDone := false
-
-// — Family trend tag changes (SPATAM-native): "2PM2 DT formed" style —
-var string[] tagPrev = array.new_string(8, "")
-f_tagCheck(int _i, string _pfx, float _pvt, int _m1, int _m2, bool _gate) =>
-    if _gate and tagAlertsOn and barOK
-        [t, b, g] = f_familyTag(_pvt, _m1, _m2, _pfx)
-        if t != array.get(tagPrev, _i)
-            f_alert(t + (_pvt > 0 ? " UT formed" : " DT formed"))
-            array.set(tagPrev, _i, t)
-f_tagCheck(0, "1", value_pvt_1m, trend1_1226, trend1, true)
-f_tagCheck(1, "5", value_pvt_5m, trend5_1226, trend5, true)
-f_tagCheck(2, "3", value_pvt_30m, trend30_1226, trend30, true)
-f_tagCheck(3, "2", value_pvt_2h, trend2h_1226, trend2h, true)
-f_tagCheck(4, "D", value_pvt_d, trendd_1226, trendd, dailyAlertsOn)
-f_tagCheck(5, "W", value_pvt_w, trendw_1226, trendw, weeklyAlertsOn)
-f_tagCheck(6, "M", value_pvt_m, trendm_1226, trendm, weeklyAlertsOn)
-f_tagCheck(7, "Q", value_pvt_q, trendq_1226, trendq, weeklyAlertsOn)
-
-// — 1PME50 run start vs 5m PVT divergence (user lookout): when the 1PME50 trend starts but the
-//   5m PVT is still far on the OPPOSITE side of zero (> 0.1), warn that the bigger TF isn't ready —
-bool pmE50Up = value_pvt_1m > 0 and trend1 == 1 and e50Up1m
-bool pmE50Dn = value_pvt_1m < 0 and trend1 == -1 and not e50Up1m
-var bool pmE50UpRun = false
-var bool pmE50DnRun = false
-if barOK
-    bool upStart = pmE50Up and not pmE50UpRun
-    bool dnStart = pmE50Dn and not pmE50DnRun
-    if upStart and value_pvt_5m < -0.1
-        f_alert("1PME50 uptrend starts..But 5m PVT is still at " + str.tostring(value_pvt_5m, "#.##") + "..Watch out..")
-    if dnStart and value_pvt_5m > 0.1
-        f_alert("1PME50 downtrend starts..But 5m PVT is still at " + str.tostring(value_pvt_5m, "#.##") + "..Watch out..")
-    pmE50UpRun := pmE50Up
-    pmE50DnRun := pmE50Dn
-
-// — Attention: 1PME50 run starting while 5m VOC is positive (volume behind the run).
-//   Announces on start, then re-announces every 2 minutes while the condition holds. —
-var int last5oUpAnnounce = 0
-var int last5oDnAnnounce = 0
-var bool pmE50UpWas5o = false
-var bool pmE50DnWas5o = false
-bool e50_5oUp = pmE50Up and voc_5m > 0
-bool e50_5oDn = pmE50Dn and voc_5m > 0
-if barOK
-    if e50_5oUp and (not pmE50UpWas5o or timenow - last5oUpAnnounce >= 2 * 60 * 1000)
-        f_alert("Attention: 1PME50_5o UT Starts")
-        last5oUpAnnounce := timenow
-    if e50_5oDn and (not pmE50DnWas5o or timenow - last5oDnAnnounce >= 2 * 60 * 1000)
-        f_alert("Attention: 1PME50_5o DT Starts")
-        last5oDnAnnounce := timenow
-    pmE50UpWas5o := e50_5oUp
-    pmE50DnWas5o := e50_5oDn
-
-// — BIAS heartbeat: every N minutes announce the day bias.
-//   Base: 30m PVT sign (UP/DOWN) + the 3m-family setup tag (3PM/3PM1/3PM2 + UT/DT).
-//   Overrides listed when against the base: 5PM (5m MACD2 down) · CV (close < VWAP) ·
-//   3S (30m Stoch K below D) → e.g. "5PM_CV_3S_DT"; all aligned → "..._UP". —
-var int lastBiasAnnounce = 0
-if barOK and biasAlertsOn and timenow - lastBiasAnnounce >= biasEveryMin * 60 * 1000
-    [t3, t3bg, t3fg] = f_familyTag(value_pvt_30m, trend30_1226, trend30, "3")
-    string[] ovs = array.new_string()
-    if trend5 == -1
-        array.push(ovs, "5PM")
-    if close < vwapSession
-        array.push(ovs, "CV")
-    if k_trend_flag_30m == -1
-        array.push(ovs, "3S")
-    string ovr = array.size(ovs) > 0 ? array.join(ovs, "_") + "_DT" : "5PM_CV_3S_UP"
-    f_alert("BIAS " + (value_pvt_30m > 0 ? "UP" : "DOWN") + ": " + t3 + (value_pvt_30m > 0 ? " UT" : " DT") + " | " + ovr)
-    lastBiasAnnounce := timenow
-
-// — MOMENTORS heartbeat: every 2 minutes list the momentum in play across ALL timeframes —
-//   VOC episodes (o/ox per TF) + FRESH PVT crosses only (within momoFreshBars of that TF —
-//   a standing 30m/D trend from days ago is NOT "in play"). D/W gated by their fire-gates.
-var int lastMomoAnnounce = 0
-int momoFresh = 4   // a PX cross stays "in play" for this many bars of its own TF
-if barOK and timenow - lastMomoAnnounce >= 2 * 60 * 1000
-    string[] mm = array.new_string()
-    // VOC in play (episode active on that TF)
-    if voc_1m > 0
-        array.push(mm, voc_1m > 0.1 ? "1o" : "1ox")
-    if voc_5m > 0
-        array.push(mm, voc_5m > 0.1 ? "5o" : "5ox")
-    if voc_30m > 0
-        array.push(mm, voc_30m > 0.1 ? "3o" : "3ox")
-    if voc_2h > 0
-        array.push(mm, voc_2h > 0.1 ? "2o" : "2ox")
-    if voc_d > 0 and dailyAlertsOn
-        array.push(mm, "Do")
-    if voc_w > 0 and weeklyAlertsOn
-        array.push(mm, "Wo")
-    // FRESH PVT crosses only (index = bars since cross on that TF)
-    if pvt_cross_over_index_1m <= momoFresh and value_pvt_1m > 0
-        array.push(mm, "1PX UT")
-    if pvt_cross_under_index_1m <= momoFresh and value_pvt_1m < 0
-        array.push(mm, "1PX DT")
-    if pvt_cross_over_index_5m <= momoFresh and value_pvt_5m > 0
-        array.push(mm, "5PX UT")
-    if pvt_cross_under_index_5m <= momoFresh and value_pvt_5m < 0
-        array.push(mm, "5PX DT")
-    if pvt_cross_over_index_30m <= momoFresh and value_pvt_30m > 0
-        array.push(mm, "3PX UT")
-    if pvt_cross_under_index_30m <= momoFresh and value_pvt_30m < 0
-        array.push(mm, "3PX DT")
-    if pvt_cross_over_index_2h <= momoFresh and value_pvt_2h > 0
-        array.push(mm, "2PX UT")
-    if pvt_cross_under_index_2h <= momoFresh and value_pvt_2h < 0
-        array.push(mm, "2PX DT")
-    if dailyAlertsOn and pvt_cross_over_index_d <= momoFresh and value_pvt_d > 0
-        array.push(mm, "DPX UT")
-    if dailyAlertsOn and pvt_cross_under_index_d <= momoFresh and value_pvt_d < 0
-        array.push(mm, "DPX DT")
-    if weeklyAlertsOn and pvt_cross_over_index_w <= momoFresh and value_pvt_w > 0
-        array.push(mm, "WPX UT")
-    if weeklyAlertsOn and pvt_cross_under_index_w <= momoFresh and value_pvt_w < 0
-        array.push(mm, "WPX DT")
-    f_alert("Attention : Momentors in play : " + (array.size(mm) > 0 ? array.join(mm, ", ") : "none"))
-    lastMomoAnnounce := timenow
-
-//═══════════════════════════════════════════════════════════════════════════════════════════════════
+// — approach warning (catalog §2): level NEAR (≤50 pts) that could act as R/S,
+//   side decided by the level's FAMILY trend; latched while the level stays near. —
+var string[] nearLatched = array.new_string()
+if barOK and srAlertsOn and barstate.isconfirmed
+    string[] nearNow = array.new_string()
+    string[] resNear = array.new_string()
+    string[] supNear = array.new_string()
+    for i = 0 to array.size(lvName) - 1
+        float lv = array.get(lvVal, i)
+        string nm = array.get(lvName, i)
+        if na(lv) or not str.contains(nm, "E")
+            continue
+        float dist = close - lv
+        if math.abs(dist) <= 50.0
+            float famPvt = str.startswith(nm, "1E") ? value_pvt_1m : str.startswith(nm, "5E") ? value_pvt_5m : str.startswith(nm, "3E") ? value_pvt_30m : str.startswith(nm, "2E") ? value_pvt_2h : str.startswith(nm, "DE") ? value_pvt_d : str.startswith(nm, "WE") ? value_pvt_w : value_pvt_m
+            array.push(nearNow, nm)
+            bool latched = false
+            if array.size(nearLatched) > 0
+                for j = 0 to array.size(nearLatched) - 1
+                    if array.get(nearLatched, j) == nm
+                        latched := true
+            if not latched
+                if dist > 0 and famPvt < 0
+                    array.push(resNear, nm)
+                else if dist < 0 and famPvt > 0
+                    array.push(supNear, nm)
+    if array.size(resNear) > 0
+        f_alert(array.join(resNear, ", ") + " could provide resistance..")
+    if array.size(supNear) > 0
+        f_alert(array.join(supNear, ", ") + " could provide support..")
+    array.clear(nearLatched)
+    if array.size(nearNow) > 0
+        for i = 0 to array.size(nearNow) - 1
+            array.push(nearLatched, array.get(nearNow, i))
 // SCENARIO: 5PX_1o_15PM  (chart = 1m)
 //   Setup : price rose from (long) / fell from (short) a MAJOR level within the last N bars
 //           major = all EMA levels + D/W/M/Q pivots (P, R1-R3, S1-S3) + VWAP
