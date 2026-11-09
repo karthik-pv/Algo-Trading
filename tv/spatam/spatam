@@ -1,6 +1,9 @@
 //@version=5
 // SPATAM — SetUp, Price Action, Trend, Alerts & Momentum
 indicator("SPATAM", "", true,scale=scale.none, max_labels_count=500)
+// VERSION: 2026-11-09.40 — fix: security limit hit (41 > 40). EMA21 folded into
+//   the existing per-TF EMA9/50/100/200 grid pull (tuple extended, 7 standalone
+//   EMA21 requests removed). TREPAT port behaviour UNCHANGED (.39).
 // VERSION: 2026-11-09.39 — TREPAT port: alert families rewritten to the FINAL
 //   catalog (tv/spatam/Tracking_spatam) ported 1:1 from the replay oracle
 //   scripts/trepat_track.py. New: level-touch engine (touch/retest/again +
@@ -287,7 +290,7 @@ get_pvt_bgcolor(value_pvt)=>
 //EMA200---------------------------------------------------------------------------------------
 
 get_EMA9_EMA50_EMA100_EMA200_Stats_res()=>
-    [ta.ema(close,9) ,ta.ema(close,50) ,ta.ema(close,100) ,ta.ema(close,200) ]
+    [ta.ema(close,9) ,ta.ema(close,21) ,ta.ema(close,50) ,ta.ema(close,100) ,ta.ema(close,200) ]
     
 //EMA200---------------------------------------------------------------------------------------
 
@@ -1089,12 +1092,12 @@ float fib618 = prevDayLow + camRng * 0.618
 
 
 
-[ema9_1m,ema50_1m,ema100_1m,ema200_1m] = request.security(syminfo.tickerid, "1",get_EMA9_EMA50_EMA100_EMA200_Stats_res(), lookahead = barmerge.lookahead_on)
-[ema9_5m,ema50_5m,ema100_5m,ema200_5m] = request.security(syminfo.tickerid, "5",get_EMA9_EMA50_EMA100_EMA200_Stats_res(), lookahead = barmerge.lookahead_on)
-[ema9_30m,ema50_30m,ema100_30m,ema200_30m] = request.security(syminfo.tickerid, "30",get_EMA9_EMA50_EMA100_EMA200_Stats_res(), lookahead = barmerge.lookahead_on)
-[ema9_2h,ema50_2h,ema100_2h,ema200_2h] = request.security(syminfo.tickerid, "120",get_EMA9_EMA50_EMA100_EMA200_Stats_res(), lookahead = barmerge.lookahead_on)
-[ema9_d, ema50_d, ema100_d, ema200_d] = request.security(syminfo.tickerid, "D",get_EMA9_EMA50_EMA100_EMA200_Stats_res(), lookahead = barmerge.lookahead_on)
-[ema9_w, ema50_w, ema100_w, ema200_w] = request.security(syminfo.tickerid, "W",get_EMA9_EMA50_EMA100_EMA200_Stats_res(), lookahead = barmerge.lookahead_on)
+[ema9_1m,ema21_1m,ema50_1m,ema100_1m,ema200_1m] = request.security(syminfo.tickerid, "1",get_EMA9_EMA50_EMA100_EMA200_Stats_res(), lookahead = barmerge.lookahead_on)
+[ema9_5m,ema21_5m,ema50_5m,ema100_5m,ema200_5m] = request.security(syminfo.tickerid, "5",get_EMA9_EMA50_EMA100_EMA200_Stats_res(), lookahead = barmerge.lookahead_on)
+[ema9_30m,ema21_30m,ema50_30m,ema100_30m,ema200_30m] = request.security(syminfo.tickerid, "30",get_EMA9_EMA50_EMA100_EMA200_Stats_res(), lookahead = barmerge.lookahead_on)
+[ema9_2h,ema21_2h,ema50_2h,ema100_2h,ema200_2h] = request.security(syminfo.tickerid, "120",get_EMA9_EMA50_EMA100_EMA200_Stats_res(), lookahead = barmerge.lookahead_on)
+[ema9_d, ema21_d, ema50_d, ema100_d, ema200_d] = request.security(syminfo.tickerid, "D",get_EMA9_EMA50_EMA100_EMA200_Stats_res(), lookahead = barmerge.lookahead_on)
+[ema9_w, ema21_w, ema50_w, ema100_w, ema200_w] = request.security(syminfo.tickerid, "W",get_EMA9_EMA50_EMA100_EMA200_Stats_res(), lookahead = barmerge.lookahead_on)
 
 
 f_pushAll(ema50_1m, "1m EMA50")
@@ -1911,20 +1914,12 @@ if array.size(alertQ) > 0 and bar_index - lastFlushBar >= flushBars
 bool barOK = alertsOn and barstate.isconfirmed
 
 // — extra pulls: EMA21 per TF, M EMA grid, Yearly pivots, 1m OHLC + prev-5 body avg —
-f_ema21() =>
-    ta.ema(close, 21)
 f_1m_bar() =>
     b = math.abs(close - open)
     [open, high, low, close, (ta.sma(b, 6) * 6 - b) / 5]
-ema21_1m = request.security(syminfo.tickerid, "1", f_ema21(), lookahead = barmerge.lookahead_on)
-ema21_5m = request.security(syminfo.tickerid, "5", f_ema21(), lookahead = barmerge.lookahead_on)
-ema21_30m = request.security(syminfo.tickerid, "30", f_ema21(), lookahead = barmerge.lookahead_on)
-ema21_2h = request.security(syminfo.tickerid, "120", f_ema21(), lookahead = barmerge.lookahead_on)
-ema21_d = request.security(syminfo.tickerid, "D", f_ema21(), lookahead = barmerge.lookahead_on)
-ema21_w = request.security(syminfo.tickerid, "W", f_ema21(), lookahead = barmerge.lookahead_on)
-ema21_m = request.security(syminfo.tickerid, "M", f_ema21(), lookahead = barmerge.lookahead_on)
-[ema9_m, ema50_m, ema100_m, ema200_m] = request.security(syminfo.tickerid, "M", get_EMA9_EMA50_EMA100_EMA200_Stats_res(), lookahead = barmerge.lookahead_on)
+[o1m, h1m, l1m, c1m, bavg5] = request.security(syminfo.tickerid, "1", f_1m_bar(), lookahead = barmerge.lookahead_on)
 [P_y,R1_y,R2_y,R3_y,R4_y,R5_y,S1_y,S2_y,S3_y,S4_y,S5_y, prevYHigh, prevYLow, prevYClose] = request.security(syminfo.tickerid, "12M", get_PrevPeriodPivots(), lookahead = barmerge.lookahead_on)
+[ema9_m, ema21_m, ema50_m, ema100_m, ema200_m] = request.security(syminfo.tickerid, "M", get_EMA9_EMA50_EMA100_EMA200_Stats_res(), lookahead = barmerge.lookahead_on)
 [o1m, h1m, l1m, c1m, bavg5] = request.security(syminfo.tickerid, "1", f_1m_bar(), lookahead = barmerge.lookahead_on)
 
 // TF boundary stamps (global scope so ta.* evaluates every bar)
