@@ -1479,20 +1479,18 @@
     #pa-widget-container { width: 100%; max-width: none; border-color: #3a5a8c; }
     #pa-widget-grid {
         display: grid;
-        grid-template-columns: minmax(0, 3fr) minmax(0, 2fr) minmax(0, 2fr);
+        grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
         grid-template-areas:
-            "setups ladder logs"
-            "momentors ladder logs";
+            "setups ladder"
+            "momentors ladder";
         gap: 8px;
     }
     #pa-setups-section { grid-area: setups; }
     #pa-momentors-section { grid-area: momentors; }
     #pa-ladder-section { grid-area: ladder; }
-    #pa-alerts-section { grid-area: logs; }
-    /* Tracking Log (SPATAM ALERTS, right of the Levels Ladder) */
+    /* Tracking Log (SPATAM ALERTS, right of the Levels Ladder in the ml-widget) */
     #pa-alerts-body {
         font-family: Consolas, monospace; font-size: 0.82em;
-        max-height: 420px; overflow-y: auto;
     }
     .pa-alert-line {
         display: flex; gap: 8px; padding: 2px 4px;
@@ -1787,6 +1785,17 @@
                     </table>
                 </div>
             </div>
+            <div id="ml-tracking" style="flex:0 0 auto;">
+                <!-- Tracking Log (2026-11-09): SPATAM ALERTS as they arrive
+                     (socket 'spatam_alerts' + GET /tv/spatam_alerts on load).
+                     TEST MODE: SYMs containing BTC only - see the JS block. -->
+                <div id="ml-tracking-title" style="border:3px solid #b9b9b9; border-radius:4px; padding:4px 10px; font-weight:700; color:#9ec5fe; margin-bottom:8px;">
+                    Tracking Log (BTC) <span id="pa-alerts-updated" style="font-weight:400; font-size:0.78em; color:#777;"></span>
+                </div>
+                <div id="pa-alerts-body" class="no-options" style="width:340px; height:411px; overflow-y:auto; border:3px solid #b9b9b9; border-radius:4px; padding:4px;">
+                    Waiting for SPATAM alerts&hellip;
+                </div>
+            </div>
         </div>
       </div>
     </div>
@@ -1809,10 +1818,6 @@
             <div class="pa-section" id="pa-ladder-section">
                 <div class="pa-section-title">Levels Ladder <span id="pa-ladder-updated" class="pa-updated"></span></div>
                 <div id="pa-ladder-body" class="no-options">Waiting for TradingView data...</div>
-            </div>
-            <div class="pa-section" id="pa-alerts-section">
-                <div class="pa-section-title">Tracking Log (BTC) <span id="pa-alerts-updated" class="pa-updated"></span></div>
-                <div id="pa-alerts-body" class="no-options">Waiting for SPATAM alerts...</div>
             </div>
         </div>
     </div>
