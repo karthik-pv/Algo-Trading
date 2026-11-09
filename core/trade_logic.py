@@ -4953,6 +4953,20 @@ class Trader_Singleton:
         now = time.localtime()
         return (now.tm_year, now.tm_yday, now.tm_hour, now.tm_min)
 
+    def _pnl_announce_enabled(self):
+        """AppConfig gate for the open-position P&L readout, read at the
+        point of decision (2026-11-09). With the UI voice toggle ON:
+        PNL_ANNOUNCE_ENABLED=true reads the P&L loop as before; false
+        limits the voice to the SPATAM tracking-log alerts (the time
+        call keeps its own toggle). Defaults to true."""
+        try:
+            v = fetch_from_json("appconfig.json", "PNL_ANNOUNCE_ENABLED")
+        except Exception:
+            return True
+        if isinstance(v, bool):
+            return v
+        return str(v).strip().lower() not in ("0", "false", "off", "no")
+
     def _voice_readout_macos(self, format_pct_pl_for_voice):
         logger.info("Started voice readout thread (macOS `say`)")
         speaker_process = None
@@ -5019,7 +5033,7 @@ class Trader_Singleton:
                         self._stop_event.wait(timeout=0.25)
                         continue
 
-                if self._voice_announcement_enabled and self._position_data:
+                if self._pnl_announce_enabled() and self._voice_announcement_enabled and self._position_data:
                     # Multiple arguments are spoken sequentially by one
                     # process, matching SAPI's queued async speech.
                     texts = []
@@ -5087,7 +5101,7 @@ class Trader_Singleton:
                     if minute_key != self._last_announced_time_minute:
                         speaker.Speak(self._time_announcement_text(), SVSFlagsAsync)
                         self._last_announced_time_minute = minute_key
-                elif self._voice_announcement_enabled and self._position_data:
+                elif self._pnl_announce_enabled() and self._voice_announcement_enabled and self._position_data:
                     for token, data in list(self._position_data.items()):
                         pct_pl = data.get("pct_pl")
                         rounded_pl = format_pct_pl_for_voice(pct_pl)

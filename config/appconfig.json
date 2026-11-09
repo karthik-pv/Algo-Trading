@@ -23,8 +23,8 @@
     "pct": {
         "PCT_BOOK_PROFIT_INTRA": "10",
         "PCT_STOP_LOSS_INTRA": "10",
-        "PCT_BOOK_PROFIT_SCALPING": "6",
-        "PCT_STOP_LOSS_SCALPING": "4",
+        "PCT_BOOK_PROFIT_SCALPING": "10",
+        "PCT_STOP_LOSS_SCALPING": "10",
         "PCT_BOOK_PROFIT_ULTRA_SCALPING": "6",
         "PCT_STOP_LOSS_ULTRA_SCALPING": "6"
     },
@@ -109,5 +109,12 @@
         "IN_ENTRY_CHECK": "WARN",
         "IN_ENTRY_5M_PVT": "OFF",
         "IN_EXIT_1M_MACD2": "OFF"
+    },
+    "window": {
+        "APP_WINDOW_WIDTH": "745",
+        "APP_WINDOW_HEIGHT": "985"
+    },
+    "voice": {
+        "PNL_ANNOUNCE_ENABLED": true
     }
 }
