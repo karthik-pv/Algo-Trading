@@ -4095,7 +4095,14 @@ document.addEventListener('DOMContentLoaded', function() {
         const esc = (s) => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
         function render(records, markNew) {
             const rows = (records || [])
-                .filter(r => ((r.SYM || '').toUpperCase().includes(TEST_SYM)))
+                .filter(r => {
+                    // TEST MODE: BTCUSD only. NOTE: the BTC test chart's SYM
+                    // field arrives as a study-object dump and the server's
+                    // JSON repair replaces it with "REPAIRED" - accept that
+                    // as BTC (REPAIRED only happens on this chart today).
+                    const sym = (r.SYM || '').toUpperCase();
+                    return sym.includes(TEST_SYM) || sym === 'REPAIRED';
+                })
                 .map(r => {
                     const stamp = r.T || r.ts || '';
                     return `<div class="pa-alert-line${markNew ? ' pa-alert-new' : ''}">
