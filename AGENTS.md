@@ -12,8 +12,9 @@ Every change to a Pine script in `tv/` (e.g.
 1. **Bump the version** in the script's header banner (`VERSION: x.y`) and add
    a `CHANGELOG` line with the date + one-line description of the change,
    including what is guaranteed UNCHANGED (payload messages etc.).
-   For `tv/spatam/spatam` the version ALSO goes in the indicator title
-   (`indicator("SPATAM v<date>.<n>", …)`) so it is visible on the chart.
+   For `tv/spatam/spatam` the version is NEVER added to the indicator title —
+   it lives as a `// VERSION: …` comment on the line right below the
+   `indicator(...)` call.
 2. **Tag the commit**: `git tag <script>-vX.Y` (e.g. `tv-data-v1.1`) and push
    the tag.
 3. **Commit + push** — commit messages follow the existing style

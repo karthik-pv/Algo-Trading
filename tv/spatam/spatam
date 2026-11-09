@@ -1,6 +1,7 @@
 //@version=5
 // SPATAM — SetUp, Price Action, Trend, Alerts & Momentum
-indicator("SPATAM v2026-11-09.40.3", "", true,scale=scale.none, max_labels_count=500)
+indicator("SPATAM", "", true,scale=scale.none, max_labels_count=500)
+// VERSION: 2026-11-09.40.3 — current (see changelog below)
 // VERSION: 2026-11-09.40 — fix: security limit hit (41 > 40). EMA21 folded into
 //   the existing per-TF EMA9/50/100/200 grid pull (tuple extended, 7 standalone
 //   EMA21 requests removed). TREPAT port behaviour UNCHANGED (.39).
