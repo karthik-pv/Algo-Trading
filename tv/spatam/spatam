@@ -1931,7 +1931,20 @@ bool new2h  = ta.change(time("120")) != 0
 // — level universe (fixed, engine names): 33 EMAs + 35 pivots + Daily VWAP —
 //   1E9 / 1E21 excluded from touches (dedicated events only). MAJOR = the
 //   EMA50/100/200 clusters that arm the price-action follow-through.
-var string[] lvName = str.split("1E50,1E100,1E200,5E9,5E21,5E50,5E100,5E200,3E9,3E21,3E50,3E100,3E200,2E9,2E21,2E50,2E100,2E200,DE9,DE21,DE50,DE100,DE200,WE9,WE21,WE50,WE100,WE200,ME9,ME21,ME50,ME100,ME200,PD P,R1 D,R2 D,R3 D,S1 D,S2 D,S3 D,P W,R1 W,R2 W,R3 W,S1 W,S2 W,S3 W,P M,R1 M,R2 M,R3 M,S1 M,S2 M,S3 M,P Q,R1 Q,R2 Q,R3 Q,S1 Q,S2 Q,S3 Q,P Y,R1 Y,R2 Y,R3 Y,S1 Y,S2 Y,S3 Y,Daily VWAP", ",")
+var string[] lvName = array.from(
+     "1E50", "1E100", "1E200",
+     "5E9", "5E21", "5E50", "5E100", "5E200",
+     "3E9", "3E21", "3E50", "3E100", "3E200",
+     "2E9", "2E21", "2E50", "2E100", "2E200",
+     "DE9", "DE21", "DE50", "DE100", "DE200",
+     "WE9", "WE21", "WE50", "WE100", "WE200",
+     "ME9", "ME21", "ME50", "ME100", "ME200",
+     "PD P", "R1 D", "R2 D", "R3 D", "S1 D", "S2 D", "S3 D",
+     "P W", "R1 W", "R2 W", "R3 W", "S1 W", "S2 W", "S3 W",
+     "P M", "R1 M", "R2 M", "R3 M", "S1 M", "S2 M", "S3 M",
+     "P Q", "R1 Q", "R2 Q", "R3 Q", "S1 Q", "S2 Q", "S3 Q",
+     "P Y", "R1 Y", "R2 Y", "R3 Y", "S1 Y", "S2 Y", "S3 Y",
+     "Daily VWAP")
 var float[]  lvVal   = array.new_float(array.size(lvName), na)
 var int[]    lvTouch = array.new_int(array.size(lvName), 0)
 var bool[]   lvAway  = array.new_bool(array.size(lvName), true)
