@@ -134,16 +134,26 @@ Chain: TV alert → `POST /trading_view_webhook` (server.py:1467) →
 
 ## 8. Open items
 
-- **Re-sync `tv/spatam/spatam` pine to the catalog** — still emits old names
-  (`M1X UT` ~line 2117, old Expect strings). Pine edit + version bump +
-  `git tag spatam-vX.Y` per AGENTS.md. NOT DONE YET.
+- **~~Re-sync `tv/spatam/spatam` pine to the catalog~~ DONE 2026-11-09**
+  (`e1a2cd8`, tag `spatam-v2026-11-09.39`): alert families ported 1:1 from
+  `scripts/trepat_track.py` — the SPATAM pine is now the sole runtime (it
+  computes the TREPAT commentary natively and paints it in the Alert Log
+  table; ALERTS flush carries the same strings for voice). The Python engine
+  is demoted to replay test oracle. Not yet regression-diffed against the
+  engine on a replay day — first live/compare session will tell.
+  Known pine-vs-engine divergences (documented in the pine's TREPAT block):
+  5m-stoch zone read from the cross bar's K (engine reads the prior stamp);
+  EMA21 for 5m+ TFs newly pulled (engine read them from exports).
 - **15s-flagship events** — `1PX_15PM` confirmation needs a 15s export
-  (not provided for Nov 6); 15s VWAP crosses same.
+  (not provided for Nov 6); 15s VWAP crosses same. Live, the pine has 15s
+  natively (chart TF); the engine stays 1m-only.
 - **WP/MP may-cross entries** inert until WP/MP PVT panes appear in an export
-  (DP exists; WP/MP don't).
+  (DP exists; WP/MP don't). Live pine computes both.
 - **Auto-file-discovery** — engine still hardcodes download filenames.
 - **Event-stamp semantics** — TF-bar events stamped at bar OPEN; user accepts.
 - **Cancellation/retraction** of the 5PZ pre-call — idea only, not implemented.
+- **Old `tv/spatam/Tracking` file** — superseded by `Tracking_spatam`; user
+  to decide on folding the two added 1PME50 lines and dropping it.
 
 ## 9. Validation history
 
