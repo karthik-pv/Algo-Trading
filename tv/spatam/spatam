@@ -2231,20 +2231,33 @@ if barOK and new1m and not na(c1m) and not na(o1m)
     bool hasSup = array.size(tickSup) > 0
     if hasRes or hasSup
         bool isRes = hasRes
-        string[] tickN = hasRes ? tickRes : tickSup
+        string[] tickN = array.new_string()
+        if hasRes
+            tickN := tickRes
+        else
+            tickN := tickSup
         // ride-along: levels already in contact on the same side merge into the group
-        string[] contN = hasRes ? contRes : contSup
-        for j = 0 to array.size(contN) - 1
-            string cn = array.get(contN, j)
+        string[] contN = array.new_string()
+        if hasRes
+            contN := contRes
+        else
+            contN := contSup
+        for cn in contN
             bool present = false
-            for i = 0 to array.size(tickN) - 1
-                if array.get(tickN, i) == cn
+            for tn in tickN
+                if tn == cn
                     present := true
             if not present
                 array.push(tickN, cn)
         string grp = f_group(tickN)
-        bool anyFirst = array.size(isRes ? firstRes : firstSup) > 0
-        bool anyAgain = array.size(isRes ? againRes : againSup) > 0
+        bool anyFirst = false
+        bool anyAgain = false
+        if isRes
+            anyFirst := array.size(firstRes) > 0
+            anyAgain := array.size(againRes) > 0
+        else
+            anyFirst := array.size(firstSup) > 0
+            anyAgain := array.size(againSup) > 0
         string base = ""
         if anyFirst
             base := (isRes ? "Price facing resistance at " : "Price takes support of ") + grp + ".."
@@ -2256,11 +2269,10 @@ if barOK and new1m and not na(c1m) and not na(o1m)
                 lastResGrp := grp
             else
                 lastSupGrp := grp
-        for i = 0 to array.size(lvName) - 1
-            string nm = array.get(lvName, i)
+        for [i, nm] in lvName
             bool inGrp = false
-            for j = 0 to array.size(tickN) - 1
-                if array.get(tickN, j) == nm
+            for tn in tickN
+                if tn == nm
                     inGrp := true
             if inGrp and (str.contains(nm, "E50") or str.contains(nm, "E100") or str.contains(nm, "E200"))
                 array.set(lvPendB, i, bar_index)
@@ -2271,8 +2283,8 @@ if barOK and new1m and not na(c1m) and not na(o1m)
             string[] panes = array.new_string()
             for p = 0 to 4
                 bool gov = false
-                for j = 0 to array.size(tickN) - 1
-                    if f_paneGov(p, array.get(tickN, j))
+                for tn in tickN
+                    if f_paneGov(p, tn)
                         gov := true
                 if gov and (isRes ? f_paneUp(p) : not f_paneUp(p))
                     array.push(panes, p == 0 ? "3P" : p == 1 ? "2P" : p == 2 ? "DP" : p == 3 ? "WP" : "MP")
@@ -2474,9 +2486,8 @@ if barOK and srAlertsOn and barstate.isconfirmed
     string[] nearNow = array.new_string()
     string[] resNear = array.new_string()
     string[] supNear = array.new_string()
-    for i = 0 to array.size(lvName) - 1
+    for [i, nm] in lvName
         float lv = array.get(lvVal, i)
-        string nm = array.get(lvName, i)
         if na(lv) or not str.contains(nm, "E")
             continue
         float dist = close - lv
@@ -2484,10 +2495,9 @@ if barOK and srAlertsOn and barstate.isconfirmed
             float famPvt = str.startswith(nm, "1E") ? value_pvt_1m : str.startswith(nm, "5E") ? value_pvt_5m : str.startswith(nm, "3E") ? value_pvt_30m : str.startswith(nm, "2E") ? value_pvt_2h : str.startswith(nm, "DE") ? value_pvt_d : str.startswith(nm, "WE") ? value_pvt_w : value_pvt_m
             array.push(nearNow, nm)
             bool latched = false
-            if array.size(nearLatched) > 0
-                for j = 0 to array.size(nearLatched) - 1
-                    if array.get(nearLatched, j) == nm
-                        latched := true
+            for ln in nearLatched
+                if ln == nm
+                    latched := true
             if not latched
                 if dist > 0 and famPvt < 0
                     array.push(resNear, nm)
@@ -2498,9 +2508,8 @@ if barOK and srAlertsOn and barstate.isconfirmed
     if array.size(supNear) > 0
         f_alert(array.join(supNear, ", ") + " could provide support..")
     array.clear(nearLatched)
-    if array.size(nearNow) > 0
-        for i = 0 to array.size(nearNow) - 1
-            array.push(nearLatched, array.get(nearNow, i))
+    for nn in nearNow
+        array.push(nearLatched, nn)
 // SCENARIO: 5PX_1o_15PM  (chart = 1m)
 //   Setup : price rose from (long) / fell from (short) a MAJOR level within the last N bars
 //           major = all EMA levels + D/W/M/Q pivots (P, R1-R3, S1-S3) + VWAP
