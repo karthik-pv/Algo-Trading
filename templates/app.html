@@ -4111,12 +4111,12 @@ document.addEventListener('DOMContentLoaded', function() {
         function render(records, markNew) {
             const rows = (records || [])
                 .filter(r => {
-                    // NIFTY feed only. NOTE: a broken SYM field (study-object
-                    // dump with unescaped quotes) is replaced by the server's
-                    // JSON repair with "REPAIRED" - accept that too so a
-                    // broken-SYM flush is never silently dropped.
+                    // NIFTY feed only. SYM is best-effort: the SPATAM
+                    // indicator's broken SYM arrives server-repaired as
+                    // "REPAIRED", and v1.11+ payloads carry NO SYM at
+                    // all - empty must be accepted too, never dropped.
                     const sym = (r.SYM || '').toUpperCase();
-                    return sym.includes(TEST_SYM) || sym === 'REPAIRED';
+                    return !sym || sym.includes(TEST_SYM) || sym === 'REPAIRED';
                 })
                 .map(r => {
                     const stamp = r.T || r.ts || '';

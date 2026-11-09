@@ -8600,9 +8600,36 @@ class Trader_Singleton:
 
     def spatam_log_lines(self, limit=300):
         """Snapshot of the recent ALERTS records (newest last) for the
-        Tracking Log widget - thread-safe copy of the ring buffer."""
+        Tracking Log widget. Prefers the in-memory ring buffer; if it is
+        empty (fresh boot), falls back to today's persisted SPATAM alert
+        file so a restart does not blank the widget (2026-11-09)."""
         with self._spatam_log_lock:
-            return list(self._spatam_log_lines[-limit:])
+            if self._spatam_log_lines:
+                return list(self._spatam_log_lines[-limit:])
+        try:
+            path = os.path.join(
+                DATA_DIR, "logs", "SPATAM",
+                time.strftime("SPATAM_Alerts_%Y-%m-%d.txt")
+            )
+            with open(path, "r", encoding="utf-8") as f:
+                out = []
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    stamp, sep, txt = line.partition(" | ")
+                    out.append({
+                        "T": stamp if sep else "",
+                        "TXT": txt if sep else stamp,
+                        "SYM": "",  # v1.11+ carries no SYM
+                        "ts": "",
+                    })
+                return out[-limit:]
+        except FileNotFoundError:
+            return []
+        except Exception as e:
+            logger.debug(f"Could not hydrate SPATAM tracking log from file: {e}")
+            return []
 
     def process_spatam_alerts(self, data):
         """SPATAM alert flush: iterate the ALERTS records ({'T','TXT'}),
