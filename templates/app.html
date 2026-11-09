@@ -6068,12 +6068,12 @@ document.addEventListener('DOMContentLoaded', function() {
             ordersDayStartCashCache = dayStartCash;
 
             ordersRowsCache = data.rows || [];
-            // Show the cash summary box whenever there are trades to
-            // display; a missing opening balance (dates before tracking
-            // began) simply renders as '--'.
+            // Cash summary box is ALWAYS visible on the broker view
+            // (user rule 2026-11-09): opening balance + flat 0 P&L even
+            // on a no-trades day. The uploaded contract-note view keeps
+            // the box hidden (set by uploadContractNote).
             if (cashSummaryLabel) {
-                cashSummaryLabel.style.display =
-                    ordersRowsCache.length > 0 ? '' : 'none';
+                cashSummaryLabel.style.display = '';
             }
             renderOrders(ordersRowsCache);
             //renderOrdersCashSummary(currentCash, dayStartCash);
