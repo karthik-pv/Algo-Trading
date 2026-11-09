@@ -510,11 +510,6 @@ APPCONFIG_GROUPS = {
         "ATM_DRIFT_ENABLED", "ATM_DRIFT_CHECK_SECS", "ATM_DRIFT_MIN_REBUILD_SECS",
     ],
     "cash": ["CASH_BALANCE_PAPER_TRADING", "FALLBACK_CASH_BALANCE", "POSITION_PNL_LOG_FREQ", "POSITION_LTP_STALE_SECS"],
-    # Voice announcements: with the UI "Voice announcements" toggle ON,
-    # PNL_ANNOUNCE_ENABLED decides whether open-position P&L is read;
-    # when OFF only the SPATAM tracking-log alerts (and the time call,
-    # its own toggle) are spoken.
-    "voice": ["PNL_ANNOUNCE_ENABLED"],
     "charges": [
         "BROKERAGE_PER_ORDER", "BROKERAGE_PER_ORDER_KITE",
         "OPTIONS_STT_SELL_PCT", "OPTIONS_STT_SELL_PCT_KITE",
@@ -642,7 +637,6 @@ APPCONFIG_DEFAULTS = {
         "POSITION_PNL_LOG_FREQ": "60",
         "POSITION_LTP_STALE_SECS": "5"
     },
-    "voice": {"PNL_ANNOUNCE_ENABLED": True},
     "charges": {
         "BROKERAGE_PER_ORDER": "5",
         "BROKERAGE_PER_ORDER_KITE": "20",

@@ -2832,17 +2832,6 @@
                             <span class="suffix">sec</span>
                         </div>
                     </div>
-                    <div class="field">
-                        <div class="field-caption">
-                            <label class="field-label" for="PNL_ANNOUNCE_ENABLED">P&amp;L Announcement</label>
-                            <span class="key-hint">PNL_ANNOUNCE_ENABLED</span>
-                        </div>
-                        <label class="switch-row" title="What the &#128266; Voice announcements toggle reads. ON: tracking-log alerts + open-position P&amp;L. OFF: tracking-log alerts only (the minute-time call keeps its own toggle).">
-                            <input type="checkbox" name="PNL_ANNOUNCE_ENABLED" id="PNL_ANNOUNCE_ENABLED">
-                            <span class="switch"></span>
-                            <span class="switch-text">Read P&amp;L when voice is on</span>
-                        </label>
-                    </div>
                     <div class="field only-ema">
                         <div class="field-caption">
                             <label class="field-label" for="INTRA_EMA">Intra EMA</label>
@@ -2927,6 +2916,13 @@
                             <input type="checkbox" id="timeAnnounceToggle" checked>
                             <span class="switch" aria-hidden="true"></span>
                             <span class="switch-text">&#128336; Time announcements</span>
+                        </label>
+                    </div>
+                    <div class="field">
+                        <label class="switch-row" title="With Voice announcements on: read the open-position P&amp;L. Off = only the Tracking Log (SPATAM) alerts are spoken; the time call keeps its own toggle.">
+                            <input type="checkbox" id="pnlAnnounceToggle" checked>
+                            <span class="switch" aria-hidden="true"></span>
+                            <span class="switch-text">&#128200; P&amp;L announcements</span>
                         </label>
                     </div>
                 </div>
@@ -3226,6 +3222,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const expiryValueEl = document.getElementById('expiryValue');
     const announcementToggleEl = document.getElementById('announcementToggle');
     const timeAnnounceToggleEl = document.getElementById('timeAnnounceToggle');
+    const pnlAnnounceToggleEl = document.getElementById('pnlAnnounceToggle');
     const availableBalanceEl = document.getElementById('availableBalanceValue');
     // Latest available balance (from /fund_summary) - shown as CBal in
     // the Orders-tab cash summary.
@@ -3411,6 +3408,9 @@ document.addEventListener('DOMContentLoaded', function() {
         socket.emit('time_announcement_toggle', {
             enabled: storedTogglePref('timeAnnounceToggleEnabled', timeAnnounceToggleEl)
         });
+        socket.emit('pnl_announcement_toggle', {
+            enabled: storedTogglePref('pnlAnnounceToggleEnabled', pnlAnnounceToggleEl)
+        });
 
         // Pending orders are NOT pushed in setup_data - request them
         // explicitly (resting U/D exit limits show here).
@@ -3466,6 +3466,18 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
+    if (pnlAnnounceToggleEl) {
+        // Same persistence contract as the other two toggles.
+        const savedPnlAnnouncePref = localStorage.getItem('pnlAnnounceToggleEnabled');
+        pnlAnnounceToggleEl.checked = savedPnlAnnouncePref === null ? true : savedPnlAnnouncePref === 'true';
+        pnlAnnounceToggleEl.addEventListener('change', () => {
+            localStorage.setItem('pnlAnnounceToggleEnabled', String(pnlAnnounceToggleEl.checked));
+            socket.emit('pnl_announcement_toggle', {
+                enabled: pnlAnnounceToggleEl.checked
+            });
+        });
+    }
+
     // Shared preference read for reconnect emits: localStorage first
     // (always current, shared by every tab), checkbox as the fallback
     // when the user never toggled (no stored value).
@@ -3484,6 +3496,9 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         if (event.key === 'timeAnnounceToggleEnabled' && timeAnnounceToggleEl && event.newValue !== null) {
             timeAnnounceToggleEl.checked = event.newValue === 'true';
+        }
+        if (event.key === 'pnlAnnounceToggleEnabled' && pnlAnnounceToggleEl && event.newValue !== null) {
+            pnlAnnounceToggleEl.checked = event.newValue === 'true';
         }
     });
 

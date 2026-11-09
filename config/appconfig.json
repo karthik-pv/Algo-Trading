@@ -113,8 +113,5 @@
     "window": {
         "APP_WINDOW_WIDTH": "745",
         "APP_WINDOW_HEIGHT": "985"
-    },
-    "voice": {
-        "PNL_ANNOUNCE_ENABLED": true
     }
 }

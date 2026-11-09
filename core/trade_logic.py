@@ -252,6 +252,11 @@ class Trader_Singleton:
     # collapsing leg (the second sell goes NET SHORT).
     _fast_exit_in_flight = set()
     _voice_announcement_enabled = True
+    # Open-position P&L readout, its own live toggle (2026-11-09): with
+    # the master voice toggle ON, this decides whether the P&L loop is
+    # spoken - when OFF only the SPATAM tracking-log alerts (and the
+    # time call, its own toggle) are read.
+    _pnl_announcement_enabled = True
     # Per-minute clock announcer ("11 13", "1 15", "3 40" - 12-hour,
     # no AM/PM). Shares the single speaker with the P&L readout; None
     # means "no minute announced yet" -> speak the time immediately.
@@ -4953,20 +4958,6 @@ class Trader_Singleton:
         now = time.localtime()
         return (now.tm_year, now.tm_yday, now.tm_hour, now.tm_min)
 
-    def _pnl_announce_enabled(self):
-        """AppConfig gate for the open-position P&L readout, read at the
-        point of decision (2026-11-09). With the UI voice toggle ON:
-        PNL_ANNOUNCE_ENABLED=true reads the P&L loop as before; false
-        limits the voice to the SPATAM tracking-log alerts (the time
-        call keeps its own toggle). Defaults to true."""
-        try:
-            v = fetch_from_json("appconfig.json", "PNL_ANNOUNCE_ENABLED")
-        except Exception:
-            return True
-        if isinstance(v, bool):
-            return v
-        return str(v).strip().lower() not in ("0", "false", "off", "no")
-
     def _voice_readout_macos(self, format_pct_pl_for_voice):
         logger.info("Started voice readout thread (macOS `say`)")
         speaker_process = None
@@ -5033,7 +5024,7 @@ class Trader_Singleton:
                         self._stop_event.wait(timeout=0.25)
                         continue
 
-                if self._pnl_announce_enabled() and self._voice_announcement_enabled and self._position_data:
+                if self._pnl_announcement_enabled and self._voice_announcement_enabled and self._position_data:
                     # Multiple arguments are spoken sequentially by one
                     # process, matching SAPI's queued async speech.
                     texts = []
@@ -5101,7 +5092,7 @@ class Trader_Singleton:
                     if minute_key != self._last_announced_time_minute:
                         speaker.Speak(self._time_announcement_text(), SVSFlagsAsync)
                         self._last_announced_time_minute = minute_key
-                elif self._pnl_announce_enabled() and self._voice_announcement_enabled and self._position_data:
+                elif self._pnl_announcement_enabled and self._voice_announcement_enabled and self._position_data:
                     for token, data in list(self._position_data.items()):
                         pct_pl = data.get("pct_pl")
                         rounded_pl = format_pct_pl_for_voice(pct_pl)
@@ -10224,6 +10215,14 @@ class Trader_Singleton:
                 # immediately instead of waiting for the next boundary.
                 self._last_announced_time_minute = None
             logger.info(f"Time announcement {'enabled' if enabled else 'disabled'} from UI")
+
+        @self.frontend_data_socket.on('pnl_announcement_toggle')
+        def handle_pnl_announcement_toggle(payload):
+            enabled = True
+            if isinstance(payload, dict):
+                enabled = bool(payload.get("enabled", True))
+            self._pnl_announcement_enabled = enabled
+            logger.info(f"P&L announcement {'enabled' if enabled else 'disabled'} from UI")
 
         @self.frontend_data_socket.on('refresh-options-table')
         def refresh_table():
