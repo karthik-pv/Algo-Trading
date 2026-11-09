@@ -281,6 +281,11 @@ class Trader_Singleton:
     _spatam_voice_lock = threading.Lock()
     # One batched append per flush (per-day alert file).
     _spatam_alert_file_lock = threading.Lock()
+    # Tracking-log ring buffer for the web UI (2026-11-09): every ALERTS
+    # record lands here (SYM-tagged) and is pushed to the browser over the
+    # socket ('spatam_alerts'). Read via GET /tv/spatam_alerts on page load.
+    _spatam_log_lock = threading.Lock()
+    _spatam_log_lines = []      # [{T, TXT, SYM, ts}] — newest last, cap 300
 
     # ---------------------------------------------------------
     # Paper trading store
@@ -8593,6 +8598,12 @@ class Trader_Singleton:
             text = self._spatam_voice_queue.pop(0)
             return text if enabled else None
 
+    def spatam_log_lines(self, limit=300):
+        """Snapshot of the recent ALERTS records (newest last) for the
+        Tracking Log widget - thread-safe copy of the ring buffer."""
+        with self._spatam_log_lock:
+            return list(self._spatam_log_lines[-limit:])
+
     def process_spatam_alerts(self, data):
         """SPATAM alert flush: iterate the ALERTS records ({'T','TXT'}),
         append each 'T | TXT' line to the per-day alert file (one
@@ -8622,6 +8633,23 @@ class Trader_Singleton:
                 with open(path, "a", encoding="utf-8") as f:
                     f.write("\n".join(lines) + "\n")
             logger.info(f"SPATAM: {len(lines)} alert(s) persisted -> {path}")
+            # Web-UI tracking log (2026-11-09): SYM-tagged ring buffer + live
+            # socket push. Read-only for the trade engine - persistence and
+            # speech above stay untouched.
+            sym = str(data.get("SYM") or "").strip()
+            stamp_now = datetime.datetime.now().strftime("%d %b %H:%M:%S")
+            recs = [{"T": s, "TXT": x, "SYM": sym, "ts": stamp_now} for (s, x) in
+                    [(str(rec.get("T") or "").strip(), str(rec.get("TXT") or "").strip())
+                     for rec in (data.get("ALERTS") or []) if isinstance(rec, dict)]]
+            recs = [r for r in recs if r["TXT"]]
+            if recs:
+                with self._spatam_log_lock:
+                    self._spatam_log_lines.extend(recs)
+                    del self._spatam_log_lines[:-300]
+                try:
+                    self.frontend_data_socket.emit("spatam_alerts", {"SYM": sym, "ALERTS": recs})
+                except Exception:
+                    pass
             if spoken:
                 self.queue_spatam_speech(" ".join(spoken))
             return [{"status": "success", "alerts": len(lines)}]

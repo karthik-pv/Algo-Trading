@@ -1468,6 +1468,14 @@ def tv_last_data():
         return jsonify({"source": "none"})
 
 
+@app.route("/tv/spatam_alerts")
+def tv_spatam_alerts():
+    """Recent SPATAM ALERTS lines (SYM-tagged ring buffer) for the
+    Tracking Log widget - hydrates the table on page load; live lines
+    arrive over the 'spatam_alerts' socket event."""
+    return jsonify({"ALERTS": trader.spatam_log_lines()}) if hasattr(trader, "spatam_log_lines") else jsonify({"ALERTS": []})
+
+
 @app.route("/tv/trend")
 def tv_trend():
     """Live trend-transition tracking summary (per-TF states, time-in-state,

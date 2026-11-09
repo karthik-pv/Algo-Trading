@@ -1479,15 +1479,28 @@
     #pa-widget-container { width: 100%; max-width: none; border-color: #3a5a8c; }
     #pa-widget-grid {
         display: grid;
-        grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+        grid-template-columns: minmax(0, 3fr) minmax(0, 2fr) minmax(0, 2fr);
         grid-template-areas:
-            "setups ladder"
-            "momentors ladder";
+            "setups ladder logs"
+            "momentors ladder logs";
         gap: 8px;
     }
     #pa-setups-section { grid-area: setups; }
     #pa-momentors-section { grid-area: momentors; }
     #pa-ladder-section { grid-area: ladder; }
+    #pa-alerts-section { grid-area: logs; }
+    /* Tracking Log (SPATAM ALERTS, right of the Levels Ladder) */
+    #pa-alerts-body {
+        font-family: Consolas, monospace; font-size: 0.82em;
+        max-height: 420px; overflow-y: auto;
+    }
+    .pa-alert-line {
+        display: flex; gap: 8px; padding: 2px 4px;
+        border-bottom: 1px solid #2a2a2a; align-items: baseline;
+    }
+    .pa-alert-line .pa-alert-time { color: #888; white-space: nowrap; }
+    .pa-alert-line .pa-alert-txt { color: #d8d8d8; word-break: break-word; }
+    .pa-alert-line.pa-alert-new .pa-alert-txt { color: #8ef58e; }
     .pa-section {
         border: 1px solid #3a3a3a; border-radius: 8px;
         padding: 6px 10px; min-width: 0; min-height: 0;
@@ -1796,6 +1809,10 @@
             <div class="pa-section" id="pa-ladder-section">
                 <div class="pa-section-title">Levels Ladder <span id="pa-ladder-updated" class="pa-updated"></span></div>
                 <div id="pa-ladder-body" class="no-options">Waiting for TradingView data...</div>
+            </div>
+            <div class="pa-section" id="pa-alerts-section">
+                <div class="pa-section-title">Tracking Log (BTC) <span id="pa-alerts-updated" class="pa-updated"></span></div>
+                <div id="pa-alerts-body" class="no-options">Waiting for SPATAM alerts...</div>
             </div>
         </div>
     </div>
@@ -4057,6 +4074,45 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         loadMomentors();
         setInterval(loadMomentors, 2000);
+    })();
+
+    // === Tracking Log (SPATAM ALERTS — right of the Levels Ladder) ===
+    // TEST MODE (2026-11-09): only SYMs containing BTC are shown until the
+    // NIFTY switch-over. Lines arrive over the 'spatam_alerts' socket event;
+    // GET /tv/spatam_alerts hydrates on page load. Newest line on top.
+    (function () {
+        const TEST_SYM = 'BTC';
+        const body = document.getElementById('pa-alerts-body');
+        const updated = document.getElementById('pa-alerts-updated');
+        if (!body) return;
+        const sock = window.__appSocket;
+        if (!sock) return;
+        const esc = (s) => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        function render(records, markNew) {
+            const rows = (records || [])
+                .filter(r => ((r.SYM || '').toUpperCase().includes(TEST_SYM)))
+                .map(r => {
+                    const stamp = r.T || r.ts || '';
+                    return `<div class="pa-alert-line${markNew ? ' pa-alert-new' : ''}">
+                        <span class="pa-alert-time">${esc(stamp)}</span>
+                        <span class="pa-alert-txt">${esc(r.TXT || '')}</span>
+                    </div>`;
+                });
+            if (!rows.length) return;
+            body.classList.remove('no-options');
+            body.insertAdjacentHTML(markNew ? 'afterbegin' : 'beforeend', rows.join(''));
+            // cap the DOM so a chatty day cannot grow it unbounded
+            while (body.children.length > 300) body.removeChild(body.lastChild);
+            if (updated) updated.textContent = 'updated ' + new Date().toLocaleTimeString('en-IN', { hour12: false });
+        }
+        fetch('/tv/spatam_alerts').then(r => r.json()).then(d => {
+            const recs = (d.ALERTS || []).slice().reverse();   // newest last -> newest on top
+            render(recs, false);
+        }).catch(() => {});
+        sock.on('spatam_alerts', (payload) => {
+            if (!payload || !Array.isArray(payload.ALERTS)) return;
+            render(payload.ALERTS.slice().reverse(), true);   // flush is in fire order -> reverse for newest-on-top
+        });
     })();
 
 
