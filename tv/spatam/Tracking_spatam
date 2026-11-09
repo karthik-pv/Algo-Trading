@@ -1,0 +1,226 @@
+TREPAT + SPATAM — FINAL MESSAGE CATALOG (source of truth)
+==========================================================
+(This file IS the vocabulary. Both SPATAM pine alerts and the TREPAT replay
+engine / strip (scripts/trepat_track.py, tv/spatam/trepat.pine) follow the
+wording below — no side invents its own strings anymore.
+Consolidated 2026-11-05, finalised 2026-11-08.)
+
+============================================================
+1. SESSION OPEN
+============================================================
+[x] Session open
+      Session open. Gap up/down +/-x.xx% from previous close.
+      DPM1M2X, 2PM1M2X, 3PM1M2X, 5PM1M2X, 1PMX, 15PM2X  // PVT/MACD1/MACD2 Cross up momentors for the morning
+      1ox/5ox/3ox/2ox/Dox // VOC cross up momentors for the morning
+      1o / 5o / 3o / 2o / Do // If VOC is already greater than 0 announce that as well
+
+============================================================
+2. NEARBY LEVELS
+============================================================
+[ ] Nearby levels — lookahead  // This needs to be announced once 1PM trend has started
+      Resistance within .5% above: <level names>
+      Support within .5% below: <level names>
+
+[ ] Possible Resistance / Support levels //Only when 1PM2 trend is in favor of that direction.
+      // 1PM2 = 1m PVT / MACD2 are uptrending / downtrending
+      Resistance/Support at <level> because of <family trend>
+      // family trend could be the 5PM / 3PM / 2PM / DPM / WPM / MPM trend.
+      // Pivots / VWAP / previous day close etc. are announced as plain level
+      // names, no reason / family trend is mentioned.
+
+[ ] Nearby levels — approach warning (price x% closer to level) //Only when 1PME50 trend is in favor of that direction.
+      Attention : <level> could provide resistance..
+      Attention : <level> could provide support..
+      Attention : <level> could be crossed // if 1PME50 trend is in favor, 1o volume is coming up, 5o VOC > -.2
+
+[ ] Nearby levels — actual touch (price AT the level)
+      Attention : Price facing resistance at level xyz..
+      Attention : Price takes support of level xyz..
+      Attention : <level> is crossed with 1o and 5o volume // if 1PME50 trend is in favor, 1o volume is coming up, 5o VOC > 0
+
+[ ] Grouped same-tick touches (one message)
+      Attention : Price takes support of <Level1>, <Level2> and <Level3>
+      Attention : Price facing resistance at <Level1>, <Level2> and <Level3>
+      // mirror for retested: "Attention : Price retested <Level1>, <Level2> and <Level3> again.."
+      // On a FIRST touch, the may-cross note applies ONLY to the EMA cluster
+      // that PVT pane governs (next-lower-TF EMA50/100/200):
+      //   3P -> 1E100/200   2P -> 5E50/100/200   DP -> 30E50/100/200
+      //   WP -> 2E50/100/200   MP -> DE50/100/200
+      // and only when that PVT trends AGAINST the touch direction:
+      //   resistance at 1E200 + 3P uptrending ->  Attention : Price facing resistance at 1E200.. May cross up since 3P is uptrending..
+      //   support at 5E100 + 2P downtrending ->   Attention : Price takes support of 5E100.. May cross down since 2P is downtrending..
+      // (multiple panes qualifying: "since 2P/3P are .."; other levels: no note)
+
+[ ] Retest (2nd touch of same level, ~25 pts away and returned)
+      Attention : Price retested the level xyz..
+
+[ ] Retest (3rd+ touch)
+      Attention : Price retested the level xyz again..
+
+[ ] Price-action follow-through — ONLY for the major EMA clusters
+    (1E50/100/200, 5E50/100/200, 30E50/100/200, 2E50/100/200, DE50/100/200,
+    WE50/100/200, ME50/100/200). Armed ONLY when the level is announced as
+    touched/retested; then an AGGRESSIVE candle (body >= 1.5x the average
+    body of the previous 5 bars) closing beyond the level, next bar onward
+    (15-bar validity, one fire per episode):
+      support hold + aggressive bull candle closing above ->
+          Price rises above 1E200
+      resistance hold + aggressive bear candle closing below ->
+          Price falls below 1E200
+      // sequence: retest -> takes support/faces resistance -> rises above /
+      // falls below
+
+============================================================
+3. EMA / LEVEL RELATIONS
+============================================================
+[ ] Price vs level
+      Price has gone above <Level> // Any level (EMAs above 1E9 / Pivotal Levels of all timeframes / VWAP)
+      Price comes below <Level> // Any level (EMAs above 1E9 / Pivotal Levels of all timeframes / VWAP)
+
+[ ] Price crosses 1E50
+      Attention : Price has crossed below 1E50.. //1E50 Needs Attention prefix — only when 1m PVT is below zero
+      Attention : Price has crossed above 1E50.. //1E50 Needs Attention prefix — only when 1m PVT is above zero
+
+[ ] Retrace to EMA
+      Price has retraced up to and faced resistance at 1E50..
+      Price has retraced down to and taken support of 1E50..
+      // mirror for 1E21
+
+[ ] EMAs under PM trends
+      Attention : 1m E50 acting as support/resistance (5PM Uptrend/Downtrend)..
+      Attention : 1m E100/200 acting as support/resistance (3PM Uptrend/Downtrend)..
+      Attention : 5m E50/100/200 acting as support/resistance (2PM Uptrend/Downtrend)..
+      Attention : 30m EMA50/100/200 acting as support/resistance (DPM Uptrend/Downtrend)..
+      Attention : 2h EMA50/100/200 acting as support/resistance (WPM Uptrend/Downtrend)..
+      Attention : D EMA50/100/200 acting as support/resistance (MPM Uptrend/Downtrend)..
+
+============================================================
+4. VWAP
+============================================================
+[ ] Close to VWAP — about to cross (approach side, ~10 pts, once/direction/episode)
+      Attention : Price about to cross down VWAP (1m)..
+      Attention : Price about to cross up VWAP (1m)..
+      Attention : Price about to cross down VWAP (5m)..
+      Attention : Price about to cross up VWAP (5m)..
+
+[ ] VWAP cross — actual
+      Attention : Price crossed up VWAP (1m)..
+      Attention : Price crossed down VWAP (1m)..
+      Attention : Price crossed up VWAP (5m)..
+      Attention : Price crossed down VWAP (5m)..
+
+[ ] VWAP consolidating
+      Attention : Price consolidating around VWAP..
+
+============================================================
+5. MOMENTORS (PVT / MACD2 / VOC)
+============================================================
+Notation: every PVT / MACD momentor is "Attention : <NAME> UT" (cross up)
+or "Attention : <NAME> DT" (cross down). Volume (o) momentors have NO
+UT/DT — only cross-UPS are considered, announced as "Attention : <NAME>x"
+(1ox / 5ox / 3ox / 2ox / Dox). VOC cross-downs are never announced.
+
+[ ] PVT zero-crosses
+      Attention : 1PX UT / 1PX DT      (1m PVT)
+      Attention : 5PX UT / 5PX DT      (5m PVT)
+      Attention : 3PX UT / 3PX DT      (30m PVT)
+      Attention : 2PX UT / 2PX DT      (2h PVT)
+      Attention : DPX UT / DPX DT      (Daily PVT)
+
+[ ] 5m PVT about-to-cross (pre-call; band +/-0.1, 1m-TF read, once per episode)
+      Attention : 5PZ DT
+      Attention : 5PZ UT
+
+[ ] MACD signal crosses (MACD Line vs its own Signal Line)
+      Attention : 1M2X UT / 1M2X DT    (1m MACD2)
+      Attention : 5M1X UT / 5M1X DT    (5m MACD1)
+      Attention : 5M2X UT / 5M2X DT    (5m MACD2)
+      Attention : 3M2X UT / 3M2X DT    (30m MACD2)
+      Attention : 2M1X UT / 2M1X DT    (2h MACD1)
+      Attention : 2M2X UT / 2M2X DT    (2h MACD2)
+      Attention : DM1X UT / DM1X DT    (Daily MACD1)
+      Attention : DM2X UT / DM2X DT    (Daily MACD2)
+
+[ ] VOC cross-ups (volume momentors — no UT/DT, cross-downs ignored)
+      Attention : 1ox                  (1m VOC)
+      Attention : 5ox                  (5m VOC)
+      Attention : 3ox                  (30m VOC)
+      Attention : 2ox                  (2h VOC)
+      Attention : Dox                  (Daily VOC)
+
+[ ] 15s MACD2 cross — never standalone
+      // only inside 1PXD_15PM / 1PXU_15PM confirmation
+
+============================================================
+6. SWING / TREND STARTS
+============================================================
+[ ] 1PM start
+      1PMX DT Resistance @ <level>   // ALWAYS name the level that acted as resistance (latest first-touch group, e.g. 1E100, 1E50, 1E200)
+      1PMX UT Support @ <level>      // ALWAYS name the level that acted as support (latest first-touch group, e.g. S1 D, Daily VWAP, 5E100)
+      // 1PMX DT fires when: 1m PVT downtrending AND 1m MACD2 crossed down, OR
+      //   1m MACD2 downtrending AND 1m PVT crossed down, OR
+      //   1m PVT and 1m MACD2 crossed down together. UT mirrors it.
+      // 5PM starts keep their wording: "5PM Uptrend started.." / "5PM Downtrend started.."
+
+[ ] 1PM E50 swing start
+      Attention : 1PME50 downswing has started.. Nearby levels are <Levels> in the vicinity of 100 points below
+      Attention : 1PME50 upswing has started.. Nearby levels are <Levels> in the vicinity of 100 points above
+      Attention : But 5m PVT is still at <val>..Watch out.. // This announcement has to be made if 5m PVT far above zero line when 1PME50 downswings..and far below zero line when upswing starts..
+
+[ ] Expect pre-call (5m PVT trending, point-in-time) — said ONLY when 1m PVT is
+    trending into the level (swing Down only if 1m PVT is uptrending and price
+    faces resistance; swing Up only if 1m PVT is downtrending and price takes
+    support; never when 1m PVT already trends the same way) AND 1m PVT is
+    within the +/-0.1 zero-line threshold — outside the band, don't say it.
+      Expect 1PX_15PM DT
+      Expect 1PX_15PM UT
+
+[ ] Confirmed swing (flagship)
+      1PX_15PM DT — 1m PXD with 15s M2XD confirmation
+      1PX_15PM UT — 1m PXU with 15s M2XU confirmation
+
+[ ] When Trend starts with current time frame volume
+      Attention : 1PM_1ox or 1PM_1o  //1PM Trend Start with 1m VOC > 0
+      Attention : 5PM_5ox or 5PM_5o  //5PM Trend Start with 5m VOC > 0
+      Attention : 3PM_3ox or 3PM_3o  //3PM Trend Start with 30m VOC > 0
+      Attention : 2PM_2ox or 2PM_2o //2PM Trend Start with 2h VOC > 0
+
+[ ] When Trend starts with higher time frame volume
+      Attention : 1PM_5ox or 1PM_5o  //1PM Trend Start with 5m VOC > 0
+      Attention : 5PM_3ox or 5PM_3o  //5PM Trend Start with 30m VOC > 0
+      Attention : 3PM_2ox or 3PM_2o  //3PM Trend Start with 2h VOC > 0
+      Attention : 2PM_Dox or 2PM_Do //2PM Trend Start with D VOC > 0
+
+============================================================
+7. STOCHASTIC
+============================================================
+[ ] 5m stochastic zone cross
+      Attention : 5m Stochastic cross down from OBZ..
+      Attention : 5m Stochastic cross up from OSZ..
+      // zones only (OBZ/MZ/OSZ), no values, 5m,30m TF only
+
+============================================================
+8. BIAS
+============================================================
+[ ] Bias statement (exact wording, one of four)
+      Bias is Uptrend as we have 5PM Uptrend
+      Bias is Strong Uptrend as we have 5PM Uptrend above VWAP
+      Bias is Downtrend as we have 5PM Downtrend
+      Bias is Strong Downtrend as we have 5PM Downtrend below VWAP
+
+============================================================
+9. SEQUENCE
+============================================================
+[ ] Sequence to be maintained
+      Price facing resistance at <level>
+      15PM_DT
+      1PX_15PM_DT
+      Price facing support at <level>
+      15PM_UT
+      1PX_15PM_UT
+
+============================================================
+10. MOMENTORS SUMMARY
+============================================================
+[ ] Momentors
+      Attention : Momentors in play : <list>
