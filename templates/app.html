@@ -4107,6 +4107,7 @@ document.addEventListener('DOMContentLoaded', function() {
         if (!body) return;
         const sock = window.__appSocket;
         if (!sock) return;
+        let gotRows = false;   // placeholder text cleared once, on first paint
         const esc = (s) => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
         function render(records, markNew) {
             const rows = (records || [])
@@ -4126,7 +4127,14 @@ document.addEventListener('DOMContentLoaded', function() {
                     </div>`;
                 });
             if (!rows.length) return;
-            body.classList.remove('no-options');
+            // First paint: wipe the "Waiting for SPATAM alerts…" placeholder
+            // (a bare text node inside the body) - it used to sit above the
+            // lines forever (user report 2026-11-09).
+            if (!gotRows) {
+                body.innerHTML = '';
+                body.classList.remove('no-options');
+                gotRows = true;
+            }
             body.insertAdjacentHTML(markNew ? 'afterbegin' : 'beforeend', rows.join(''));
             // cap the DOM so a chatty day cannot grow it unbounded
             while (body.children.length > 300) body.removeChild(body.lastChild);
