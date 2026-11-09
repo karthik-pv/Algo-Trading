@@ -1920,7 +1920,6 @@ f_1m_bar() =>
 [o1m, h1m, l1m, c1m, bavg5] = request.security(syminfo.tickerid, "1", f_1m_bar(), lookahead = barmerge.lookahead_on)
 [P_y,R1_y,R2_y,R3_y,R4_y,R5_y,S1_y,S2_y,S3_y,S4_y,S5_y, prevYHigh, prevYLow, prevYClose] = request.security(syminfo.tickerid, "12M", get_PrevPeriodPivots(), lookahead = barmerge.lookahead_on)
 [ema9_m, ema21_m, ema50_m, ema100_m, ema200_m] = request.security(syminfo.tickerid, "M", get_EMA9_EMA50_EMA100_EMA200_Stats_res(), lookahead = barmerge.lookahead_on)
-[o1m, h1m, l1m, c1m, bavg5] = request.security(syminfo.tickerid, "1", f_1m_bar(), lookahead = barmerge.lookahead_on)
 
 // TF boundary stamps (global scope so ta.* evaluates every bar)
 bool newDay = ta.change(time("D")) != 0
