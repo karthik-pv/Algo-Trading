@@ -1758,7 +1758,7 @@
            strip's width is JS-synced to the Levels Ladder width. -->
       <div style="display:inline-block; flex:0 0 auto;">
         <div id="ml-top-strip" style="margin-bottom:8px;">
-            <table class="option-table" id="ml-top-table" style="width:100%; table-layout:fixed;"><tbody id="ml-top-body">
+            <table class="option-table" id="ml-top-table" style="width:100%;"><tbody id="ml-top-body">
                 <tr><td colspan="6" class="no-options">Waiting for TradingView data&hellip;</td></tr>
             </tbody></table>
         </div>
@@ -4081,17 +4081,6 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         loadMomentors();
         setInterval(loadMomentors, 2000);
-
-        // top strip width = Levels Ladder width (user request 2026-11-09):
-        // the strip table is width:100% table-layout:fixed, so sizing the
-        // strip div pins the table to the ladder's on-screen width.
-        const topStrip = document.getElementById('ml-top-strip');
-        const ladderBox = document.getElementById('ml-ladder');
-        if (topStrip && ladderBox) {
-            const syncStrip = () => { topStrip.style.width = ladderBox.offsetWidth + 'px'; };
-            syncStrip();
-            setInterval(syncStrip, 2000);
-        }
     })();
 
     // === Tracking Log (SPATAM ALERTS — right of the Levels Ladder) ===
