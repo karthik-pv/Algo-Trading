@@ -3605,6 +3605,29 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }).catch(() => {});
 
+    // TV DATA-stream stall watcher (2026-11-10): the server-side watchdog
+    // (server.py _tv_data_watchdog_loop) flags a dead MSG:DATA webhook
+    // stream. While stalled, keep a RED toast effectively pinned - the
+    // 28s toast life re-shows on every 30s poll, so a timeout can never
+    // lose the alert (2026-11-09: the DATA stream died ~10:31 and ran
+    // stale all day unnoticed).
+    let tvDataStallShown = false;
+    function pollTvDataStall() {
+        fetch('/tv/last_data').then(r => r.json()).then(payload => {
+            const stalled = !!(payload && payload.data_stalled);
+            const msg = 'TradingView DATA stream stopped - check the DATA alert on the chart';
+            if (stalled) {
+                showInlineStatus(msg, 'error', 28000);
+                tvDataStallShown = true;
+            } else if (tvDataStallShown) {
+                tvDataStallShown = false;
+                showInlineStatus('TradingView DATA stream restored', 'success', 6000);
+            }
+        }).catch(() => {});
+    }
+    setInterval(pollTvDataStall, 30000);
+    pollTvDataStall();
+
     // === Setup Call panel rendering ===
     const TC_MODES = ['ultra_scalp', 'scalp', 'intraday'];
     function applySetupCall(forecast) {
