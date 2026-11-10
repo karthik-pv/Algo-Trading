@@ -356,6 +356,7 @@ def main(paths):
     below21 = False
     above50 = False
     e21_res = e21_sup = e50_sup = e50_res = False
+    pmx_state = 0   # 1PMX pair-alignment state: -1 down, +1 up, 0 = open of day
     ret_time = {}
     touches, away = {}, {}
     # price-action follow-through applies to the major EMA clusters:
@@ -388,27 +389,27 @@ def main(paths):
             below21 = True
         elif below21 and pd.notna(e21[i-1]) and c1[i-1] < e21[i-1] and px > e21[i]:
             below21 = False
-        # 1PMX swing start — per user condition (DT; UT mirrors it):
-        #   1m PVT downtrending AND 1m MACD2 crossed down, OR
-        #   1m MACD2 downtrending AND 1m PVT crossed down, OR
-        #   1m PVT and MACD2 crossed down together
-        pvt_x_dn = pd.notna(pvt1[i-1]) and pd.notna(pvt1[i]) and pvt1[i-1] > 0 >= pvt1[i]
-        pvt_x_up = pd.notna(pvt1[i-1]) and pd.notna(pvt1[i]) and pvt1[i-1] < 0 <= pvt1[i]
-        m2_x_dn = (pd.notna(sig_1[i-1]) and pd.notna(sig_1[i])
-                   and m2_1[i-1] > sig_1[i-1] and m2_1[i] <= sig_1[i])
-        m2_x_up = (pd.notna(sig_1[i-1]) and pd.notna(sig_1[i])
-                   and m2_1[i-1] < sig_1[i-1] and m2_1[i] >= sig_1[i])
-        pvt_dn = pd.notna(pvt1[i]) and pvt1[i] < 0
-        m2_dn = pd.notna(sig_1[i]) and m2_1[i] < sig_1[i]
-        pmx_dn = (pvt_dn and m2_x_dn) or (m2_dn and pvt_x_dn) or (pvt_x_dn and m2_x_dn)
-        pmx_up = ((not pvt_dn) and m2_x_up) or ((not m2_dn) and pvt_x_up) \
-            or (pvt_x_up and m2_x_up)
-        if pmx_dn:
-            lvl = getattr(main, '_last_res', None)
-            ev(t, "1PMX DT" + (f" Resistance @ {lvl}" if lvl else " Resistance"))
-        elif pmx_up:
-            lvl = getattr(main, '_last_sup', None)
-            ev(t, "1PMX UT" + (f" Support @ {lvl}" if lvl else " Support"))
+        # 1PMX swing start — stateful pair alignment (2026-11-10 rule):
+        # Down state = 1m PVT < 0 AND MACD2 below signal; Up state = PVT > 0
+        # AND MACD2 above signal. Announcement fires on the FIRST bar the pair
+        # holds while the opposite state was in force (same bar or a few bars
+        # apart — no same-bar cross requirement, no DT-over-UT precedence).
+        pvt_up_now = pd.notna(pvt1[i]) and pvt1[i] > 0
+        pvt_dn_now = pd.notna(pvt1[i]) and pvt1[i] < 0
+        m2_up_now = (pd.notna(sig_1[i]) and pd.notna(m2_1[i]) and m2_1[i] > sig_1[i])
+        m2_dn_now = (pd.notna(sig_1[i]) and pd.notna(m2_1[i]) and m2_1[i] < sig_1[i])
+        down_now = pvt_dn_now and m2_dn_now
+        up_now = pvt_up_now and m2_up_now
+        if down_now:
+            if pmx_state != -1:
+                lvl = getattr(main, '_last_res', None)
+                ev(t, "1PMX DT" + (f" Resistance @ {lvl}" if lvl else " Resistance"))
+            pmx_state = -1
+        elif up_now:
+            if pmx_state != 1:
+                lvl = getattr(main, '_last_sup', None)
+                ev(t, "1PMX UT" + (f" Support @ {lvl}" if lvl else " Support"))
+            pmx_state = 1
         # 1E50 cross — Attention prefix per catalog; only said when 1m PVT
         # agrees with the cross (above-cross needs 1P > 0, below-cross 1P < 0)
         if pd.notna(e50[i-1]) and c1[i-1] > e50[i-1] and px < e50[i]:

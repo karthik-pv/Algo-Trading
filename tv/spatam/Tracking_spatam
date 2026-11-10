@@ -160,9 +160,10 @@ UT/DT — only cross-UPS are considered, announced as "<NAME>x"
 [ ] 1PM start
       1PMX DT Resistance @ <level>   // ALWAYS name the level that acted as resistance (latest first-touch group, e.g. 1E100, 1E50, 1E200)
       1PMX UT Support @ <level>      // ALWAYS name the level that acted as support (latest first-touch group, e.g. S1 D, Daily VWAP, 5E100)
-      // 1PMX DT fires when: 1m PVT downtrending AND 1m MACD2 crossed down, OR
-      //   1m MACD2 downtrending AND 1m PVT crossed down, OR
-      //   1m PVT and 1m MACD2 crossed down together. UT mirrors it.
+      // 1PMX DT fires on the FIRST bar where 1m PVT < 0 AND 1m MACD2 is
+      //   downtrending hold together after an Uptrend state — same bar or a
+      //   few bars apart (stateful pair alignment, 2026-11-10 rule).
+      //   UT mirrors it: PVT > 0 AND MACD2 uptrending after a Downtrend state.
       // 5PM starts keep their wording: "5PM Uptrend started.." / "5PM Downtrend started.."
 
 [ ] 1PM E50 swing start
