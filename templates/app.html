@@ -3611,7 +3611,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // effectively pinned - the 28s toast life re-shows on every 30s poll,
     // so a timeout can never lose the alert (2026-11-09: the DATA stream
     // died ~10:31 and ran stale all day unnoticed).
-    const tvStreamStallShown = { DATA: false, LEVELS: false, OPT: false };
+    const tvStreamStallShown = { DATA: false, LEVELS: false, OPT: false, ALERTS: false };
     function pollTvDataStall() {
         fetch('/tv/last_data').then(r => r.json()).then(payload => {
             const stalled = (payload && payload.streams_stalled) || {};

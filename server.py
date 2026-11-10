@@ -1406,9 +1406,13 @@ _tv_persist_lock = threading.Lock()
 # only — no trade-logic touchpoints.
 _TV_DATA_STALE_SECS = 90     # periodic streams normally arrive every 15s
 _TV_DATA_WARN_EVERY = 300    # repeat the warning every 5 minutes while stalled
-_tv_stream_ts = {s: None for s in ("DATA", "LEVELS", "OPT")}
+_tv_stream_ts = {s: None for s in ("DATA", "LEVELS", "OPT", "ALERTS")}
 _tv_stream_stall = {s: {"on": False, "since": None, "last_warn": 0.0}
                     for s in _tv_stream_ts}
+# ALERTS is event-driven — silence is normal — so it gets a much looser
+# threshold: only 5 quiet minutes count as a stall (user rule 2026-11-10).
+_TV_STREAM_STALE_SECS = {s: _TV_DATA_STALE_SECS for s in _tv_stream_ts}
+_TV_STREAM_STALE_SECS["ALERTS"] = 300
 
 
 def _tv_stream_watchdog_loop():
@@ -1418,7 +1422,8 @@ def _tv_stream_watchdog_loop():
                 now = time.time()
                 for stream, last in _tv_stream_ts.items():
                     st = _tv_stream_stall[stream]
-                    stale = (last is None) or (now - last > _TV_DATA_STALE_SECS)
+                    stale = (last is None) or \
+                        (now - last > _TV_STREAM_STALE_SECS[stream])
                     if stale and not st["on"]:
                         st["on"] = True
                         st["since"] = now if last is None else last
