@@ -1,7 +1,12 @@
 //@version=5
 // SPATAM — SetUp, Price Action, Trend, Alerts & Momentum
 indicator("SPATAM", "", true,scale=scale.none, max_labels_count=500)
-// VERSION: 2026-11-10.41 — current (see changelog below)
+// VERSION: 2026-11-10.42 — current (see changelog below)
+// VERSION: 2026-11-10.42 — NEW message: after a 1PM trend start, the first
+//   1E50 cross in the trend's direction announces "Attention: 1PME50 UT
+//   Started Support @ <levels>" (UT) / "Attention: 1PME50 DT Started
+//   Resistance @ <levels>" (DT) — once per trend episode. All existing
+//   messages and DATA/LEVELS payloads UNCHANGED.
 // VERSION: 2026-11-10.41 — 1PMX reworked to stateful pair alignment: fires on
 //   the first bar where 1m PVT > 0 AND MACD2 uptrending hold together after a
 //   downtrend (same bar or a few bars apart — no same-bar cross requirement,
@@ -2313,13 +2318,19 @@ if barOK and new1m and not na(c1m) and not na(o1m)
     bool pmxDownNow = value_pvt_1m < 0 and trend1 == -1
     bool pmxUpNow = value_pvt_1m > 0 and trend1 == 1
     var int pmxState = 0
+    // 1PME50 follow-through: after a 1PM trend start, the FIRST 1E50 cross
+    // in the trend's direction announces "Attention: 1PME50 UT/DT Started
+    // Support/Resistance @ <levels>" (once per trend episode).
+    var bool pmE50Said = false
     if pmxDownNow
         if pmxState != -1
             f_alert(lastResGrp != "" ? "1PMX DT Resistance @ " + lastResGrp : "1PMX DT Resistance")
+            pmE50Said := false
         pmxState := -1
     else if pmxUpNow
         if pmxState != 1
             f_alert(lastSupGrp != "" ? "1PMX UT Support @ " + lastSupGrp : "1PMX UT Support")
+            pmE50Said := false
         pmxState := 1
 
     // ---- 1E50 cross (gated on 1m PVT agreement) + retrace-that-holds ----
@@ -2327,10 +2338,16 @@ if barOK and new1m and not na(c1m) and not na(o1m)
         above50 := false
         if value_pvt_1m < 0
             f_alert("Price has crossed below 1E50..")
+        if pmxState == -1 and not pmE50Said
+            pmE50Said := true
+            f_alert(lastResGrp != "" ? "Attention: 1PME50 DT Started Resistance @ " + lastResGrp : "Attention: 1PME50 DT Started Resistance")
     else if not na(e50Prev) and not na(cPrev) and cPrev < e50Prev and c1m > ema50_1m
         above50 := true
         if value_pvt_1m > 0
             f_alert("Price has crossed above 1E50..")
+        if pmxState == 1 and not pmE50Said
+            pmE50Said := true
+            f_alert(lastSupGrp != "" ? "Attention: 1PME50 UT Started Support @ " + lastSupGrp : "Attention: 1PME50 UT Started Support")
     if above50 and not na(ema50_1m) and math.abs(c1m - ema50_1m) <= T_NEAR and c1m > ema50_1m
         if not e50Sup
             e50Sup := true
