@@ -3605,23 +3605,28 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }).catch(() => {});
 
-    // TV DATA-stream stall watcher (2026-11-10): the server-side watchdog
-    // (server.py _tv_data_watchdog_loop) flags a dead MSG:DATA webhook
-    // stream. While stalled, keep a RED toast effectively pinned - the
-    // 28s toast life re-shows on every 30s poll, so a timeout can never
-    // lose the alert (2026-11-09: the DATA stream died ~10:31 and ran
-    // stale all day unnoticed).
-    let tvDataStallShown = false;
+    // TV stream stall watcher (2026-11-10): the server-side watchdog
+    // (server.py _tv_stream_watchdog_loop) flags dead periodic MSG streams
+    // (DATA / LEVELS / OPT). While a stream is stalled, keep a RED toast
+    // effectively pinned - the 28s toast life re-shows on every 30s poll,
+    // so a timeout can never lose the alert (2026-11-09: the DATA stream
+    // died ~10:31 and ran stale all day unnoticed).
+    const tvStreamStallShown = { DATA: false, LEVELS: false, OPT: false };
     function pollTvDataStall() {
         fetch('/tv/last_data').then(r => r.json()).then(payload => {
-            const stalled = !!(payload && payload.data_stalled);
-            const msg = 'TradingView DATA stream stopped - check the DATA alert on the chart';
-            if (stalled) {
-                showInlineStatus(msg, 'error', 28000);
-                tvDataStallShown = true;
-            } else if (tvDataStallShown) {
-                tvDataStallShown = false;
-                showInlineStatus('TradingView DATA stream restored', 'success', 6000);
+            const stalled = (payload && payload.streams_stalled) || {};
+            const stalledNow = Object.keys(tvStreamStallShown).filter(s => stalled[s]);
+            const wasShown = Object.values(tvStreamStallShown).some(Boolean);
+            if (stalledNow.length > 0) {
+                showInlineStatus(
+                    'TradingView ' + stalledNow.join('/') + ' stream' +
+                    (stalledNow.length > 1 ? 's' : '') +
+                    ' stopped - check the alert' + (stalledNow.length > 1 ? 's' : '') +
+                    ' on the chart', 'error', 28000);
+                for (const s of stalledNow) tvStreamStallShown[s] = true;
+            } else if (wasShown) {
+                for (const s of Object.keys(tvStreamStallShown)) tvStreamStallShown[s] = false;
+                showInlineStatus('TradingView data stream(s) restored', 'success', 6000);
             }
         }).catch(() => {});
     }

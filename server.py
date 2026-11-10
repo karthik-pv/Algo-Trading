@@ -1396,51 +1396,57 @@ def _tv_dump_incoming(data):
 
 _tv_persist_lock = threading.Lock()
 
-# TV DATA-stream watchdog (2026-11-10): the spatam DATA alert on TradingView
+# TV stream watchdog (2026-11-10): the spatam DATA alert on TradingView
 # stopped firing mid-session on 2026-11-09 (~10:31, right after an app
 # restart — LEVELS/ALERTS kept flowing) and nobody noticed for hours: the
-# app kept running on stale indicators. The webhook route stamps every DATA
-# message here; a daemon loop warns (log + voice) while the stream is stale
-# during market hours. Runtime state only — no trade-logic touchpoints.
-_tv_last_data_ts = {"t": None}
-_tv_data_stalled = {"on": False, "since": None, "last_warn": 0.0}
-_TV_DATA_STALE_SECS = 90     # DATA normally arrives every 15s
+# app kept running on stale indicators. The webhook route stamps every
+# periodic stream message here; a daemon loop warns (log + voice) while a
+# stream is stale during market hours. ALERTS is event-driven (quiet
+# stretches are normal) so it is deliberately NOT watched. Runtime state
+# only — no trade-logic touchpoints.
+_TV_DATA_STALE_SECS = 90     # periodic streams normally arrive every 15s
 _TV_DATA_WARN_EVERY = 300    # repeat the warning every 5 minutes while stalled
+_tv_stream_ts = {s: None for s in ("DATA", "LEVELS", "OPT")}
+_tv_stream_stall = {s: {"on": False, "since": None, "last_warn": 0.0}
+                    for s in _tv_stream_ts}
 
 
-def _tv_data_watchdog_loop():
+def _tv_stream_watchdog_loop():
     while True:
         try:
             if is_market_open():
-                last = _tv_last_data_ts["t"]
                 now = time.time()
-                stale = (last is None) or (now - last > _TV_DATA_STALE_SECS)
-                if stale and not _tv_data_stalled["on"]:
-                    _tv_data_stalled["on"] = True
-                    _tv_data_stalled["since"] = now if last is None else last
-                    _tv_data_stalled["last_warn"] = 0.0
-                    logger.error(
-                        "TV DATA stream STALE - no MSG:DATA webhook for "
-                        f"{'never (this boot)' if last is None else str(int(now - last)) + 's'}"
-                        " - check the DATA alert on the TradingView chart")
-                if stale and _tv_data_stalled["since"] is not None:
-                    if now - _tv_data_stalled["last_warn"] >= _TV_DATA_WARN_EVERY:
-                        _tv_data_stalled["last_warn"] = now
-                        try:
-                            trader.queue_spatam_speech(
-                                "TradingView data stream stopped. "
-                                "Please check the data alert.")
-                        except Exception:
-                            pass
-            elif _tv_data_stalled["on"]:
-                _tv_data_stalled["on"] = False   # market closed — reset quietly
+                for stream, last in _tv_stream_ts.items():
+                    st = _tv_stream_stall[stream]
+                    stale = (last is None) or (now - last > _TV_DATA_STALE_SECS)
+                    if stale and not st["on"]:
+                        st["on"] = True
+                        st["since"] = now if last is None else last
+                        st["last_warn"] = 0.0
+                        logger.error(
+                            f"TV {stream} stream STALE - no MSG:{stream} "
+                            f"webhook for "
+                            f"{'never (this boot)' if last is None else str(int(now - last)) + 's'}"
+                            f" - check the {stream} alert on the TradingView chart")
+                    if stale and st["since"] is not None:
+                        if now - st["last_warn"] >= _TV_DATA_WARN_EVERY:
+                            st["last_warn"] = now
+                            try:
+                                trader.queue_spatam_speech(
+                                    f"TradingView {stream} data stream stopped. "
+                                    "Please check the alert.")
+                            except Exception:
+                                pass
+            else:
+                for st in _tv_stream_stall.values():
+                    st["on"] = False   # market closed — reset quietly
         except Exception as e:
-            logger.error(f"tv data watchdog error: {e}")
+            logger.error(f"tv stream watchdog error: {e}")
         time.sleep(30)
 
 
-threading.Thread(target=_tv_data_watchdog_loop, daemon=True,
-                 name="tv-data-watchdog").start()
+threading.Thread(target=_tv_stream_watchdog_loop, daemon=True,
+                 name="tv-stream-watchdog").start()
 
 
 def _tv_persist_snapshot(data):
@@ -1505,17 +1511,20 @@ _TV_LAST_PAYLOAD_PATH = os.path.join(DATA_DIR, "tv_last_payload.json")
 
 @app.route("/tv/last_data")
 def tv_last_data():
-    stalled = _tv_data_stalled["on"] and is_market_open()
+    market = is_market_open()
+    streams = {s: (st["on"] and market)
+               for s, st in _tv_stream_stall.items()}
     try:
         with open(_TV_LAST_PAYLOAD_PATH, encoding="utf-8") as f:
             payload = json.load(f)
         payload["source"] = "persisted"
-        payload["data_stalled"] = stalled
-        if stalled:
-            payload["data_stall_since"] = _tv_data_stalled["since"]
+        payload["data_stalled"] = streams["DATA"]   # legacy key (DATA only)
+        payload["streams_stalled"] = streams
         return jsonify(payload)
     except Exception:
-        return jsonify({"source": "none", "data_stalled": stalled})
+        return jsonify({"source": "none",
+                        "data_stalled": streams["DATA"],
+                        "streams_stalled": streams})
 
 
 @app.route("/tv/spatam_alerts")
@@ -1567,16 +1576,18 @@ def trading_view():
         # on every restart (seen 2026-11-04: widget froze at the previous
         # session's last snapshot all day).
         logger.info(f"TV webhook MSG={data.get('MSG')}")
-        if data.get("MSG") == "DATA":
-            _tv_last_data_ts["t"] = time.time()
-            if _tv_data_stalled["on"]:
+        _msg = data.get("MSG")
+        if _msg in _tv_stream_ts:
+            _tv_stream_ts[_msg] = time.time()
+            st = _tv_stream_stall[_msg]
+            if st["on"]:
                 # recovery after a stall — say so once, loudly
-                _tv_data_stalled["on"] = False
-                logger.warning("TV DATA stream RESTORED after "
-                               f"{time.time() - _tv_data_stalled['since']:.0f}s stall")
+                st["on"] = False
+                logger.warning(f"TV {_msg} stream RESTORED after "
+                               f"{time.time() - st['since']:.0f}s stall")
                 try:
                     trader.queue_spatam_speech(
-                        "TradingView data stream restored.")
+                        f"TradingView {_msg} data stream restored.")
                 except Exception:
                     pass
         _tv_dump_incoming(data)
