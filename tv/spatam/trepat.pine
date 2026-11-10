@@ -3,8 +3,11 @@ indicator("trepat", "trepat", overlay = false, max_labels_count = 500)
 // ============================================================================
 // TREPAT strip — Trend Price Action Tracking viewer (historical)
 // ----------------------------------------------------------------------------
-// VERSION: 1.2
+// VERSION: 1.3
 // CHANGELOG:
+//  2026-11-10  v1.3  Data block regenerated from the 2026-11-09 replay after
+//                    adding the 1PME50 follow-through messages (indicator
+//                    v2026-11-10.42). Logic UNCHANGED.
 //  2026-11-10  v1.2  Data block regenerated from the 2026-11-09 session replay
 //                    (scripts/trepat_track.py with the stateful 1PMX rule).
 //                    Logic UNCHANGED.
@@ -43,7 +46,7 @@ var string TREPAT_DATA = "202611090915|Session open. Gap down -0.00% from previo
   "202611090944|Price has retraced up to and faced resistance at 1E21..\n5m Stochastic cross down from OSZ..~" +
   "202611090945|Price has retraced up to and faced resistance at 1E50..\nPrice crossed up VWAP (1m)..\n1M2X UT\nPrice retested the level 1E100 and 1E200 again..~" +
   "202611090946|Price has retraced down to and taken support of 1E50..\nPrice retested the level Daily VWAP and 1E100 again..~" +
-  "202611090947|Price has crossed below 1E50..~" +
+  "202611090947|Price has crossed below 1E50..\nAttention: 1PME50 DT Started Resistance @ PD P, 1E50, 1E100~" +
   "202611090948|Price crossed down VWAP (1m)..~" +
   "202611090949|Price crossed up VWAP (1m)..\n5m Stochastic cross up from OSZ..~" +
   "202611090952|1PMX UT Support @ S2 D\n1PX UT~" +
@@ -54,7 +57,7 @@ var string TREPAT_DATA = "202611090915|Session open. Gap down -0.00% from previo
   "202611091002|Price crossed down VWAP (1m)..~" +
   "202611091009|1PX UT~" +
   "202611091010|Price crossed up VWAP (1m)..\nPrice retested the level 1E100, 1E50 and 1E200 again..~" +
-  "202611091011|Price has crossed above 1E50..~" +
+  "202611091011|Price has crossed above 1E50..\nAttention: 1PME50 UT Started Support @ S2 D~" +
   "202611091012|Price crossed down VWAP (1m)..~" +
   "202611091014|1PX DT\n1ox~" +
   "202611091019|Price crossed up VWAP (1m)..\nPrice retested the level 1E100, 1E50 and 1E200 again..~" +
@@ -66,7 +69,7 @@ var string TREPAT_DATA = "202611090915|Session open. Gap down -0.00% from previo
   "202611091030|Price has retraced up to and faced resistance at 1E21..\nPrice retested the level 1E200, S1 D, 1E50 and 5E50 again..~" +
   "202611091031|Price has retraced up to and faced resistance at 1E50..\nPrice retested the level 1E100, 1E50 and 1E200 again..~" +
   "202611091033|Price crossed up VWAP (1m)..\n1M2X UT~" +
-  "202611091034|Price has crossed below 1E50..\nPrice crossed down VWAP (1m)..~" +
+  "202611091034|Price has crossed below 1E50..\nAttention: 1PME50 DT Started Resistance @ PD P, 1E50, 1E100\nPrice crossed down VWAP (1m)..~" +
   "202611091036|1M2X DT\nPrice falls below 1E200\nPrice falls below 1E50\nPrice falls below 5E50\nPrice falls below 1E100~" +
   "202611091038|1ox\nPrice retested the level S2 D..~" +
   "202611091039|5m Stochastic cross down from MZ..~" +
@@ -82,7 +85,7 @@ var string TREPAT_DATA = "202611090915|Session open. Gap down -0.00% from previo
   "202611091106|Price retested the level 5E100..~" +
   "202611091112|Price has retraced up to and faced resistance at 1E21..\nPrice retested the level 1E50 and S2 D again..~" +
   "202611091113|1PMX UT Support @ 5E100\nPrice has retraced up to and faced resistance at 1E50..\n1PX UT\n1M2X UT\n1ox\nPrice rises above 5E100\nPrice retested the level 1E100 and 1E50 again..~" +
-  "202611091114|Price has crossed above 1E50..\nPrice retested the level 1E200, 5E50 and 1E100 again..\n5m Stochastic cross up from MZ..~" +
+  "202611091114|Price has crossed above 1E50..\nAttention: 1PME50 UT Started Support @ 5E100\nPrice retested the level 1E200, 5E50 and 1E100 again..\n5m Stochastic cross up from MZ..~" +
   "202611091115|Price crossed up VWAP (1m)..\nPrice retested the level S1 D, 1E200 and 5E50..~" +
   "202611091116|Price crossed down VWAP (1m)..~" +
   "202611091117|Price has retraced down to and taken support of 1E21..\nPrice has retraced down to and taken support of 1E50..~" +
@@ -104,7 +107,7 @@ var string TREPAT_DATA = "202611090915|Session open. Gap down -0.00% from previo
   "202611091156|Price has retraced down to and taken support of 1E50..\nPrice retested the level 1E100 and 1E50 again..\nExpect 1PX_15PM UT~" +
   "202611091158|Price rises above 1E50\nPrice rises above 1E100~" +
   "202611091159|Price retested the level S1 D, 1E200, 5E50, 1E50 and 1E100 again..\nExpect 1PX_15PM UT~" +
-  "202611091200|Price has crossed below 1E50..~" +
+  "202611091200|Price has crossed below 1E50..\nAttention: 1PME50 DT Started Resistance @ R1 D~" +
   "202611091201|Price crossed down VWAP (1m)..~" +
   "202611091203|1ox~" +
   "202611091206|Price has retraced up to and faced resistance at 1E50..~" +
@@ -127,7 +130,7 @@ var string TREPAT_DATA = "202611090915|Session open. Gap down -0.00% from previo
   "202611091240|1M2X UT~" +
   "202611091242|Price falls below 1E100\nPrice falls below 1E200\nPrice falls below 5E50~" +
   "202611091245|1PMX UT Support @ 5E100\n5PZ UT\n1PX UT~" +
-  "202611091251|Price has crossed above 1E50..~" +
+  "202611091251|Price has crossed above 1E50..\nAttention: 1PME50 UT Started Support @ 5E100~" +
   "202611091254|5m Stochastic cross up from OSZ..~" +
   "202611091256|1ox~" +
   "202611091300|Price crossed up VWAP (1m)..\n5PX UT~" +
@@ -147,7 +150,7 @@ var string TREPAT_DATA = "202611090915|Session open. Gap down -0.00% from previo
   "202611091331|Price has retraced up to and faced resistance at 1E50..\nPrice rises above 5E100\nPrice retested the level 1E100 and 1E50 again..~" +
   "202611091332|Price retested the level 1E200, 5E50, 1E50 and 1E100 again..~" +
   "202611091333|1PMX UT Support @ 5E100\n1PX UT\n1M2X UT~" +
-  "202611091334|Price has crossed above 1E50..\nPrice retested the level S1 D, 1E100, 1E200 and 5E50 again..\nExpect 1PX_15PM DT~" +
+  "202611091334|Price has crossed above 1E50..\nAttention: 1PME50 UT Started Support @ 5E100\nPrice retested the level S1 D, 1E100, 1E200 and 5E50 again..\nExpect 1PX_15PM DT~" +
   "202611091338|Price has crossed above 1E50..~" +
   "202611091347|Price crossed up VWAP (1m)..~" +
   "202611091349|5M1X UT\n5m Stochastic cross up from MZ..~" +
@@ -178,7 +181,7 @@ var string TREPAT_DATA = "202611090915|Session open. Gap down -0.00% from previo
   "202611091450|1PX DT~" +
   "202611091453|5ox~" +
   "202611091455|1ox\nPrice retested the level 1E100, Daily VWAP and 1E50 again..~" +
-  "202611091456|Price has crossed below 1E50..\n5ox~" +
+  "202611091456|Price has crossed below 1E50..\nAttention: 1PME50 DT Started Resistance @ R1 D\n5ox~" +
   "202611091459|Price has crossed above 1E50..\n1PX UT~" +
   "202611091500|Price rises above 1E50\nPrice rises above 1E100~" +
   "202611091510|1ox~" +
@@ -208,7 +211,7 @@ var string TREPAT_DATA = "202611090915|Session open. Gap down -0.00% from previo
   "20261109094400|Price has retraced up to and faced resistance at 1E21..\n5m Stochastic cross down from OSZ..~" +
   "20261109094500|Price has retraced up to and faced resistance at 1E50..\nPrice crossed up VWAP (1m)..\n1M2X UT\nPrice retested the level 1E100 and 1E200 again..~" +
   "20261109094600|Price has retraced down to and taken support of 1E50..\nPrice retested the level Daily VWAP and 1E100 again..~" +
-  "20261109094700|Price has crossed below 1E50..~" +
+  "20261109094700|Price has crossed below 1E50..\nAttention: 1PME50 DT Started Resistance @ PD P, 1E50, 1E100~" +
   "20261109094800|Price crossed down VWAP (1m)..~" +
   "20261109094900|Price crossed up VWAP (1m)..\n5m Stochastic cross up from OSZ..~" +
   "20261109095200|1PMX UT Support @ S2 D\n1PX UT~" +
@@ -219,7 +222,7 @@ var string TREPAT_DATA = "202611090915|Session open. Gap down -0.00% from previo
   "20261109100200|Price crossed down VWAP (1m)..~" +
   "20261109100900|1PX UT~" +
   "20261109101000|Price crossed up VWAP (1m)..\nPrice retested the level 1E100, 1E50 and 1E200 again..~" +
-  "20261109101100|Price has crossed above 1E50..~" +
+  "20261109101100|Price has crossed above 1E50..\nAttention: 1PME50 UT Started Support @ S2 D~" +
   "20261109101200|Price crossed down VWAP (1m)..~" +
   "20261109101400|1PX DT\n1ox~" +
   "20261109101900|Price crossed up VWAP (1m)..\nPrice retested the level 1E100, 1E50 and 1E200 again..~" +
@@ -231,7 +234,7 @@ var string TREPAT_DATA = "202611090915|Session open. Gap down -0.00% from previo
   "20261109103000|Price has retraced up to and faced resistance at 1E21..\nPrice retested the level 1E200, S1 D, 1E50 and 5E50 again..~" +
   "20261109103100|Price has retraced up to and faced resistance at 1E50..\nPrice retested the level 1E100, 1E50 and 1E200 again..~" +
   "20261109103300|Price crossed up VWAP (1m)..\n1M2X UT~" +
-  "20261109103400|Price has crossed below 1E50..\nPrice crossed down VWAP (1m)..~" +
+  "20261109103400|Price has crossed below 1E50..\nAttention: 1PME50 DT Started Resistance @ PD P, 1E50, 1E100\nPrice crossed down VWAP (1m)..~" +
   "20261109103600|1M2X DT\nPrice falls below 1E200\nPrice falls below 1E50\nPrice falls below 5E50\nPrice falls below 1E100~" +
   "20261109103800|1ox\nPrice retested the level S2 D..~" +
   "20261109103900|5m Stochastic cross down from MZ..~" +
@@ -247,7 +250,7 @@ var string TREPAT_DATA = "202611090915|Session open. Gap down -0.00% from previo
   "20261109110600|Price retested the level 5E100..~" +
   "20261109111200|Price has retraced up to and faced resistance at 1E21..\nPrice retested the level 1E50 and S2 D again..~" +
   "20261109111300|1PMX UT Support @ 5E100\nPrice has retraced up to and faced resistance at 1E50..\n1PX UT\n1M2X UT\n1ox\nPrice rises above 5E100\nPrice retested the level 1E100 and 1E50 again..~" +
-  "20261109111400|Price has crossed above 1E50..\nPrice retested the level 1E200, 5E50 and 1E100 again..\n5m Stochastic cross up from MZ..~" +
+  "20261109111400|Price has crossed above 1E50..\nAttention: 1PME50 UT Started Support @ 5E100\nPrice retested the level 1E200, 5E50 and 1E100 again..\n5m Stochastic cross up from MZ..~" +
   "20261109111500|Price crossed up VWAP (1m)..\nPrice retested the level S1 D, 1E200 and 5E50..~" +
   "20261109111600|Price crossed down VWAP (1m)..~" +
   "20261109111700|Price has retraced down to and taken support of 1E21..\nPrice has retraced down to and taken support of 1E50..~" +
@@ -269,7 +272,7 @@ var string TREPAT_DATA = "202611090915|Session open. Gap down -0.00% from previo
   "20261109115600|Price has retraced down to and taken support of 1E50..\nPrice retested the level 1E100 and 1E50 again..\nExpect 1PX_15PM UT~" +
   "20261109115800|Price rises above 1E50\nPrice rises above 1E100~" +
   "20261109115900|Price retested the level S1 D, 1E200, 5E50, 1E50 and 1E100 again..\nExpect 1PX_15PM UT~" +
-  "20261109120000|Price has crossed below 1E50..~" +
+  "20261109120000|Price has crossed below 1E50..\nAttention: 1PME50 DT Started Resistance @ R1 D~" +
   "20261109120100|Price crossed down VWAP (1m)..~" +
   "20261109120300|1ox~" +
   "20261109120600|Price has retraced up to and faced resistance at 1E50..~" +
@@ -292,7 +295,7 @@ var string TREPAT_DATA = "202611090915|Session open. Gap down -0.00% from previo
   "20261109124000|1M2X UT~" +
   "20261109124200|Price falls below 1E100\nPrice falls below 1E200\nPrice falls below 5E50~" +
   "20261109124500|1PMX UT Support @ 5E100\n5PZ UT\n1PX UT~" +
-  "20261109125100|Price has crossed above 1E50..~" +
+  "20261109125100|Price has crossed above 1E50..\nAttention: 1PME50 UT Started Support @ 5E100~" +
   "20261109125400|5m Stochastic cross up from OSZ..~" +
   "20261109125600|1ox~" +
   "20261109130000|Price crossed up VWAP (1m)..\n5PX UT~" +
@@ -312,7 +315,7 @@ var string TREPAT_DATA = "202611090915|Session open. Gap down -0.00% from previo
   "20261109133100|Price has retraced up to and faced resistance at 1E50..\nPrice rises above 5E100\nPrice retested the level 1E100 and 1E50 again..~" +
   "20261109133200|Price retested the level 1E200, 5E50, 1E50 and 1E100 again..~" +
   "20261109133300|1PMX UT Support @ 5E100\n1PX UT\n1M2X UT~" +
-  "20261109133400|Price has crossed above 1E50..\nPrice retested the level S1 D, 1E100, 1E200 and 5E50 again..\nExpect 1PX_15PM DT~" +
+  "20261109133400|Price has crossed above 1E50..\nAttention: 1PME50 UT Started Support @ 5E100\nPrice retested the level S1 D, 1E100, 1E200 and 5E50 again..\nExpect 1PX_15PM DT~" +
   "20261109133800|Price has crossed above 1E50..~" +
   "20261109134700|Price crossed up VWAP (1m)..~" +
   "20261109134900|5M1X UT\n5m Stochastic cross up from MZ..~" +
@@ -343,7 +346,7 @@ var string TREPAT_DATA = "202611090915|Session open. Gap down -0.00% from previo
   "20261109145000|1PX DT~" +
   "20261109145300|5ox~" +
   "20261109145500|1ox\nPrice retested the level 1E100, Daily VWAP and 1E50 again..~" +
-  "20261109145600|Price has crossed below 1E50..\n5ox~" +
+  "20261109145600|Price has crossed below 1E50..\nAttention: 1PME50 DT Started Resistance @ R1 D\n5ox~" +
   "20261109145900|Price has crossed above 1E50..\n1PX UT~" +
   "20261109150000|Price rises above 1E50\nPrice rises above 1E100~" +
   "20261109151000|1ox~" +

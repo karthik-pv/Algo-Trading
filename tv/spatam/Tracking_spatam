@@ -164,6 +164,11 @@ UT/DT — only cross-UPS are considered, announced as "<NAME>x"
       //   downtrending hold together after an Uptrend state — same bar or a
       //   few bars apart (stateful pair alignment, 2026-11-10 rule).
       //   UT mirrors it: PVT > 0 AND MACD2 uptrending after a Downtrend state.
+
+[ ] 1PM E50 follow-through (2026-11-10, v2026-11-10.42)
+      Attention: 1PME50 UT Started Support @ <levels>   // after a 1PM uptrend start, the FIRST price cross above 1E50
+      Attention: 1PME50 DT Started Resistance @ <levels> // after a 1PM downtrend start, the FIRST price cross below 1E50
+      // once per trend episode (re-armed by each new 1PMX start)
       // 5PM starts keep their wording: "5PM Uptrend started.." / "5PM Downtrend started.."
 
 [ ] 1PM E50 swing start

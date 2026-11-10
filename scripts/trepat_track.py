@@ -357,6 +357,7 @@ def main(paths):
     above50 = False
     e21_res = e21_sup = e50_sup = e50_res = False
     pmx_state = 0   # 1PMX pair-alignment state: -1 down, +1 up, 0 = open of day
+    pm_e50_said = False  # "Attention: 1PME50 UT/DT Started ..." once per episode
     ret_time = {}
     touches, away = {}, {}
     # price-action follow-through applies to the major EMA clusters:
@@ -404,11 +405,13 @@ def main(paths):
             if pmx_state != -1:
                 lvl = getattr(main, '_last_res', None)
                 ev(t, "1PMX DT" + (f" Resistance @ {lvl}" if lvl else " Resistance"))
+                pm_e50_said = False
             pmx_state = -1
         elif up_now:
             if pmx_state != 1:
                 lvl = getattr(main, '_last_sup', None)
                 ev(t, "1PMX UT" + (f" Support @ {lvl}" if lvl else " Support"))
+                pm_e50_said = False
             pmx_state = 1
         # 1E50 cross — Attention prefix per catalog; only said when 1m PVT
         # agrees with the cross (above-cross needs 1P > 0, below-cross 1P < 0)
@@ -416,10 +419,18 @@ def main(paths):
             above50 = False
             if pd.notna(pvt1[i]) and pvt1[i] < 0:
                 ev(t, "Price has crossed below 1E50..")
+            if pmx_state == -1 and not pm_e50_said:
+                pm_e50_said = True
+                lvl = getattr(main, '_last_res', None)
+                ev(t, "Attention: 1PME50 DT Started Resistance" + (f" @ {lvl}" if lvl else ""))
         elif pd.notna(e50[i-1]) and c1[i-1] < e50[i-1] and px > e50[i]:
             above50 = True
             if pd.notna(pvt1[i]) and pvt1[i] > 0:
                 ev(t, "Price has crossed above 1E50..")
+            if pmx_state == 1 and not pm_e50_said:
+                pm_e50_said = True
+                lvl = getattr(main, '_last_sup', None)
+                ev(t, "Attention: 1PME50 UT Started Support" + (f" @ {lvl}" if lvl else ""))
         # 1E50 retrace-that-holds
         if above50 and pd.notna(e50[i]) and abs(px - e50[i]) <= NEAR and px > e50[i]:
             if not e50_sup:
